@@ -538,10 +538,11 @@ export function createApp({
   app.get("/lang/:lang{en|fr}", (c) => {
     const next = c.req.query("next") ?? "";
     // Browsers drop tabs and newlines from URLs ("/\t/evil" becomes "//evil"): refuse any control character or space,
-    // then keep the path only if it still resolves on this hub.
+    // resolve on this hub, then check the final path too: "/.//evil" resolves to "//evil", another site to a browser.
     const hub = new URL(config.publicUrl);
     const target = /^\/[^\s\p{Cc}\\]*$/u.test(next) ? new URL(next, hub) : null;
-    const local = target && target.origin === hub.origin ? target.pathname + target.search + target.hash : "/console";
+    const path = target?.origin === hub.origin ? target.pathname + target.search + target.hash : "";
+    const local = /^\/(?![/\\])/.test(path) ? path : "/console";
     setCookie(c, "lang", c.req.param("lang"), {
       path: "/",
       maxAge: 365 * 86400,
