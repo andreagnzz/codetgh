@@ -1,6 +1,6 @@
 // After pnpm -r build: pack what the hub serves to members, the plugin (zip) and the CLI (npm tarball), into apps/hub/dist.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,6 +49,7 @@ copyFileSync(join(root, "LICENSE"), join(stage, "LICENSE"));
 copyFileSync(join(root, "NOTICE"), join(stage, "NOTICE"));
 // On Windows npm is npm.cmd, which only runs through a shell; no argument carries a path, so nothing needs quoting.
 execFileSync("npm", ["pack", "--silent"], { cwd: stage, stdio: ["ignore", "ignore", "inherit"], shell: process.platform === "win32" });
-renameSync(join(stage, `codetgh-${version}.tgz`), join(out, "codetgh-cli.tgz"));
+// Copy, not rename: the temp folder may sit on another drive (C: vs D: on Windows).
+copyFileSync(join(stage, `codetgh-${version}.tgz`), join(out, "codetgh-cli.tgz"));
 rmSync(stage, { recursive: true });
 console.log(`apps/hub/dist: plugin.zip (${Object.keys(files).length} files), codetgh-cli.tgz (codetgh ${version})`);
