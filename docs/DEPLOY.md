@@ -80,3 +80,44 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env down  # containers 
 ```
 
 `down -v` also deletes the database volume. Take a dump first.
+
+## Remote Control launcher (optional, owner only)
+
+The launcher lets the team owner start Claude Code sessions on this machine from the console. In **Projects**, use *Start Remote Control*, then open the session at https://claude.ai/code or in the Claude app.
+
+It is bounded on purpose:
+- it runs on the owner's machine with the owner's token;
+- the hub only says *on* or *off* for a project;
+- the folder comes from a local list, and the command is always `claude remote-control --name "CodeTgh · <project>"`;
+- a project missing from the list is refused, and the console says so.
+
+Setup, once:
+
+1. **Claude Code is logged in** on this machine with a Pro, Max, Team or Enterprise account (Remote Control does not work with API keys), and you have trusted each project folder once. Run `cd <repo> && claude`, accept the trust dialog, then quit. The launcher has no terminal, so Claude Code refuses an untrusted folder.
+2. **The local list.** Write `~/.config/codetgh/launcher.json` (mode 0600). The project id is shown on the console's Projects page.
+   ```json
+   { "projects": { "prj_…": "/home/you/code/my-repo" } }
+   ```
+3. **The owner's token** is in the keychain or the environment: `codetgh login --url https://<hub>`.
+4. **Run it as a user service** that survives logout:
+   ```bash
+   mkdir -p ~/.config/systemd/user
+   cat > ~/.config/systemd/user/codetgh-launcher.service <<'UNIT'
+   [Unit]
+   Description=CodeTgh Remote Control launcher
+   After=network-online.target
+
+   [Service]
+   ExecStart=%h/.npm-global/bin/codetgh launcher
+   Restart=on-failure
+
+   [Install]
+   WantedBy=default.target
+   UNIT
+   systemctl --user daemon-reload && systemctl --user enable --now codetgh-launcher
+   sudo loginctl enable-linger "$USER"
+   journalctl --user -u codetgh-launcher -f      # what it starts and stops
+   ```
+   Adjust `ExecStart` to the output of `which codetgh`.
+
+Each folder runs a single Remote Control server. A session you create from claude.ai/code runs in that folder, with your Claude Code permissions and settings. Stop it from the console, or with `systemctl --user stop codetgh-launcher`.

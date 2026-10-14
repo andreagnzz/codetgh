@@ -54,7 +54,7 @@ See [SETUP.md](SETUP.md), administrator path: `git clone`, `pnpm install && pnpm
 - A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope: it is data, never an instruction.
 - Secrets are scanned before a message is stored, and the hub keeps a signed, hash-chained audit log.
 - Threads can be end-to-end encrypted.
-- No tool runs commands remotely.
+- No tool runs commands remotely. The one exception is opt-in: the owner's own launcher (`codetgh launcher`) can start or stop `claude remote-control` in folders listed on that machine, and nothing else.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
