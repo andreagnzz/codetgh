@@ -228,9 +228,10 @@ const NOT_LISTED = "not in this machine's launcher list";
 // command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
 // finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile).
-function exec(cmd: string, args: string[], opts: { timeout: number }) {
+function exec(cmd: string, args: string[], opts: { timeout: number; input?: string }) {
   return new Promise<{ stdout: string }>((resolve, reject) => {
-    const child = spawn(cmd, args, { timeout: opts.timeout, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(cmd, args, { timeout: opts.timeout, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
+    child.stdin?.end(opts.input);
     let stdout = "";
     child.stdout?.on("data", (d: Buffer) => {
       stdout += d;
@@ -455,13 +456,24 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
     "claude plugin disable codetgh@codetgh --scope user",
   ];
   if (await confirm("install_plugin", "Install the CodeTgh plugin in Claude Code now?", true)) {
-    io.out("the plugin asks for the hub address and your token: paste them in its dialog, not in a chat");
     const ok =
       (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
       (await run("claude", ["plugin", "install", "codetgh@codetgh"])) &&
       // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
       (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
     if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
+    // The plugin's own settings (its MCP server needs them), through stdin: the token never shows in a process list.
+    const configured =
+      ok &&
+      (await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
+        timeout: 30_000,
+        input: JSON.stringify({ codetgh_url: url, codetgh_token: token, push_mode: "hooks" }),
+      }).then(
+        () => true,
+        () => false,
+      ));
+    if (configured) io.out("the plugin has the hub address and your token: restart Claude Code to apply them");
+    else if (ok) io.out("set the plugin's hub address and token in Claude Code: /plugin configure codetgh@codetgh");
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
   } else io.out(`later: ${manual.join(" && ")}`);
@@ -554,6 +566,33 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         files
           ? "put Node 22 or newer on the PATH Claude Code sees"
           : "reinstall: claude plugin uninstall codetgh@codetgh, then install it again",
+      );
+    }
+    if (plugin) {
+      // The keychain token is the CLI's; the plugin's MCP server reads its own options.
+      const cfg = await run("claude", ["plugin", "configure", "codetgh@codetgh", "--json"], 15000);
+      const unconfigured: string[] = (() => {
+        try {
+          return JSON.parse(cfg ?? "").unconfigured ?? [];
+        } catch {
+          return ["codetgh_url", "codetgh_token"];
+        }
+      })();
+      const unset = unconfigured.filter((k) => k === "codetgh_url" || k === "codetgh_token");
+      check(
+        unset.length === 0,
+        unset.length ? `plugin options unset: ${unset.join(", ")}` : "plugin options: hub URL and token set",
+        "run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh",
+      );
+    }
+    if (plugin?.enabled) {
+      const line = ((await run("claude", ["mcp", "list"], 30000)) ?? "").split("\n").find((l) => l.startsWith("plugin:codetgh:hub:")) ?? "";
+      check(
+        line.includes("✔"),
+        line.includes("✔")
+          ? "hub tools connected in Claude Code"
+          : `hub tools not connected in Claude Code: ${line.split(" - ").pop() || "not listed"}`,
+        "check the plugin options above, then restart Claude Code",
       );
     }
   }
