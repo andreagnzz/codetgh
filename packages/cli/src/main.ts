@@ -3,7 +3,7 @@ import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -943,6 +943,62 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const ctl = new AbortController();
       for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => ctl.abort());
       await daemon({ url, token, out: io.out, signal: ctl.signal });
+    });
+
+  // Admin commands for the machine that runs the hub. They chain the scripts in deploy/, which cron runs too.
+  const checkout = (from: string) => {
+    for (let dir = resolve(from); ; dir = dirname(dir)) {
+      if (existsSync(join(dir, "deploy/compose.yaml"))) return dir;
+      if (dirname(dir) === dir)
+        throw new Error(`no deploy/compose.yaml in ${from} or above: run this from your hub checkout, or pass --dir`);
+    }
+  };
+  const run = (cmd: string, args: string[], cwd: string) =>
+    promisify(execFile)(cmd, args, { cwd, timeout: 15 * 60_000 }).then(
+      (r) => ({ ok: true, out: r.stdout.trim() }),
+      (e: { stdout?: string; stderr?: string; message: string }) => ({
+        ok: false,
+        out: `${e.stdout ?? ""}${e.stderr || e.message}`.trim(),
+      }),
+    );
+  const compose = ["compose", "-f", "deploy/compose.yaml", "--env-file", "deploy/.env"];
+  const backup = async (dir: string) => {
+    const dump = await run(join(dir, "deploy/backup.sh"), [], dir);
+    if (!dump.ok) throw new Error(`backup failed: ${dump.out}`);
+    const path = dump.out.split("\n").pop() ?? "";
+    const check = await run(join(dir, "deploy/restore-test.sh"), [path], dir);
+    if (!check.ok) throw new Error(`the dump did not restore (${path}): ${check.out}`);
+    io.out(path);
+    io.out(check.out);
+  };
+
+  cli
+    .command("backup")
+    .description("dump the hub's database into deploy/backups/, then check that the dump restores (admins, on the hub's machine)")
+    .option("--dir <path>", "hub checkout", ".")
+    .action(async (opts: { dir: string }) => backup(checkout(opts.dir)));
+
+  cli
+    .command("update")
+    .description("pull the latest hub, back up, rebuild and restart it, then wait until it is ready (admins, on the hub's machine)")
+    .option("--dir <path>", "hub checkout", ".")
+    .option("--hub <url>", "where the hub answers on this machine", "http://127.0.0.1:8787")
+    .option("--wait <seconds>", "how long to wait for the new hub", "60")
+    .action(async (opts: { dir: string; hub: string; wait: string }) => {
+      const dir = checkout(opts.dir);
+      const before = (await run("git", ["rev-parse", "HEAD"], dir)).out;
+      const pull = await run("git", ["pull", "--ff-only"], dir);
+      if (!pull.ok) throw new Error(`git pull failed, nothing restarted: ${pull.out}`);
+      await backup(dir);
+      const up = await run("docker", [...compose, "up", "-d", "--build"], dir);
+      if (!up.ok) throw new Error(`docker compose failed (are you in the docker group?): ${up.out}`);
+      for (const end = Date.now() + Number(opts.wait) * 1000; Date.now() < end; await sleep(1000)) {
+        const res = await fetch(`${opts.hub}/readyz`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+        if (res?.ok) return io.out("hub is up");
+      }
+      throw new Error(
+        `the hub is not ready after ${opts.wait} s: roll back with git checkout ${before} && docker ${compose.join(" ")} up -d --build`,
+      );
     });
 
   cli

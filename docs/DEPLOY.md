@@ -46,16 +46,22 @@ codetgh setup            # admin → this machine → GitHub → Tailscale Funne
 ## Update
 
 ```
-git pull && pnpm install && pnpm build
-deploy/backup.sh                                                   # dump first
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
-curl -fsS http://127.0.0.1:8787/readyz
+codetgh update
 ```
+
+From the checkout (or `--dir <path>`), it runs, in order:
+1. `git pull --ff-only`;
+2. a backup with its restore check;
+3. `docker compose … up -d --build`;
+4. a wait of up to 60 s for `/readyz`.
+
+If the pull or the backup fails, no container is touched. If the new hub is not ready, it prints the rollback command with the previous commit. Docker needs your user in the `docker` group, or run `sudo $(which codetgh) update`.
 
 Migrations run when the hub starts. Each one stays compatible with the previous hub version, so rolling back means checking out the previous commit and running `up -d --build` again.
 
 ## Backup
 
+- `codetgh backup` runs `deploy/backup.sh`, then `deploy/restore-test.sh` on the new dump, and fails if it does not restore.
 - `deploy/backup.sh` writes `deploy/backups/codetgh-<date>.dump` (`pg_dump -Fc`, mode 0600) and deletes dumps older than 7 days.
 - It runs every night at 03:17 from the crontab of the user who runs the hub: `17 3 * * * cd <repo> && deploy/backup.sh >> deploy/backups/backup.log 2>&1`.
 - Copy `deploy/backups/` off the machine from time to time; a backup kept on the same disk does not survive the disk.

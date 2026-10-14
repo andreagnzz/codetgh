@@ -79,6 +79,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | `codetgh invite <email>` | Create a 7-day invitation link (admins) |
 | `codetgh project new <name>` | Set up a repository as a team project |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
+| `codetgh backup` / `update` | Back up the hub with a restore check, or update it safely (admins, on the hub's machine) |
 
 Every command has `--help`, and every error says what to do next.
 
