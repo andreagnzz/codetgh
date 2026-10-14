@@ -99,6 +99,7 @@ Found a vulnerability? Please report it privately: see [SECURITY.md](SECURITY.md
 | --- | --- |
 | [SETUP.md](SETUP.md) | Guided install, written for Claude Code to run with you |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Hosting the hub on a VPS |
+| [docs/HACKATHON.md](docs/HACKATHON.md) | Running autonomous sessions (bypassPermissions) together: checklist and rehearsal |
 | [docs/claude-ai.md](docs/claude-ai.md) | Using CodeTgh from claude.ai and the Claude apps |
 | [docs/FACTS.md](docs/FACTS.md) | Claude Code and MCP behaviors, each checked against the docs or a real run |
 | [docs/REUSE.md](docs/REUSE.md) | Every dependency, with its license read from source |
