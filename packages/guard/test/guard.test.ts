@@ -84,3 +84,23 @@ describe("look-alikes", () => {
     expect(textFlags("＜system＞ hello")).toContain("instruction-like");
   });
 });
+
+describe("envelope attributes", () => {
+  it("escapes the sender's name once", () => {
+    const out = renderPeerMessage(
+      {
+        id: "msg_1",
+        from: 'Bob "x" & <y>',
+        agent: null,
+        kind: "note",
+        priority: "normal",
+        authoredBy: "human",
+        sentAt: new Date(0),
+        flags: [],
+      },
+      null,
+      "hi",
+    );
+    expect(out).toContain('from="Bob &quot;x&quot; &amp; &lt;y&gt;"');
+  });
+});
