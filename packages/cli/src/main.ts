@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -205,6 +205,55 @@ function banner(io: Io, what: string) {
   const color = process.stdout.isTTY && !process.env.NO_COLOR;
   const teal = (s: string) => (color ? `\x1b[1;38;5;30m${s}\x1b[0m` : s);
   io.out(`${teal("CodeTgh")} ${what} · Plusieurs Claude Code, une même ligne.`);
+}
+
+// codetgh launcher: the Remote Control servers it started, by project id, for the life of this process.
+const launched = new Map<string, { child: ChildProcess; lastError: string }>();
+const NOT_LISTED = "not in this machine's launcher list";
+
+// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
+// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
+async function launcherPass(client: CodeTghClient, projects: Record<string, string>, io: Io) {
+  const { targets } = await client.launcherTargets();
+  for (const t of targets) {
+    const run = launched.get(t.project_id);
+    if (!t.desired) {
+      if (run) {
+        run.child.kill("SIGTERM");
+        launched.delete(t.project_id);
+        io.out(`${t.project_name}: Remote Control stopped`);
+      }
+      await client.launcherReport({ project_id: t.project_id, running: false });
+      continue;
+    }
+    const dir = projects[t.project_id];
+    if (!dir) {
+      io.out(`${t.project_name}: ${NOT_LISTED}; add "${t.project_id}": "/path/to/the/repository" to it`);
+      await client.launcherReport({ project_id: t.project_id, running: false, error: NOT_LISTED });
+      continue;
+    }
+    if (run && run.child.exitCode === null) {
+      await client.launcherReport({ project_id: t.project_id, running: true });
+      continue;
+    }
+    if (run) {
+      // It exited (an untrusted folder, a lost login...): report why, then try again on this pass.
+      await client.launcherReport({ project_id: t.project_id, running: false, error: run.lastError || "Remote Control exited" });
+    }
+    const name = `CodeTgh · ${t.project_name.replace(/\p{Cc}/gu, "").slice(0, 60)}`;
+    const child = spawn("claude", ["remote-control", "--name", name], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
+    const entry = { child, lastError: "" };
+    child.stderr?.on("data", (d: Buffer) => {
+      const line = d.toString().trim().split("\n").pop();
+      if (line) entry.lastError = line.slice(0, 300);
+    });
+    child.on("error", (e) => {
+      entry.lastError = e.message;
+    });
+    launched.set(t.project_id, entry);
+    io.out(`${t.project_name}: Remote Control started in ${dir}`);
+    await client.launcherReport({ project_id: t.project_id, running: true });
+  }
 }
 
 // The token goes to the OS keychain only; the config file holds the hub URL.
@@ -643,6 +692,35 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         });
         io.out(paused ? "Your agents are paused: they can read but not send. codetgh resume to undo." : "Your agents resumed sending.");
       });
+
+  cli
+    .command("launcher")
+    .description("owner's machine: run Remote Control for the projects switched on in the console, only in folders listed locally")
+    .option("--config <file>", "the local list of project folders", join(configDir(), "launcher.json"))
+    .option("--interval <seconds>", "how often to check the hub", "15")
+    .option("--once", "one pass, then return (servers keep running in this process)")
+    .action(async (opts: { config: string; interval: string; once?: boolean }) => {
+      const { url, token } = await credentials(deps.keyring);
+      if (!url || !token) throw new Error("no hub URL or token: run codetgh login on this machine with the owner's account");
+      let projects: Record<string, string>;
+      try {
+        projects = (JSON.parse(readFileSync(opts.config, "utf8")) as { projects?: Record<string, string> }).projects ?? {};
+      } catch {
+        throw new Error(`cannot read ${opts.config}: create it with {"projects": {"<project id>": "/path/to/the/repository"}}`);
+      }
+      const client = createClient({ url, token });
+      if (opts.once) return launcherPass(client, projects, io);
+      const stop = () => {
+        for (const r of launched.values()) r.child.kill("SIGTERM");
+        process.exit(0);
+      };
+      process.on("SIGTERM", stop);
+      process.on("SIGINT", stop);
+      for (;;) {
+        await launcherPass(client, projects, io).catch((e: Error) => io.err(`launcher: ${e.message}`));
+        await sleep(Number(opts.interval) * 1000);
+      }
+    });
 
   const audit = cli.command("audit").description("check the team's audit log");
   audit
