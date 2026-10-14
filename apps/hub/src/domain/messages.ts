@@ -27,7 +27,8 @@ const EXPIRY_MS: Record<string, number> = { status: 24 * 3600_000, alert: 7 * 24
 const QUARANTINE_KINDS = new Set(["note", "question", "answer"]);
 const GUEST_KINDS = new Set(["note", "question"]);
 
-const notExpired = or(isNull(message.expiresAt), gt(message.expiresAt, new Date()));
+// A function, so "now" is the time of each read, not the time this module loaded.
+const notExpired = () => or(isNull(message.expiresAt), gt(message.expiresAt, new Date()));
 
 async function threadParticipants(tx: Db, threadId: string) {
   const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, threadId));
@@ -454,7 +455,7 @@ export async function unread(
       and(
         visibleTo(p, agentId),
         isNull(receipt.readAt),
-        notExpired,
+        notExpired(),
         opts.thread ? eq(message.threadId, opts.thread) : undefined,
         opts.kinds?.length ? inArray(message.kind, opts.kinds) : undefined,
         opts.afterSeq ? gt(receipt.seq, opts.afterSeq) : undefined,
