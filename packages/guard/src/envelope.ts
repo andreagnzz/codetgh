@@ -1,9 +1,17 @@
+// Look-alikes fold to what a model reads (fullwidth ＜ becomes <, then gets escaped) and invisible format
+// characters go, Unicode tag characters (U+E0000–E007F) included.
+export const clean = (s: string) => s.normalize("NFKC").replace(/\p{Cf}/gu, "");
+
 export const escapeText = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
 // One line, no control characters, cut before escaping so an entity is never split.
 export const escapeAttr = (s: string, max = 60) =>
   escapeText(
-    Array.from(s.replace(/[\r\n\t]+/g, " ").replace(/\p{Cc}/gu, ""))
+    Array.from(
+      clean(s)
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\p{Cc}/gu, ""),
+    )
       .slice(0, max)
       .join(""),
   );
@@ -45,5 +53,5 @@ export function renderPeerMessage(meta: PeerMeta, subject: string | null, body: 
     .map(([k, v]) => `${k}="${escapeAttr(v ?? "", 80)}"`)
     .join(" ");
   const text = truncate(subject ? `Subject: ${subject}\n${body}` : body, meta.id);
-  return `<peer_message ${attrs}>\n${escapeText(text)}\n</peer_message>`;
+  return `<peer_message ${attrs}>\n${escapeText(clean(text))}\n</peer_message>`;
 }
