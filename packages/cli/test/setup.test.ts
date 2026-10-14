@@ -1,9 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
+import { fakeCommand } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -29,18 +30,18 @@ function fakeClaude() {
   writeFileSync(join(plugin, "dist/hook.js"), "");
   writeFileSync(join(plugin, "hooks/hooks.json"), "{}");
   const listed = JSON.stringify([{ id: "codetgh@codetgh", version: "0.0.1", enabled: true, installPath: plugin }]);
-  const bin = join(dir, "claude");
-  writeFileSync(
-    bin,
-    [
-      "#!/bin/sh",
-      `echo "$@" >> "${dir}/calls"`,
-      'if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi',
-      `if [ "$1 $2" = "plugin list" ]; then if grep -q "plugin install" "${dir}/calls"; then echo '${listed}'; else echo '[]'; fi; exit 0; fi`,
-      "exit 0",
-    ].join("\n"),
+  fakeCommand(
+    dir,
+    "claude",
+    `import { appendFileSync, existsSync, readFileSync } from "node:fs";
+const calls = ${JSON.stringify(join(dir, "calls"))};
+const args = process.argv.slice(2).join(" ");
+appendFileSync(calls, args + "\\n");
+if (args === "--version") console.log("2.1.296 (Claude Code)");
+else if (args.startsWith("plugin list"))
+  console.log(readFileSync(calls, "utf8").includes("plugin install") ? ${JSON.stringify(listed)} : "[]");
+`,
   );
-  chmodSync(bin, 0o755);
   process.env.PATH = `${dir}${delimiter}${PATH}`;
   return () => readFileSync(join(dir, "calls"), "utf8");
 }
@@ -114,7 +115,8 @@ describe("codetgh setup from an answers file", () => {
     };
     const { out } = await setup(answers);
     const env = readFileSync(join(repo, "deploy/.env"), "utf8");
-    expect(statSync(join(repo, "deploy/.env")).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") expect(statSync(join(repo, "deploy/.env")).mode & 0o777).toBe(0o600);
     const secret = env.match(/^CODETGH_SECRET=(.+)$/m)?.[1] ?? "";
     expect(secret.length).toBeGreaterThanOrEqual(40);
     expect(env).toMatch(/^POSTGRES_PASSWORD=.{20,}$/m);

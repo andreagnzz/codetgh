@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { project } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, fakeCommand } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -31,8 +31,18 @@ const projectsPage = async () => (await fetch(`${hub.url}/console/projects`, { h
 // A fake claude: writes its arguments and directory, then stays alive like the real server.
 function fakeClaude() {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
-  writeFileSync(join(dir, "claude"), `#!/bin/sh\necho "$@" > "${dir}/args"\npwd > "${dir}/cwd"\necho $$ > "${dir}/pid"\nexec sleep 300\n`);
-  chmodSync(join(dir, "claude"), 0o755);
+  fakeCommand(
+    dir,
+    "claude",
+    `import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const dir = ${JSON.stringify(dir)};
+writeFileSync(join(dir, "args"), process.argv.slice(2).join(" "));
+writeFileSync(join(dir, "cwd"), process.cwd());
+writeFileSync(join(dir, "pid"), String(process.pid));
+setTimeout(() => {}, 300_000);
+`,
+  );
   process.env.PATH = `${dir}${delimiter}${PATH}`;
   return dir;
 }
