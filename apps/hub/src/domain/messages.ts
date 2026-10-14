@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
+import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
 import { and, asc, desc, eq, gt, inArray, isNull, lte, max, ne, or, sql } from "drizzle-orm";
@@ -117,7 +117,8 @@ export async function assertNoSecrets(deps: Pick<MessagingDeps, "db" | "bus" | "
   const fromAgentId = author.agent?.id ?? null;
   const fingerprint = (secret: string) => createHmac("sha256", deps.secret).update(secret).digest("hex");
   const allowed = new Set(p.settings.allowed_fingerprints ?? []);
-  const findings = (await scanSecrets(text, { patterns: p.settings.secret_patterns ?? [] })).filter(
+  // Scan what a reader will see: rendering folds look-alikes (fullwidth letters) back to ASCII and drops invisible characters.
+  const findings = (await scanSecrets(clean(text), { patterns: p.settings.secret_patterns ?? [] })).filter(
     (f) => !allowed.has(fingerprint(f.secret)),
   );
   if (!findings.length) return;
