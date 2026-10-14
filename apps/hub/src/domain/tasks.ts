@@ -1,6 +1,6 @@
 import { escapeAttr, renderPeerData, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { TaskStatus } from "@codetgh/shared";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { membership, task, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -120,6 +120,9 @@ export async function claimTask(db: Db, p: Principal, a: Agent, input: { task_id
     .from(task)
     .where(and(eq(task.id, input.task_id), eq(task.teamId, p.teamId)));
   if (!current) throw new HubError("E_NOT_FOUND", `no task ${input.task_id}`);
+  // A todo task assigned to someone else is theirs; one already claimed falls through to the version check below.
+  if (current.status === "todo" && current.assigneeUserId && current.assigneeUserId !== p.user.id)
+    throw new HubError("E_FORBIDDEN", `task ${input.task_id} is assigned to someone else: ask them, or ask an admin to reassign it`);
   if (current.dependsOn.length) {
     const open = await db
       .select({ id: task.id })
@@ -137,7 +140,15 @@ export async function claimTask(db: Db, p: Principal, a: Agent, input: { task_id
         version: sql`${task.version} + 1`,
         updatedAt: new Date(),
       })
-      .where(and(eq(task.id, input.task_id), eq(task.teamId, p.teamId), eq(task.version, input.expected_version), eq(task.status, "todo")))
+      .where(
+        and(
+          eq(task.id, input.task_id),
+          eq(task.teamId, p.teamId),
+          eq(task.version, input.expected_version),
+          eq(task.status, "todo"),
+          or(isNull(task.assigneeUserId), eq(task.assigneeUserId, p.user.id)),
+        ),
+      )
       .returning();
     if (!row) {
       const reason = current.version !== input.expected_version ? `version is now ${current.version}` : `status is ${current.status}`;

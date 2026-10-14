@@ -973,7 +973,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const { messages, envelopes } = await createClient({ url, token }).inbox({ limit: Math.min(Number(opts.limit) || 20, 20) });
       if (!messages.length) return io.out("Inbox empty.");
       const privateKey = (await deps.keyring()).get(`${url}#e2e`) ?? "";
-      const { renderPeerMessage } = await import("@codetgh/guard");
+      const { renderPeerMessage, textFlags } = await import("@codetgh/guard");
       for (const [n, m] of messages.entries()) {
         io.out(`${m.id} · ${m.kind} · ${m.thread}`);
         if (!m.e2e) {
@@ -998,7 +998,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
               priority: m.priority,
               authoredBy: m.e2e.authored_by,
               sentAt: new Date(m.sent_at),
-              flags: m.e2e.flags,
+              // The sender's flags, and ours: a sender that skipped the scan gets flagged here anyway.
+              flags: [...new Set([...m.e2e.flags, ...textFlags(text)])],
             },
             null,
             text,
