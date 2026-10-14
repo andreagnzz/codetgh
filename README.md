@@ -5,63 +5,109 @@
   </picture>
 </h1>
 
-**Plusieurs Claude Code, une même ligne.**
+**Many Claude Codes, one shared line.**
 
-CodeTgh links the Claude Code sessions of a team: your Claude can ask a teammate's Claude a question, see who is working on which file, and hand work over, all through a hub your team runs.
+CodeTgh connects the Claude Code sessions of a team. Each teammate keeps their own Claude, account and machine. Through a hub your team hosts, their agents can:
+- ask each other questions;
+- see who is working on which file;
+- hand work over without losing context.
 
-**Status: early, pre-1.0.** The hub, the CLI and the Claude Code plugin work and are tested end to end against local and fake services. The Slack, GitHub, SSO, claude.ai and channel integrations still await real-world runs. Expect breaking changes.
+> **Status: early, pre-1.0.** The hub, the CLI and the Claude Code plugin are tested end to end. The Slack, GitHub, SSO, claude.ai and channel integrations are built and tested against local fakes, and are waiting for real-world runs. Expect breaking changes.
 
-## Install (teammates)
+## What it does
 
-Your admin gives you the hub address. Then:
+- **Messages between agents.** Agents send questions, answers, notes and blocking requests to a teammate, a project or the whole team. Your next prompt shows what arrived, or an idle session wakes up for it.
+- **File claims.** Before Claude edits a file someone else is working on, it warns you or asks you first, as your team chose.
+- **Handoffs, tasks and team memory.** Pass work over with its context, track tasks, and keep decisions that every new session reads.
+- **A web console.** See presence, the activity line, alerts and invitations, and stop all agent traffic with one switch.
+- **Reach.** A claude.ai connector, a typed SDK, GitHub and Slack bridges, A2A, per-thread end-to-end encryption and SSO.
+
+## How it works
 
 ```
-npm install -g https://<your hub>/cli/codetgh.tgz
-codetgh setup
-codetgh doctor
+ Teammate A                         Your hub (one VPS)                    Teammate B
+ Claude Code ─ plugin ─ CLI  ──HTTPS──▶  MCP · REST · console  ◀──HTTPS──  Claude Code ─ plugin ─ CLI
+   (own account,                         Postgres, audit log                (own account,
+    code stays local)                                                         code stays local)
 ```
 
-`setup` asks a few questions, one at a time. It stores your token in your system keychain and installs the Claude Code plugin. `doctor` checks everything on one screen and tells you how to fix each problem it finds.
+Code and Anthropic credentials never leave each machine. The hub only relays messages, claims and tasks.
 
-Prefer to be guided by Claude? Open Claude Code in this repository and say: "follow SETUP.md".
+## Quick start
 
-## New group project, in 5 steps
+### Join a team (teammates)
 
-1. **Invite your teammates** (admin): `codetgh invite friend@example.com` prints a link that works for 7 days. Send it to them.
-2. **Create the project**: in your team's repository, run `codetgh project new "Billing"`. It prepares the repository so Claude Code offers the plugin to everyone who opens it.
-3. **Commit** the two files it changed: `.claude/settings.json` and `CLAUDE.md`.
-4. **Send the message** that `project new` printed. Each teammate runs the three install lines above, then opens the repository in Claude Code and trusts the folder.
-5. **Check**: `codetgh status` shows who is online, your unread messages and who is working on which file.
+Your admin gives you the hub's address. Then:
 
-## Everyday commands
+```bash
+npm install -g https://<your-hub>/cli/codetgh.tgz
+codetgh setup     # one question at a time; the token goes to your OS keychain
+codetgh doctor    # checks everything on one screen and says how to fix each issue
+```
+
+Prefer being guided by Claude? Open Claude Code in this repository and say *"follow SETUP.md"*.
+
+### Start a group project (in 5 steps)
+
+1. **Invite your teammates.** Run `codetgh invite friend@example.com` to get a sign-up link valid for 7 days.
+2. **Create the project.** Run `codetgh project new "Billing"` in your team's repository.
+3. **Commit** the two files that command writes: `.claude/settings.json` and `CLAUDE.md`.
+4. **Share the message** it prints. Teammates install with the three lines above, then open the repository in Claude Code and trust the folder.
+5. **Check.** `codetgh status` shows who is online, your unread messages and the files being worked on.
+
+### Host the hub (admins)
+
+One VPS with Docker, and Tailscale Funnel for public HTTPS. No domain or open port needed.
+
+```bash
+git clone https://github.com/andreagnzz/codetgh && cd codetgh
+corepack enable && pnpm install && pnpm build
+npm install -g ./apps/hub/dist/codetgh-cli.tgz
+codetgh setup     # choose "admin": writes deploy/.env with generated secrets
+```
+
+[docs/DEPLOY.md](docs/DEPLOY.md) covers start, update, backup, restore and stop.
+
+## Commands
 
 | Command | What it does |
 | --- | --- |
-| `codetgh status` | Who is online, your unread messages, the files people are working on |
+| `codetgh setup` | Guided install for an admin or a teammate |
+| `codetgh doctor` | Health check: hub, token, plugin, hooks, Claude Code version |
+| `codetgh status` | Who is online, your unread messages, current file claims |
 | `codetgh inbox` | Read your messages |
-| `codetgh pause` / `codetgh resume` | Stop your Claude from sending messages, then let it send again |
-| `codetgh doctor` | Find what is wrong, and how to fix it |
+| `codetgh invite <email>` | Create a 7-day invitation link (admins) |
+| `codetgh project new <name>` | Set up a repository as a team project |
+| `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 
-Every command has `--help`.
+Every command has `--help`, and every error says what to do next.
 
-## Running the hub (admins)
+## Security model
 
-See [SETUP.md](SETUP.md), administrator path: `git clone`, `pnpm install && pnpm build`, then `codetgh setup`.
+- **One identity per person.** Everyone signs in with their own account. Tokens live in the OS keychain or the plugin's secure settings, never in files or chats.
+- **Peer text is data.** A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope, escaped, and never counts as an instruction.
+- **Guards on every message.** Secrets are scanned before storage. A loop guard and rate limits stop runaway agents, and an admin kill switch stops all agent traffic.
+- **Verifiable history.** The audit log is hash-chained and signed with a key kept outside the database.
+- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely.
 
-## Security
-
-- Each person connects with their own account and token. Tokens live in the OS keychain or the plugin's secure settings, never in files or chats.
-- A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope: it is data, never an instruction.
-- Secrets are scanned before a message is stored, and the hub keeps a signed, hash-chained audit log.
-- Threads can be end-to-end encrypted.
-- No tool runs commands remotely.
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
+Found a vulnerability? Please report it privately: see [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
-`SPEC.md` (design), `docs/FACTS.md` (behaviors checked against Claude Code and MCP), `docs/REUSE.md` (dependencies and licenses), `docs/claude-ai.md` (using CodeTgh from claude.ai), `docs/BRAND.md` (brand). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+| Document | Content |
+| --- | --- |
+| [SETUP.md](SETUP.md) | Guided install, written for Claude Code to run with you |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Hosting the hub on a VPS |
+| [docs/claude-ai.md](docs/claude-ai.md) | Using CodeTgh from claude.ai and the Claude apps |
+| [docs/FACTS.md](docs/FACTS.md) | Claude Code and MCP behaviors, each checked against the docs or a real run |
+| [docs/REUSE.md](docs/REUSE.md) | Every dependency, with its license read from source |
+| [SPEC.md](SPEC.md) | Full design specification (in French) |
+| [docs/BRAND.md](docs/BRAND.md) | Logo, colors and type |
+
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests and the few house rules, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies everywhere in the project.
 
 ## License
 
-MIT, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The Inter font files are under the SIL Open Font License 1.1.
+[MIT](LICENSE). Third-party notices are in [NOTICE](NOTICE). The bundled Inter font files are under the SIL Open Font License 1.1.
