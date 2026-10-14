@@ -15,6 +15,7 @@ const FR: Record<string, string> = {
   Agents: "Agents",
   Projects: "Projets",
   Project: "Projet",
+  Remove: "Retirer",
   "Project id": "Identifiant du projet",
   "Remote Control running": "Remote Control en marche",
   "Remote Control stopped": "Remote Control arrêté",

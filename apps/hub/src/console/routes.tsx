@@ -30,6 +30,7 @@ import { createExternalAgent } from "../domain/a2a.js";
 import {
   changeRole,
   isAdmin,
+  removeAgent,
   requireAdmin,
   resolveAlert,
   resumeKillSwitch,
@@ -544,13 +545,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
             </>,
             <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
-            r.agent.trustLevel === "trusted" ? (
-              <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
-            ) : r.agent.kind === "a2a" ? (
-              _("external: always quarantined")
-            ) : (
-              <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
-            ),
+            <>
+              {r.agent.trustLevel === "trusted" ? (
+                <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
+              ) : r.agent.kind === "a2a" ? (
+                _("external: always quarantined")
+              ) : (
+                <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
+              )}{" "}
+              <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
+            </>,
           ])}
         />
         {isAdmin(p) && (
@@ -654,6 +658,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <p>It appears to the team as {created.handle}.</p>
       </Result>,
     );
+  });
+
+  consoleApp.post("/agents/:id/remove", async (c) => {
+    await removeAgent(db, c.get("principal"), c.req.param("id"));
+    return refresh(c);
   });
 
   consoleApp.post("/agents/:id/:trust{trusted|quarantined}", async (c) => {

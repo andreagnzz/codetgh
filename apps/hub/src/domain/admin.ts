@@ -5,6 +5,7 @@ import { agent, alert, membership, personalToken, type TeamSettings, team } from
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { appendAudit } from "./audit.js";
+import { releaseFor } from "./claims.js";
 
 const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/;
 
@@ -126,6 +127,24 @@ export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust
     if (a.kind === "a2a" && trust === "trusted") throw new HubError("E_FORBIDDEN", "an external agent stays in quarantine");
     await tx.update(agent).set({ trustLevel: trust }).where(eq(agent.id, a.id));
     await appendAudit(tx, { ...byUser(p), action: `agent.${trust}`, subjectId: a.id });
+  });
+}
+
+// The row stays (messages and the audit chain point to it): the session ends and leaves every list.
+export async function removeAgent(db: Db, p: Principal, agentId: string) {
+  await db.transaction(async (tx) => {
+    const [a] = await tx
+      .select()
+      .from(agent)
+      .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId), isNull(agent.removedAt)));
+    if (!a) throw new HubError("E_NOT_FOUND", "agent not found");
+    if (a.userId !== p.user.id) requireAdmin(p);
+    await tx
+      .update(agent)
+      .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date() })
+      .where(eq(agent.id, a.id));
+    await releaseFor(tx, { agentId: a.id }, "session_end", true);
+    await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });
   });
 }
 
