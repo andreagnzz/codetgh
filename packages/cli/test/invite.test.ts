@@ -49,3 +49,12 @@ it("tells a member to ask an admin, and checks the address", async () => {
   await expect(cli(team.sam.token, ["invite", "z@acme.test"])).rejects.toThrow(/ask an admin/);
   await expect(cli(team.lea.token, ["invite", "not-an-email"])).rejects.toThrow(/email/);
 });
+
+it("sets how many days a link lasts, and revokes it", async () => {
+  const out = await cli(team.lea.token, ["invite", "zoe@acme.test", "--days", "3"]);
+  expect(out).toContain("valid 3 days");
+  const link = out.match(/https?:\/\/\S+\/invite\/[A-Za-z0-9_-]+/)?.[0] ?? "";
+  expect(await cli(team.lea.token, ["invite", "zoe@acme.test", "--revoke"])).toContain("Revoked 1 invitation");
+  expect(await (await fetch(link)).text()).toContain("no longer valid");
+  await expect(cli(team.lea.token, ["invite", "zoe@acme.test", "--days", "45"])).rejects.toThrow(/between 1 and 30 days/);
+});
