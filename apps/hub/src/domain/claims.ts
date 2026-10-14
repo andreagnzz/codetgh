@@ -49,9 +49,26 @@ function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "sc
 }
 
 const minutesLeft = (c: Claim) => Math.max(0, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000));
-// The reason is a peer's words: only the permission prompt (ask), which the user reads, carries it.
+// The reason is a peer's words: only the permission prompt (ask) carries it, inside a peer envelope.
 const describe = (h: Holder, withReason = false) =>
-  `${escapeAttr(h.name, 40)} (${h.mode}, ${minutesLeft(h)} min left${withReason && h.reason ? `: ${escapeAttr(h.reason, 200)}` : ""})`;
+  `${escapeAttr(h.name, 40)} (${h.mode}, ${minutesLeft(h)} min left)${
+    withReason && h.reason
+      ? `, reason:\n${renderPeerMessage(
+          {
+            id: "claim-reason",
+            from: h.name,
+            agent: null,
+            kind: "claim_reason",
+            priority: "normal",
+            authoredBy: "agent",
+            sentAt: new Date(),
+            flags: textFlags(h.reason),
+          },
+          null,
+          h.reason,
+        )}`
+      : ""
+  }`;
 
 // One lock per team: task and resource claims are team-wide, so a per-project lock would let two projects race.
 async function lock(tx: Db, teamId: string) {

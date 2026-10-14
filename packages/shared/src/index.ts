@@ -141,8 +141,15 @@ export const repoPath = z
     message: "use a path relative to the repository root",
   });
 
-// A scope is a path, a glob, task:<id> or resource:<name>.
-const claimScope = z.union([z.string().regex(/^task:tsk_[0-9A-Z]{26}$/), z.string().regex(/^resource:[\w.-]{1,60}$/), repoPath]);
+// A scope is a path, a glob, task:<id> or resource:<name>. Paths use path characters only, so a scope can never
+// carry a sentence into another session's context.
+const claimScope = repoPath.refine(
+  (s) => /^task:tsk_[0-9A-Z]{26}$/.test(s) || /^resource:[\w.-]{1,60}$/.test(s) || /^[\p{L}\p{N}._\-/*?[\]{},!@+~#%=]+$/u.test(s),
+  {
+    message:
+      "a claim scope is a path or glob (letters, digits and . _ - / * ? [ ] { } , ! @ + ~ # % =, no spaces), task:<id> or resource:<name>",
+  },
+);
 
 export const ClaimInput = z.object({
   agent: agentId.optional(),
