@@ -1,4 +1,4 @@
-import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { escapeAttr, renderPeerData, renderPeerMessage, textFlags } from "@codetgh/guard";
 import { and, asc, desc, eq, ilike, inArray, max, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { memoryItem, user } from "../db/schema.js";
@@ -29,7 +29,7 @@ const header = (i: Item) => ({
   version: i.version,
   kind: i.kind,
   status: i.status,
-  title: escapeAttr(i.title, 120),
+  title: renderPeerData("memory_title", i.title.replace(/\s+/g, " ").slice(0, 120)),
   pinned: i.pinned,
 });
 

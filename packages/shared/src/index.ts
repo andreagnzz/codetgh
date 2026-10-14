@@ -152,13 +152,16 @@ export const repoPath = z
 
 // A scope is a path, a glob, task:<id> or resource:<name>. Paths use path characters only, so a scope can never
 // carry a sentence into another session's context.
-const claimScope = repoPath.refine(
-  (s) => /^task:tsk_[0-9A-Z]{26}$/.test(s) || /^resource:[\w.-]{1,60}$/.test(s) || /^[\p{L}\p{N}._\-/*?[\]{},!@+~#%=]+$/u.test(s),
-  {
-    message:
-      "a claim scope is a path or glob (letters, digits and . _ - / * ? [ ] { } , ! @ + ~ # % =, no spaces), task:<id> or resource:<name>",
-  },
-);
+// Paths and globs a peer writes for others to read (claims, task paths): path characters only, so they can never
+// carry a sentence or markup into another session.
+const PATH_CHARS = /^[\p{L}\p{N}._\-/*?[\]{},!@+~#%=]+$/u;
+const PATH_CHARS_HELP = "letters, digits and . _ - / * ? [ ] { } , ! @ + ~ # % =, no spaces";
+const peerPath = repoPath.refine((s) => PATH_CHARS.test(s), { message: `a path or glob: ${PATH_CHARS_HELP}` });
+
+// A scope is a path, a glob, task:<id> or resource:<name>.
+const claimScope = repoPath.refine((s) => /^task:tsk_[0-9A-Z]{26}$/.test(s) || /^resource:[\w.-]{1,60}$/.test(s) || PATH_CHARS.test(s), {
+  message: `a claim scope is a path or glob (${PATH_CHARS_HELP}), task:<id> or resource:<name>`,
+});
 
 export const ClaimInput = z.object({
   agent: agentId.optional(),
@@ -201,7 +204,7 @@ export const TaskCreateInput = z.object({
   agent: agentId.optional(),
   title: z.string().min(1).max(200),
   body: z.string().max(8000).default(""),
-  paths: z.array(repoPath).max(50).default([]),
+  paths: z.array(peerPath).max(50).default([]),
   depends_on: z.array(taskId).max(20).default([]),
   assignee: handle.optional(),
 });
