@@ -71,6 +71,7 @@ export function whoami(p: Principal, a: Agent | null): Whoami {
     handle: p.handle,
     agent: a ? { id: a.id, label: a.label } : null,
     paused: p.paused,
+    push_allowed_modes: ["hooks", ...(p.settings.push_allowed_modes ?? []).filter((m) => m === "rewake")],
   };
 }
 

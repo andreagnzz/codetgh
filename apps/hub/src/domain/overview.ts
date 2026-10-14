@@ -82,6 +82,8 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
         label: free(r.agent.label),
         project: free(r.project),
         branch: free(r.agent.branch),
+        push_mode: r.agent.pushMode,
+        client_version: r.agent.clientVersion,
         presence: presence(r.agent),
         status: r.agent.statusExpiresAt && r.agent.statusExpiresAt > new Date() ? free(r.agent.statusText) : "",
         last_seen: r.agent.lastSeenAt.toISOString(),
@@ -156,4 +158,38 @@ export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
     peerText,
   );
   return `<codetgh_context ${attrs}>\n${hubText}\n${envelope}\n</codetgh_context>`;
+}
+
+// The version CodeTgh is tested with; older ones may lack hook features it relies on.
+const TESTED_CLAUDE_CODE = "2.1.296";
+const versionNumber = (v: string) =>
+  v
+    .split(".")
+    .map(Number)
+    .reduce((a, n) => a * 1000 + n, 0);
+
+// One line for the person at session start: hub data only, so no teammate's words reach it.
+export async function statusLine(db: Db, p: Principal, me: Agent) {
+  const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
+  const ov = await teamOverview(db, p, me, { scope: "team", limit: 30 });
+  const online = ov.agents.filter((a) => a.presence !== "offline").length;
+  const unread = Object.values(ov.unread).reduce((s, n) => s + n, 0);
+  const mode = me.pushMode ?? "hooks";
+  const parts = [
+    `CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`,
+    `@${p.handle}`,
+    `push ${mode}`,
+    ...(me.clientVersion ? [`Claude Code ${me.clientVersion}`] : []),
+    `${online} online`,
+    `${unread} unread`,
+  ];
+  const warnings = [
+    ...(mode === "rewake" && !(p.settings.push_allowed_modes ?? []).includes("rewake")
+      ? ["rewake is off for this team: messages arrive between tool calls and at your prompts (an admin can allow it in Settings)"]
+      : []),
+    ...(me.clientVersion && versionNumber(me.clientVersion) < versionNumber(TESTED_CLAUDE_CODE)
+      ? [`Claude Code older than ${TESTED_CLAUDE_CODE} (tested version): update with claude update`]
+      : []),
+  ];
+  return [parts.join(" · "), ...warnings].join(" · ⚠ ");
 }

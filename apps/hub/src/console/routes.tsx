@@ -531,7 +531,18 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Agents",
       <>
         <Table
-          head={[_("Who"), _("Label"), _("Project"), _("Kind"), _("Branch"), _("Last seen"), _("Trust"), _("Actions")]}
+          head={[
+            _("Who"),
+            _("Label"),
+            _("Project"),
+            _("Kind"),
+            _("Branch"),
+            _("Push"),
+            _("Claude Code"),
+            _("Last seen"),
+            _("Trust"),
+            _("Actions"),
+          ]}
           empty={_("No agent yet. Agents appear here once someone runs codetgh setup and opens Claude Code in a team repository.")}
           rows={rows.map((r) => [
             r.name,
@@ -542,6 +553,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             r.project ?? "",
             r.agent.kind,
             r.agent.branch ?? "",
+            r.agent.pushMode ?? "",
+            r.agent.clientVersion ?? "",
             <>
               <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
             </>,

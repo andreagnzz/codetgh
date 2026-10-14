@@ -92,6 +92,13 @@
       "when": 1791984986745,
       "tag": "0012_agent_removed",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791997176080,
+      "tag": "0013_agent_session_status",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
-import { fakeCommand } from "../../../e2e/helpers.js";
+import { consolePost, fakeCommand } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -69,6 +69,23 @@ async function setup(answers: Record<string, unknown>, opts: { stdin?: string; k
 }
 
 describe("codetgh setup from an answers file", () => {
+  it("member: picks the rewake push mode on its own when the team allows it", async () => {
+    await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+      retention_days: "90",
+      secret_patterns: "",
+      push_hooks: "on",
+      push_rewake: "on",
+    });
+    const calls = fakeClaude();
+    const { out } = await setup(
+      { role: "member", hub_url: hub.url, invite_link: "", display_name: "Malik", install_plugin: true },
+      { stdin: team.malik.token },
+    );
+    expect(calls.options().push_mode).toBe("rewake");
+    expect(out).toContain("push mode rewake");
+    await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "", push_hooks: "on" });
+  });
+
   it("member: connects to the hub, keeps the token in the keychain, installs the plugin, then runs doctor", async () => {
     const calls = fakeClaude();
     const { out, code, store } = await setup(

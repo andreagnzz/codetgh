@@ -17,7 +17,13 @@ const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional(
 
 export const ErrorBody = z.object({ code: z.enum(ERROR_CODES), message: z.string() });
 
-export const SessionStarted = z.object({ agent_id: z.string().nullable(), paused: z.boolean(), context: z.string(), linked: z.boolean() });
+export const SessionStarted = z.object({
+  agent_id: z.string().nullable(),
+  paused: z.boolean(),
+  context: z.string(),
+  linked: z.boolean(),
+  status_line: z.string().optional(),
+});
 export const SessionEndInput = z.object({ session_id: z.string().min(1).max(200) });
 export const PreEditDecision = z.object({ decision: z.enum(["warn", "ask", "deny"]), reason: z.string() });
 export const ClaimsCheckOutput = z.object({
