@@ -1023,6 +1023,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 ))}
               </select>
             </label>
+            <p class="meta">
+              {_(
+                "Autonomous sessions (bypassPermissions) cannot answer a question: CodeTgh warns them instead of asking. Choose warn for teams that run them.",
+              )}
+            </p>
             <label>
               {_("Who accepts team memory")}{" "}
               <select name="memory_accept_by">

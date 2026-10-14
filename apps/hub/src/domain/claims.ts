@@ -33,6 +33,12 @@ function scopeType(scope: string): ScopeType {
   return picomatch.scan(scope).isGlob ? "glob" : "path";
 }
 
+// A glob with no directory in front of ** (or a bare *) reaches every file of the project.
+const coversProject = (scope: string) => {
+  const glob = scope.replace(/^\.\//, "");
+  return glob === "*" || (picomatch.scan(glob).base === "" && glob.includes("**"));
+};
+
 function covers(c: Pick<Claim, "scopeType" | "scope">, path: string) {
   if (c.scopeType === "path") return c.scope === path;
   return c.scopeType === "glob" && picomatch(c.scope, { dot: true })(path);
@@ -138,6 +144,11 @@ export async function createClaims(
     if ((s.scopeType === "path" || s.scopeType === "glob") && !a.projectId)
       throw new HubError("E_INVALID", "no project for this agent: start the session inside a git repository");
     if (isExcluded(s.scope)) throw new HubError("E_INVALID", `${s.scope} cannot be claimed (secrets and .git are excluded)`);
+    if (s.scopeType === "glob" && coversProject(s.scope))
+      throw new HubError(
+        "E_INVALID",
+        `${s.scope} would cover the whole project and block everyone: claim a narrower path, like src/** or a file`,
+      );
   }
   const reason = input.reason?.replace(/\s+/g, " ").slice(0, 200) || null;
   await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, [reason ?? "", ...input.scope].join("\n"));
