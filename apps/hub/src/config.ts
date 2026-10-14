@@ -19,6 +19,8 @@ export type Config = {
   publicDir: string;
   brandDir: string;
   port: number;
+  // Loopback unless HOST says otherwise: the container sets 0.0.0.0, its published port stays on 127.0.0.1.
+  host: string;
 };
 
 export function loadConfig(env = process.env): Config {
@@ -42,5 +44,6 @@ export function loadConfig(env = process.env): Config {
     publicDir: env.CODETGH_PUBLIC_DIR ?? "public",
     brandDir: env.CODETGH_BRAND_DIR ?? "../../assets/brand",
     port: Number(env.PORT ?? 8787),
+    host: env.HOST ?? "127.0.0.1",
   };
 }

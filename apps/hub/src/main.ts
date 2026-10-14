@@ -9,6 +9,6 @@ const config = loadConfig();
 const { db } = await openDb(config);
 const mailer = createMailer(config.smtpUrl, config.mailFrom);
 const auth = createAuth(config, db, mailer);
-serve({ fetch: createApp({ config, db, auth, mailer }).fetch, port: config.port }, () => {
-  console.log(`CodeTgh hub on ${config.publicUrl} (port ${config.port})`);
+serve({ fetch: createApp({ config, db, auth, mailer }).fetch, port: config.port, hostname: config.host }, () => {
+  console.log(`CodeTgh hub on ${config.publicUrl} (listening on ${config.host}:${config.port})`);
 });

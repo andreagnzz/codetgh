@@ -40,7 +40,8 @@ export type PeerMeta = {
 export function renderPeerMessage(meta: PeerMeta, subject: string | null, body: string) {
   const attrs = [
     ["id", meta.id],
-    ["from", escapeAttr(meta.from, 40)],
+    // Cut here, escaped once below with every other attribute.
+    ["from", Array.from(meta.from).slice(0, 40).join("")],
     ["agent", meta.agent ?? ""],
     ["kind", meta.kind],
     ["priority", meta.priority],

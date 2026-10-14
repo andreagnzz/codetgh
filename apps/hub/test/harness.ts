@@ -57,6 +57,7 @@ export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; c
     publicDir: fileURLToPath(new URL("../public", import.meta.url)),
     brandDir: fileURLToPath(new URL("../../../assets/brand", import.meta.url)),
     port,
+    host: "127.0.0.1",
     ...opts.config,
   };
   const template = process.env.CODETGH_TEST_PGLITE_TEMPLATE;
