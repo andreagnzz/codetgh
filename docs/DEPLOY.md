@@ -127,3 +127,22 @@ Setup, once:
    Adjust `ExecStart` to the output of `which codetgh`.
 
 Each folder runs a single Remote Control server. A session you create from claude.ai/code runs in that folder, with your Claude Code permissions and settings. Stop it from the console, or with `systemctl --user stop codetgh-launcher`.
+
+## Discord bot (optional)
+
+A small bot for a community server: `/install`, `/docs`, `/status` (CI of main), `/bug`, `/security`. It uses Discord's HTTP interactions, so there is no gateway connection and no token at runtime. Every request is checked against Discord's Ed25519 signature. It sees neither the hub nor its data.
+
+1. In the [Developer Portal](https://discord.com/developers/applications), copy the application's **Application ID** and **Public Key** (both public) into `deploy/.env` as `DISCORD_APP_ID` and `DISCORD_PUBLIC_KEY`.
+2. Start it, and expose it on a second Funnel port:
+   ```
+   docker compose -f deploy/compose.yaml --env-file deploy/.env --profile discord up -d --build discord
+   sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8790
+   ```
+3. In the portal, set **Interactions Endpoint URL** to `https://<your-machine>.<tailnet>.ts.net:8443/interactions` and save. Discord checks it with a signed PING.
+4. Register the commands once. The bot token (portal → Bot → Reset Token) stays in your shell, never in a file:
+   ```
+   read -rs DISCORD_BOT_TOKEN && export DISCORD_BOT_TOKEN
+   docker compose -f deploy/compose.yaml --env-file deploy/.env --profile discord run --rm -e DISCORD_BOT_TOKEN discord node register.js
+   unset DISCORD_BOT_TOKEN
+   ```
+5. Invite the bot with `https://discord.com/oauth2/authorize?client_id=<Application ID>&scope=applications.commands`.
