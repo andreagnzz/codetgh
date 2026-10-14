@@ -481,6 +481,18 @@ label:has(> input[type="checkbox"]) {
   opacity: 0.6;
   cursor: progress;
 }
+/* A small form inside a table cell: the field and its action on one line. */
+form.inline,
+form.inline label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: 0;
+}
+form.inline input {
+  width: auto;
+  margin: 0;
+}
 .field-error {
   color: var(--danger);
   font-weight: 500;

@@ -5,7 +5,7 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
 import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreEditInput, SendMessageInput } from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
-import { CreateProjectInput, InviteInput, KeysQuery, PublishKeyInput } from "@codetgh/shared/rest";
+import { CreateProjectInput, InviteInput, KeysQuery, PublishKeyInput, RevokeInvitationsInput } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { sql } from "drizzle-orm";
@@ -43,7 +43,7 @@ import {
 import { contextPacket, teamOverview } from "./domain/overview.js";
 import { handleSlackCommand, handleSlackEvent, startSlackRelay, validSlackSignature } from "./domain/slack.js";
 import { backchannelLogout } from "./domain/sso.js";
-import { inviteMember } from "./domain/teams.js";
+import { inviteMember, revokeInvitations } from "./domain/teams.js";
 import { HTTP_STATUS, HubError } from "./errors.js";
 import { langOf } from "./i18n.js";
 import { createMailer, type Mailer } from "./mailer.js";
@@ -353,6 +353,10 @@ export function createApp({
     const p = c.get("principal");
     return c.json(await teamOverview(db, p, await restAgent(p, undefined), { scope: "team", limit: 50 }));
   });
+
+  v1.post("/invitations/revoke", async (c) =>
+    c.json({ revoked: await revokeInvitations(db, c.get("principal"), await parse(c, RevokeInvitationsInput), "rest") }),
+  );
 
   v1.get("/keys", async (c) => {
     const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });

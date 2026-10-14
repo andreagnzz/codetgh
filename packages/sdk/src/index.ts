@@ -78,7 +78,9 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     createProject: async (name: string, repoFingerprint: string) =>
       must(await call("createProject", { name, repo_fingerprint: repoFingerprint })),
     /** Invite an email address (admins): the 7-day sign-up link. */
-    invite: async (email: string, role = "member") => must(await call("invite", { email, role })),
+    invite: async (email: string, role = "member", days?: number) => must(await call("invite", { email, role, days })),
+    /** Revoke the pending invitations of an email address (admins). */
+    revokeInvitations: async (email: string) => must(await call("revokeInvitations", { email })),
     /** Who is online, your unread counts by kind, and the team's live claims. */
     status: async () => must(await call("status")),
     /** Stop or restore your own agents' sending. */

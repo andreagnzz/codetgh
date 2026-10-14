@@ -69,12 +69,19 @@ export const CreateProjectInput = z.object({
   repo_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });
 export const ProjectOutput = z.object({ id: z.string(), name: z.string() });
-export const InviteInput = z.object({ email: z.string().max(254), role: z.string().max(20).default("member") });
+export const InviteInput = z.object({
+  email: z.string().max(254),
+  role: z.string().max(20).default("member"),
+  days: z.number().int().optional(),
+});
+export const RevokeInvitationsInput = z.object({ email: z.string().max(254) });
+export const RevokedOutput = z.object({ revoked: z.number() });
 export const InviteOutput = z.object({
   link: z.string(),
   email: z.string(),
   role: z.string(),
   emailed: z.boolean(),
+  days: z.number(),
   expires_at: z.string(),
 });
 // Hub data and escaped one-line labels only; no message text.
@@ -187,6 +194,13 @@ export const REST_ROUTES = {
     summary: "Invite an email address to the team (admins); returns the 7-day link, also emailed when SMTP is set",
     body: InviteInput,
     output: InviteOutput,
+  },
+  revokeInvitations: {
+    method: "POST",
+    path: "/v1/invitations/revoke",
+    summary: "Revoke the pending invitations of an email address (admins); their links stop working",
+    body: RevokeInvitationsInput,
+    output: RevokedOutput,
   },
   status: { method: "GET", path: "/v1/status", summary: "Who is online, your unread counts and the live claims", output: StatusOutput },
   pause: {
