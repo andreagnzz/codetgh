@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import type { ClientRequest as ClientRequestType, IncomingMessage, RequestOptions } from "node:http";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL, urlToHttpOptions } from "node:url";
@@ -28,6 +28,7 @@ type State = {
   touched?: string[];
   reported?: string[];
   waiter?: number;
+  waiterAt?: number;
   wakes?: number[];
   // The hub does not know this repository: every hook stays quiet in this session.
   unlinked?: boolean;
@@ -40,8 +41,12 @@ const config = () => ({
   token: process.env.CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN || process.env.CODETGH_TOKEN || "",
 });
 
-const statePath = (sessionId: string) =>
-  join(process.env.CODETGH_STATE_DIR || tmpdir(), `codetgh-${createHash("sha256").update(sessionId).digest("hex").slice(0, 16)}.json`);
+// Private to the user, never the shared /tmp: on a shared machine another user could plant a session's state there.
+function statePath(sessionId: string) {
+  const dir = process.env.CODETGH_STATE_DIR || join(process.env.XDG_RUNTIME_DIR || join(homedir(), ".cache"), "codetgh");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return join(dir, `codetgh-${createHash("sha256").update(sessionId).digest("hex").slice(0, 16)}.json`);
+}
 
 function loadState(sessionId: string): State {
   try {
@@ -58,7 +63,9 @@ function saveState(sessionId: string, state: State) {
 }
 
 function warnOnce(input: Input, message: string) {
-  const sessionId = input.session_id ?? "unknown";
+  // No session id: warn without state rather than share one path between sessions.
+  if (!input.session_id) return { systemMessage: message };
+  const sessionId = input.session_id;
   const state = loadState(sessionId);
   if (state.warned) return null;
   saveState(sessionId, { ...state, warned: true });
@@ -148,7 +155,10 @@ async function sessionStart(input: Input) {
       if (res.ok) body = (await res.json()) as typeof body;
     }
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
-    const shown = body.status_line && (input.source === "startup" || input.source === "resume") ? { systemMessage: body.status_line } : {};
+    const shown =
+      body.status_line && (input.source === "startup" || input.source === "resume")
+        ? { systemMessage: body.status_line.replace(/\p{Cc}/gu, "") }
+        : {};
     return {
       ...shown,
       ...(body.paused && warnOnce(input, "CodeTgh is paused by an admin; working without it.")),
@@ -372,8 +382,10 @@ async function rewake(input: Input) {
   const state = loadState(sessionId);
   if (state.unlinked) return null;
   // Every Stop starts a hook process: one waiter per session is enough.
-  if (state.waiter && state.waiter !== process.pid && alive(state.waiter)) return null;
-  saveState(sessionId, { ...state, waiter: process.pid });
+  // A waiter killed at its timeout never clears itself: past the budget its pid no longer counts.
+  const waiting = state.waiter && Date.now() - (state.waiterAt ?? 0) < REWAKE_BUDGET_MS + 60_000;
+  if (waiting && state.waiter !== process.pid && alive(state.waiter ?? 0)) return null;
+  saveState(sessionId, { ...state, waiter: process.pid, waiterAt: Date.now() });
   const deadline = Date.now() + REWAKE_BUDGET_MS;
   try {
     for (let waitS = 55; waitS >= 1; waitS = Math.min(55, Math.floor((deadline - Date.now()) / 1000))) {
