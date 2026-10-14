@@ -7,7 +7,7 @@ import { buildSync } from "esbuild";
 
 // Tests run the same single-file bundle the plugin ships, built once per test process.
 let bundle: string | undefined;
-function hookBundle() {
+export function hookBundle() {
   if (!bundle) {
     // A space in the path, like "C:\Users\Jane Doe\": the hook must still recognise it was run directly.
     const outdir = mkdtempSync(join(tmpdir(), "codetgh bundle-"));
@@ -44,10 +44,15 @@ export function fakeCommand(dir: string, name: string, js: string) {
 export type HookRun = { out: Record<string, unknown> | null; raw: string; err: string; ms: number; code: number | null };
 
 // Runs the plugin hook like Claude Code does: event name in argv, hook input JSON on stdin.
-export function runHook(event: string, input: Record<string, unknown>, env: Record<string, string>): Promise<HookRun> {
+export function runHook(
+  event: string,
+  input: Record<string, unknown>,
+  env: Record<string, string>,
+  entry = hookBundle(),
+): Promise<HookRun> {
   const started = Date.now();
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [hookBundle(), event], { env: { PATH: process.env.PATH ?? "", ...env } });
+    const child = spawn(process.execPath, [entry, event], { env: { PATH: process.env.PATH ?? "", ...env } });
     let raw = "";
     let err = "";
     child.stdout.on("data", (d) => {
