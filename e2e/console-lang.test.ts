@@ -31,7 +31,16 @@ it("switches the console to English and back, whatever the browser asks", async 
 
 it("only sends you back to a page of this hub", async () => {
   // Browsers drop tabs and newlines from URLs: "/\t/evil" would become "//evil".
-  for (const next of ["//evil.example", "https://evil.example", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", ""]) {
+  for (const next of [
+    "//evil.example",
+    "https://evil.example",
+    "/\\evil.example",
+    "/\t/evil.example",
+    "/\n/evil.example",
+    "/.//evil.example",
+    "/a/..//evil.example",
+    "",
+  ]) {
     expect((await get(`/lang/fr?next=${encodeURIComponent(next)}`)).headers.get("location")).toBe("/console");
   }
   expect((await get("/lang/de")).status).toBe(404);
