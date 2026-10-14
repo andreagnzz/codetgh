@@ -59,7 +59,7 @@ Not done: `whoami` with a real throwaway token. Creating one needs the owner's a
   17 3 * * * cd /home/andrea/code/codetgh-public && deploy/backup.sh >> deploy/backups/backup.log 2>&1
   ```
   Its exact command was run once by hand and wrote a dump. The alternative was to add the user to the `docker` group, which is root-equivalent, so it was left out.
-- **Not done:** an off-machine copy of `deploy/backups/`. A backup on the same disk does not survive the disk.
+- **Off-machine copy** of `deploy/backups/`: made by the owner on 2026-10-14.
 
 ## Updates
 
@@ -80,5 +80,5 @@ Not done: `whoami` with a real throwaway token. Creating one needs the owner's a
 
 ## Open
 
-- An off-machine copy of the backups.
 - `whoami` with a real throwaway token.
+- Monitoring: nothing alerts when the hub goes down.
