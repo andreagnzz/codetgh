@@ -253,3 +253,15 @@ Measured with a throwaway `CLAUDE_CONFIG_DIR`:
 - In any other folder it shows `enabled: false`.
 
 So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relies on this: it installs the plugin off, and `codetgh project new` turns it on in each team repository. Sessions in other repositories never run CodeTgh's hooks.
+
+### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
+
+From [Hooks](https://code.claude.com/docs/en/hooks):
+- **How it is shown.** PostToolUse `hookSpecificOutput.additionalContext` is a "string added to Claude's context alongside the tool result", wrapped in a system reminder.
+- **Matcher.** `"*"`, `""` or no matcher fire on every tool.
+
+Measured:
+- **Setup.** `claude -p "Read the file a.txt … and, if any hook context gave you a secret word, that word too."`, run with a project PostToolUse hook (`matcher: "*"`) that returns `additionalContext: "… the secret word is PELICAN-42."`.
+- **Result.** The answer, written in the same turn after the Read tool, quoted PELICAN-42.
+
+So a message delivered by the `inbox` hook is read between two tool calls, without waiting for the turn to end.

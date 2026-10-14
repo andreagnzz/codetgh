@@ -31,6 +31,8 @@ type State = {
   wakes?: number[];
   // The hub does not know this repository: every hook stays quiet in this session.
   unlinked?: boolean;
+  polledAt?: number;
+  injections?: number[];
 };
 
 const config = () => ({
@@ -314,6 +316,36 @@ const alive = (pid: number) => {
   }
 };
 
+// PostToolUse on every tool: a busy agent sees new messages between tool calls, mid-turn, instead of after a turn
+// that can last half an hour. At most one hub call per POLL_MS, sharing the prompt hook's ETag so nothing shows twice.
+const POLL_MS = Number(process.env.CODETGH_POLL_MS ?? 25_000);
+const MAX_INJECTIONS = 10;
+const INJECTION_WINDOW_MS = 10 * 60_000;
+
+async function inbox(input: Input) {
+  const { url, token } = config();
+  if (!url || !token || !input.session_id) return null;
+  const state = loadState(input.session_id);
+  if (state.unlinked || Date.now() - (state.polledAt ?? 0) < POLL_MS) return null;
+  saveState(input.session_id, { ...state, polledAt: Date.now() });
+  try {
+    const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}`, {
+      timeoutMs: 2000,
+      headers: state.etag ? { "If-None-Match": state.etag } : {},
+    });
+    if (res.status !== 200) return null;
+    const latest = loadState(input.session_id);
+    const injections = (latest.injections ?? []).filter((t) => Date.now() - t < INJECTION_WINDOW_MS);
+    // Past the cap the ETag stays unsaved, so the next prompt still delivers these messages.
+    if (latest.etag === res.etag || injections.length >= MAX_INJECTIONS) return null;
+    saveState(input.session_id, { ...latest, etag: res.etag, injections: [...injections, Date.now()] });
+    const { context } = (await res.json()) as { context: string };
+    return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: context } };
+  } catch {
+    return null;
+  }
+}
+
 // Claude Code enforces the asyncRewake hook's timeout (600 s in hooks.json): the waiter gives up a little before.
 const REWAKE_BUDGET_MS = 570_000;
 // A burst of messages must not keep an autonomous session busy waking: past this, delivery waits for the next prompt.
@@ -396,6 +428,7 @@ const handlers: Record<string, (input: Input) => Promise<unknown>> = {
   "pre-tool-use": preToolUse,
   "pre-edit": preEdit,
   "post-edit": postEdit,
+  inbox,
   stop,
   rewake,
   "session-end": sessionEnd,

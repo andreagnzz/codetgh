@@ -72,6 +72,17 @@
             "timeout": 2
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hook.js", "inbox"],
+            "timeout": 3
+          }
+        ]
       }
     ],
     "Stop": [
