@@ -2,16 +2,18 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
 
 // Tests run the same single-file bundle the plugin ships, built once per test process.
 let bundle: string | undefined;
 function hookBundle() {
   if (!bundle) {
-    const outdir = mkdtempSync(join(tmpdir(), "codetgh-bundle-"));
+    // A space in the path, like "C:\Users\Jane Doe\": the hook must still recognise it was run directly.
+    const outdir = mkdtempSync(join(tmpdir(), "codetgh bundle-"));
     bundle = join(outdir, "hook.js");
     buildSync({
-      entryPoints: [new URL("../packages/cli/src/hook.ts", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("../packages/cli/src/hook.ts", import.meta.url))],
       bundle: true,
       platform: "node",
       format: "esm",
