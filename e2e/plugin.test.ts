@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 
-const root = new URL("../packages/plugin/", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../packages/plugin/", import.meta.url));
 const frontmatter = (file: string) => {
   const head = readFileSync(file, "utf8").split("---")[1] ?? "";
   return Object.fromEntries(
