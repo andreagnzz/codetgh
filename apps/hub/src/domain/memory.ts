@@ -114,6 +114,9 @@ export async function decideMemory(
       .where(and(eq(memoryItem.id, input.item_id), eq(memoryItem.teamId, p.teamId)));
     if (!item) throw new HubError("E_NOT_FOUND", `no item ${input.item_id}`);
     if (item.status !== "proposed") throw new HubError("E_INVALID", `this item is already ${item.status}`);
+    // An agent accepting what its own person proposed is no human decision: someone else, or the console.
+    if (via === "mcp" && item.proposedByUser === p.user.id)
+      throw new HubError("E_FORBIDDEN", "someone else decides on your own proposal, or you do it in the console");
     const status = input.decision === "accept" ? "accepted" : "rejected";
     const [row] = await tx
       .update(memoryItem)

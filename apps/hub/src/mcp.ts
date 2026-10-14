@@ -124,6 +124,12 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     },
     async ({ agent, ...input }) =>
       run(async () => {
+        // The hub cannot scan ciphertext: only the CLI, which scans before sealing, may send it.
+        if (input.encrypted)
+          throw new HubError(
+            "E_INVALID",
+            "encrypted messages are sent with codetgh send --encrypt, which scans the text before sealing it",
+          );
         const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, { ...input, agent });
         return { id: m.id, thread: m.threadId, hop: m.hop, sent_at: m.createdAt.toISOString() };
       }),
@@ -333,7 +339,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       },
       async ({ agent, ...input }) =>
         run(async () => {
-          await me(agent);
+          if ((await me(agent)).trustLevel === "quarantined") throw new HubError("E_FORBIDDEN", "this agent is in quarantine");
           return decideMemory(db, p, input, "mcp");
         }),
     );
