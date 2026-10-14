@@ -100,7 +100,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}
-        lang={langOf(c.req.header("accept-language"))}
+        lang={langOf(c.req.header("accept-language"), c.req.header("cookie"))}
       />,
     );
   });
@@ -129,7 +129,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // The page language follows the browser; titles and labels go through i18n's t().
   const tr = (c: Context<Env>) => {
-    const lang = langOf(c.req.header("accept-language"));
+    const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
     return Object.assign((s: string) => t(lang, s), { lang });
   };
   const page = (c: Context<Env>, title: string, body: unknown) =>

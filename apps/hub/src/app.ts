@@ -11,6 +11,7 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { setCookie } from "hono/cookie";
 import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
@@ -518,7 +519,7 @@ export function createApp({
           ...(process.env.AUTH_GOOGLE_ID ? (["google"] as const) : []),
           ...(config.oidcIssuer ? (["sso"] as const) : []),
         ],
-        lang: langOf(c.req.header("accept-language")),
+        lang: langOf(c.req.header("accept-language"), c.req.header("cookie")),
       }),
     ),
   );
@@ -529,9 +530,26 @@ export function createApp({
         clientId: c.req.query("client_id") ?? "",
         scope: c.req.query("scope") ?? "",
         redirectHost: redirect,
-        lang: langOf(c.req.header("accept-language")),
+        lang: langOf(c.req.header("accept-language"), c.req.header("cookie")),
       }),
     );
+  });
+  // Language switch: a preference cookie, then back to the page it came from. Only a path of this hub, never another site.
+  app.get("/lang/:lang{en|fr}", (c) => {
+    const next = c.req.query("next") ?? "";
+    // Browsers drop tabs and newlines from URLs ("/\t/evil" becomes "//evil"): refuse any control character or space,
+    // resolve on this hub, then check the final path too: "/.//evil" resolves to "//evil", another site to a browser.
+    const hub = new URL(config.publicUrl);
+    const target = /^\/[^\s\p{Cc}\\]*$/u.test(next) ? new URL(next, hub) : null;
+    const path = target?.origin === hub.origin ? target.pathname + target.search + target.hash : "";
+    const local = /^\/(?![/\\])/.test(path) ? path : "/console";
+    setCookie(c, "lang", c.req.param("lang"), {
+      path: "/",
+      maxAge: 365 * 86400,
+      sameSite: "Lax",
+      secure: config.publicUrl.startsWith("https:"),
+    });
+    return c.redirect(local, 302);
   });
   app.get("/assets/oauth.js", (c) => c.body(OAUTH_JS, 200, { "content-type": "text/javascript" }));
   app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey }));

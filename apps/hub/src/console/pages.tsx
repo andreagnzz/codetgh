@@ -63,6 +63,17 @@ export const Layout: FC<{ p: Principal; csrf: string; title: string; path: strin
               <br />
               {p.teamName}
             </p>
+            <p class="meta">
+              {lang === "fr" ? (
+                <a href={`/lang/en?next=${encodeURIComponent(path)}`} hreflang="en" lang="en">
+                  English
+                </a>
+              ) : (
+                <a href={`/lang/fr?next=${encodeURIComponent(path)}`} hreflang="fr" lang="fr">
+                  Français
+                </a>
+              )}
+            </p>
           </aside>
           <main id="main">
             {p.paused && (

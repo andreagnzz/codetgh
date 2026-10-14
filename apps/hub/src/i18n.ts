@@ -1,8 +1,10 @@
 // Console and public pages in English or French, from the browser's first language. English strings are the keys.
 export type Lang = "en" | "fr";
 
-export const langOf = (acceptLanguage: string | null | undefined): Lang =>
-  (acceptLanguage ?? "").trim().toLowerCase().startsWith("fr") ? "fr" : "en";
+// The lang cookie, set by the console's language switch, wins over the browser's language.
+export const langOf = (acceptLanguage: string | null | undefined, cookie?: string | null): Lang =>
+  (cookie?.match(/(?:^|;\s*)lang=(en|fr)(?:;|$)/)?.[1] as Lang | undefined) ??
+  ((acceptLanguage ?? "").trim().toLowerCase().startsWith("fr") ? "fr" : "en");
 
 const FR: Record<string, string> = {
   // Layout
