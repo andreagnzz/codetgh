@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { buildSync } from "esbuild";
@@ -16,7 +17,7 @@ beforeAll(async () => {
   // The same single-file bundle the plugin ships.
   bundle = join(mkdtempSync(join(tmpdir(), "codetgh-channel-")), "channel.js");
   buildSync({
-    entryPoints: [new URL("../packages/channel-bridge/src/index.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../packages/channel-bridge/src/index.ts", import.meta.url))],
     bundle: true,
     platform: "node",
     format: "esm",

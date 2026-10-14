@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { urlToHttpOptions } from "node:url";
+import { pathToFileURL, urlToHttpOptions } from "node:url";
 import { promisify } from "node:util";
 import { normalizeOrigin, repoFingerprint } from "@codetgh/shared/repo";
 
@@ -177,10 +177,18 @@ async function repoPath(input: Input, state: State) {
     dir = dirname(dir);
   }
   try {
-    dir = realpathSync(dir);
+    dir = realpathSync.native(dir);
   } catch {}
-  state.root ||= await git(dir, ["rev-parse", "--show-toplevel"]);
-  if (!state.root) return null;
+  if (!state.root) {
+    const top = await git(dir, ["rev-parse", "--show-toplevel"]);
+    if (!top) return null;
+    // On Windows git and the file system can spell one folder differently (C:/ vs C:\, RUNNER~1 vs runneradmin).
+    try {
+      state.root = realpathSync.native(top);
+    } catch {
+      state.root = top;
+    }
+  }
   const rel = relative(state.root, join(dir, rest));
   return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
 }
@@ -362,4 +370,4 @@ export async function runHook(event: string) {
   } catch {}
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await runHook(process.argv[2] ?? "");
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runHook(process.argv[2] ?? "");
