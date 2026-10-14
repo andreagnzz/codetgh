@@ -23,17 +23,23 @@ In bypass there is no permission prompt to catch a mistake. The `<peer_message>`
 
 ## 2. Each person (on the VPS, under your own Unix user)
 
-1. Claude Code **2.1.296 or newer**: `claude --version`.
-2. Install the CLI in your home, never with sudo:
+1. Install the CLI in your home (never with sudo), then run setup:
    ```
    npm config set prefix ~/.local    # once; ~/.local/bin must be on PATH
    npm install -g https://<hub>/cli/codetgh.tgz
    codetgh setup                     # member; the hub URL; the token from Console → Tokens
    ```
-   `setup` installs the plugin **off at user scope** and gives it the hub URL and your token. If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`.
-3. In the hackathon repository, the first person runs `codetgh project new "<name>"` and commits `.claude/settings.json` and `CLAUDE.md`. The other pulls them.
-4. Set your push mode to **rewake**: in Claude Code, `/plugin configure codetgh@codetgh`, then Push mode → `rewake`. Do not use `channel`: it is a preview and duplicates messages.
-5. Restart Claude Code in the repository, then check with `codetgh doctor`. Every line must be ok, including "plugin options: hub URL and token set" and "hub tools connected in Claude Code".
+   `setup` does the rest:
+   - it installs the plugin **off at user scope**;
+   - it gives the plugin the hub URL, your token and the push mode: **rewake** when the team allows it, otherwise `hooks`.
+
+   If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`.
+2. In the hackathon repository, the first person runs `codetgh project new "<name>"` and commits `.claude/settings.json` and `CLAUDE.md`. The other pulls them.
+3. Open Claude Code in the repository. Its first line says it all:
+   ```
+   CodeTgh ✓ <project> · @you · push rewake · Claude Code 2.1.299 · 2 online · 0 unread
+   ```
+   Anything to fix follows on that line after ⚠: rewake not allowed by the team, or a Claude Code older than the tested 2.1.296. `codetgh doctor` gives the details and the fix for each check.
 
 ## 3. How messages reach a busy agent
 

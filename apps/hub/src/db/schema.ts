@@ -154,6 +154,9 @@ export const agent = pgTable(
     endedAt: timestamp("ended_at"),
     // Removed from the console: hidden from every list until the same session starts again.
     removedAt: timestamp("removed_at"),
+    // What the session reported at start: the plugin's push mode and the Claude Code version.
+    pushMode: text("push_mode"),
+    clientVersion: text("client_version"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("agent_session_uq").on(t.teamId, t.userId, t.sessionId), index("agent_team_seen_idx").on(t.teamId, t.lastSeenAt)],

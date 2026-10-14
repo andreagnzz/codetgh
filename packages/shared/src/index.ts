@@ -117,12 +117,19 @@ export const AskPeerInput = z.object({
   priority: z.enum(["normal", "blocking"]).default("normal"),
 });
 
+export const PUSH_MODES = ["hooks", "rewake", "channel"] as const;
+
 export const AgentSessionInput = z.object({
   session_id: z.string().min(1).max(200),
   source: z.string().max(40).optional(),
   kind: z.enum(["claude-code", "claude-ai", "agent-sdk", "other"]).default("claude-code"),
   label: z.string().max(60).optional(),
   branch: z.string().max(200).optional(),
+  push_mode: z.enum(PUSH_MODES).optional(),
+  client_version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/)
+    .optional(),
   repo_fingerprint: z
     .string()
     .regex(/^[0-9a-f]{64}$/)
@@ -276,5 +283,6 @@ export const WhoamiSchema = z.object({
   handle: z.string(),
   agent: z.object({ id: z.string(), label: z.string() }).nullable(),
   paused: z.boolean(),
+  push_allowed_modes: z.array(z.enum(PUSH_MODES)),
 });
 export type Whoami = z.infer<typeof WhoamiSchema>;

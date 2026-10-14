@@ -171,6 +171,14 @@ const Person: FC<{ r: AgentRow; lang: Lang }> = ({ r, lang }) => {
   return (
     <li>
       <span class="who-name">{r.name}</span> <span class="meta">{r.agent.label}</span> <Pill tone={toneOf(state)}>{t(lang, state)}</Pill>
+      {(r.agent.pushMode || r.agent.clientVersion) && (
+        <span class="meta">
+          {" "}
+          {[r.agent.pushMode && `push ${r.agent.pushMode}`, r.agent.clientVersion && `Claude Code ${r.agent.clientVersion}`]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      )}
       {r.agent.trustLevel === "quarantined" && (
         <>
           {" "}

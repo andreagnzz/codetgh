@@ -108,10 +108,16 @@ async function git(cwd: string | undefined, args: string[]) {
 async function sessionStart(input: Input) {
   const { url, token } = config();
   if (!url || !token) return warnOnce(input, "CodeTgh: hub URL or token not configured; working without CodeTgh.");
-  const [branch, origin] = await Promise.all([
+  const [branch, origin, version] = await Promise.all([
     git(input.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
     git(input.cwd, ["remote", "get-url", "origin"]),
+    // Hooks get no Claude Code version: ask the CLI (about 30 ms). shortcut: not found on Windows npm installs (claude.cmd).
+    run("claude", ["--version"], { timeout: 1000 }).then(
+      (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
+      () => undefined,
+    ),
   ]);
+  const pushMode = process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE || "hooks";
   const fingerprint = origin ? repoFingerprint(origin) : undefined;
   const register = (withBranch: boolean) =>
     hub("/v1/agents/session", {
@@ -123,13 +129,15 @@ async function sessionStart(input: Input) {
         source: input.source,
         repo_fingerprint: fingerprint,
         branch: withBranch && branch ? branch : undefined,
+        push_mode: pushMode,
+        client_version: version,
       }),
     });
   try {
     // In a repository, ask with the fingerprint alone first: one nobody linked never sends its branch or file paths.
     let res = await register(!fingerprint);
     if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
-    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean };
+    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean; status_line?: string };
     if (body.linked === false) {
       if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
       return null;
@@ -138,7 +146,10 @@ async function sessionStart(input: Input) {
       res = await register(true);
       if (res.ok) body = (await res.json()) as typeof body;
     }
+    // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
+    const shown = body.status_line && (input.source === "startup" || input.source === "resume") ? { systemMessage: body.status_line } : {};
     return {
+      ...shown,
       ...(body.paused && warnOnce(input, "CodeTgh is paused by an admin; working without it.")),
       hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: body.context },
     };

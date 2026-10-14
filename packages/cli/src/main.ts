@@ -60,7 +60,13 @@ async function readToken(io: Io, fromStdin: boolean) {
 async function whoami(url: string, token: string) {
   const res = await fetch(`${url}/v1/whoami`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`the hub refused the token (HTTP ${res.status})`);
-  return (await res.json()) as { user: { name: string }; team: { name: string }; role: string; handle: string };
+  return (await res.json()) as {
+    user: { name: string };
+    team: { name: string };
+    role: string;
+    handle: string;
+    push_allowed_modes?: string[];
+  };
 }
 
 // Environment first (plugin, CI), then the login config and the keychain.
@@ -462,17 +468,22 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
       (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
     if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
+    // The best push mode the team allows: rewake wakes an idle session for a message; hooks waits for a tool call or a prompt.
+    const pushMode = who.push_allowed_modes?.includes("rewake") ? "rewake" : "hooks";
     // The plugin's own settings (its MCP server needs them), through stdin: the token never shows in a process list.
     const configured =
       ok &&
       (await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
         timeout: 30_000,
-        input: JSON.stringify({ codetgh_url: url, codetgh_token: token, push_mode: "hooks" }),
+        input: JSON.stringify({ codetgh_url: url, codetgh_token: token, push_mode: pushMode }),
       }).then(
         () => true,
         () => false,
       ));
-    if (configured) io.out("the plugin has the hub address and your token: restart Claude Code to apply them");
+    if (configured)
+      io.out(
+        `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): restart Claude Code to apply them`,
+      );
     else if (ok) io.out("set the plugin's hub address and token in Claude Code: /plugin configure codetgh@codetgh");
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
@@ -490,6 +501,8 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     if (!ok && fix) io.out(`     → ${fix}`);
     failed ||= !ok;
   };
+  // The push modes the team allows, from whoami; null when the hub could not be asked.
+  let allowedModes: string[] | null = null;
   const run = (cmd: string, args: string[], timeout: number) =>
     exec(cmd, args, { timeout }).then(
       (r) => r.stdout,
@@ -510,6 +523,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     );
     if (health?.ok && token) {
       const who = await whoami(url, token).catch(() => null);
+      allowedModes = who?.push_allowed_modes ?? null;
       check(
         who !== null,
         who ? `token: ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}` : "token refused by the hub",
@@ -530,6 +544,15 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     version ? `Claude Code ${version}` : "Claude Code not found",
     version ? "update Claude Code to 2.1.224 or newer: claude update" : "install Claude Code: https://code.claude.com/docs/en/setup",
   );
+  if (
+    recent &&
+    version &&
+    version
+      .split(".")
+      .map(Number)
+      .reduce((a, n) => a * 1000 + n, 0) < 2_001_296
+  )
+    io.out(`warn Claude Code ${version} is older than 2.1.296, the version CodeTgh is tested with: claude update`);
   if (version) {
     const list = await run("claude", ["plugin", "list", "--json"], 15000);
     const plugin = (JSON.parse(list ?? "[]") as Array<{ id: string; version?: string; enabled?: boolean; installPath?: string }>).find(
@@ -571,18 +594,27 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     if (plugin) {
       // The keychain token is the CLI's; the plugin's MCP server reads its own options.
       const cfg = await run("claude", ["plugin", "configure", "codetgh@codetgh", "--json"], 15000);
-      const unconfigured: string[] = (() => {
+      const options: { unconfigured?: string[]; inputs?: { push_mode?: string } } = (() => {
         try {
-          return JSON.parse(cfg ?? "").unconfigured ?? [];
+          return JSON.parse(cfg ?? "");
         } catch {
-          return ["codetgh_url", "codetgh_token"];
+          return { unconfigured: ["codetgh_url", "codetgh_token"] };
         }
       })();
+      const unconfigured = options.unconfigured ?? [];
       const unset = unconfigured.filter((k) => k === "codetgh_url" || k === "codetgh_token");
       check(
         unset.length === 0,
         unset.length ? `plugin options unset: ${unset.join(", ")}` : "plugin options: hub URL and token set",
         "run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh",
+      );
+      const mode = options.inputs?.push_mode ?? "hooks";
+      check(
+        mode !== "rewake" || allowedModes === null || allowedModes.includes("rewake"),
+        mode === "rewake" && allowedModes && !allowedModes.includes("rewake")
+          ? "push mode rewake, but this team does not allow it"
+          : `push mode ${mode}`,
+        "an admin allows rewake in the console Settings, or set push mode hooks in Claude Code: /config",
       );
     }
     if (plugin?.enabled) {

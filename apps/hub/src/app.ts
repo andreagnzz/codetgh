@@ -42,7 +42,7 @@ import {
   sendMessage,
   unread,
 } from "./domain/messages.js";
-import { contextPacket, teamOverview } from "./domain/overview.js";
+import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
 import { handleSlackCommand, handleSlackEvent, startSlackRelay, validSlackSignature } from "./domain/slack.js";
 import { backchannelLogout } from "./domain/sso.js";
 import { inviteMember, revokeInvitations } from "./domain/teams.js";
@@ -175,7 +175,13 @@ export function createApp({
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
     if (!p.paused && !agent) return c.json({ agent_id: null, paused: false, context: "", linked: false });
     bus.emit("presence", { teamId: p.teamId });
-    return c.json({ agent_id: agent?.id ?? null, paused: p.paused, context: await contextPacket(db, p, agent), linked: true });
+    return c.json({
+      agent_id: agent?.id ?? null,
+      paused: p.paused,
+      context: await contextPacket(db, p, agent),
+      linked: true,
+      ...(agent && { status_line: await statusLine(db, p, agent) }),
+    });
   });
 
   v1.post("/agents/session/end", async (c) => {

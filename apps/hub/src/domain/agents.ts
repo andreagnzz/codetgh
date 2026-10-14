@@ -43,6 +43,8 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       lastSeenAt: new Date(),
       endedAt: null,
       removedAt: null,
+      pushMode: input.push_mode ?? null,
+      clientVersion: input.client_version ?? null,
     };
     const [row] = await tx
       .insert(agent)
