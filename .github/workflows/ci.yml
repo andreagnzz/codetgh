@@ -55,7 +55,7 @@ jobs:
           node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      # These files fake `claude` with a #!/bin/sh script or check POSIX file modes; Linux still runs them.
+      # These files fake `claude` (or git, docker) with #!/bin/sh scripts or check POSIX file modes; Linux still runs them.
       # shortcut: whole files are excluded, until the Windows claude.cmd issue makes them portable.
       - run: >-
           pnpm vitest run
@@ -64,6 +64,7 @@ jobs:
           --exclude e2e/scenario-5-outbox.test.ts
           --exclude packages/cli/test/doctor.test.ts
           --exclude packages/cli/test/setup.test.ts
+          --exclude packages/cli/test/ops.test.ts
       - run: pnpm build
 
   postgres:
