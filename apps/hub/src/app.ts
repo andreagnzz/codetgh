@@ -499,7 +499,17 @@ export function createApp({
   app.on(["GET", "HEAD", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => auth.handler(c.req.raw));
   const csp = secureHeaders({ contentSecurityPolicy: { defaultSrc: ["'self'"] } });
   app.get("/login", csp, (c) =>
-    c.html(LoginPage({ magicLink: mailer.enabled, sso: Boolean(config.oidcIssuer), lang: langOf(c.req.header("accept-language")) })),
+    c.html(
+      LoginPage({
+        magicLink: mailer.enabled,
+        providers: [
+          ...(process.env.AUTH_GITHUB_ID ? (["github"] as const) : []),
+          ...(process.env.AUTH_GOOGLE_ID ? (["google"] as const) : []),
+          ...(config.oidcIssuer ? (["sso"] as const) : []),
+        ],
+        lang: langOf(c.req.header("accept-language")),
+      }),
+    ),
   );
   app.get("/consent", csp, (c) => {
     const redirect = URL.canParse(c.req.query("redirect_uri") ?? "") ? new URL(c.req.query("redirect_uri") ?? "").host : "";
@@ -584,16 +594,16 @@ async function post(path, body) {
   else if (res.ok) location.href = "/console";
   else document.getElementById("error").textContent = data.message || "Error " + res.status;
 }
-document.getElementById("sso")?.addEventListener("click", async () => {
+for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
   const res = await fetch("/api/auth/sign-in/social", {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ provider: "sso", callbackURL: q ? "/login?" + q : "/console" }),
+    body: JSON.stringify({ provider: button.dataset.provider, callbackURL: q ? "/login?" + q : "/console" }),
   });
   const data = await res.json().catch(() => ({}));
   if (data.url) location.href = data.url;
-  else document.getElementById("error").textContent = data.message || "Single sign-on is not available.";
+  else document.getElementById("error").textContent = data.message || "This sign-in method is not available.";
 });
 document.getElementById("magic-link")?.addEventListener("submit", async (e) => {
   e.preventDefault();

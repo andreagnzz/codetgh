@@ -21,16 +21,29 @@ const Layout = ({ lang, children }: { lang: Lang; children?: Child }) => (
   </html>
 );
 
-export const LoginPage = ({ magicLink, sso, lang = "en" }: { magicLink: boolean; sso: boolean; lang?: Lang }) => {
+const PROVIDER_LABEL = { github: "Sign in with GitHub", google: "Sign in with Google", sso: "Sign in with your organization" };
+
+// One button per sign-in provider the hub is configured with (auth.ts reads them from the environment).
+export const LoginPage = ({
+  magicLink,
+  providers,
+  lang = "en",
+}: {
+  magicLink: boolean;
+  providers: Array<keyof typeof PROVIDER_LABEL>;
+  lang?: Lang;
+}) => {
   const _ = (s: string) => t(lang, s);
   return (
     <Layout lang={lang}>
       <h1>{_("Sign in to CodeTgh")}</h1>
-      {sso && (
-        <p>
-          <button type="button" id="sso" class="primary">
-            {_("Sign in with your organization")}
-          </button>
+      {providers.length > 0 && (
+        <p class="actions">
+          {providers.map((p) => (
+            <button type="button" class="primary" data-provider={p}>
+              {_(PROVIDER_LABEL[p])}
+            </button>
+          ))}
         </p>
       )}
       <form id="login">

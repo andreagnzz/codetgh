@@ -163,6 +163,8 @@ const FR: Record<string, string> = {
   // Public pages
   "Sign in to CodeTgh": "Se connecter à CodeTgh",
   "Sign in with your organization": "Se connecter avec ton organisation",
+  "Sign in with GitHub": "Se connecter avec GitHub",
+  "Sign in with Google": "Se connecter avec Google",
   Password: "Mot de passe",
   "Sign in": "Se connecter",
   "Or get a sign-in link by email": "Ou recevoir un lien de connexion par e-mail",
