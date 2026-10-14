@@ -177,10 +177,18 @@ async function repoPath(input: Input, state: State) {
     dir = dirname(dir);
   }
   try {
-    dir = realpathSync(dir);
+    dir = realpathSync.native(dir);
   } catch {}
-  state.root ||= await git(dir, ["rev-parse", "--show-toplevel"]);
-  if (!state.root) return null;
+  if (!state.root) {
+    const top = await git(dir, ["rev-parse", "--show-toplevel"]);
+    if (!top) return null;
+    // On Windows git and the file system can spell one folder differently (C:/ vs C:\, RUNNER~1 vs runneradmin).
+    try {
+      state.root = realpathSync.native(top);
+    } catch {
+      state.root = top;
+    }
+  }
   const rel = relative(state.root, join(dir, rest));
   return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
 }
