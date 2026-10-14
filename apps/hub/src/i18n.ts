@@ -15,6 +15,8 @@ const FR: Record<string, string> = {
   Agents: "Agents",
   Projects: "Projets",
   Project: "Projet",
+  "Autonomous sessions (bypassPermissions) cannot answer a question: CodeTgh warns them instead of asking. Choose warn for teams that run them.":
+    "Les sessions autonomes (bypassPermissions) ne peuvent pas répondre à une question : CodeTgh les prévient au lieu de demander. Choisis « prévenir l'agent » pour les équipes qui en utilisent.",
   Remove: "Retirer",
   "Project id": "Identifiant du projet",
   "Remote Control running": "Remote Control en marche",

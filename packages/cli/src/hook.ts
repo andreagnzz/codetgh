@@ -12,7 +12,14 @@ import { normalizeOrigin, repoFingerprint } from "@codetgh/shared/repo";
 
 // Hooks fail open: any error gives at most one warning per session and exit code 0, so Claude keeps working.
 const run = promisify(execFile);
-type Input = { session_id?: string; cwd?: string; source?: string; tool_name?: string; tool_input?: unknown };
+type Input = {
+  session_id?: string;
+  cwd?: string;
+  source?: string;
+  tool_name?: string;
+  tool_input?: unknown;
+  permission_mode?: string;
+};
 // Per-session state: prompt ETag, one warning, repository root, files touched by editor tools, shell edits already reported.
 type State = { etag?: string; warned?: boolean; root?: string; touched?: string[]; reported?: string[]; waiter?: number };
 
@@ -210,7 +217,9 @@ async function preEdit(input: Input) {
     });
     if (res.status !== 200) return null;
     const { decision, reason } = (await res.json()) as { decision: "warn" | "ask" | "deny"; reason: string };
-    if (decision === "warn") return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `CodeTgh: ${reason}` } };
+    // Under bypassPermissions nobody answers an ask: Claude Code counts it as a denial (FACTS.md). Warn instead.
+    if (decision === "warn" || (decision === "ask" && input.permission_mode === "bypassPermissions"))
+      return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: `CodeTgh: ${reason}` } };
     if (decision === "ask" || decision === "deny")
       return {
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision, permissionDecisionReason: `CodeTgh: ${reason}` },

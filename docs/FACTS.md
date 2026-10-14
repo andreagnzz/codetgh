@@ -231,3 +231,16 @@ Measured on the VPS:
 - One server per folder: `Error: This folder is already served by a terminal claude remote-control on this device. Stop it first.`
 
 CodeTgh therefore only starts `claude remote-control --name "CodeTgh · <project>"` in folders the owner listed and trusted by hand.
+
+### PreToolUse `ask` and `deny` under bypassPermissions (2026-10-14, Claude Code 2.1.296, Linux)
+
+The docs say what `ask` and `deny` do, and that deny rules hold in every mode. They do not say what a **hook's** `ask` does under `bypassPermissions`.
+
+Measured with `claude -p "Create a file named note.txt…" --dangerously-skip-permissions --output-format json`, in a scratch repository whose `.claude/settings.json` registers a PreToolUse hook on `Write|Edit`:
+- **The hook input carries `"permission_mode": "bypassPermissions"`.**
+- **`deny`**: the write does not happen. It appears in `permission_denials`, and the model reports the hook's reason.
+- **`ask`**: the write does not happen either. It appears in `permission_denials` (twice, since the model retried), as a denial. Nobody can answer in `-p`.
+
+Not measured: an interactive or Remote Control session in bypass, where `ask` might still show a prompt.
+
+CodeTgh therefore turns an `ask` into a warning when the hook input says `bypassPermissions` (`packages/cli/src/hook.ts`, `preEdit`). Teams running autonomous sessions should set claims enforcement to `warn`.
