@@ -33,17 +33,24 @@ function fakeClaude() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, existsSync, readFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 const calls = ${JSON.stringify(join(dir, "calls"))};
+const options = ${JSON.stringify(join(dir, "options.json"))};
 const args = process.argv.slice(2).join(" ");
 appendFileSync(calls, args + "\\n");
+if (args === "plugin configure codetgh@codetgh --values-stdin") writeFileSync(options, readFileSync(0, "utf8"));
+if (args === "plugin configure codetgh@codetgh --json")
+  console.log(JSON.stringify(existsSync(options) ? { configured: ["codetgh_url", "codetgh_token"], unconfigured: [] } : { configured: [], unconfigured: ["codetgh_url"] }));
+if (args === "mcp list") console.log(existsSync(options) ? "plugin:codetgh:hub: /mcp (HTTP) - ✔ Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
 if (args === "--version") console.log("2.1.296 (Claude Code)");
 else if (args.startsWith("plugin list"))
   console.log(readFileSync(calls, "utf8").includes("plugin install") ? ${JSON.stringify(listed)} : "[]");
 `,
   );
   process.env.PATH = `${dir}${delimiter}${PATH}`;
-  return () => readFileSync(join(dir, "calls"), "utf8");
+  return Object.assign(() => readFileSync(join(dir, "calls"), "utf8"), {
+    options: () => JSON.parse(readFileSync(join(dir, "options.json"), "utf8")),
+  });
 }
 
 async function setup(answers: Record<string, unknown>, opts: { stdin?: string; keyring?: Map<string, string> } = {}) {
@@ -77,6 +84,12 @@ describe("codetgh setup from an answers file", () => {
     expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
     expect(out).toContain("ok   token: Sam (@sam, member) in Acme web");
     expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled");
+    // The plugin gets the hub URL and the token through stdin, never through its arguments.
+    expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
+    expect(calls.options()).toEqual({ codetgh_url: hub.url, codetgh_token: team.sam.token, push_mode: "hooks" });
+    expect(calls()).not.toContain(team.sam.token);
+    expect(out).toContain("ok   plugin options: hub URL and token set");
+    expect(out).toContain("restart Claude Code");
     expect(out).not.toContain(team.sam.token);
   });
 

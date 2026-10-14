@@ -21,8 +21,8 @@ afterEach(() => {
   delete process.env.CODETGH_URL;
 });
 
-// A stand-in for the claude binary: its version and the plugin list it prints.
-function fakeClaude(version: string, plugins: unknown[]) {
+// A stand-in for the claude binary: its version, the plugin list, the plugin's options and the MCP connection.
+function fakeClaude(version: string, plugins: unknown[], opts = { configured: true, connected: true }) {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   writeFileSync(join(dir, "plugins.json"), JSON.stringify(plugins));
   fakeCommand(
@@ -32,6 +32,10 @@ function fakeClaude(version: string, plugins: unknown[]) {
 const args = process.argv.slice(2).join(" ");
 if (args === "--version") console.log(${JSON.stringify(`${version} (Claude Code)`)});
 else if (args.startsWith("plugin list")) process.stdout.write(readFileSync(${JSON.stringify(join(dir, "plugins.json"))}));
+else if (args === "plugin configure codetgh@codetgh --json")
+  console.log(JSON.stringify(${JSON.stringify(opts.configured)} ? { configured: ["codetgh_url", "codetgh_token", "push_mode"], unconfigured: [] } : { configured: ["push_mode"], unconfigured: ["codetgh_url", "codetgh_token"] }));
+else if (args === "mcp list")
+  console.log(${JSON.stringify(opts.connected)} ? "plugin:codetgh:hub: https://hub/mcp (HTTP) - ✔ Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
 else process.exitCode = 1;
 `,
   );
@@ -67,6 +71,8 @@ it("checks the hub, the token, Claude Code, the plugin and its hooks on one scre
   expect(out).toContain("ok   Claude Code 2.1.296");
   expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled");
   expect(out).toContain("ok   hooks: hook.js present, node on PATH");
+  expect(out).toContain("ok   plugin options: hub URL and token set");
+  expect(out).toContain("ok   hub tools connected in Claude Code");
   expect(code).toBe(0);
   // Not a terminal here: the banner has no color codes.
   expect(out.split("\n")[0]).toBe("CodeTgh doctor · Plusieurs Claude Code, une même ligne.");
@@ -90,6 +96,16 @@ it("names the fix when Claude Code is too old or the plugin is missing", async (
   expect(out).toContain("→ update Claude Code");
   expect(out).toContain("FAIL plugin codetgh@codetgh not installed");
   expect(out).toContain(`claude plugin marketplace add ${hub.url}/plugin/marketplace.json`);
+  expect(code).toBe(1);
+});
+
+it("says when the plugin itself has no hub URL or token, even with a token in the keychain", async () => {
+  fakeClaude("2.1.296", [installedPlugin()], { configured: false, connected: false });
+  const { out, code } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("ok   token: Léa (@lea, owner) in Acme web");
+  expect(out).toContain("FAIL plugin options unset: codetgh_url, codetgh_token");
+  expect(out).toContain("→ run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh");
+  expect(out).toContain("FAIL hub tools not connected in Claude Code: ✘ Failed to connect");
   expect(code).toBe(1);
 });
 
