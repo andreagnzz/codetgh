@@ -35,7 +35,8 @@ it("returns peer-written titles, statuses and labels only inside envelopes", asy
     ["team_overview", { scope: "team" }],
   ] as const) {
     const text = (await call(sam, tool, args)).text;
-    expect(text, tool).toContain(PAYLOAD);
-    expect(outside(text), tool).not.toContain(PAYLOAD);
+    // Statuses are cut at 60 characters: the start of the payload is enough to follow it.
+    expect(text, tool).toContain(PAYLOAD.slice(0, 40));
+    expect(outside(text), tool).not.toContain(PAYLOAD.slice(0, 40));
   }
 });
