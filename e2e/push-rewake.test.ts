@@ -76,3 +76,24 @@ describe("push: rewake mode (opt-in)", () => {
     expect(r).toMatchObject({ code: 0, err: "" });
   });
 });
+
+describe("push: rewake under a burst", () => {
+  it("wakes a session at most 6 times in 10 minutes, and the rest waits for the next prompt", async () => {
+    await allowRewake(["rewake"]);
+    await startSession(hub.url, team.sam.token, "sam-rw-burst");
+    const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
+    const codes: Array<number | null> = [];
+    // From Malik: Léa's rate-limit budget is spent by the tests above.
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const samAgent = await mcpClient(hub.url, team.sam.token);
+    for (let i = 0; i < 7; i++) {
+      const sent = JSON.parse((await call(malik, "send_message", { to: "@sam", kind: "note", body: `burst ${i}` })).text);
+      codes.push((await runHook("rewake", { session_id: "sam-rw-burst" }, env)).code);
+      // Sam's agent handles what it was woken for, as a real one would.
+      if (i < 6) await call(samAgent, "ack", { up_to: sent.id });
+    }
+    expect(codes).toEqual([2, 2, 2, 2, 2, 2, 0]);
+    const prompt = await runHook("user-prompt-submit", { session_id: "sam-rw-burst", prompt: "go on" }, env);
+    expect(JSON.stringify(prompt.out)).toContain("burst 6");
+  }, 60_000);
+});
