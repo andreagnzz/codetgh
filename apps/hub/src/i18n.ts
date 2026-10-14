@@ -12,6 +12,13 @@ const FR: Record<string, string> = {
   Threads: "Fils",
   Agents: "Agents",
   Projects: "Projets",
+  "Project id": "Identifiant du projet",
+  "Remote Control running": "Remote Control en marche",
+  "Remote Control stopped": "Remote Control arrêté",
+  "Waiting for the launcher on your machine": "En attente du lanceur sur ta machine",
+  "Start Remote Control": "Démarrer Remote Control",
+  "Stop Remote Control": "Arrêter Remote Control",
+  "Open claude.ai/code": "Ouvrir claude.ai/code",
   "Not in a project": "Hors projet",
   "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
   "No project yet. A project appears when someone starts Claude Code in a repository with the plugin, or runs codetgh project new.":

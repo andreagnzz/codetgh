@@ -43,6 +43,7 @@ import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoi
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
 import { createGithubHook } from "../domain/github.js";
+import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
 import { ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
@@ -563,6 +564,34 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const projects = await db.select().from(project).where(eq(project.teamId, p.teamId)).orderBy(asc(project.name));
     const sessions = await listAgents(db, p.teamId, { limit: 200 });
     const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id);
+    const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
+    // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
+    const launch = (projectId: string) => {
+      const l = launches.find((x) => x.projectId === projectId);
+      const fresh = l?.reportedAt && Date.now() - l.reportedAt.getTime() < 60_000;
+      const state = !l
+        ? null
+        : l.reportedError && fresh
+          ? { tone: "danger" as const, text: l.reportedError }
+          : l.desired && l.running && fresh
+            ? { tone: "ok" as const, text: _("Remote Control running") }
+            : l.desired
+              ? { tone: "warn" as const, text: _("Waiting for the launcher on your machine") }
+              : l.reportedAt
+                ? { tone: "neutral" as const, text: _("Remote Control stopped") }
+                : null;
+      return (
+        <p class="launcher">
+          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
+          {l?.desired ? (
+            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "0" }} label={_("Stop Remote Control")} />
+          ) : (
+            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
+          )}{" "}
+          {state?.tone === "ok" && <a href="https://claude.ai/code">{_("Open claude.ai/code")}</a>}
+        </p>
+      );
+    };
     const groups = [
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
       { id: "none", name: _("Not in a project"), rows: byProject(null) },
@@ -580,11 +609,24 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         groups.map((g) => (
           <section aria-labelledby={`p-${g.id}`}>
             <h2 id={`p-${g.id}`}>{g.name}</h2>
+            {p.role === "owner" && g.id !== "none" && (
+              <>
+                <p class="meta">
+                  {_("Project id")} <code>{g.id}</code>
+                </p>
+                {launch(g.id)}
+              </>
+            )}
             <People rows={g.rows} lang={_.lang} empty={_("No session on this project right now.")} />
           </section>
         ))
       ),
     );
+  });
+
+  consoleApp.post("/projects/:id/launch", async (c) => {
+    await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    return refresh(c);
   });
 
   consoleApp.post("/agents/a2a", async (c) => {
