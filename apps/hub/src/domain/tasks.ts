@@ -1,4 +1,4 @@
-import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { escapeAttr, renderPeerData, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { TaskStatus } from "@codetgh/shared";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
@@ -50,7 +50,7 @@ async function view(db: Db, t: Task) {
     : [];
   return {
     id: t.id,
-    title: escapeAttr(t.title, 120),
+    title: renderPeerData("task_title", t.title.replace(/\s+/g, " ").slice(0, 120)),
     status: t.status,
     version: t.version,
     assignee: assignee?.handle ?? null,
@@ -79,7 +79,7 @@ export async function createTask(
   input: { title: string; body: string; paths: string[]; depends_on: string[]; assignee?: string },
 ) {
   guard(p, a);
-  await assertNoSecrets(deps, { p, agent: a, via: a ? "mcp" : "console" }, `${input.title}\n${input.body}`);
+  await assertNoSecrets(deps, { p, agent: a, via: a ? "mcp" : "console" }, `${input.title}\n${input.body}\n${input.paths.join("\n")}`);
   const { db } = deps;
   if (input.depends_on.length) {
     const found = await db
