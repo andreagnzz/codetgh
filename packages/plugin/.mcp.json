@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "hub": {
+      "type": "http",
+      "url": "${user_config.codetgh_url}/mcp",
+      "headers": { "Authorization": "Bearer ${user_config.codetgh_token}" }
+    },
+    "channel": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/channel.js"],
+      "env": {
+        "CODETGH_URL": "${user_config.codetgh_url}",
+        "CODETGH_TOKEN": "${user_config.codetgh_token}",
+        "CODETGH_PUSH_MODE": "${user_config.push_mode}"
+      }
+    }
+  }
+}

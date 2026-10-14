@@ -1,0 +1,271 @@
+import { z } from "zod";
+
+export const ERROR_CODES = [
+  "E_UNAUTHORIZED",
+  "E_FORBIDDEN",
+  "E_INVALID",
+  "E_NOT_FOUND",
+  "E_TOO_LARGE",
+  "E_SECRET_BLOCKED",
+  "E_RATE_LIMITED",
+  "E_LOOP_GUARD",
+  "E_KILL_SWITCH",
+  "E_CLAIM_CONFLICT",
+  "E_VERSION_CONFLICT",
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export const ROLES = ["owner", "admin", "member", "guest"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const MESSAGE_KINDS = ["note", "question", "answer", "request", "status", "alert", "handoff"] as const;
+// A handoff only goes through the handoff tool, which validates the capsule.
+export const SEND_KINDS = ["note", "question", "answer", "request", "status", "alert"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+export const PRIORITIES = ["low", "normal", "high", "blocking"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+
+export const ACK_STATUSES = ["accepted", "declined", "done"] as const;
+
+const agentId = z.string().regex(/^agt_[0-9A-Z]{26}$/);
+const messageId = z.string().regex(/^msg_[0-9A-Z]{26}$/);
+const address = z.string().min(1).max(100);
+// Hard caps against abuse; the domain answers E_TOO_LARGE on the documented limits (8 KB, 20 refs).
+const body = z.string().max(65536);
+const ref = z.object({
+  type: z.enum(["file", "commit", "url", "message"]),
+  path: z.string().max(500).optional(),
+  rev: z.string().max(100).optional(),
+});
+
+export const WhoamiInput = z.object({ agent: agentId.optional() });
+
+export const TeamOverviewInput = z.object({
+  agent: agentId.optional(),
+  scope: z.enum(["project", "team"]).default("team"),
+  limit: z.number().int().min(1).max(50).default(20),
+});
+
+export const StatusSetInput = z.object({
+  agent: agentId.optional(),
+  text: z.string().min(1).max(200),
+  paths: z.array(z.string().max(300)).max(20).default([]),
+  ttl_s: z.number().int().min(60).max(86400).default(3600),
+});
+
+export const SendMessageInput = z
+  .object({
+    agent: agentId.optional(),
+    to: z.union([address, z.array(address).min(1).max(10)]).optional(),
+    kind: z.enum(SEND_KINDS),
+    subject: z.string().max(1000).optional(),
+    body,
+    priority: z.enum(PRIORITIES).default("normal"),
+    refs: z.array(ref).max(100).default([]),
+    reply_to: messageId.optional(),
+    requires_ack: z.boolean().optional(),
+    idempotency_key: z.string().max(64).optional(),
+    // End-to-end encrypted: body is ciphertext from the client, which also scanned and flagged the plain text.
+    // keys: the new thread's key wrapped for every participant, sender included; omitted on replies.
+    encrypted: z
+      .object({
+        keys: z
+          .array(z.object({ handle: z.string().regex(/^@[a-z0-9-]{1,40}$/), wrapped: z.string().max(400) }))
+          .max(11)
+          .optional(),
+        flags: z
+          .array(z.enum(["instruction-like", "secret-suspect", "external-link"]))
+          .max(3)
+          .default([]),
+      })
+      .optional(),
+  })
+  .refine((m) => !m.encrypted || !m.subject, { message: "an encrypted message has no subject: put it in the body", path: ["subject"] })
+  .refine((m) => m.kind !== "answer" || m.reply_to, { message: "an answer needs reply_to", path: ["reply_to"] })
+  .refine((m) => m.to || m.reply_to, { message: "to or reply_to is required", path: ["to"] });
+export type SendMessage = z.infer<typeof SendMessageInput>;
+
+export const InboxReadInput = z.object({
+  agent: agentId.optional(),
+  thread: z
+    .string()
+    .regex(/^thr_[0-9A-Z]{26}$/)
+    .optional(),
+  page_token: z.string().max(40).optional(),
+  kinds: z.array(z.enum(MESSAGE_KINDS)).optional(),
+  limit: z.number().int().min(1).max(20).default(20),
+});
+
+export const AckInput = z
+  .object({
+    agent: agentId.optional(),
+    message_ids: z.array(messageId).min(1).max(100).optional(),
+    up_to: messageId.optional(),
+    status: z.enum(ACK_STATUSES).optional(),
+    note: z.string().max(500).optional(),
+  })
+  .refine((a) => a.message_ids || a.up_to, { message: "message_ids or up_to is required" });
+
+export const AskPeerInput = z.object({
+  agent: agentId.optional(),
+  to: address,
+  question: body,
+  refs: z.array(ref).max(100).default([]),
+  wait_s: z.number().int().min(0).max(60).default(45),
+});
+
+export const AgentSessionInput = z.object({
+  session_id: z.string().min(1).max(200),
+  source: z.string().max(40).optional(),
+  kind: z.enum(["claude-code", "claude-ai", "agent-sdk", "other"]).default("claude-code"),
+  label: z.string().max(60).optional(),
+  branch: z.string().max(200).optional(),
+  repo_fingerprint: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  repo_name: z.string().max(100).optional(),
+});
+
+export const CLAIM_MODES = ["exclusive", "intent", "shared"] as const;
+export type ClaimMode = (typeof CLAIM_MODES)[number];
+export const CLAIM_ENFORCEMENT = ["off", "warn", "ask", "block"] as const;
+
+// Repository-relative, forward slashes, no way out of the repository.
+export const repoPath = z
+  .string()
+  .min(1)
+  .max(300)
+  .refine((s) => !s.startsWith("/") && !s.includes("\\") && !s.split("/").includes(".."), {
+    message: "use a path relative to the repository root",
+  });
+
+// A scope is a path, a glob, task:<id> or resource:<name>.
+const claimScope = z.union([z.string().regex(/^task:tsk_[0-9A-Z]{26}$/), z.string().regex(/^resource:[\w.-]{1,60}$/), repoPath]);
+
+export const ClaimInput = z.object({
+  agent: agentId.optional(),
+  scope: z.array(claimScope).min(1).max(20),
+  mode: z.enum(["exclusive", "shared"]).default("exclusive"),
+  ttl_s: z.number().int().min(60).max(14400).default(1800),
+  reason: z.string().max(200).optional(),
+});
+
+export const ClaimCheckInput = z.object({ agent: agentId.optional(), paths: z.array(repoPath).min(1).max(200) });
+
+export const ClaimReleaseInput = z
+  .object({
+    agent: agentId.optional(),
+    claim_ids: z
+      .array(z.string().regex(/^clm_[0-9A-Z]{26}$/))
+      .min(1)
+      .max(100)
+      .optional(),
+    all_mine: z.boolean().optional(),
+  })
+  .refine((r) => r.claim_ids || r.all_mine, { message: "claim_ids or all_mine is required" });
+
+export const PreEditInput = z.object({ session_id: z.string().min(1).max(200), path: repoPath });
+export const ClaimsCheckRestInput = z.object({ session_id: z.string().min(1).max(200), paths: z.array(repoPath).max(200) });
+
+export const TASK_STATUSES = ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+const taskId = z.string().regex(/^tsk_[0-9A-Z]{26}$/);
+const handle = z.string().regex(/^@[a-z0-9-]{1,40}$/);
+
+export const TaskListInput = z.object({
+  agent: agentId.optional(),
+  status: z.enum(TASK_STATUSES).optional(),
+  assignee: z.union([z.literal("me"), handle]).optional(),
+  limit: z.number().int().min(1).max(50).default(20),
+});
+
+export const TaskCreateInput = z.object({
+  agent: agentId.optional(),
+  title: z.string().min(1).max(200),
+  body: z.string().max(8000).default(""),
+  paths: z.array(repoPath).max(50).default([]),
+  depends_on: z.array(taskId).max(20).default([]),
+  assignee: handle.optional(),
+});
+
+export const TaskClaimInput = z.object({ agent: agentId.optional(), task_id: taskId, expected_version: z.number().int().min(1) });
+
+export const TaskUpdateInput = z.object({
+  agent: agentId.optional(),
+  task_id: taskId,
+  expected_version: z.number().int().min(1),
+  patch: z
+    .object({
+      status: z.enum(TASK_STATUSES).optional(),
+      assignee: z.union([handle, z.literal("none")]).optional(),
+      note: z.string().min(1).max(500).optional(),
+    })
+    .refine((p) => p.status || p.assignee || p.note, { message: "patch needs status, assignee or note" }),
+});
+
+export const MEMORY_KINDS = ["decision", "contract", "convention", "note"] as const;
+const memoryId = z.string().regex(/^mit_[0-9A-Z]{26}$/);
+
+export const MemoryProposeInput = z.object({
+  agent: agentId.optional(),
+  kind: z.enum(MEMORY_KINDS),
+  title: z.string().min(1).max(200),
+  body: z.string().min(1).max(8000),
+  refs: z.array(ref).max(20).default([]),
+  supersedes: memoryId.optional(),
+});
+
+export const MemorySearchInput = z.object({
+  agent: agentId.optional(),
+  query: z.string().max(200).default(""),
+  kinds: z.array(z.enum(MEMORY_KINDS)).optional(),
+  include_proposed: z.boolean().default(false),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
+export const MemoryAcceptInput = z.object({
+  agent: agentId.optional(),
+  item_id: memoryId,
+  decision: z.enum(["accept", "reject"]),
+  note: z.string().max(500).optional(),
+});
+
+const line = z.string().min(1).max(200);
+export const HandoffInput = z.object({
+  agent: agentId.optional(),
+  to: handle,
+  task_id: taskId.optional(),
+  summary: z.string().min(1).max(1200),
+  done: z.array(line).max(20).default([]),
+  todo: z.array(line).max(20).default([]),
+  files_touched: z
+    .array(z.object({ path: repoPath, change: z.enum(["added", "modified", "deleted"]), note: z.string().max(200).optional() }))
+    .max(50)
+    .default([]),
+  decisions: z.array(memoryId).max(20).default([]),
+  open_questions: z
+    .array(z.object({ text: z.string().min(1).max(300), to: handle.optional() }))
+    .max(10)
+    .default([]),
+  commands: z.array(line).max(10).default([]),
+  warnings: z.array(line).max(10).default([]),
+  branch: z.string().max(200).optional(),
+  last_commit: z
+    .string()
+    .regex(/^[0-9a-f]{7,40}$/)
+    .optional(),
+});
+export type Handoff = z.infer<typeof HandoffInput>;
+
+export const WhoamiSchema = z.object({
+  user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+  auth: z.enum(["personal_token", "oauth"]),
+  team: z.object({ id: z.string(), name: z.string() }),
+  role: z.enum(ROLES),
+  handle: z.string(),
+  agent: z.object({ id: z.string(), label: z.string() }).nullable(),
+  paused: z.boolean(),
+});
+export type Whoami = z.infer<typeof WhoamiSchema>;

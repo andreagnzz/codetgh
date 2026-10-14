@@ -1,0 +1,15 @@
+{
+  "name": "@codetgh/sdk",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@codetgh/shared": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

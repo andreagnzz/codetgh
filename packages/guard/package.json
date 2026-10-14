@@ -1,0 +1,15 @@
+{
+  "name": "@codetgh/guard",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@secretlint/core": "13.0.7",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.7"
+  }
+}

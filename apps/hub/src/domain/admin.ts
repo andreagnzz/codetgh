@@ -1,0 +1,158 @@
+import type { Role } from "@codetgh/shared";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import type { Db } from "../db/index.js";
+import { agent, alert, membership, personalToken, type TeamSettings, team } from "../db/schema.js";
+import { HubError } from "../errors.js";
+import type { Principal } from "../principal.js";
+import { appendAudit } from "./audit.js";
+
+const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/;
+
+export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";
+
+export function requireAdmin(p: Principal) {
+  if (!isAdmin(p)) throw new HubError("E_FORBIDDEN", "admins only");
+}
+
+const byUser = (p: Principal) => ({ teamId: p.teamId, actorType: "user" as const, actorUserId: p.user.id, via: "console" as const });
+
+export async function setKillSwitch(db: Db, p: Principal, reason: string) {
+  requireAdmin(p);
+  if (!reason.trim()) throw new HubError("E_INVALID", "a reason is required");
+  await db.transaction(async (tx) => {
+    await tx
+      .update(team)
+      .set({ killSwitchAt: new Date(), killSwitchReason: reason.slice(0, 500), killSwitchBy: p.user.id })
+      .where(eq(team.id, p.teamId));
+    await appendAudit(tx, { ...byUser(p), action: "kill_switch.on", subjectId: p.teamId });
+  });
+}
+
+export async function resumeKillSwitch(db: Db, p: Principal, confirm: string) {
+  requireAdmin(p);
+  if (confirm !== "yes") throw new HubError("E_INVALID", "confirm with yes");
+  await db.transaction(async (tx) => {
+    await tx.update(team).set({ killSwitchAt: null, killSwitchReason: null, killSwitchBy: null }).where(eq(team.id, p.teamId));
+    await appendAudit(tx, { ...byUser(p), action: "kill_switch.off", subjectId: p.teamId });
+  });
+}
+
+export async function updateSettings(
+  db: Db,
+  p: Principal,
+  input: {
+    retentionDays: number;
+    secretPatterns: string[];
+    strict: boolean;
+    claimsEnforcement?: TeamSettings["claims_enforcement"];
+    memoryAcceptBy?: TeamSettings["memory_accept_by"];
+    memoryAcceptViaMcp?: boolean;
+    pushAllowedModes?: TeamSettings["push_allowed_modes"];
+    slackChannel?: string;
+  },
+) {
+  requireAdmin(p);
+  for (const pattern of input.secretPatterns) {
+    try {
+      new RegExp(pattern);
+    } catch {
+      throw new HubError("E_INVALID", `invalid pattern: ${pattern}`);
+    }
+    // Patterns run on every message on the event loop: refuse nested quantifiers like (a+)+ (catastrophic backtracking).
+    // shortcut: heuristic check; switch to a linear-time engine (re2) if teams need richer patterns.
+    if (pattern.length > 200 || NESTED_QUANTIFIER.test(pattern))
+      throw new HubError("E_INVALID", `pattern too long or with nested quantifiers: ${pattern}`);
+  }
+  const settings: TeamSettings = {
+    ...p.settings,
+    retention_days: Math.min(Math.max(input.retentionDays, 1), 3650),
+    secret_patterns: input.secretPatterns.slice(0, 50),
+    strict: input.strict, // shortcut: stored only, no effect yet
+    claims_enforcement: input.claimsEnforcement ?? p.settings.claims_enforcement,
+    memory_accept_by: input.memoryAcceptBy ?? p.settings.memory_accept_by,
+    memory_accept_via_mcp: input.memoryAcceptViaMcp ?? p.settings.memory_accept_via_mcp,
+    push_allowed_modes: input.pushAllowedModes ?? p.settings.push_allowed_modes,
+    slack_channel: input.slackChannel,
+  };
+  await db.transaction(async (tx) => {
+    // The Slack bot is shared by the hub: one team's admin must not aim its posts at another team's channel.
+    if (input.slackChannel) {
+      const [taken] = await tx
+        .select({ id: team.id })
+        .from(team)
+        .where(and(ne(team.id, p.teamId), sql`${team.settings}->>'slack_channel' = ${input.slackChannel}`));
+      if (taken) throw new HubError("E_INVALID", "this Slack channel is used by another team");
+    }
+    await tx.update(team).set({ settings }).where(eq(team.id, p.teamId));
+    await appendAudit(tx, {
+      ...byUser(p),
+      action: "settings.updated",
+      subjectId: p.teamId,
+      data: { patterns: settings.secret_patterns?.length },
+    });
+  });
+}
+
+export async function resolveAlert(db: Db, p: Principal, alertId: string, status: "dismissed" | "false_positive" | "fingerprint_allowed") {
+  requireAdmin(p);
+  await db.transaction(async (tx) => {
+    const [a] = await tx
+      .select()
+      .from(alert)
+      .where(and(eq(alert.id, alertId), eq(alert.teamId, p.teamId)));
+    if (!a) throw new HubError("E_NOT_FOUND", "alert not found");
+    if (status === "fingerprint_allowed") {
+      const fingerprints = (a.detail.fingerprints as string[] | undefined) ?? [];
+      if (!fingerprints.length) throw new HubError("E_INVALID", "this alert has no fingerprint");
+      const allowed = [...new Set([...(p.settings.allowed_fingerprints ?? []), ...fingerprints])];
+      await tx
+        .update(team)
+        .set({ settings: { ...p.settings, allowed_fingerprints: allowed } })
+        .where(eq(team.id, p.teamId));
+    }
+    await tx.update(alert).set({ status, resolvedBy: p.user.id, resolvedAt: new Date() }).where(eq(alert.id, a.id));
+    await appendAudit(tx, { ...byUser(p), action: `alert.${status}`, subjectId: a.id });
+  });
+}
+
+export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust: "trusted" | "quarantined") {
+  await db.transaction(async (tx) => {
+    const [a] = await tx
+      .select()
+      .from(agent)
+      .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId)));
+    if (!a) throw new HubError("E_NOT_FOUND", "agent not found");
+    if (a.userId !== p.user.id) requireAdmin(p);
+    if (a.kind === "a2a" && trust === "trusted") throw new HubError("E_FORBIDDEN", "an external agent stays in quarantine");
+    await tx.update(agent).set({ trustLevel: trust }).where(eq(agent.id, a.id));
+    await appendAudit(tx, { ...byUser(p), action: `agent.${trust}`, subjectId: a.id });
+  });
+}
+
+export async function revokeToken(db: Db, p: Principal, tokenId: string) {
+  await db.transaction(async (tx) => {
+    const [t] = await tx
+      .select()
+      .from(personalToken)
+      .where(and(eq(personalToken.id, tokenId), eq(personalToken.teamId, p.teamId), isNull(personalToken.revokedAt)));
+    if (!t) throw new HubError("E_NOT_FOUND", "token not found");
+    if (t.userId !== p.user.id) requireAdmin(p);
+    await tx.update(personalToken).set({ revokedAt: new Date() }).where(eq(personalToken.id, t.id));
+    await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: t.id });
+  });
+}
+
+export async function changeRole(db: Db, p: Principal, membershipId: string, role: Role) {
+  requireAdmin(p);
+  await db.transaction(async (tx) => {
+    const [m] = await tx
+      .select()
+      .from(membership)
+      .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId), eq(membership.status, "active")));
+    if (!m) throw new HubError("E_NOT_FOUND", "member not found");
+    if ((m.role === "owner" || role === "owner") && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes owners");
+    if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
+    await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
+    await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
+  });
+}

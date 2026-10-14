@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+minimumReleaseAgeExclude:
+  - zod@4.6.7
+  - '@hono/node-server@2.1.5'
+allowBuilds:
+  esbuild: true
+  libxmljs2: false

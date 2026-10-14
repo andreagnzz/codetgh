@@ -1,0 +1,58 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type Hub, startHub, startSession } from "../../../apps/hub/test/harness.js";
+import { CodeTghError, createClient } from "../src/index.js";
+
+let hub: Hub;
+let team: Awaited<ReturnType<Hub["seed"]>>;
+beforeAll(async () => {
+  hub = await startHub();
+  team = await hub.seed();
+});
+afterAll(() => hub.stop());
+
+describe("@codetgh/sdk", () => {
+  it("knows who it is", async () => {
+    const sam = createClient({ url: hub.url, token: team.sam.token });
+    expect(await sam.whoami()).toMatchObject({ handle: "sam", team: { name: "Acme web" } });
+  });
+
+  it("sends, reads an inbox in envelopes and acks", async () => {
+    const sam = createClient({ url: hub.url, token: team.sam.token });
+    const lea = createClient({ url: hub.url, token: team.lea.token });
+    await startSession(hub.url, team.lea.token, "lea-sdk");
+    const sent = await sam.send({ to: "@lea", kind: "question", body: "Is <b>v2</b> frozen?" });
+    expect(sent.id).toMatch(/^msg_/);
+
+    const inbox = await lea.inbox({ limit: 20 });
+    expect(inbox.messages.map((m) => m.id)).toContain(sent.id);
+    expect(inbox.envelopes.join("\n")).toContain("Is &lt;b&gt;v2&lt;/b&gt; frozen?");
+    expect(inbox.envelopes.join("\n")).toContain('trust="untrusted-peer"');
+
+    expect((await lea.ack({ up_to: sent.id })).acked).toBeGreaterThan(0);
+    expect((await lea.inbox({ limit: 20 })).messages.map((m) => m.id)).not.toContain(sent.id);
+  });
+
+  it("streams new message ids", async () => {
+    const lea = createClient({ url: hub.url, token: team.lea.token });
+    const sam = createClient({ url: hub.url, token: team.sam.token });
+    const ctl = new AbortController();
+    const events = lea.stream({ signal: ctl.signal });
+    const first = events.next();
+    await new Promise((r) => setTimeout(r, 200));
+    const sent = await sam.send({ to: "@lea", kind: "note", body: "streamed" });
+    const { value } = await first;
+    ctl.abort();
+    expect(value).toMatchObject({ message_id: sent.id, kind: "note" });
+  });
+
+  it("throws typed errors", async () => {
+    const sam = createClient({ url: hub.url, token: team.sam.token });
+    const err = await sam.send({ to: "@lea", kind: "note", body: `ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}` }).catch((e) => e);
+    expect(err).toBeInstanceOf(CodeTghError);
+    expect(err).toMatchObject({ code: "E_SECRET_BLOCKED", status: 422 });
+    const nobody = await createClient({ url: hub.url, token: "ctgh_nope" })
+      .whoami()
+      .catch((e) => e);
+    expect(nobody).toMatchObject({ code: "E_UNAUTHORIZED", status: 401 });
+  });
+});

@@ -1,0 +1,52 @@
+// After pnpm -r build: pack what the hub serves to members, the plugin (zip) and the CLI (npm tarball), into apps/hub/dist.
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
+import { zipSync } from "fflate";
+
+const root = new URL("..", import.meta.url).pathname;
+const out = join(root, "apps/hub/dist");
+const plugin = join(root, "packages/plugin");
+mkdirSync(out, { recursive: true });
+
+const files = {};
+const walk = (dir) => {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) walk(path);
+    else files[`codetgh/${relative(plugin, path)}`] = readFileSync(path);
+  }
+};
+if (!statSync(join(plugin, "dist/hook.js"), { throwIfNoEntry: false }))
+  throw new Error("packages/plugin/dist/hook.js is missing: run pnpm -r build first");
+walk(plugin);
+files["codetgh/LICENSE"] = readFileSync(join(root, "LICENSE"));
+files["codetgh/NOTICE"] = readFileSync(join(root, "NOTICE"));
+// Fixed timestamps: the same sources give the same zip, so the marketplace digest only changes with the plugin.
+writeFileSync(join(out, "plugin.zip"), zipSync(files, { mtime: new Date("2026-01-01T00:00:00Z") }));
+
+const { version } = JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8"));
+const cli = JSON.parse(readFileSync(join(root, "packages/cli/package.json"), "utf8"));
+const stage = mkdtempSync(join(tmpdir(), "codetgh-cli-"));
+writeFileSync(
+  join(stage, "package.json"),
+  JSON.stringify({
+    name: "codetgh",
+    version,
+    description: "CodeTgh command line: connect your Claude to your team's hub",
+    license: "MIT",
+    type: "module",
+    bin: { codetgh: "codetgh.js" },
+    engines: { node: ">=22" },
+    // The bundle carries everything else; the keychain binding is native and comes per platform from npm.
+    dependencies: { "@napi-rs/keyring": cli.dependencies["@napi-rs/keyring"] },
+  }),
+);
+copyFileSync(join(root, "packages/cli/dist/codetgh.js"), join(stage, "codetgh.js"));
+copyFileSync(join(root, "LICENSE"), join(stage, "LICENSE"));
+copyFileSync(join(root, "NOTICE"), join(stage, "NOTICE"));
+execFileSync("npm", ["pack", "--silent", "--pack-destination", stage], { cwd: stage, stdio: ["ignore", "ignore", "inherit"] });
+renameSync(join(stage, `codetgh-${version}.tgz`), join(out, "codetgh-cli.tgz"));
+rmSync(stage, { recursive: true });
+console.log(`apps/hub/dist: plugin.zip (${Object.keys(files).length} files), codetgh-cli.tgz (codetgh ${version})`);

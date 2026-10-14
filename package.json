@@ -1,0 +1,34 @@
+{
+  "name": "codetgh",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @codetgh/hub dev",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
+    "build": "pnpm -r build && node scripts/bundles.mjs",
+    "e2e": "vitest run e2e",
+    "e2e:console": "pnpm --filter @codetgh/e2e exec playwright test -c console/playwright.config.ts",
+    "test:pg": "vitest run --no-file-parallelism",
+    "licenses": "node scripts/licenses.mjs",
+    "sbom": "cd apps/hub && npm_execpath= cyclonedx-npm --ignore-npm-errors --omit dev --output-format JSON --output-file ../../sbom.json",
+    "test:perf": "vitest run --config vitest.perf.config.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@cyclonedx/cyclonedx-npm": "6.0.1",
+    "@electric-sql/pglite": "0.5.9",
+    "@electric-sql/pglite-socket": "0.2.12",
+    "@types/node": "^26.6.5",
+    "fflate": "0.8.3",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.4"
+  }
+}

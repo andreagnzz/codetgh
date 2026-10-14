@@ -1,0 +1,44 @@
+# Dependencies and builds
+node_modules/
+dist/
+coverage/
+sbom.json
+
+# Secrets and local configuration: never committed
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
+
+# Local data: hub data directory, PGlite and Postgres volumes, backups, dumps
+data/
+pgdata/
+*.db
+*.sqlite*
+*.dump
+*.bak
+backup*/
+
+# Logs
+*.log
+logs/
+
+# Test output, including the screenshots the Playwright review specs write
+test-results/
+playwright-report/
+docs/visual/
+docs/brand/screenshots/
+
+# Personal editor and Claude Code settings
+.claude/*.local*
+CLAUDE.local.md
+.DS_Store
+.idea/
+.vscode/
+
+# Hub database dumps (deploy/backup.sh)
+deploy/backups/

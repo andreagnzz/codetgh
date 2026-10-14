@@ -1,0 +1,18 @@
+{
+  "name": "@codetgh/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./audit": "./src/audit.ts",
+    "./rest": "./src/rest.ts",
+    "./e2e": "./src/e2e.ts",
+    "./repo": "./src/repo.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

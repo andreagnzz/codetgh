@@ -1,0 +1,31 @@
+{
+  "name": "codetgh",
+  "version": "0.0.1",
+  "description": "Links the Claude agents of a team: messages, file claims, handoffs, shared memory.",
+  "license": "MIT",
+  "icon": "./assets/symbol.svg",
+  "author": {
+    "name": "Andrea Gonzalez"
+  },
+  "userConfig": {
+    "codetgh_url": {
+      "type": "string",
+      "title": "Hub URL",
+      "description": "For example https://codetgh.example.com",
+      "required": true
+    },
+    "codetgh_token": {
+      "type": "string",
+      "title": "Personal token",
+      "description": "Created in the CodeTgh console",
+      "sensitive": true
+    },
+    "push_mode": {
+      "type": "string",
+      "title": "Push mode",
+      "description": "hooks: messages show up at your next prompt. rewake: an idle session wakes up (your admin must allow it). channel: needs claude --dangerously-load-development-channels plugin:codetgh@<marketplace>.",
+      "options": ["hooks", "rewake", "channel"],
+      "default": "hooks"
+    }
+  }
+}

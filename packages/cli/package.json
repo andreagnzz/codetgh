@@ -1,0 +1,23 @@
+{
+  "name": "@codetgh/cli",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/hook.ts --bundle --platform=node --format=esm --target=node22 --minify \"--banner:js=import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --splitting --chunk-names=chunks/[name]-[hash] --metafile=dist/hook-meta.json --outdir=../plugin/dist && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --minify --external:@napi-rs/keyring \"--banner:js=#!/usr/bin/env node\nimport{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --metafile=dist/cli-meta.json --outfile=dist/codetgh.js",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "@codetgh/guard": "workspace:*",
+    "@codetgh/sdk": "workspace:*",
+    "@codetgh/shared": "workspace:*",
+    "@inquirer/prompts": "8.7.3",
+    "@napi-rs/keyring": "2.1.1",
+    "commander": "15.0.0"
+  },
+  "bin": {
+    "codetgh": "dist/codetgh.js"
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "membership" ADD COLUMN "agents_paused_at" timestamp;
