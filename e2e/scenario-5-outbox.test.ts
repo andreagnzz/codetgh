@@ -1,4 +1,6 @@
 import { copyFileSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { createServer, request } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -35,6 +37,29 @@ async function cli(args: string[], env: { url: string; token: string }) {
   const code = process.exitCode;
   process.exitCode = 0;
   return { out: out.join("\n"), code };
+}
+
+// One hub address, unreachable until up(): then a relay to the test hub listens on it, as when the hub comes back.
+async function hubDownThenUp() {
+  const probe = createServer();
+  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise((r) => probe.close(r));
+  const relay = createServer((req, res) => {
+    const out = request(`${hub.url}${req.url}`, { method: req.method, headers: req.headers }, (r) => {
+      res.writeHead(r.statusCode ?? 502, r.headers);
+      r.pipe(res);
+    });
+    req.pipe(out);
+  });
+  return {
+    url: `http://127.0.0.1:${port}`,
+    up: () => new Promise<void>((r) => relay.listen(port, "127.0.0.1", r)),
+    stop: () => {
+      relay.closeAllConnections();
+      relay.close();
+    },
+  };
 }
 
 const bodies = async (text: string) => (await hub.db.select().from(message).where(eq(message.body, text))).length;
@@ -104,20 +129,38 @@ describe("stream", () => {
 
 describe("outbox (scenario 5, phase 2)", () => {
   it("queues a CLI send while the hub is down and replays it once", async () => {
-    const down = await cli(["send", "--to", "@lea", "--body", "sent while offline"], { url: DEAD, token: team.sam.token });
+    const sam = await hubDownThenUp();
+    const down = await cli(["send", "--to", "@lea", "--body", "sent while offline"], { url: sam.url, token: team.sam.token });
     expect(down.out).toContain("queued");
     expect(down.code).toBe(0);
     const file = join(config, "outbox.json");
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(readFileSync(file, "utf8")).not.toContain(team.sam.token);
 
+    await sam.up();
     copyFileSync(file, `${file}.bak`);
-    expect((await cli(["outbox", "flush"], { url: hub.url, token: team.sam.token })).out).toContain("1 sent");
+    expect((await cli(["outbox", "flush"], { url: sam.url, token: team.sam.token })).out).toContain("1 sent");
     // The hub answered but the reply was lost: the same entry is sent again and the hub keeps one copy.
     copyFileSync(`${file}.bak`, file);
-    await cli(["outbox", "flush"], { url: hub.url, token: team.sam.token });
+    await cli(["outbox", "flush"], { url: sam.url, token: team.sam.token });
     expect(await bodies("sent while offline")).toBe(1);
-    expect((await cli(["outbox", "flush"], { url: hub.url, token: team.sam.token })).out).toContain("0 sent");
+    expect((await cli(["outbox", "flush"], { url: sam.url, token: team.sam.token })).out).toContain("0 sent");
+    sam.stop();
+  });
+
+  it("only sends a queued message to the hub and the account it was written for", async () => {
+    const old = await hubDownThenUp();
+    await cli(["send", "--to", "@lea", "--body", "queued for the old hub"], { url: old.url, token: team.sam.token });
+    // After logging in elsewhere, or as someone else, the queue is kept, not sent.
+    const elsewhere = await cli(["outbox", "flush"], { url: hub.url, token: team.sam.token });
+    expect(elsewhere.out).toContain("0 sent, 1 kept for another hub or account");
+    await old.up();
+    expect((await cli(["outbox", "flush"], { url: old.url, token: team.malik.token })).out).toContain("0 sent, 1 kept");
+    expect(await bodies("queued for the old hub")).toBe(0);
+    expect((await cli(["outbox", "flush"], { url: old.url, token: team.sam.token })).out).toContain("1 sent");
+    const [m] = await hub.db.select().from(message).where(eq(message.body, "queued for the old hub"));
+    expect(m?.fromUserId).toBe(team.sam.userId);
+    old.stop();
   });
 
   it("refuses to queue a secret", async () => {
@@ -130,10 +173,12 @@ describe("outbox (scenario 5, phase 2)", () => {
   });
 
   it("the daemon flushes the outbox and prints one line per incoming message", async () => {
-    await cli(["send", "--to", "@lea", "--body", "flushed by the daemon"], { url: DEAD, token: team.sam.token });
+    const back = await hubDownThenUp();
+    await cli(["send", "--to", "@lea", "--body", "flushed by the daemon"], { url: back.url, token: team.sam.token });
+    await back.up();
     const lines: string[] = [];
     const ctl = new AbortController();
-    const running = daemon({ url: hub.url, token: team.sam.token, out: (s) => lines.push(s), signal: ctl.signal });
+    const running = daemon({ url: back.url, token: team.sam.token, out: (s) => lines.push(s), signal: ctl.signal });
     for (let i = 0; i < 50 && !(await bodies("flushed by the daemon")); i++) await new Promise((r) => setTimeout(r, 100));
     expect(await bodies("flushed by the daemon")).toBe(1);
 
@@ -143,6 +188,7 @@ describe("outbox (scenario 5, phase 2)", () => {
     for (let i = 0; i < 50 && !lines.some((l) => l.includes(sent.id)); i++) await new Promise((r) => setTimeout(r, 100));
     ctl.abort();
     await running;
+    back.stop();
     expect(lines.find((l) => l.includes(sent.id))).toMatch(/question/);
   });
 });

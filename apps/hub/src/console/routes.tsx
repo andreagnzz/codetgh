@@ -45,7 +45,7 @@ import { adminReleaseClaim } from "../domain/claims.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
-import { ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage } from "../domain/messages.js";
+import { ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { createSlackCode } from "../domain/slack.js";
 import { createTask, updateTask } from "../domain/tasks.js";
@@ -377,7 +377,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(and(eq(thread.id, c.req.param("id") ?? ""), eq(thread.teamId, p.teamId)));
     if (!t) throw new HubError("E_NOT_FOUND", "thread not found");
     const participant = (await participantThreads(p)).some((r) => r.id === t.id);
-    if (t.kind === "direct" && !participant) {
+    // SPEC: an admin may open a direct thread they are not in, in full, and every opening is audited.
+    const adminRead = t.kind === "direct" && !participant;
+    if (adminRead) {
       requireAdmin(p);
       await db.transaction((tx) =>
         appendAudit(tx, {
@@ -390,16 +392,17 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         }),
       );
     }
-    return t;
+    return { t, adminRead };
   };
 
   consoleApp.get("/threads/:id", async (c) => {
-    const t = await loadThread(c);
+    const { t, adminRead } = await loadThread(c);
+    const p = c.get("principal");
     const rows = await db
       .select({ message, name: user.name })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
-      .where(eq(message.threadId, t.id))
+      .where(adminRead ? eq(message.threadId, t.id) : and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
       .orderBy(message.createdAt);
     return page(
       c,
@@ -440,7 +443,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // A human reply carries authored_by=human, resets the agent streak and reopens a muted thread.
   consoleApp.post("/threads/:id/reply", async (c) => {
-    const t = await loadThread(c);
+    const { t } = await loadThread(c);
     const body = (await form(c)).body ?? "";
     await sendMessage(
       messaging,
@@ -451,7 +454,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/threads/:id/:action{mute|reopen}", async (c) => {
-    const t = await loadThread(c);
+    const { t } = await loadThread(c);
     const p = c.get("principal");
     const mute = c.req.param("action") === "mute";
     await db.transaction(async (tx) => {
