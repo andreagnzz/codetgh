@@ -79,6 +79,11 @@ export function createApp({
   mailer = createMailer(),
 }: Deps) {
   const app = new Hono<Env>();
+  // A driver error carries the query's parameters, message text included: log its name only.
+  app.onError((e, c) => {
+    logger.error({ err: e.name, route: routePath(c, -1) }, "unhandled error");
+    return c.json({ message: "internal error" }, 500);
+  });
   app.use(async (c, next) => {
     const started = performance.now();
     await next();
