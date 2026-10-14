@@ -80,6 +80,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
         handle: r.handle,
         name: free(r.name),
         label: free(r.agent.label),
+        project: free(r.project),
         branch: free(r.agent.branch),
         presence: presence(r.agent),
         status: r.agent.statusExpiresAt && r.agent.statusExpiresAt > new Date() ? free(r.agent.statusText) : "",

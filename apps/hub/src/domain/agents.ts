@@ -194,9 +194,10 @@ export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: s
 export async function listAgents(db: Db, teamId: string, opts: { projectId?: string | null; limit?: number } = {}) {
   const recent = gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000));
   return db
-    .select({ agent, name: user.name, handle: membership.handle })
+    .select({ agent, name: user.name, handle: membership.handle, project: project.name })
     .from(agent)
     .innerJoin(user, eq(user.id, agent.userId))
+    .leftJoin(project, eq(project.id, agent.projectId))
     .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId), eq(membership.status, "active")))
     .where(
       and(eq(agent.teamId, teamId), or(recent, isNull(agent.endedAt)), opts.projectId ? eq(agent.projectId, opts.projectId) : sql`true`),

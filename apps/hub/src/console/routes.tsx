@@ -529,11 +529,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Agents",
       <>
         <Table
-          head={[_("Who"), _("Label"), _("Kind"), _("Branch"), _("Last seen"), _("Trust"), _("Actions")]}
+          head={[_("Who"), _("Label"), _("Project"), _("Kind"), _("Branch"), _("Last seen"), _("Trust"), _("Actions")]}
           empty={_("No agent yet. Agents appear here once someone runs codetgh setup and opens Claude Code in a team repository.")}
           rows={rows.map((r) => [
             r.name,
-            r.agent.label,
+            // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
+            <>
+              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
+            </>,
+            r.project ?? "",
             r.agent.kind,
             r.agent.branch ?? "",
             <>
