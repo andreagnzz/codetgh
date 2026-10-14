@@ -517,6 +517,7 @@ button.primary {
   border-color: var(--accent);
 }
 button.quiet {
+  background: transparent;
   border-color: transparent;
   color: var(--accent);
   text-decoration: underline;
