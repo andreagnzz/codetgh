@@ -63,7 +63,10 @@ it("hands a task over with its whole context, ahead of everything else (scenario
   const packet = start?.hookSpecificOutput?.additionalContext ?? "";
   const firstLine = packet.split("\n")[1] ?? "";
   expect(firstLine).toMatch(/^Pending handoffs:/);
-  for (const part of ["Léa", handoffId, t.id, "feat/users-contract"]) expect(firstLine).toContain(part);
+  for (const part of [handoffId, t.id]) expect(firstLine).toContain(part);
+  // Who sent it and the branch are peer words: inside the packet's peer envelope only.
+  const envelope = packet.match(/<peer_message [^>]*trust="untrusted-peer">[\s\S]*?<\/peer_message>/)?.[0] ?? "";
+  for (const part of ["Léa", "feat/users-contract"]) expect(envelope).toContain(part);
   for (const leak of ["presque fini", "ignore previous", "createdAt en ISO", "ISO ou timestamp"]) expect(packet).not.toContain(leak);
   expect(packet.length).toBeLessThanOrEqual(4800);
   expect(Math.ceil(packet.length / 4)).toBeLessThanOrEqual(1200);

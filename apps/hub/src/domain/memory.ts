@@ -243,5 +243,6 @@ export async function packetDecisions(db: Db, p: Principal) {
     )
     .orderBy(desc(memoryItem.pinned), desc(memoryItem.decidedAt))
     .limit(8);
-  return rows.map((r) => `${memoryRef(r)} ${escapeAttr(r.title, 60)}`);
+  // Raw titles: the SessionStart packet escapes them inside its peer envelope.
+  return rows.map((r) => `${memoryRef(r)} ${r.title.replace(/\s+/g, " ").slice(0, 60)}`);
 }
