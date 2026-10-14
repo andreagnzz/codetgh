@@ -111,8 +111,9 @@ async function sessionStart(input: Input) {
   const [branch, origin, version] = await Promise.all([
     git(input.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
     git(input.cwd, ["remote", "get-url", "origin"]),
-    // Hooks get no Claude Code version: ask the CLI (about 30 ms). shortcut: not found on Windows npm installs (claude.cmd).
-    run("claude", ["--version"], { timeout: 1000 }).then(
+    // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
+    // through a shell; the arguments are fixed, so nothing can be injected.
+    run("claude", ["--version"], { timeout: 1000, shell: process.platform === "win32" }).then(
       (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
       () => undefined,
     ),
