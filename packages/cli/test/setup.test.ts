@@ -95,6 +95,16 @@ describe("codetgh setup from an answers file", () => {
     );
   });
 
+  it("member: says what goes in the invitation field when it gets something else, like an email", async () => {
+    fakeClaude();
+    await expect(setup({ role: "member", hub_url: hub.url, invite_link: "lea@acme.test", display_name: "Léa" })).rejects.toThrow(
+      /not an invitation link: paste the .*\/invite\/.* link from the email, or leave it empty if you already have an account/,
+    );
+    await expect(
+      setup({ role: "member", hub_url: hub.url, invite_link: "https://other.example/invite/abc", display_name: "Léa" }),
+    ).rejects.toThrow(/this invitation is not for/);
+  });
+
   it("admin: writes deploy/.env with generated secrets it never prints, and the commands to start the hub", async () => {
     fakeClaude();
     const repo = mkdtempSync(join(tmpdir(), "codetgh-clone-"));
