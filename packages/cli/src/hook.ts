@@ -393,4 +393,5 @@ export async function runHook(event: string) {
   } catch {}
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runHook(process.argv[2] ?? "");
+// Node runs the real file behind a symlinked plugin path: compare real paths, as the CLI does.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) await runHook(process.argv[2] ?? "");
