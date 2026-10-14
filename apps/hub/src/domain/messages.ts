@@ -512,6 +512,14 @@ export function renderInbox(items: InboxItem[], nextPageToken: string | null) {
   return [JSON.stringify(header), ...items.map(envelope)].join("\n\n");
 }
 
+// A reply in a team thread can be addressed to one person: a reader sees only what they sent or received.
+// MCP and the console both filter with this.
+export const sentOrReceivedBy = (db: Db, p: Principal) =>
+  or(
+    eq(message.fromUserId, p.user.id),
+    inArray(message.id, db.select({ id: receipt.messageId }).from(receipt).where(eq(receipt.recipientUserId, p.user.id))),
+  );
+
 // Resource codetgh://thread/{id}: the latest messages of a thread its reader takes part in, oldest first.
 // shortcut: latest 50 only, no paging; add a cursor when threads grow longer.
 export async function threadView(db: Db, p: Principal, threadId: string) {
@@ -525,16 +533,7 @@ export async function threadView(db: Db, p: Principal, threadId: string) {
     .select({ message, fromName: user.name })
     .from(message)
     .innerJoin(user, eq(user.id, message.fromUserId))
-    .where(
-      and(
-        eq(message.threadId, t.id),
-        // A reply in a team thread can be addressed to one person: show only what this reader sent or received.
-        or(
-          eq(message.fromUserId, p.user.id),
-          inArray(message.id, db.select({ id: receipt.messageId }).from(receipt).where(eq(receipt.recipientUserId, p.user.id))),
-        ),
-      ),
-    )
+    .where(and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
     .orderBy(desc(message.createdAt))
     .limit(50);
   const items = rows.reverse().map((r) => ({ seq: 0, ...r }));
