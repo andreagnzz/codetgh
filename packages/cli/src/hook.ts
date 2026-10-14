@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL, urlToHttpOptions } from "node:url";
 import { promisify } from "node:util";
-import { normalizeOrigin, repoFingerprint } from "@codetgh/shared/repo";
+import { repoFingerprint } from "@codetgh/shared/repo";
 
 // Hooks fail open: any error gives at most one warning per session and exit code 0, so Claude keeps working.
 const run = promisify(execFile);
@@ -29,6 +29,8 @@ type State = {
   reported?: string[];
   waiter?: number;
   wakes?: number[];
+  // The hub does not know this repository: every hook stays quiet in this session.
+  unlinked?: boolean;
 };
 
 const config = () => ({
@@ -108,22 +110,32 @@ async function sessionStart(input: Input) {
     git(input.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
     git(input.cwd, ["remote", "get-url", "origin"]),
   ]);
-  const repo = origin ? normalizeOrigin(origin) : "";
-  try {
-    const res = await hub("/v1/agents/session", {
+  const fingerprint = origin ? repoFingerprint(origin) : undefined;
+  const register = (withBranch: boolean) =>
+    hub("/v1/agents/session", {
       method: "POST",
-      timeoutMs: 3500,
+      timeoutMs: 2400,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         session_id: input.session_id ?? "unknown",
         source: input.source,
-        branch: branch || undefined,
-        repo_fingerprint: origin ? repoFingerprint(origin) : undefined,
-        repo_name: repo ? repo.split("/").slice(-2).join("/") : undefined,
+        repo_fingerprint: fingerprint,
+        branch: withBranch && branch ? branch : undefined,
       }),
     });
+  try {
+    // In a repository, ask with the fingerprint alone first: one nobody linked never sends its branch or file paths.
+    let res = await register(!fingerprint);
     if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
-    const body = (await res.json()) as { context: string; paused: boolean };
+    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean };
+    if (body.linked === false) {
+      if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
+      return null;
+    }
+    if (fingerprint && branch && !body.paused) {
+      res = await register(true);
+      if (res.ok) body = (await res.json()) as typeof body;
+    }
     return {
       ...(body.paused && warnOnce(input, "CodeTgh is paused by an admin; working without it.")),
       hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: body.context },
@@ -137,6 +149,7 @@ async function userPromptSubmit(input: Input) {
   const { url, token } = config();
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
+  if (state.unlinked) return null;
   try {
     const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}`, {
       timeoutMs: 2000,
@@ -213,6 +226,7 @@ async function preEdit(input: Input) {
   const { url, token } = config();
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
+  if (state.unlinked) return null;
   const path = await repoPath(input, state);
   saveState(input.session_id, state);
   if (!path) return null;
@@ -240,6 +254,7 @@ async function preEdit(input: Input) {
 async function postEdit(input: Input) {
   if (!input.session_id) return null;
   const state = loadState(input.session_id);
+  if (state.unlinked) return null;
   const path = await repoPath(input, state);
   if (path) state.touched = [...new Set([...(state.touched ?? []), path])].slice(-500);
   saveState(input.session_id, state);
@@ -251,6 +266,7 @@ async function stop(input: Input) {
   const { url, token } = config();
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
+  if (state.unlinked) return null;
   // Raw output: porcelain lines start with a status column that may be a space.
   const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: input.cwd, timeout: 1000 })
     .then((r) => r.stdout)
@@ -310,6 +326,7 @@ async function rewake(input: Input) {
   const sessionId = input.session_id;
   if (process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE !== "rewake" || !url || !token || !sessionId) return null;
   const state = loadState(sessionId);
+  if (state.unlinked) return null;
   // Every Stop starts a hook process: one waiter per session is enough.
   if (state.waiter && state.waiter !== process.pid && alive(state.waiter)) return null;
   saveState(sessionId, { ...state, waiter: process.pid });

@@ -449,12 +449,19 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
 
   step("Claude Code plugin");
   const marketplace = `${url}/plugin/marketplace.json`;
-  const manual = [`claude plugin marketplace add ${marketplace}`, "claude plugin install codetgh@codetgh"];
+  const manual = [
+    `claude plugin marketplace add ${marketplace}`,
+    "claude plugin install codetgh@codetgh",
+    "claude plugin disable codetgh@codetgh --scope user",
+  ];
   if (await confirm("install_plugin", "Install the CodeTgh plugin in Claude Code now?", true)) {
     io.out("the plugin asks for the hub address and your token: paste them in its dialog, not in a chat");
     const ok =
       (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
-      (await run("claude", ["plugin", "install", "codetgh@codetgh"]));
+      (await run("claude", ["plugin", "install", "codetgh@codetgh"])) &&
+      // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
+      (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
+    if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
   } else io.out(`later: ${manual.join(" && ")}`);
@@ -517,13 +524,25 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       (p) => p.id.startsWith("codetgh@"),
     );
     const marketplace = url ? `${url}/plugin/marketplace.json` : "<hub>/plugin/marketplace.json";
+    // Off at user scope by design: it must be on only where this folder's settings turn it on.
+    const wanted = (() => {
+      try {
+        return JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true;
+      } catch {
+        return false;
+      }
+    })();
     check(
-      plugin?.enabled === true,
+      Boolean(plugin) && (plugin?.enabled === true || !wanted),
+      !plugin
+        ? "plugin codetgh@codetgh not installed"
+        : plugin.enabled
+          ? `plugin ${plugin.id} ${plugin.version ?? ""} enabled here`.replace("  ", " ")
+          : wanted
+            ? `plugin ${plugin.id} turned on in .claude/settings.json but not active`
+            : `plugin ${plugin.id} installed, on only in team repositories (not this folder)`,
       plugin
-        ? `plugin ${plugin.id} ${plugin.version ?? ""} ${plugin.enabled ? "enabled" : "disabled"}`.replace("  ", " ")
-        : "plugin codetgh@codetgh not installed",
-      plugin
-        ? `claude plugin enable ${plugin.id}`
+        ? "open Claude Code in this folder and trust it, or run: claude plugin enable codetgh@codetgh --scope project"
         : `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`,
     );
     if (plugin?.installPath) {
