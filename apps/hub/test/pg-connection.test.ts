@@ -19,7 +19,8 @@ describe.runIf(process.env.TEST_DATABASE_URL)("Postgres connection loss", () => 
     await admin.end();
     expect(killed.rowCount).toBeGreaterThan(0);
     await sleep(200);
-    const [row] = (await hub.db.execute(sql`select 1 as ok`)).rows as Array<{ ok: number }>;
+    const result = (await hub.db.execute(sql`select 1 as ok`)) as unknown as { rows: Array<{ ok: number }> };
+    const [row] = result.rows;
     expect(row?.ok).toBe(1);
     await hub.stop();
   });
