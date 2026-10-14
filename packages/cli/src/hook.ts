@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { urlToHttpOptions } from "node:url";
+import { pathToFileURL, urlToHttpOptions } from "node:url";
 import { promisify } from "node:util";
 import { normalizeOrigin, repoFingerprint } from "@codetgh/shared/repo";
 
@@ -362,4 +362,4 @@ export async function runHook(event: string) {
   } catch {}
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await runHook(process.argv[2] ?? "");
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runHook(process.argv[2] ?? "");
