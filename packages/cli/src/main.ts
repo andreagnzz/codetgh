@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -5,6 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { type CodeTghClient, CodeTghError, createClient } from "@codetgh/sdk";
 import { SendMessageInput } from "@codetgh/shared";
@@ -951,7 +953,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   return cli;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("codetgh.js")) {
+if ((process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) || process.argv[1]?.endsWith("codetgh.js")) {
   const io: Io = { out: (s) => console.log(s), err: (s) => console.error(s), stdin: process.stdin };
   try {
     await program({ keyring: osKeyring, io }).parseAsync(process.argv);
