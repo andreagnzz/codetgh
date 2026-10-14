@@ -123,9 +123,14 @@ export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust
       .from(agent)
       .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId)));
     if (!a) throw new HubError("E_NOT_FOUND", "agent not found");
-    if (a.userId !== p.user.id) requireAdmin(p);
+    // Anyone may quarantine their own agents; lifting a quarantine is an admin's call.
+    if (a.userId !== p.user.id || trust === "trusted") requireAdmin(p);
     if (a.kind === "a2a" && trust === "trusted") throw new HubError("E_FORBIDDEN", "an external agent stays in quarantine");
-    await tx.update(agent).set({ trustLevel: trust }).where(eq(agent.id, a.id));
+    // The whole person: a new session must not be a way out (agents.ts personTrust).
+    await tx
+      .update(agent)
+      .set({ trustLevel: trust })
+      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, a.userId), ne(agent.kind, "a2a")));
     await appendAudit(tx, { ...byUser(p), action: `agent.${trust}`, subjectId: a.id });
   });
 }
