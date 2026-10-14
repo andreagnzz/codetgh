@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 // A stand-in for the claude binary: its version, the plugin list, the plugin's options and the MCP connection.
-function fakeClaude(version: string, plugins: unknown[], opts = { configured: true, connected: true }) {
+function fakeClaude(version: string, plugins: unknown[], opts = { configured: true, connected: true, pushMode: "hooks" }) {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   writeFileSync(join(dir, "plugins.json"), JSON.stringify(plugins));
   fakeCommand(
@@ -33,7 +33,7 @@ const args = process.argv.slice(2).join(" ");
 if (args === "--version") console.log(${JSON.stringify(`${version} (Claude Code)`)});
 else if (args.startsWith("plugin list")) process.stdout.write(readFileSync(${JSON.stringify(join(dir, "plugins.json"))}));
 else if (args === "plugin configure codetgh@codetgh --json")
-  console.log(JSON.stringify(${JSON.stringify(opts.configured)} ? { configured: ["codetgh_url", "codetgh_token", "push_mode"], unconfigured: [] } : { configured: ["push_mode"], unconfigured: ["codetgh_url", "codetgh_token"] }));
+  console.log(JSON.stringify(${JSON.stringify(opts.configured)} ? { configured: ["codetgh_url", "codetgh_token", "push_mode"], unconfigured: [], inputs: { push_mode: ${JSON.stringify(opts.pushMode)} } } : { configured: ["push_mode"], unconfigured: ["codetgh_url", "codetgh_token"] }));
 else if (args === "mcp list")
   console.log(${JSON.stringify(opts.connected)} ? "plugin:codetgh:hub: https://hub/mcp (HTTP) - ✔ Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
 else process.exitCode = 1;
@@ -100,12 +100,21 @@ it("names the fix when Claude Code is too old or the plugin is missing", async (
 });
 
 it("says when the plugin itself has no hub URL or token, even with a token in the keychain", async () => {
-  fakeClaude("2.1.296", [installedPlugin()], { configured: false, connected: false });
+  fakeClaude("2.1.296", [installedPlugin()], { configured: false, connected: false, pushMode: "hooks" });
   const { out, code } = await doctor(hub.url, team.lea.token);
   expect(out).toContain("ok   token: Léa (@lea, owner) in Acme web");
   expect(out).toContain("FAIL plugin options unset: codetgh_url, codetgh_token");
   expect(out).toContain("→ run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh");
   expect(out).toContain("FAIL hub tools not connected in Claude Code: ✘ Failed to connect");
+  expect(code).toBe(1);
+});
+
+it("says when the push mode is rewake but the team does not allow it, and when Claude Code is older than tested", async () => {
+  fakeClaude("2.1.250", [installedPlugin()], { configured: true, connected: true, pushMode: "rewake" });
+  const { out, code } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("FAIL push mode rewake, but this team does not allow it");
+  expect(out).toContain("→ an admin allows rewake in the console Settings");
+  expect(out).toContain("warn Claude Code 2.1.250 is older than 2.1.296, the version CodeTgh is tested with: claude update");
   expect(code).toBe(1);
 });
 
