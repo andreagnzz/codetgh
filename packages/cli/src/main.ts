@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -1032,13 +1032,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   return cli;
 }
 
-if ((process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) || process.argv[1]?.endsWith("codetgh.js")) {
+// npm starts the CLI through a symlink (bin/codetgh): compare real paths.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const io: Io = { out: (s) => console.log(s), err: (s) => console.error(s), stdin: process.stdin };
   try {
     await program({ keyring: osKeyring, io }).parseAsync(process.argv);
   } catch (e) {
-    const err = e as { code?: string; message: string };
+    const err = e as { code?: string; exitCode?: number; message: string };
     if (!err.code?.startsWith("commander.")) io.err(`codetgh: ${err.message}`);
-    process.exitCode = process.exitCode || 1;
+    // commander's own exits carry their code: 0 for --help and --version.
+    process.exitCode = process.exitCode || (err.code?.startsWith("commander.") ? err.exitCode : 1);
   }
 }
