@@ -43,6 +43,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       tokenId: p.tokenId,
       lastSeenAt: new Date(),
       endedAt: null,
+      removedAt: null,
     };
     const [row] = await tx
       .insert(agent)
@@ -200,7 +201,12 @@ export async function listAgents(db: Db, teamId: string, opts: { projectId?: str
     .leftJoin(project, eq(project.id, agent.projectId))
     .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId), eq(membership.status, "active")))
     .where(
-      and(eq(agent.teamId, teamId), or(recent, isNull(agent.endedAt)), opts.projectId ? eq(agent.projectId, opts.projectId) : sql`true`),
+      and(
+        eq(agent.teamId, teamId),
+        isNull(agent.removedAt),
+        or(recent, isNull(agent.endedAt)),
+        opts.projectId ? eq(agent.projectId, opts.projectId) : sql`true`,
+      ),
     )
     .orderBy(desc(agent.lastSeenAt))
     .limit(opts.limit ?? 50);
