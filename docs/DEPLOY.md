@@ -63,7 +63,7 @@ Migrations run when the hub starts. Each one stays compatible with the previous 
 
 - `codetgh backup` runs `deploy/backup.sh`, then `deploy/restore-test.sh` on the new dump, and fails if it does not restore.
 - `deploy/backup.sh` writes `deploy/backups/codetgh-<date>.dump` (`pg_dump -Fc`, mode 0600) and deletes dumps older than 7 days.
-- It runs every night at 03:17 from the crontab of the user who runs the hub: `17 3 * * * cd <repo> && deploy/backup.sh >> deploy/backups/backup.log 2>&1`.
+- It runs every night at 03:17 from a crontab that can run `docker`: root's (`sudo crontab -e`), or a user in the `docker` group. The line is `17 3 * * * cd <repo> && deploy/backup.sh >> deploy/backups/backup.log 2>&1`. Run that exact command once by hand to check it writes a dump.
 - Copy `deploy/backups/` off the machine from time to time; a backup kept on the same disk does not survive the disk.
 
 ## Restore
