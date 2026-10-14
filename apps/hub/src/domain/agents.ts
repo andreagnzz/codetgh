@@ -20,6 +20,17 @@ export function presence(a: Pick<Agent, "lastSeenAt" | "endedAt">, now = Date.no
 
 export const oneLine = (s: string, max = 60) => s.replace(/\s+/g, " ").slice(0, max);
 
+// Quarantine follows the person: their token can open new sessions, so any quarantined agent of theirs (removed or
+// not) makes every agent of theirs quarantined, until an admin trusts them again.
+async function personTrust(db: Db, p: Principal) {
+  const [q] = await db
+    .select({ id: agent.id })
+    .from(agent)
+    .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.trustLevel, "quarantined")))
+    .limit(1);
+  return q ? ("quarantined" as const) : ("trusted" as const);
+}
+
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
@@ -45,6 +56,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       removedAt: null,
       pushMode: input.push_mode ?? null,
       clientVersion: input.client_version ?? null,
+      trustLevel: await personTrust(tx, p),
     };
     const [row] = await tx
       .insert(agent)
@@ -159,6 +171,7 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
         sessionId: `auto-${p.tokenId ?? p.auth}`,
         kind,
         label: `${p.handle}@${kind}`,
+        trustLevel: await personTrust(db, p),
       })
       .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: { endedAt: null, lastSeenAt: new Date() } })
       .returning();
