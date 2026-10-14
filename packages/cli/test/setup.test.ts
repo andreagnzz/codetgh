@@ -73,6 +73,8 @@ describe("codetgh setup from an answers file", () => {
     expect(JSON.parse(readFileSync(join(process.env.CODETGH_CONFIG_DIR ?? "", "config.json"), "utf8"))).toEqual({ url: hub.url });
     expect(calls()).toContain(`plugin marketplace add ${hub.url}/plugin/marketplace.json`);
     expect(calls()).toContain("plugin install codetgh@codetgh");
+    // Off everywhere by default: project new turns it on in the team repositories only.
+    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
     expect(out).toContain("ok   token: Sam (@sam, member) in Acme web");
     expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled");
     expect(out).not.toContain(team.sam.token);
