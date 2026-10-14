@@ -45,3 +45,9 @@ it("only sends you back to a page of this hub", async () => {
   }
   expect((await get("/lang/de")).status).toBe(404);
 });
+
+it("translates the empty state of every list, not only the titles", async () => {
+  const html = await (await get("/console/claims", { cookie: team.lea.cookie, "accept-language": "fr" })).text();
+  expect(html).toContain("Réservations");
+  expect(html).not.toContain("Nothing yet.");
+});

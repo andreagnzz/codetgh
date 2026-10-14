@@ -426,6 +426,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             </>,
             <When at={m.createdAt} />,
           ])}
+          empty={tr(c)("Nothing yet.")}
         />
         <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
           <label>
@@ -752,6 +753,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <When at={t.expiresAt} />,
             <Action post={`/console/tokens/${t.id}/revoke`} label="Revoke" />,
           ])}
+          empty={tr(c)("Nothing yet.")}
         />
       </>,
     );
@@ -859,6 +861,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               </>
             ),
           ])}
+          empty={_("Nothing yet.")}
         />
       </>,
     );
@@ -954,6 +957,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             e.subjectId ?? "",
             e.hash.slice(0, 12),
           ])}
+          empty={tr(c)("Nothing yet.")}
         />
         {rows.length === PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
       </>,
@@ -1154,6 +1158,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             `${name}${item.authoredBy === "agent" ? " (agent)" : ""}`,
             <When at={item.createdAt} />,
           ])}
+          empty={tr(c)("Nothing yet.")}
         />
       </>,
     );
@@ -1248,6 +1253,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           `${Math.max(1, Math.round((r.claim.expiresAt.getTime() - Date.now()) / 60_000))} min`,
           isAdmin(p) ? <Action post={`/console/claims/${r.claim.id}/release`} label="Release" /> : "",
         ])}
+        empty={tr(c)("Nothing yet.")}
       />,
     );
   });
@@ -1288,6 +1294,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                     r.task.version,
                     <When at={r.task.updatedAt} />,
                   ])}
+                  empty={tr(c)("Nothing yet.")}
                 />
               </>
             )
@@ -1344,9 +1351,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         <pre>{t.body}</pre>
         <h2>Notes</h2>
-        <Table head={["When", "Note"]} rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])} />
+        <Table head={["When", "Note"]} rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])} empty={tr(c)("Nothing yet.")} />
         <h2>History</h2>
-        <Table head={["#", "Action", "Via", "At"]} rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])} />
+        <Table
+          head={["#", "Action", "Via", "At"]}
+          rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])}
+          empty={tr(c)("Nothing yet.")}
+        />
         <h2>Update</h2>
         <form hx-post={`/console/tasks/${t.id}`} hx-swap="none">
           <input type="hidden" name="expected_version" value={String(t.version)} />
