@@ -11,6 +11,11 @@ const FR: Record<string, string> = {
   Dashboard: "Tableau de bord",
   Threads: "Fils",
   Agents: "Agents",
+  Projects: "Projets",
+  "Not in a project": "Hors projet",
+  "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
+  "No project yet. A project appears when someone starts Claude Code in a repository with the plugin, or runs codetgh project new.":
+    "Aucun projet pour l'instant. Un projet apparaît quand quelqu'un lance Claude Code dans un dépôt avec le plugin, ou lance codetgh project new.",
   Claims: "Réservations",
   Tasks: "Tâches",
   Memory: "Mémoire",
