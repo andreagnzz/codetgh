@@ -937,8 +937,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const parsed = SendMessageInput.safeParse({ ...m, ...(opts.encrypt && { encrypted: { flags: [] } }) });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "invalid message");
       // Checked here too, so a secret never lands in the outbox file, and on encrypted threads the hub cannot check.
-      const { scanSecrets } = await import("@codetgh/guard");
-      const findings = await scanSecrets(`${m.subject ?? ""}\n${m.body}`);
+      const { clean, scanSecrets } = await import("@codetgh/guard");
+      const findings = await scanSecrets(clean(`${m.subject ?? ""}\n${m.body}`));
       if (findings.length) {
         io.err(`not sent: this looks like a secret (${findings.map((f) => f.rule).join(", ")})`);
         process.exitCode = 1;
