@@ -21,7 +21,15 @@ type Input = {
   permission_mode?: string;
 };
 // Per-session state: prompt ETag, one warning, repository root, files touched by editor tools, shell edits already reported.
-type State = { etag?: string; warned?: boolean; root?: string; touched?: string[]; reported?: string[]; waiter?: number };
+type State = {
+  etag?: string;
+  warned?: boolean;
+  root?: string;
+  touched?: string[];
+  reported?: string[];
+  waiter?: number;
+  wakes?: number[];
+};
 
 const config = () => ({
   url: (process.env.CLAUDE_PLUGIN_OPTION_CODETGH_URL || process.env.CODETGH_URL || "").replace(/\/$/, ""),
@@ -292,6 +300,9 @@ const alive = (pid: number) => {
 
 // Claude Code enforces the asyncRewake hook's timeout (600 s in hooks.json): the waiter gives up a little before.
 const REWAKE_BUDGET_MS = 570_000;
+// A burst of messages must not keep an autonomous session busy waking: past this, delivery waits for the next prompt.
+const MAX_WAKES = 6;
+const WAKE_WINDOW_MS = 10 * 60_000;
 
 // Stop, asyncRewake (opt-in): wait in the background for the next message; exit 2 with the envelopes on stderr wakes Claude.
 async function rewake(input: Input) {
@@ -319,7 +330,10 @@ async function rewake(input: Input) {
         const latest = loadState(sessionId);
         // The prompt hook already showed these while we waited.
         if (latest.etag === res.etag) continue;
-        saveState(sessionId, { ...latest, etag: res.etag });
+        const wakes = (latest.wakes ?? []).filter((t) => Date.now() - t < WAKE_WINDOW_MS);
+        // The ETag stays unsaved, so the next prompt still delivers these messages.
+        if (wakes.length >= MAX_WAKES) return null;
+        saveState(sessionId, { ...latest, etag: res.etag, wakes: [...wakes, Date.now()] });
         const { context } = (await res.json()) as { context: string };
         process.stderr.write(context);
         process.exitCode = 2;

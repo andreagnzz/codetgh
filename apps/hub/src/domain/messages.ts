@@ -23,6 +23,9 @@ const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
 const MAX_SUBJECT = 200;
 const MAX_HOPS = 6;
+// Agent messages between two people, all threads, both ways. shortcut: fixed numbers; a team setting if teams need more.
+const PAIR_LIMIT = 12;
+const PAIR_WINDOW_MS = 10 * 60_000;
 const EXPIRY_MS: Record<string, number> = { status: 24 * 3600_000, alert: 7 * 24 * 3600_000 };
 const QUARANTINE_KINDS = new Set(["note", "question", "answer"]);
 const GUEST_KINDS = new Set(["note", "question"]);
@@ -250,6 +253,38 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       if (!recipients.has(key)) recipients.set(key, r);
     }
     if (!recipients.size) throw new HubError("E_INVALID", "no recipient besides yourself");
+    // The thread guard below counts one thread: two agents opening a new thread for every message never build a streak.
+    if (authoredBy === "agent" && author.agent?.kind !== "bridge") {
+      const since = new Date(Date.now() - PAIR_WINDOW_MS);
+      for (const other of new Set([...recipients.values()].map((r) => r.userId))) {
+        if (other === p.user.id) continue;
+        const [row] = await tx
+          .select({ n: sql<number>`count(distinct ${message.id})::int` })
+          .from(message)
+          .innerJoin(receipt, eq(receipt.messageId, message.id))
+          .where(
+            and(
+              eq(message.teamId, p.teamId),
+              eq(message.authoredBy, "agent"),
+              gt(message.createdAt, since),
+              or(
+                and(eq(message.fromUserId, p.user.id), eq(receipt.recipientUserId, other)),
+                and(eq(message.fromUserId, other), eq(receipt.recipientUserId, p.user.id)),
+              ),
+            ),
+          );
+        if ((row?.n ?? 0) >= PAIR_LIMIT) {
+          const [m] = await tx
+            .select({ handle: membership.handle })
+            .from(membership)
+            .where(and(eq(membership.userId, other), eq(membership.teamId, p.teamId)));
+          throw new HubError(
+            "E_LOOP_GUARD",
+            `too many agent messages between you and @${m?.handle ?? "them"} in 10 minutes: stop and summarize to the user`,
+          );
+        }
+      }
+    }
 
     // One thread per conversation: a reply joins its parent's thread, anything else opens a new one.
     let threadId = parent?.threadId ?? addressed.threadId;
