@@ -12,6 +12,7 @@ const FR: Record<string, string> = {
   Threads: "Fils",
   Agents: "Agents",
   Projects: "Projets",
+  Project: "Projet",
   "Project id": "Identifiant du projet",
   "Remote Control running": "Remote Control en marche",
   "Remote Control stopped": "Remote Control arrêté",
