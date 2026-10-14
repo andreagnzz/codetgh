@@ -64,6 +64,7 @@ jobs:
           --exclude e2e/scenario-5-outbox.test.ts
           --exclude packages/cli/test/doctor.test.ts
           --exclude packages/cli/test/setup.test.ts
+      - run: pnpm build
 
   postgres:
     runs-on: ubuntu-latest

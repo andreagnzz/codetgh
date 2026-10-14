@@ -2,10 +2,11 @@
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const out = join(root, "apps/hub/dist");
 const plugin = join(root, "packages/plugin");
 mkdirSync(out, { recursive: true });
@@ -15,7 +16,7 @@ const walk = (dir) => {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) walk(path);
-    else files[`codetgh/${relative(plugin, path)}`] = readFileSync(path);
+    else files[`codetgh/${relative(plugin, path).split(sep).join("/")}`] = readFileSync(path);
   }
 };
 if (!statSync(join(plugin, "dist/hook.js"), { throwIfNoEntry: false }))
@@ -46,7 +47,8 @@ writeFileSync(
 copyFileSync(join(root, "packages/cli/dist/codetgh.js"), join(stage, "codetgh.js"));
 copyFileSync(join(root, "LICENSE"), join(stage, "LICENSE"));
 copyFileSync(join(root, "NOTICE"), join(stage, "NOTICE"));
-execFileSync("npm", ["pack", "--silent", "--pack-destination", stage], { cwd: stage, stdio: ["ignore", "ignore", "inherit"] });
+// On Windows npm is npm.cmd, which only runs through a shell; no argument carries a path, so nothing needs quoting.
+execFileSync("npm", ["pack", "--silent"], { cwd: stage, stdio: ["ignore", "ignore", "inherit"], shell: process.platform === "win32" });
 renameSync(join(stage, `codetgh-${version}.tgz`), join(out, "codetgh-cli.tgz"));
 rmSync(stage, { recursive: true });
 console.log(`apps/hub/dist: plugin.zip (${Object.keys(files).length} files), codetgh-cli.tgz (codetgh ${version})`);
