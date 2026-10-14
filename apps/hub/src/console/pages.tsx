@@ -93,7 +93,7 @@ export const Layout: FC<{ p: Principal; csrf: string; title: string; path: strin
 };
 
 // Every value below is rendered by JSX, which escapes text: agent-written strings never become HTML.
-export const Table: FC<{ head: string[]; rows: Child[][]; empty?: Child }> = ({ head, rows, empty }) =>
+export const Table: FC<{ head: string[]; rows: Child[][]; empty: Child }> = ({ head, rows, empty }) =>
   rows.length ? (
     <div class="table-wrap">
       <table>
@@ -118,7 +118,7 @@ export const Table: FC<{ head: string[]; rows: Child[][]; empty?: Child }> = ({ 
       </table>
     </div>
   ) : (
-    <p class="empty">{empty ?? "Nothing yet."}</p>
+    <p class="empty">{empty}</p>
   );
 
 // A state always reads as text; the tone only reinforces it.
