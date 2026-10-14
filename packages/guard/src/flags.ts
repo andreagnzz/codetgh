@@ -1,3 +1,5 @@
+import { clean } from "./envelope.js";
+
 // Heuristics only: a flag makes the reader careful, it never blocks.
 // JS \b ignores accented letters, so word edges use Unicode lookarounds.
 const w = (words: string) => `(?<![\\p{L}\\p{N}])(?:${words})(?![\\p{L}\\p{N}])`;
@@ -24,13 +26,13 @@ const INSTRUCTION_LIKE = [
 ];
 const SECRET_SUSPECT = /\b(password|passwd|mot de passe|secret|api[_-]?key|token)\s*[:=]/i;
 const EXTERNAL_LINK = /\bhttps?:\/\//i;
-// Zero-width and bidi controls hide words from the patterns above.
-const INVISIBLE = /[​-‏‪-‮⁠-⁤﻿]/g;
+// Tag characters spell text a model reads but a human never sees: hiding words is itself a red flag.
+const TAG_CHARACTERS = /[\u{E0000}-\u{E007F}]/u;
 
 export function textFlags(text: string, opts: { secretFound?: boolean } = {}) {
-  const visible = text.replace(INVISIBLE, "");
+  const visible = clean(text);
   const flags: string[] = [];
-  if (INSTRUCTION_LIKE.some((r) => r.test(visible))) flags.push("instruction-like");
+  if (TAG_CHARACTERS.test(text) || INSTRUCTION_LIKE.some((r) => r.test(visible))) flags.push("instruction-like");
   if (!opts.secretFound && SECRET_SUSPECT.test(visible)) flags.push("secret-suspect");
   if (EXTERNAL_LINK.test(visible)) flags.push("external-link");
   return flags;
