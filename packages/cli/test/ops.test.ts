@@ -65,15 +65,11 @@ it("backup dumps the database, then checks that the dump restores", async () => 
 
 it("backup fails loudly when the dump does not restore", async () => {
   process.env.FAKE_RESTORE_FAILS = "1";
-  const r = await cli(["backup", "--dir", repo]);
-  expect(r.code).toBe(1);
-  expect(r.out).toContain("the dump did not restore");
+  await expect(cli(["backup", "--dir", repo])).rejects.toThrow(/the dump did not restore/);
 });
 
 it("backup says where to run it from outside a hub checkout", async () => {
-  const r = await cli(["backup", "--dir", tmpdir()]);
-  expect(r.code).toBe(1);
-  expect(r.out).toContain("no deploy/compose.yaml");
+  await expect(cli(["backup", "--dir", tmpdir()])).rejects.toThrow(/no deploy\/compose.yaml/);
 });
 
 it("update pulls, backs up, rebuilds, then waits for the hub to be ready", async () => {
@@ -92,15 +88,10 @@ it("update pulls, backs up, rebuilds, then waits for the hub to be ready", async
 
 it("update touches no container when the pull fails", async () => {
   process.env.FAKE_GIT_FAILS = "1";
-  const r = await cli(["update", "--dir", repo, "--hub", await hub(200)]);
-  expect(r.code).toBe(1);
-  expect(r.out).toContain("Not possible to fast-forward");
+  await expect(cli(["update", "--dir", repo, "--hub", await hub(200)])).rejects.toThrow(/Not possible to fast-forward/);
   expect(calls()).toEqual(["git rev-parse HEAD", "git pull --ff-only"]);
 });
 
 it("update says how to roll back when the new hub does not come up", async () => {
-  const r = await cli(["update", "--dir", repo, "--hub", await hub(503), "--wait", "1"]);
-  expect(r.code).toBe(1);
-  expect(r.out).toContain("not ready");
-  expect(r.out).toContain("git checkout abc1234");
+  await expect(cli(["update", "--dir", repo, "--hub", await hub(503), "--wait", "1"])).rejects.toThrow(/not ready.*git checkout abc1234/);
 });
