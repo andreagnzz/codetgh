@@ -430,6 +430,10 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
   const name = await input("display_name", "Your name as teammates will see it", "");
   step("Account");
   if (invite) {
+    if (!/^https?:\/\/\S+\/invite\/\S+$/.test(invite))
+      throw new Error(
+        `not an invitation link: paste the ${url}/invite/… link from the email, or leave it empty if you already have an account`,
+      );
     if (!invite.startsWith(`${url}/invite/`))
       throw new Error(`this invitation is not for ${url}: ask your admin for a new one (codetgh invite)`);
     io.out(`open this link, create your account, then create a token in Tokens:`);
