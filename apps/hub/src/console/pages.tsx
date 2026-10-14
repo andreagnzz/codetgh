@@ -8,6 +8,7 @@ import type { Principal } from "../principal.js";
 const NAV: Array<[string, string, boolean?]> = [
   ["/console", "Dashboard"],
   ["/console/threads", "Threads"],
+  ["/console/projects", "Projects"],
   ["/console/agents", "Agents"],
   ["/console/claims", "Claims"],
   ["/console/tasks", "Tasks"],

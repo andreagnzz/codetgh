@@ -20,6 +20,7 @@ import {
   memoryItem,
   message,
   personalToken,
+  project,
   receipt,
   task,
   thread,
@@ -552,6 +553,37 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </>
         )}
       </>,
+    );
+  });
+
+  // Every member sees which sessions run on which project: who, branch, presence, last seen. Never what they say.
+  consoleApp.get("/projects", async (c) => {
+    const p = c.get("principal");
+    const _ = tr(c);
+    const projects = await db.select().from(project).where(eq(project.teamId, p.teamId)).orderBy(asc(project.name));
+    const sessions = await listAgents(db, p.teamId, { limit: 200 });
+    const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id);
+    const groups = [
+      ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
+      { id: "none", name: _("Not in a project"), rows: byProject(null) },
+    ].filter((g) => g.rows.length > 0 || g.id !== "none");
+    return page(
+      c,
+      "Projects",
+      projects.length === 0 && sessions.length === 0 ? (
+        <p class="empty">
+          {_(
+            "No project yet. A project appears when someone starts Claude Code in a repository with the plugin, or runs codetgh project new.",
+          )}
+        </p>
+      ) : (
+        groups.map((g) => (
+          <section aria-labelledby={`p-${g.id}`}>
+            <h2 id={`p-${g.id}`}>{g.name}</h2>
+            <People rows={g.rows} lang={_.lang} empty={_("No session on this project right now.")} />
+          </section>
+        ))
+      ),
     );
   });
 
