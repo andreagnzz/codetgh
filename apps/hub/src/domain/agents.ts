@@ -24,15 +24,14 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
     let projectId: string | null = null;
+    // Only repositories someone linked (codetgh project new) are known: anything else stays off the hub entirely.
     if (input.repo_fingerprint) {
-      const name = oneLine(input.repo_name ?? "repository", 100);
       const [row] = await tx
-        .insert(project)
-        .values({ id: newId("prj"), teamId: p.teamId, name, repoFingerprint: input.repo_fingerprint })
-        // The name a member gave the project (codetgh project new) wins over the repository name.
-        .onConflictDoUpdate({ target: [project.teamId, project.repoFingerprint], set: { name: sql`${project.name}` } })
-        .returning({ id: project.id });
-      projectId = row?.id ?? null;
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)));
+      if (!row) return null;
+      projectId = row.id;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
     const values = {

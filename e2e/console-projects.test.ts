@@ -1,5 +1,6 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
@@ -14,8 +15,17 @@ const page = async (cookie: string, lang = "en") =>
   (await fetch(`${hub.url}/console/projects`, { headers: { cookie, "accept-language": lang } })).text();
 
 describe("console: sessions by project", () => {
-  it("says what to do when no session is linked to a project yet", async () => {
-    expect(await page(team.sam.cookie)).toContain("No project yet. A project appears when someone starts Claude Code in a repository");
+  it("says what to do when no repository is linked yet", async () => {
+    await hub.db.delete(project);
+    expect(await page(team.sam.cookie)).toContain("No project yet. A project appears when someone runs codetgh project new");
+    // Linked again, as codetgh project new would, for the tests below.
+    for (const repo of ["acme/webapp", "acme/billing"])
+      await hub.db.insert(project).values({
+        id: `prj_${repo.slice(5)}`,
+        teamId: team.teamId,
+        name: repo,
+        repoFingerprint: repoFingerprint(`git@github.com:${repo}.git`),
+      });
   });
 
   it("lets any member see every member's sessions, grouped by project, with no message content", async () => {

@@ -244,3 +244,12 @@ Measured with `claude -p "Create a file named note.txt…" --dangerously-skip-pe
 Not measured: an interactive or Remote Control session in bypass, where `ask` might still show a prompt.
 
 CodeTgh therefore turns an `ask` into a warning when the hook input says `bypassPermissions` (`packages/cli/src/hook.ts`, `preEdit`). Teams running autonomous sessions should set claims enforcement to `warn`.
+
+### A plugin off at user scope, on in one project (2026-10-14, Claude Code 2.1.296, Linux)
+
+Measured with a throwaway `CLAUDE_CONFIG_DIR`:
+- `claude plugin install codetgh@codetgh`, then `claude plugin disable codetgh@codetgh --scope user`, leaves `"codetgh@codetgh": false` under `enabledPlugins` in the user `settings.json`.
+- In a folder whose `.claude/settings.json` has `"enabledPlugins": {"codetgh@codetgh": true}`, `claude plugin list --json` shows the plugin `enabled: true`.
+- In any other folder it shows `enabled: false`.
+
+So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relies on this: it installs the plugin off, and `codetgh project new` turns it on in each team repository. Sessions in other repositories never run CodeTgh's hooks.

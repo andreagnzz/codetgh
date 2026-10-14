@@ -172,8 +172,10 @@ export function createApp({
     const parsed = AgentSessionInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
+    // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
+    if (!p.paused && !agent) return c.json({ agent_id: null, paused: false, context: "", linked: false });
     bus.emit("presence", { teamId: p.teamId });
-    return c.json({ agent_id: agent?.id ?? null, paused: p.paused, context: await contextPacket(db, p, agent) });
+    return c.json({ agent_id: agent?.id ?? null, paused: p.paused, context: await contextPacket(db, p, agent), linked: true });
   });
 
   v1.post("/agents/session/end", async (c) => {
@@ -297,10 +299,11 @@ export function createApp({
   const restAgent = async (p: Principal, agentArg: string | undefined) => {
     if (agentArg) return resolveAgent(db, p, agentArg, "rest");
     const session = `cli-${p.tokenId}`;
-    return (
+    const a =
       (await agentBySession(db, p, session)) ??
-      (await registerSession(db, p, { session_id: session, kind: "other", label: `${p.handle}@cli` }))
-    );
+      (await registerSession(db, p, { session_id: session, kind: "other", label: `${p.handle}@cli` }));
+    if (!a) throw new HubError("E_INVALID", "agent registration failed");
+    return a;
   };
 
   v1.post("/messages", async (c) => {

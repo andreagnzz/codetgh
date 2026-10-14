@@ -619,11 +619,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Projects",
       projects.length === 0 && sessions.length === 0 ? (
-        <p class="empty">
-          {_(
-            "No project yet. A project appears when someone starts Claude Code in a repository with the plugin, or runs codetgh project new.",
-          )}
-        </p>
+        <p class="empty">{_("No project yet. A project appears when someone runs codetgh project new in a team repository.")}</p>
       ) : (
         groups.map((g) => (
           <section aria-labelledby={`p-${g.id}`}>

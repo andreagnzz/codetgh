@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
+import { repoFingerprint } from "@codetgh/shared/repo";
 import { serve } from "@hono/node-server";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import pg from "pg";
@@ -12,8 +13,10 @@ import { createApp } from "../src/app.js";
 import { type Auth, createAuth, INVITE_HEADER } from "../src/auth.js";
 import type { Config } from "../src/config.js";
 import { type Db, openDb } from "../src/db/index.js";
+import { project } from "../src/db/schema.js";
 import type { RateLimiter } from "../src/domain/limits.js";
 import { createInvitation, createTeam } from "../src/domain/teams.js";
+import { newId } from "../src/ids.js";
 import type { Mailer } from "../src/mailer.js";
 import { createPersonalToken } from "../src/tokens.js";
 
@@ -106,6 +109,15 @@ async function seedTeam(hub: { db: Db; auth: Auth }) {
       .join("; ");
     people[p.key] = { userId: user.id, name: p.name, email: p.email, password, token, cookie, handle: p.key };
   }
+  // The repositories the tests use, linked as codetgh project new would: unknown ones stay off the hub.
+  for (const repo of ["webapp", "billing", "api", "latency", "ops"])
+    await hub.db.insert(project).values({
+      id: newId("prj"),
+      teamId,
+      name: `acme/${repo}`,
+      repoFingerprint: repoFingerprint(`git@github.com:acme/${repo}.git`),
+    });
+  await hub.db.insert(project).values({ id: newId("prj"), teamId, name: "acme", repoFingerprint: ACME_REPO });
   return { teamId, ...people };
 }
 
