@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -14,6 +14,7 @@ import { type AuditRecord, type Checkpoint, verifyAudit } from "@codetgh/shared/
 import { newKeyPair, newThreadKey, openBody, publicKeyOf, sealBody, unwrapKey, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { Command } from "commander";
+import spawn from "cross-spawn";
 import { runHook } from "./hook.js";
 
 export type Keyring = { get(url: string): string | null; set(url: string, token: string): void; delete(url: string): void };
@@ -225,13 +226,35 @@ const NOT_LISTED = "not in this machine's launcher list";
 
 // One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
 // command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
+// On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
+// finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile).
+function exec(cmd: string, args: string[], opts: { timeout: number }) {
+  return new Promise<{ stdout: string }>((resolve, reject) => {
+    const child = spawn(cmd, args, { timeout: opts.timeout, stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    child.stdout?.on("data", (d: Buffer) => {
+      stdout += d;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve({ stdout }) : reject(new Error(`${cmd} exited with ${code}`))));
+  });
+}
+
+// Through cmd.exe, killing the child would leave claude running: on Windows, end the whole process tree.
+function stopServer(child: ChildProcess) {
+  if (process.platform !== "win32") return child.kill("SIGTERM");
+  try {
+    execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+  } catch {}
+}
+
 async function launcherPass(client: CodeTghClient, projects: Record<string, string>, io: Io) {
   const { targets } = await client.launcherTargets();
   for (const t of targets) {
     const run = launched.get(t.project_id);
     if (!t.desired) {
       if (run) {
-        run.child.kill("SIGTERM");
+        stopServer(run.child);
         launched.delete(t.project_id);
         io.out(`${t.project_name}: Remote Control stopped`);
       }
@@ -445,7 +468,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     failed ||= !ok;
   };
   const run = (cmd: string, args: string[], timeout: number) =>
-    promisify(execFile)(cmd, args, { timeout }).then(
+    exec(cmd, args, { timeout }).then(
       (r) => r.stdout,
       () => null,
     );
@@ -589,7 +612,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         const dir = mkdtempSync(join(tmpdir(), "codetgh-marketplace-"));
         mkdirSync(join(dir, ".claude-plugin"));
         writeFileSync(join(dir, ".claude-plugin/marketplace.json"), await mkt.text());
-        valid = await promisify(execFile)("claude", ["plugin", "validate", dir], { timeout: 30000 }).then(
+        valid = await exec("claude", ["plugin", "validate", dir], { timeout: 30000 }).then(
           () => true,
           () => false,
         );
@@ -734,7 +757,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const client = createClient({ url, token });
       if (opts.once) return launcherPass(client, projects, io);
       const stop = () => {
-        for (const r of launched.values()) r.child.kill("SIGTERM");
+        for (const r of launched.values()) stopServer(r.child);
         process.exit(0);
       };
       process.on("SIGTERM", stop);

@@ -49,6 +49,8 @@ Decisions: **reuse** (published dependency), **adapt** (copy with attribution), 
 | @secretlint/core, preset recommend | Secret detection | 13.0.7 | MIT | fd51611 · 2026-10-13 | reuse | 1 |
 | @napi-rs/keyring | OS keychain | 2.1.1 | MIT | 97aa4e0 · 2026-10-10 | reuse | 1 |
 | commander | CLI | 15.0.0 | MIT | ba6d13d · 2026-05-29 | reuse | 1 |
+| cross-spawn | Runs `claude` on Windows, where npm installs it as `claude.cmd`: finds it and escapes every argument for `cmd.exe` (no injection through a project name) | 7.0.6 | MIT (LICENSE read 2026-10-14) | — · 2024-11-18 (last npm publish; repository not read) | reuse | 1 |
+| @types/cross-spawn | Typings | 6.0.6 | MIT (DefinitelyTyped) | — | reuse (dev) | 1 |
 | pino | Logs | 10.4.0 | MIT | b29dbe9 · 2026-10-02 | reuse | 1 |
 | ulid | Prefixed IDs | 3.0.2 | MIT | 11c2067 · 2025-11-30 | reuse | 0 |
 | picomatch | Glob claims, excluded paths | 4.0.7 | MIT | 9fab7bf · 2026-08-27 | reuse (hub dependency since phase 2) | 2 |

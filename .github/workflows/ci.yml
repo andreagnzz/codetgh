@@ -55,16 +55,8 @@ jobs:
           node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      # These files fake `claude` (or git, docker) with #!/bin/sh scripts or check POSIX file modes; Linux still runs them.
-      # shortcut: whole files are excluded, until the Windows claude.cmd issue makes them portable.
-      - run: >-
-          pnpm vitest run
-          --exclude e2e/launcher.test.ts
-          --exclude e2e/project-new.test.ts
-          --exclude e2e/scenario-5-outbox.test.ts
-          --exclude packages/cli/test/doctor.test.ts
-          --exclude packages/cli/test/setup.test.ts
-          --exclude packages/cli/test/ops.test.ts
+      # The deploy scripts behind codetgh backup and update are POSIX shell, like the VPS they run on.
+      - run: pnpm vitest run --exclude packages/cli/test/ops.test.ts
       - run: pnpm build
 
   postgres:

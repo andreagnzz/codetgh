@@ -1,9 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
+import { fakeCommand } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -24,12 +25,16 @@ afterEach(() => {
 function fakeClaude(version: string, plugins: unknown[]) {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   writeFileSync(join(dir, "plugins.json"), JSON.stringify(plugins));
-  const bin = join(dir, "claude");
-  writeFileSync(
-    bin,
-    `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "${version} (Claude Code)"; exit 0; fi\nif [ "$1 $2" = "plugin list" ]; then cat "${dir}/plugins.json"; exit 0; fi\nexit 1\n`,
+  fakeCommand(
+    dir,
+    "claude",
+    `import { readFileSync } from "node:fs";
+const args = process.argv.slice(2).join(" ");
+if (args === "--version") console.log(${JSON.stringify(`${version} (Claude Code)`)});
+else if (args.startsWith("plugin list")) process.stdout.write(readFileSync(${JSON.stringify(join(dir, "plugins.json"))}));
+else process.exitCode = 1;
+`,
   );
-  chmodSync(bin, 0o755);
   process.env.PATH = `${dir}${delimiter}${PATH}`;
 }
 function installedPlugin() {
