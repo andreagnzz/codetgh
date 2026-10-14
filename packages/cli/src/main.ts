@@ -635,16 +635,27 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .command("invite <email>")
     .description("invite someone to the team (admins): prints the 7-day sign-up link, also emailed when the hub has SMTP")
     .option("--role <role>", "member, admin, guest or owner", "member")
-    .action(async (email: string, opts: { role: string }) => {
+    .option("--days <n>", "how many days the link works, 1 to 30", "7")
+    .option("--revoke", "cancel the pending invitations of this email instead: their links stop working")
+    .action(async (email: string, opts: { role: string; days: string; revoke?: boolean }) => {
       const { url, token } = await credentials(deps.keyring);
       if (!url || !token) throw new Error("no hub URL or token: run codetgh setup (or codetgh login)");
-      const sent = await createClient({ url, token })
-        .invite(email, opts.role)
-        .catch((e: Error & { code?: string }) => {
-          if (e.code === "E_FORBIDDEN") throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email}`);
+      const client = createClient({ url, token });
+      if (opts.revoke) {
+        const { revoked } = await client.revokeInvitations(email).catch((e: Error & { code?: string }) => {
+          if (e.code === "E_FORBIDDEN") throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email} --revoke`);
           throw e;
         });
-      io.out(`${sent.emailed ? `Emailed to ${sent.email}` : `Send this link to ${sent.email}`} (as ${sent.role}, valid 7 days):`);
+        io.out(`Revoked ${revoked} invitation${revoked > 1 ? "s" : ""} for ${email}.`);
+        return;
+      }
+      const sent = await client.invite(email, opts.role, Number(opts.days)).catch((e: Error & { code?: string }) => {
+        if (e.code === "E_FORBIDDEN") throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email}`);
+        throw e;
+      });
+      io.out(
+        `${sent.emailed ? `Emailed to ${sent.email}` : `Send this link to ${sent.email}`} (as ${sent.role}, valid ${sent.days} days):`,
+      );
       io.out(sent.link);
     });
 

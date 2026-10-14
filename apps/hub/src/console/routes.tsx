@@ -49,7 +49,15 @@ import { ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage } from "../domai
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { createSlackCode } from "../domain/slack.js";
 import { createTask, updateTask } from "../domain/tasks.js";
-import { findInvitation, inviteMember, revokeMember } from "../domain/teams.js";
+import {
+  findInvitation,
+  inviteMember,
+  renameTeam,
+  revokeInvitations,
+  revokeMember,
+  setDisplayName,
+  setMemberHandle,
+} from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
@@ -651,6 +659,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "My data",
       <>
+        <form hx-post="/console/me/profile" hx-swap="none">
+          <label>
+            {tr(c)("Display name")} <input name="name" value={c.get("principal").user.name} maxlength={60} required />
+          </label>
+          <button type="submit">{tr(c)("Save")}</button>
+        </form>
         <p>
           <a href="/console/me/export">Download everything CodeTgh stores about you (JSON)</a>
         </p>
@@ -790,17 +804,21 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               ))}
             </select>
           </label>
+          <label>
+            {_("Valid for (days)")} <input name="days" type="number" min={1} max={30} value="7" required />
+          </label>
           <button type="submit">{_("Invite")}</button>
         </form>
         <div id="invite-result" />
         <h2>{_("Invitations")}</h2>
         <Table
-          head={[_("Email"), _("Role"), _("Sent"), _("Expires")]}
+          head={[_("Email"), _("Role"), _("Sent"), _("Expires"), _("Actions")]}
           rows={invites.map((i) => [
             i.email,
             <Pill>{_(i.role)}</Pill>,
             <When at={i.createdAt} lang={_.lang} />,
             <When at={i.expiresAt} lang={_.lang} />,
+            <Action post={`/console/invitations/${i.id}/revoke`} label={_("Revoke invitation")} />,
           ])}
           empty={_("No pending invitations. Invite someone with the form above, or run codetgh invite <email>.")}
         />
@@ -809,7 +827,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
           rows={rows.map((r) => [
             r.name,
-            `@${r.membership.handle}`,
+            <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
+              <label>
+                <span class="sr-only">{_("Handle")}</span>@
+                <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
+              </label>
+              <button type="submit" class="quiet">
+                {_("Rename")}
+              </button>
+            </form>,
             r.email,
             <Pill>{_(r.membership.role)}</Pill>,
             r.membership.userId !== p.user.id && (
@@ -829,20 +855,41 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/members/invite", async (c) => {
     const f = await form(c);
     const _ = tr(c);
-    const { link, emailed } = await inviteMember(
+    const { link, emailed, days } = await inviteMember(
       { db, mailer, publicUrl: config.publicUrl },
       c.get("principal"),
-      { email: f.email ?? "", role: f.role || "member" },
+      { email: f.email ?? "", role: f.role || "member", days: f.days ? Number(f.days) : undefined },
       "console",
     );
     return c.html(
       <Result>
         <p>
-          {emailed ? `${_("Invitation emailed to")} ${f.email}.` : `${_("Send this link to")} ${f.email}`} ({_("valid 7 days")}):
+          {emailed ? `${_("Invitation emailed to")} ${f.email}.` : `${_("Send this link to")} ${f.email}`} ({_("valid")} {days} {_("days")}
+          ):
         </p>
         <pre>{link}</pre>
       </Result>,
     );
+  });
+
+  consoleApp.post("/invitations/:id/revoke", async (c) => {
+    await revokeInvitations(db, c.get("principal"), { id: c.req.param("id") }, "console");
+    return refresh(c);
+  });
+
+  consoleApp.post("/members/:id/handle", async (c) => {
+    await setMemberHandle(db, c.get("principal"), c.req.param("id"), ((await form(c)).handle ?? "").trim());
+    return refresh(c);
+  });
+
+  consoleApp.post("/me/profile", async (c) => {
+    await setDisplayName(db, c.get("principal"), (await form(c)).name ?? "");
+    return refresh(c);
+  });
+
+  consoleApp.post("/settings/team", async (c) => {
+    await renameTeam(db, c.get("principal"), (await form(c)).name ?? "");
+    return refresh(c);
   });
 
   consoleApp.post("/members/:id/role", async (c) => {
@@ -941,6 +988,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Settings",
       <>
+        <form hx-post="/console/settings/team" hx-swap="none">
+          <label>
+            {_("Team name")} <input name="name" value={p.teamName} maxlength={80} required />
+          </label>
+          <button type="submit">{_("Rename the team")}</button>
+        </form>
         <form hx-post="/console/settings" hx-swap="none" class="settings">
           <section aria-labelledby="rules-h">
             <h2 id="rules-h">{_("Agent rules")}</h2>

@@ -1,0 +1,36 @@
+name: Changelog to Discord
+# Posts the commits of each push to main to the project's Discord channel.
+# The webhook URL is the repository secret DISCORD_WEBHOOK_URL; with no secret set, the job does nothing.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post the changelog
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Commit messages are untrusted text: they only travel as JSON data, never inside the script.
+          COMMITS: ${{ toJSON(github.event.commits) }}
+          COMPARE: ${{ github.event.compare }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ -n "$WEBHOOK" ] || { echo "DISCORD_WEBHOOK_URL is not set: nothing to post"; exit 0; }
+          payload=$(jq -n --argjson commits "$COMMITS" --arg compare "$COMPARE" --arg repo "$REPO" '
+            ($commits | map("• `" + .id[0:7] + "` " + (.message | split("\n")[0] | .[0:180])) | join("\n")) as $lines
+            | {
+                username: "CodeTgh",
+                allowed_mentions: { parse: [] },
+                embeds: [{
+                  title: ("Changelog · " + $repo),
+                  url: $compare,
+                  description: ($lines | .[0:3900]),
+                  color: 556912
+                }]
+              }')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$WEBHOOK" > /dev/null
