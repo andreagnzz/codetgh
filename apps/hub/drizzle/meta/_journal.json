@@ -78,6 +78,13 @@
       "when": 1791959938920,
       "tag": "0010_agents_pause",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791970311726,
+      "tag": "0011_launcher",
+      "breakpoints": true
     }
   ]
 }

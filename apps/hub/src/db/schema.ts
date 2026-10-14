@@ -89,6 +89,23 @@ export const project = pgTable(
   (t) => [uniqueIndex("project_team_fingerprint_uq").on(t.teamId, t.repoFingerprint)],
 );
 
+// Remote Control launcher: the owner switches a project's server on or off; the launcher on the owner's machine
+// reports what actually runs. The hub stores no path and no command: those live in the launcher's local config.
+export const launchTarget = pgTable("launch_target", {
+  projectId: text("project_id")
+    .primaryKey()
+    .references(() => project.id, { onDelete: "cascade" }),
+  teamId: text("team_id")
+    .notNull()
+    .references(() => team.id, { onDelete: "cascade" }),
+  desired: boolean("desired").notNull().default(false),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  running: boolean("running").notNull().default(false),
+  reportedAt: timestamp("reported_at"),
+  reportedError: text("reported_error"),
+});
+
 // Personal tokens are stored as SHA-256 hashes; the clear value is shown once. One token = one team.
 export const personalToken = pgTable(
   "personal_token",

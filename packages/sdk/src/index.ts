@@ -86,6 +86,11 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     /** Stop or restore your own agents' sending. */
     pause: async () => must(await call("pause")),
     resume: async () => must(await call("resume")),
+    /** Remote Control launcher (owner only): what should run, and what does. */
+    launcherTargets: async () => must(await call("launcherTargets")),
+    launcherReport: async (report: { project_id: string; running: boolean; error?: string }) => {
+      await call("launcherReport", report);
+    },
     /** New message ids as they arrive; pass the last event id to resume. */
     async *stream(o: { signal?: AbortSignal; lastEventId?: string } = {}): AsyncGenerator<Out<"stream">> {
       const res = await doFetch(`${base}${REST_ROUTES.stream.path}`, {

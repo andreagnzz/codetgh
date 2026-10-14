@@ -109,6 +109,10 @@ export const StatusOutput = z.object({
   blocking_message_ids: z.array(z.string()),
 });
 export const PauseOutput = z.object({ agents_paused: z.boolean() });
+export const LauncherTargets = z.object({
+  targets: z.array(z.object({ project_id: z.string(), project_name: z.string(), desired: z.boolean() })),
+});
+export const LauncherReport = z.object({ project_id: z.string().max(64), running: z.boolean(), error: z.string().max(300).optional() });
 export const StreamEvent = z.object({ message_id: z.string(), thread: z.string(), kind: z.string(), priority: z.string() });
 
 type Route = {
@@ -194,6 +198,19 @@ export const REST_ROUTES = {
     summary: "Invite an email address to the team (admins); returns the 7-day link, also emailed when SMTP is set",
     body: InviteInput,
     output: InviteOutput,
+  },
+  launcherTargets: {
+    method: "GET",
+    path: "/v1/launcher/targets",
+    summary: "Projects whose Remote Control server the owner wants on or off (owner only; no path, no command)",
+    output: LauncherTargets,
+  },
+  launcherReport: {
+    method: "POST",
+    path: "/v1/launcher/report",
+    summary: "What the owner's launcher actually runs for a project (owner only)",
+    body: LauncherReport,
+    empty: [204],
   },
   revokeInvitations: {
     method: "POST",

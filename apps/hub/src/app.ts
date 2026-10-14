@@ -5,7 +5,7 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
 import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreEditInput, SendMessageInput } from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
-import { CreateProjectInput, InviteInput, KeysQuery, PublishKeyInput, RevokeInvitationsInput } from "@codetgh/shared/rest";
+import { CreateProjectInput, InviteInput, KeysQuery, LauncherReport, PublishKeyInput, RevokeInvitationsInput } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { sql } from "drizzle-orm";
@@ -28,6 +28,7 @@ import { Bus } from "./domain/bus.js";
 import { checkPaths, preEdit } from "./domain/claims.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
 import { githubSecret, handleGithubEvent, teamForGithubHook, validGithubSignature } from "./domain/github.js";
+import { launcherTargets, reportLaunch } from "./domain/launcher.js";
 import { RateLimiter } from "./domain/limits.js";
 import {
   ack,
@@ -357,6 +358,12 @@ export function createApp({
   v1.post("/invitations/revoke", async (c) =>
     c.json({ revoked: await revokeInvitations(db, c.get("principal"), await parse(c, RevokeInvitationsInput), "rest") }),
   );
+
+  v1.get("/launcher/targets", async (c) => c.json(await launcherTargets(db, c.get("principal"))));
+  v1.post("/launcher/report", async (c) => {
+    await reportLaunch(db, c.get("principal"), await parse(c, LauncherReport));
+    return c.body(null, 204);
+  });
 
   v1.get("/keys", async (c) => {
     const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });

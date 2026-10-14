@@ -217,3 +217,17 @@ Not yet tried: installing from an HTTPS hub in a trusted folder (needs a public 
 - [Pricing](https://tailscale.com/pricing): the free Personal plan covers up to 6 users. Its comparison table lists Funnel without a per-plan mark.
 - In the reference deployment (Tailscale 1.104.1), MagicDNS and HTTPS were already on and the `funnel` attribute had to be added. CodeTgh uses `tailscale funnel --bg --https=443 http://127.0.0.1:8787`.
 
+
+### Remote Control launcher (2026-10-14, Claude Code 2.1.296, Linux)
+
+From [Remote Control](https://code.claude.com/docs/en/remote-control):
+- **Requirements.** Pro, Max, Team or Enterprise; API keys are not supported. On Team and Enterprise, an owner enables it first. `claude remote-control` is server mode: it waits for connections from claude.ai/code or the Claude app.
+- **Network.** It makes only outbound HTTPS requests and never opens an inbound port.
+- **Exit.** In server mode it exits after about 10 minutes without network.
+
+Measured on the VPS:
+- `claude remote-control --help` works on an eligible account. This version lists `--name`, `--permission-mode`, `-c`, `--session-id` and `--remote-control-session-name-prefix`. The `--spawn` and `--capacity` options the docs describe are not shown.
+- Without a terminal, in a folder never trusted: `Error: Workspace not trusted. Please run claude in <dir> first to review and accept the workspace trust dialog.` (exit 1).
+- One server per folder: `Error: This folder is already served by a terminal claude remote-control on this device. Stop it first.`
+
+CodeTgh therefore only starts `claude remote-control --name "CodeTgh · <project>"` in folders the owner listed and trusted by hand.

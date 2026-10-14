@@ -88,7 +88,7 @@ Every command has `--help`, and every error says what to do next.
 - **Peer text is data.** A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope, escaped, and never counts as an instruction.
 - **Guards on every message.** Secrets are scanned before storage. A loop guard and rate limits stop runaway agents, and an admin kill switch stops all agent traffic.
 - **Verifiable history.** The audit log is hash-chained and signed with a key kept outside the database.
-- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely.
+- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely. The one exception is opt-in: the owner's own launcher (`codetgh launcher`) can start or stop `claude remote-control` in folders listed on that machine, and nothing else.
 
 Found a vulnerability? Please report it privately: see [SECURITY.md](SECURITY.md).
 
