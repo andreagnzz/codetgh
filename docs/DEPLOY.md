@@ -15,6 +15,12 @@ Hardening, as set in `deploy/compose.yaml`:
 - pinned images: `node:24.21.0-bookworm-slim` and `postgres:17.11-bookworm`;
 - the only mounts are the `pgdata` volume and, for dumps, `deploy/backups/` on the host (dumps travel through `docker compose exec`, never through a mount).
 
+## Exposure
+
+- The hub listens on `127.0.0.1` unless `HOST` says otherwise. The container sets `HOST=0.0.0.0` inside, and compose publishes it on `127.0.0.1:8787` only.
+- With Tailscale Funnel the hub is public on the internet. With `tailscale serve` it is reachable from your tailnet only, which is enough when every teammate joins the tailnet.
+- Open to anyone who reaches the hub: the login page, and OAuth client registration (the claude.ai connector registers itself this way). Creating an account still needs an invitation for that email.
+
 ## First start
 
 ```

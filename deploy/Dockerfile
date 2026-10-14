@@ -29,7 +29,7 @@ CMD ["node", "main.js"]
 
 # The hub, the default target. The bundle carries the code; node_modules only holds PGlite (wasm) and the htmx assets; dist/ also holds the plugin and CLI members install.
 FROM node:24.21.0-bookworm-slim
-ENV NODE_ENV=production PORT=8787 CODETGH_DATA_DIR=/data
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 CODETGH_DATA_DIR=/data
 WORKDIR /app
 COPY --from=build /runtime/node_modules ./node_modules
 COPY --from=build /repo/apps/hub/dist/server ./dist/server
