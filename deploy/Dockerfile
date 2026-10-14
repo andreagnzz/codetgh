@@ -9,16 +9,25 @@ COPY packages/guard/package.json packages/guard/
 COPY packages/cli/package.json packages/cli/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/channel-bridge/package.json packages/channel-bridge/
+COPY apps/discord-bot/package.json apps/discord-bot/
 COPY e2e/package.json e2e/
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm --filter @codetgh/hub --filter @codetgh/cli --filter @codetgh/channel-bridge build \
+RUN pnpm --filter @codetgh/hub --filter @codetgh/cli --filter @codetgh/channel-bridge --filter @codetgh/discord-bot build \
  && node scripts/bundles.mjs \
  && mkdir -p /runtime/node_modules/@electric-sql \
  && cp -rL apps/hub/node_modules/@electric-sql/pglite /runtime/node_modules/@electric-sql/ \
  && cp -rL apps/hub/node_modules/htmx.org apps/hub/node_modules/htmx-ext-sse /runtime/node_modules/
 
-# The bundle carries the code; node_modules only holds PGlite (wasm) and the htmx assets; dist/ also holds the plugin and CLI members install.
+# The community Discord bot (docs/DEPLOY.md, "Discord bot"): two dependency-free bundles, nothing else.
+FROM node:24.21.0-bookworm-slim AS discord-bot
+WORKDIR /app
+COPY --from=build /repo/apps/discord-bot/dist ./
+USER node
+EXPOSE 8790
+CMD ["node", "main.js"]
+
+# The hub, the default target. The bundle carries the code; node_modules only holds PGlite (wasm) and the htmx assets; dist/ also holds the plugin and CLI members install.
 FROM node:24.21.0-bookworm-slim
 ENV NODE_ENV=production PORT=8787 CODETGH_DATA_DIR=/data
 WORKDIR /app

@@ -115,3 +115,4 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: docker build -f deploy/Dockerfile -t codetgh-hub:ci .
+      - run: docker build -f deploy/Dockerfile --target discord-bot -t codetgh-discord-bot:ci .
