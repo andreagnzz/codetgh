@@ -1,10 +1,12 @@
+#!/usr/bin/env node
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { type CodeTghClient, CodeTghError, createClient } from "@codetgh/sdk";
 import { SendMessageInput } from "@codetgh/shared";
@@ -73,6 +75,9 @@ async function credentials(keyring: () => Promise<Keyring>) {
 }
 
 // The outbox holds CLI sends made while the hub was unreachable; never the token.
+// Each entry names the hub and the account it was written for: a token is one user in one team, so its digest stands
+// for both while the hub cannot be asked. Entries written before this have neither and are never sent.
+const account = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 32);
 type Queued = {
   to?: string | string[];
   reply_to?: string;
@@ -82,6 +87,8 @@ type Queued = {
   idempotency_key: string;
   encrypted?: { keys?: Array<{ handle: string; wrapped: string }>; flags: string[] };
   queued_at: string;
+  hub?: string;
+  account?: string;
 };
 const outboxPath = () => join(configDir(), "outbox.json");
 const readOutbox = (): Queued[] => {
@@ -98,7 +105,7 @@ const writeOutbox = (items: Queued[]) => {
 
 // Throws when the send may succeed later (network, 5xx, 429, 401); returns `rejected` when the hub refused it for good.
 async function postMessage(url: string, token: string, m: Queued) {
-  const { queued_at: _, ...body } = m;
+  const { queued_at: _, hub: _hub, account: _account, ...body } = m;
   const res = await fetch(`${url}/v1/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -114,16 +121,21 @@ async function postMessage(url: string, token: string, m: Queued) {
 // Same idempotency key on every replay, so a send whose reply was lost is stored once.
 async function flushOutbox(url: string, token: string) {
   let sent = 0;
+  let kept = 0;
   const rejected: string[] = [];
   for (const m of readOutbox()) {
+    if (m.hub !== url || m.account !== account(token)) {
+      kept++;
+      continue;
+    }
     const r = await postMessage(url, token, m).catch(() => null);
-    if (!r) return { sent, rejected, offline: true };
+    if (!r) return { sent, kept, rejected, offline: true };
     if ("rejected" in r) rejected.push(`${m.to}: ${r.rejected}`);
     else sent++;
     // Re-read: a send may have queued more meanwhile.
     writeOutbox(readOutbox().filter((x) => x.idempotency_key !== m.idempotency_key));
   }
-  return { sent, rejected, offline: false };
+  return { sent, kept, rejected, offline: false };
 }
 
 async function* sseEvents(body: ReadableStream<Uint8Array>) {
@@ -824,7 +836,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         }
         Object.assign(m, sealed);
       }
-      const queued = { ...m, queued_at: new Date().toISOString() };
+      const queued = { ...m, queued_at: new Date().toISOString(), hub: url, account: account(token) };
       const r = await postMessage(url, token, queued).catch(() => null);
       if (!r) {
         writeOutbox([...readOutbox(), queued]);
@@ -916,7 +928,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       if (!url || !token) throw new Error("no hub URL or token: run codetgh login");
       const f = await flushOutbox(url, token);
       for (const r of f.rejected) io.err(`rejected ${r}`);
-      io.out(`${f.sent} sent${f.offline ? `, ${readOutbox().length} still queued (hub unreachable)` : ""}`);
+      io.out(
+        `${f.sent} sent${f.kept ? `, ${f.kept} kept for another hub or account (log in there to send them)` : ""}${f.offline ? `, ${readOutbox().length - f.kept} still queued (hub unreachable)` : ""}`,
+      );
       if (f.offline || f.rejected.length) process.exitCode = 1;
     });
 
@@ -939,7 +953,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   return cli;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("codetgh.js")) {
+if ((process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) || process.argv[1]?.endsWith("codetgh.js")) {
   const io: Io = { out: (s) => console.log(s), err: (s) => console.error(s), stdin: process.stdin };
   try {
     await program({ keyring: osKeyring, io }).parseAsync(process.argv);
