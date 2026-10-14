@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,18 @@ function hookBundle() {
     });
   }
   return bundle;
+}
+
+// A fake command on PATH: a Node script behind the launcher each OS runs, an sh script or, on Windows, a .cmd file
+// like the one npm installs for claude.
+export function fakeCommand(dir: string, name: string, js: string) {
+  writeFileSync(join(dir, `${name}.mjs`), js);
+  if (process.platform === "win32") {
+    writeFileSync(join(dir, `${name}.cmd`), `@"${process.execPath}" "%~dp0${name}.mjs" %*\r\n`);
+    return;
+  }
+  writeFileSync(join(dir, name), `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/${name}.mjs" "$@"\n`);
+  chmodSync(join(dir, name), 0o755);
 }
 
 export type HookRun = { out: Record<string, unknown> | null; raw: string; err: string; ms: number; code: number | null };

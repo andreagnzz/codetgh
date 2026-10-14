@@ -134,7 +134,8 @@ describe("outbox (scenario 5, phase 2)", () => {
     expect(down.out).toContain("queued");
     expect(down.code).toBe(0);
     const file = join(config, "outbox.json");
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(readFileSync(file, "utf8")).not.toContain(team.sam.token);
 
     await sam.up();

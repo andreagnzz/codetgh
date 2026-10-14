@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
+import { fakeCommand } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -33,12 +34,19 @@ afterEach(() => {
 // claude plugin validate passes or fails on demand; the marketplace it was given is kept for the test to read.
 function fakeClaude(validates: boolean) {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
-  const bin = join(dir, "claude");
-  writeFileSync(
-    bin,
-    `#!/bin/sh\nif [ "$1 $2" = "plugin validate" ]; then cp "$3/.claude-plugin/marketplace.json" "${dir}/validated.json"; ${validates ? "echo '✔ Validation passed'; exit 0" : "echo '✘ Validation failed'; exit 1"}; fi\nexit 1\n`,
+  fakeCommand(
+    dir,
+    "claude",
+    `import { copyFileSync } from "node:fs";
+import { join } from "node:path";
+const [a, b, target] = process.argv.slice(2);
+if (\`\${a} \${b}\` === "plugin validate") {
+  copyFileSync(join(target, ".claude-plugin/marketplace.json"), ${JSON.stringify(join(dir, "validated.json"))});
+  console.log(${JSON.stringify(validates ? "✔ Validation passed" : "✘ Validation failed")});
+  process.exitCode = ${validates ? 0 : 1};
+} else process.exitCode = 1;
+`,
   );
-  chmodSync(bin, 0o755);
   process.env.PATH = `${dir}${delimiter}${PATH}`;
   return dir;
 }
