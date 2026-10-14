@@ -18,6 +18,9 @@ const migrationsFolder = fileURLToPath(new URL("../../drizzle", import.meta.url)
 export async function openDb(opts: { databaseUrl?: string; dataDir: string; loadDataDir?: Blob }) {
   if (opts.databaseUrl) {
     const pool = new pg.Pool({ connectionString: opts.databaseUrl, options: "-c timezone=UTC" });
+    // The server can end an idle connection (restart, failover, a dropped database). Without a listener, node-postgres
+    // turns that into an uncaught error that stops the hub; the pool discards the client and opens a new one when needed.
+    pool.on("error", (e) => console.warn(`postgres: idle connection closed (${e.message})`));
     const db = drizzlePg(pool, { schema });
     const client = await pool.connect();
     try {
