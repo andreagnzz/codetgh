@@ -40,6 +40,28 @@ services:
     ports:
       - "127.0.0.1:8787:8787"
     restart: unless-stopped
+  # Optional: only starts with --profile discord. It sees neither the hub nor its data, and holds no token.
+  discord:
+    profiles: [discord]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: discord-bot
+    image: codetgh-discord-bot:local
+    environment:
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:-}
+      DISCORD_APP_ID: ${DISCORD_APP_ID:-}
+      CODETGH_REPO: ${CODETGH_REPO:-andreagnzz/codetgh}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:8790:8790"
+    restart: unless-stopped
   db:
     image: postgres:17.11-bookworm
     environment:
