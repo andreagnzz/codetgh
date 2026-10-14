@@ -113,6 +113,8 @@ export const AskPeerInput = z.object({
   question: body,
   refs: z.array(ref).max(100).default([]),
   wait_s: z.number().int().min(0).max(60).default(45),
+  // blocking: you cannot go on without the answer; the teammate's agent is told to answer at its next stopping point.
+  priority: z.enum(["normal", "blocking"]).default("normal"),
 });
 
 export const AgentSessionInput = z.object({

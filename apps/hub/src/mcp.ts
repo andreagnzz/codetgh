@@ -164,15 +164,15 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "ask_peer",
     {
       description:
-        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives with inbox_read or at your next prompt.",
+        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives between your tool calls, with inbox_read or at your next prompt. priority blocking: you cannot go on without it.",
       inputSchema: AskPeerInput,
       annotations: WRITE,
       _meta: ALWAYS,
     },
-    async ({ agent, to, question, refs, wait_s }) =>
+    async ({ agent, to, question, refs, wait_s, priority }) =>
       run(async () => {
         const a = await me(agent);
-        const q = await sendMessage(deps, { p, agent: a, via: "mcp" }, { to, kind: "question", body: question, refs, priority: "normal" });
+        const q = await sendMessage(deps, { p, agent: a, via: "mcp" }, { to, kind: "question", body: question, refs, priority });
         const answered = (item: Awaited<ReturnType<typeof findAnswer>>) =>
           item && {
             status: "answered",
