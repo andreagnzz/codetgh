@@ -537,7 +537,11 @@ export function createApp({
   // Language switch: a preference cookie, then back to the page it came from. Only a path of this hub, never another site.
   app.get("/lang/:lang{en|fr}", (c) => {
     const next = c.req.query("next") ?? "";
-    const local = /^\/(?![/\\])/.test(next) ? next : "/console";
+    // Browsers drop tabs and newlines from URLs ("/\t/evil" becomes "//evil"): refuse any control character or space,
+    // then keep the path only if it still resolves on this hub.
+    const hub = new URL(config.publicUrl);
+    const target = /^\/[^\s\p{Cc}\\]*$/u.test(next) ? new URL(next, hub) : null;
+    const local = target && target.origin === hub.origin ? target.pathname + target.search + target.hash : "/console";
     setCookie(c, "lang", c.req.param("lang"), {
       path: "/",
       maxAge: 365 * 86400,
