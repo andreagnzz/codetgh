@@ -1,12 +1,15 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, team as teamTable } from "../src/db/schema.js";
+import { RateLimiter } from "../src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 beforeAll(async () => {
-  hub = await startHub();
+  // Many writes by one person in a few milliseconds: a clock that moves an hour per call keeps the write budget out of these scenarios.
+  let now = 0;
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
 });
 afterAll(() => hub.stop());
