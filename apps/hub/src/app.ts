@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie } from "hono/cookie";
+import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
@@ -81,6 +82,7 @@ export function createApp({
   const app = new Hono<Env>();
   // A driver error carries the query's parameters, message text included: log its name only.
   app.onError((e, c) => {
+    if (e instanceof HTTPException) return e.getResponse(); // bodyLimit's 413 and the like
     logger.error({ err: e.name, route: routePath(c, -1) }, "unhandled error");
     return c.json({ message: "internal error" }, 500);
   });
@@ -138,6 +140,8 @@ export function createApp({
   app.use("/mcp", bodyLimit({ maxSize: 128 * 1024 }));
   app.use("/a2a", bodyLimit({ maxSize: 128 * 1024 }));
   app.use("/v1/*", bodyLimit({ maxSize: 128 * 1024 }));
+  app.use("/console/*", bodyLimit({ maxSize: 128 * 1024 }));
+  app.use("/api/auth/*", bodyLimit({ maxSize: 64 * 1024 }));
   app.all("/mcp", async (c) => {
     const token = bearerToken(c.req.header("authorization"));
     const principal = token ? await principalForToken(db, token) : null;
@@ -575,7 +579,7 @@ export function createApp({
     return c.redirect(local, 302);
   });
   app.get("/assets/oauth.js", (c) => c.body(OAUTH_JS, 200, { "content-type": "text/javascript" }));
-  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey }));
+  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey, hold }));
   app.get("/healthz", (c) => c.text("ok"));
 
   // The plugin and the CLI come from the hub itself, so members always get the version their hub speaks.

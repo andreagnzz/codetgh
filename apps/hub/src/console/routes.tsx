@@ -68,7 +68,16 @@ import { createPersonalToken } from "../tokens.js";
 import { Action, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
-type Deps = { config: Config; db: Db; auth: Auth; bus: Bus; messaging: MessagingDeps; mailer: Mailer; auditKey: AuditKey };
+type Deps = {
+  config: Config;
+  db: Db;
+  auth: Auth;
+  bus: Bus;
+  messaging: MessagingDeps;
+  mailer: Mailer;
+  auditKey: AuditKey;
+  hold: (key: string, max: number) => () => void;
+};
 
 const FRESH_AUTH_MS = 10 * 60_000;
 const PAGE = 50;
@@ -79,7 +88,7 @@ const ASSETS: Record<string, [string, string]> = {
   "sse.js": [readFileSync(require.resolve("htmx-ext-sse/dist/sse.min.js"), "utf8"), "text/javascript"],
 };
 
-export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey }: Deps) {
+export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, hold }: Deps) {
   const app = new Hono<Env>();
   const csrfFor = (sessionId: string) => createHmac("sha256", config.secret).update(`csrf:${sessionId}`).digest("base64url");
   const csp = secureHeaders({
@@ -1412,6 +1421,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   // Live updates: events are refresh signals; DM activity only reaches participants and admins.
   consoleApp.get("/stream", (c) => {
     const p = c.get("principal");
+    const release = hold(`console:${p.user.id}`, 8); // a few tabs each
     return streamSSE(c, async (stream) => {
       const send = (event: string) => stream.writeSSE({ event, data: "refresh" }).catch(() => {});
       const onPresence = (e: { teamId: string }) => e.teamId === p.teamId && send("presence");
@@ -1429,13 +1439,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       bus.on("revoked", onRevoked);
       stream.onAbort(stop);
       const keepAlive = setInterval(() => stream.write(": keep-alive\n\n").catch(stop), 15_000);
-      await stream.writeSSE({ event: "ready", data: "ok" });
+      // Never throws, so the cleanup below (listeners, the per-user slot) always runs.
+      await stream.writeSSE({ event: "ready", data: "ok" }).catch(stop);
       await stopped;
       clearInterval(keepAlive);
       bus.off("presence", onPresence);
       bus.off("attention", onAttention);
       bus.off("message", onMessage);
       bus.off("revoked", onRevoked);
+      release();
     });
   });
 
