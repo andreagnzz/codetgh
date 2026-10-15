@@ -17,7 +17,7 @@ beforeAll(async () => {
   const lea = await mcpClient(hub.url, team.lea.token);
   taskId = JSON.parse((await call(lea, "task_create", { title: "Rotate the billing keys" })).text).id;
   memoryId = JSON.parse((await call(lea, "memory_propose", { kind: "decision", title: "Billing moves to v2", body: "b" })).text).id;
-  await call(lea, "claim", { paths: ["src/billing/**"], mode: "exclusive", reason: "refactor" });
+  expect((await call(lea, "claim", { scope: ["src/billing/**"], mode: "exclusive", reason: "refactor" })).isError).toBe(false);
   await call(lea, "send_message", { to: "@malik", kind: "note", body: "hello guest" });
   // Made a guest before the team message, which then does not reach them.
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
