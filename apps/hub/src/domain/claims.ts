@@ -7,6 +7,7 @@ import { claim, membership, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
+import { requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps, sendMessage } from "./messages.js";
@@ -102,6 +103,7 @@ async function othersLive(tx: Db, p: Principal, a: Agent) {
 
 // team_overview: live claims of the team (or of the agent's project), the agent's own included. No reasons: they are peer text.
 export async function liveClaims(db: Db, p: Principal, a: Agent, opts: { scope: "team" | "project"; limit: number }) {
+  requireMember(p);
   const rows = await db
     .select({ claim, handle: membership.handle })
     .from(claim)
@@ -234,6 +236,7 @@ export async function createClaims(
 }
 
 export async function checkPaths(db: Db, p: Principal, a: Agent, paths: string[]) {
+  requireMember(p);
   const others = await othersLive(db, p, a);
   const holders = paths.map((path) => ({ path, holders: others.filter((h) => covers(h, path)) }));
   return {

@@ -15,6 +15,11 @@ export function requireAdmin(p: Principal) {
   if (!isAdmin(p)) throw new HubError("E_FORBIDDEN", "admins only");
 }
 
+// A guest reads only the threads they take part in: no tasks, memory, claims or team view.
+export function requireMember(p: Principal) {
+  if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests see only their own threads");
+}
+
 const byUser = (p: Principal) => ({ teamId: p.teamId, actorType: "user" as const, actorUserId: p.user.id, via: "console" as const });
 
 export async function setKillSwitch(db: Db, p: Principal, reason: string) {

@@ -6,6 +6,7 @@ import { membership, task, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
+import { requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps } from "./messages.js";
@@ -214,6 +215,7 @@ export async function updateTask(
 }
 
 export async function listTasks(db: Db, p: Principal, input: { status?: TaskStatus; assignee?: string; limit: number }) {
+  requireMember(p);
   const assignee = input.assignee === "me" ? p.user.id : input.assignee ? (await userByHandle(db, p, input.assignee)).userId : undefined;
   const rows = await db
     .select()
@@ -232,6 +234,7 @@ export async function listTasks(db: Db, p: Principal, input: { status?: TaskStat
 
 // Resource codetgh://task/{id}: the header, then the creator's title and body in an envelope.
 export async function taskView(db: Db, p: Principal, taskId: string) {
+  requireMember(p);
   const [row] = await db
     .select({ task, name: user.name })
     .from(task)

@@ -5,6 +5,7 @@ import { memoryItem, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
+import { requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps } from "./messages.js";
@@ -175,6 +176,7 @@ export async function searchMemory(
   p: Principal,
   input: { query: string; kinds?: Kind[]; include_proposed: boolean; limit: number },
 ) {
+  requireMember(p);
   const words = input.query.split(/\s+/).filter(Boolean).slice(0, 8);
   const rows = await db
     .select({ item: memoryItem, name: user.name })
@@ -218,6 +220,7 @@ const memoryEnvelope = (item: Item, name: string) =>
 
 // Resource codetgh://memory/{id}: one item, any status, in an envelope.
 export async function memoryView(db: Db, p: Principal, itemId: string) {
+  requireMember(p);
   const [row] = await db
     .select({ item: memoryItem, name: user.name })
     .from(memoryItem)
