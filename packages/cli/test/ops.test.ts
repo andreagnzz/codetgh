@@ -49,6 +49,13 @@ async function cli(args: string[]) {
   return { out: out.join("\n"), code };
 }
 const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
+
+// Any user on the machine could otherwise plant a deploy/ the admin's CLI then runs.
+it.skipIf(process.platform === "win32")("refuses to run deploy scripts that others can change", async () => {
+  chmodSync(join(repo, "deploy/backup.sh"), 0o777);
+  await expect(cli(["backup", "--dir", repo])).rejects.toThrow(/writable by others/);
+  expect(calls()).toEqual([]);
+});
 async function hub(status: number) {
   ready = createServer((req, res) => res.writeHead(req.url === "/readyz" ? status : 404).end());
   await new Promise<void>((r) => ready?.listen(0, "127.0.0.1", r));

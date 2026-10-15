@@ -49,3 +49,9 @@ it("logs in with a token from stdin and keeps it in the keychain only", async ()
 it("refuses a wrong token", async () => {
   await expect(run(["login", "--url", hub.url, "--token-stdin"], fakeKeyring(), "ctgh_wrong")).rejects.toThrow(/401/);
 });
+
+it("never sends the token to a plain-http hub outside this machine", async () => {
+  const keyring = fakeKeyring();
+  await expect(run(["login", "--url", "http://hub.example.com", "--token-stdin"], keyring, team.sam.token)).rejects.toThrow(/https/);
+  expect(keyring.store.size).toBe(0);
+});
