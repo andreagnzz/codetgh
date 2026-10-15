@@ -1089,12 +1089,16 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         out: `${e.stdout ?? ""}${e.stderr || e.message}`.trim(),
       }),
     );
+  // Under sudo, root has docker and the caller has the git keys: git runs as the caller, whose checkout it is.
+  const sudoCaller = process.getuid?.() === 0 && process.env.SUDO_UID ? Number(process.env.SUDO_UID) : undefined;
+  const git = (args: string[], dir: string) =>
+    sudoCaller === undefined ? run("git", args, dir) : run("sudo", ["-u", `#${sudoCaller}`, "-H", "git", ...args], dir);
   // These run with the admin's rights (docker, the database): never from files another user could change.
   const trusted = (dir: string, ...paths: string[]) => {
     if (process.platform === "win32") return;
     for (const p of [".", ...paths]) {
       const st = statSync(join(dir, p));
-      if (st.uid !== process.getuid?.() || st.mode & 0o002)
+      if ((st.uid !== process.getuid?.() && st.uid !== sudoCaller) || st.mode & 0o002)
         throw new Error(`${join(dir, p)} is not yours or is writable by others: fix its owner and mode (chmod o-w)`);
     }
   };
@@ -1124,8 +1128,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .option("--wait <seconds>", "how long to wait for the new hub", "60")
     .action(async (opts: { dir: string; hub: string; wait: string }) => {
       const dir = checkout(opts.dir);
-      const before = (await run("git", ["rev-parse", "HEAD"], dir)).out;
-      const pull = await run("git", ["pull", "--ff-only"], dir);
+      const before = (await git(["rev-parse", "HEAD"], dir)).out;
+      const pull = await git(["pull", "--ff-only"], dir);
       if (!pull.ok) throw new Error(`git pull failed, nothing restarted: ${pull.out}`);
       await backup(dir);
       const up = await run("docker", [...compose, "up", "-d", "--build"], dir);
