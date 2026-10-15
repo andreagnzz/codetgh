@@ -1,3 +1,5 @@
+import { HubError } from "../errors.js";
+
 // Token bucket per agent: burst 10, refill 30/min, plus a 600/hour window.
 // shortcut: in memory, single process; move to Postgres with replicas. No team-level limit yet.
 const BURST = 10;
@@ -27,4 +29,10 @@ export class RateLimiter {
     s.hourCount += 1;
     return 0;
   }
+}
+
+// Statuses, claims, tasks, memory, sessions and projects: one budget per person, apart from messages.
+export function takeWrite(limiter: RateLimiter, userId: string) {
+  const wait = limiter.take(`write:${userId}`);
+  if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many changes in a short time: wait and retry", wait);
 }

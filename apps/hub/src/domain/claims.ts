@@ -1,6 +1,6 @@
 import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { ClaimMode } from "@codetgh/shared";
-import { and, asc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import picomatch from "picomatch";
 import type { Db } from "../db/index.js";
 import { claim, membership, user } from "../db/schema.js";
@@ -10,6 +10,8 @@ import type { Principal } from "../principal.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps, sendMessage } from "./messages.js";
+
+const MAX_LIVE_CLAIMS = 100;
 
 type Claim = typeof claim.$inferSelect;
 type ScopeType = Claim["scopeType"];
@@ -154,6 +156,13 @@ export async function createClaims(
   await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, [reason ?? "", ...input.scope].join("\n"));
   const result = await deps.db.transaction(async (tx) => {
     await lock(tx, p.teamId);
+    // Every check matches against all live claims: cap what one person can hold.
+    const [held] = await tx
+      .select({ n: count() })
+      .from(claim)
+      .where(and(eq(claim.teamId, p.teamId), eq(claim.holderUserId, p.user.id), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())));
+    if ((held?.n ?? 0) + scopes.length > MAX_LIVE_CLAIMS)
+      throw new HubError("E_TOO_LARGE", `more than ${MAX_LIVE_CLAIMS} live claims: release some with claim_release`);
     const others = await othersLive(tx, p, a);
     const warnings: string[] = [];
     const notify: Holder[] = [];

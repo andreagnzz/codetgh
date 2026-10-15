@@ -25,6 +25,7 @@ import { z } from "zod";
 import { type Agent, resolveAgent, setStatus } from "./domain/agents.js";
 import { checkPaths, createClaims, releaseClaims } from "./domain/claims.js";
 import { sendHandoff } from "./domain/handoff.js";
+import { takeWrite } from "./domain/limits.js";
 import { decideMemory, memoryView, proposeMemory, searchMemory } from "./domain/memory.js";
 import {
   ack,
@@ -105,6 +106,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   const { db, bus } = deps;
   const server = new McpServer({ name: "codetgh", version: "0.1.0" });
   const me = (agentArg?: string) => resolveAgent(db, p, agentArg, "mcp");
+  const write = () => takeWrite(deps.limiter, p.user.id);
 
   server.registerTool(
     "whoami",
@@ -132,6 +134,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     async ({ agent, ...input }) =>
       run(async () => {
         const a = await me(agent);
+        write();
         await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, [input.text, ...input.paths].join("\n"));
         await setStatus(db, p, a, input);
         return { ok: true };
@@ -247,7 +250,11 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       inputSchema: ClaimInput,
       annotations: WRITE,
     },
-    async ({ agent, ...input }) => run(async () => createClaims(deps, p, await me(agent), input)),
+    async ({ agent, ...input }) =>
+      run(async () => {
+        write();
+        return createClaims(deps, p, await me(agent), input);
+      }),
   );
 
   server.registerTool(
@@ -302,7 +309,11 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       inputSchema: TaskCreateInput,
       annotations: WRITE,
     },
-    async ({ agent, ...input }) => run(async () => createTask(deps, p, await me(agent), input)),
+    async ({ agent, ...input }) =>
+      run(async () => {
+        write();
+        return createTask(deps, p, await me(agent), input);
+      }),
   );
 
   server.registerTool(
@@ -312,7 +323,11 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       inputSchema: TaskClaimInput,
       annotations: WRITE,
     },
-    async ({ agent, ...input }) => run(async () => claimTask(db, p, await me(agent), input)),
+    async ({ agent, ...input }) =>
+      run(async () => {
+        write();
+        return claimTask(db, p, await me(agent), input);
+      }),
   );
 
   server.registerTool(
@@ -322,7 +337,11 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       inputSchema: TaskUpdateInput,
       annotations: WRITE,
     },
-    async ({ agent, ...input }) => run(async () => updateTask(deps, p, await me(agent), input)),
+    async ({ agent, ...input }) =>
+      run(async () => {
+        write();
+        return updateTask(deps, p, await me(agent), input);
+      }),
   );
 
   server.registerTool(
@@ -349,7 +368,11 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       inputSchema: MemoryProposeInput,
       annotations: WRITE,
     },
-    async ({ agent, ...input }) => run(async () => proposeMemory(deps, p, await me(agent), input)),
+    async ({ agent, ...input }) =>
+      run(async () => {
+        write();
+        return proposeMemory(deps, p, await me(agent), input);
+      }),
   );
 
   // Off by default (memory_accept_via_mcp): acceptance belongs to a human, in the console.
