@@ -31,7 +31,7 @@ import { checkPaths, preEdit } from "./domain/claims.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
 import { githubSecret, handleGithubEvent, teamForGithubHook, validGithubSignature } from "./domain/github.js";
 import { launcherTargets, reportLaunch } from "./domain/launcher.js";
-import { RateLimiter } from "./domain/limits.js";
+import { RateLimiter, takeWrite } from "./domain/limits.js";
 import {
   ack,
   assertNoSecrets,
@@ -180,6 +180,7 @@ export function createApp({
     const p = c.get("principal");
     const parsed = AgentSessionInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
+    takeWrite(limiter, p.user.id);
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
     if (!p.paused && !agent) return c.json({ agent_id: null, paused: false, context: "", linked: false });
@@ -364,7 +365,11 @@ export function createApp({
     return c.body(null, 204);
   });
 
-  v1.post("/projects", async (c) => c.json(await createProject(db, c.get("principal"), await parse(c, CreateProjectInput))));
+  v1.post("/projects", async (c) => {
+    const p = c.get("principal");
+    takeWrite(limiter, p.user.id);
+    return c.json(await createProject(db, p, await parse(c, CreateProjectInput)));
+  });
 
   v1.post("/invitations", async (c) =>
     c.json(await inviteMember({ db, mailer, publicUrl: config.publicUrl }, c.get("principal"), await parse(c, InviteInput), "rest")),
