@@ -32,6 +32,7 @@ import {
   isAdmin,
   removeAgent,
   requireAdmin,
+  requireMember,
   resolveAlert,
   resumeKillSwitch,
   revokeToken,
@@ -127,6 +128,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!(e instanceof HubError)) throw e;
     return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
   });
+  for (const section of ["/tasks", "/memory", "/claims"])
+    consoleApp.use(`${section}/*`, async (c, next) => {
+      requireMember(c.get("principal"));
+      await next();
+    });
 
   // The page language follows the browser; titles and labels go through i18n's t().
   const tr = (c: Context<Env>) => {
@@ -311,6 +317,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .leftJoin(receipt, eq(receipt.messageId, message.id))
       .where(and(eq(message.teamId, p.teamId), or(eq(message.fromUserId, p.user.id), eq(receipt.recipientUserId, p.user.id))));
 
+  // Members see team threads and their own; a guest only their own; admins everything.
+  const visibleThreads = (p: Principal, mine: string[]) =>
+    isAdmin(p) ? undefined : or(p.role === "guest" ? undefined : eq(thread.kind, "team"), inArray(thread.id, mine));
+
   // The activity line: who wrote to whom, never what. Same visibility as the thread list.
   async function recentLine(p: Principal) {
     const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
@@ -319,12 +329,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
-      .where(
-        and(
-          eq(message.teamId, p.teamId),
-          isAdmin(p) ? undefined : or(eq(thread.kind, "team"), mine.length ? inArray(thread.id, mine) : undefined),
-        ),
-      )
+      .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine)))
       .orderBy(desc(message.createdAt))
       .limit(40);
   }
@@ -340,7 +345,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(
         and(
           eq(thread.teamId, p.teamId),
-          isAdmin(p) ? undefined : or(eq(thread.kind, "team"), mine.length ? inArray(thread.id, mine) : undefined),
+          visibleThreads(p, mine),
           before && !Number.isNaN(Date.parse(before)) ? lt(thread.lastMessageAt, new Date(before)) : undefined,
         ),
       )
@@ -379,6 +384,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!t) throw new HubError("E_NOT_FOUND", "thread not found");
     const participant = (await participantThreads(p)).some((r) => r.id === t.id);
     // SPEC: an admin may open a direct thread they are not in, in full, and every opening is audited.
+    if (!participant) requireMember(p);
     const adminRead = t.kind === "direct" && !participant;
     if (adminRead) {
       requireAdmin(p);
@@ -458,6 +464,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/threads/:id/:action{mute|reopen}", async (c) => {
     const { t } = await loadThread(c);
     const p = c.get("principal");
+    requireMember(p);
     const mute = c.req.param("action") === "mute";
     await db.transaction(async (tx) => {
       await tx

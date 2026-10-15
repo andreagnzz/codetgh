@@ -43,9 +43,9 @@ async function threadParticipants(tx: Db, threadId: string) {
   return [...new Set([...senders, ...readers].map((r) => r.userId))];
 }
 
-// A direct thread is visible to the people who wrote or received in it, nobody else.
+// A direct thread, or any thread for a guest, is visible to the people who wrote or received in it, nobody else.
 async function assertCanJoin(tx: Db, p: Principal, t: { id: string; kind: string }, label: string) {
-  if (t.kind === "team") return;
+  if (t.kind === "team" && p.role !== "guest") return;
   const sent = await tx
     .select({ id: message.id })
     .from(message)

@@ -3,6 +3,7 @@ import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { message, project, receipt, user } from "../db/schema.js";
 import type { Principal } from "../principal.js";
+import { requireMember } from "./admin.js";
 import { type Agent, listAgents, presence } from "./agents.js";
 import { liveClaims } from "./claims.js";
 import { packetDecisions } from "./memory.js";
@@ -66,6 +67,7 @@ async function unreadSummary(db: Db, p: Principal, agentId: string) {
 }
 
 export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scope: "team" | "project"; limit: number }) {
+  requireMember(p);
   const agents = await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me.projectId : undefined, limit: opts.limit });
   const unread = await unreadSummary(db, p, me.id);
   return {
@@ -99,6 +101,8 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
 export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
   const attrs = `agent="${me?.id ?? ""}"`;
   if (p.paused || !me) return `<codetgh_context ${attrs}>CodeTgh is paused by an admin: work normally without it.</codetgh_context>`;
+  if (p.role === "guest")
+    return `<codetgh_context ${attrs}>You are a guest: read the messages sent to you with inbox_read; you can send notes and questions.</codetgh_context>`;
   const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
   const ov = await teamOverview(db, p, me, { scope: "team", limit: 30 });
   const agents = await listAgents(db, p.teamId, { limit: 30 });
@@ -171,16 +175,19 @@ const versionNumber = (v: string) =>
 // One line for the person at session start: hub data only, so no teammate's words reach it.
 export async function statusLine(db: Db, p: Principal, me: Agent) {
   const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
-  const ov = await teamOverview(db, p, me, { scope: "team", limit: 30 });
-  const online = ov.agents.filter((a) => a.presence !== "offline").length;
-  const unread = Object.values(ov.unread).reduce((s, n) => s + n, 0);
+  // A guest sees no team presence, only their own unread count.
+  const online =
+    p.role === "guest"
+      ? null
+      : (await teamOverview(db, p, me, { scope: "team", limit: 30 })).agents.filter((a) => a.presence !== "offline").length;
+  const unread = Object.values((await unreadSummary(db, p, me.id)).byKind).reduce((s, n) => s + n, 0);
   const mode = me.pushMode ?? "hooks";
   const parts = [
     `CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`,
     `@${p.handle}`,
     `push ${mode}`,
     ...(me.clientVersion ? [`Claude Code ${me.clientVersion}`] : []),
-    `${online} online`,
+    ...(online === null ? [] : [`${online} online`]),
     `${unread} unread`,
   ];
   const warnings = [
