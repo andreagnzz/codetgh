@@ -61,7 +61,7 @@ From the checkout (or `--dir <path>`), it runs, in order:
 3. `docker compose … up -d --build`;
 4. a wait of up to 60 s for `/readyz`.
 
-If the pull or the backup fails, no container is touched. If the new hub is not ready, it prints the rollback command with the previous commit. Docker needs your user in the `docker` group, or run `sudo $(which codetgh) update`.
+If the pull or the backup fails, no container is touched. If the new hub is not ready, it prints the rollback command with the previous commit. Docker needs your user in the `docker` group, or run `sudo $(which codetgh) update`: under sudo, git still runs as you (your GitHub keys) and the checkout must be yours.
 
 Migrations run when the hub starts. Each one stays compatible with the previous hub version, so rolling back means checking out the previous commit and running `up -d --build` again.
 
