@@ -118,6 +118,9 @@ export const AskPeerInput = z.object({
 });
 
 export const PUSH_MODES = ["hooks", "rewake", "channel"] as const;
+// Claude Code's permission mode as hooks report it (default, acceptEdits, bypassPermissions…): letters only, so a mode
+// added later still registers.
+export const PermissionMode = z.string().regex(/^[A-Za-z]{1,40}$/);
 
 export const AgentSessionInput = z.object({
   session_id: z.string().min(1).max(200),
@@ -126,6 +129,7 @@ export const AgentSessionInput = z.object({
   label: z.string().max(60).optional(),
   branch: z.string().max(200).optional(),
   push_mode: z.enum(PUSH_MODES).optional(),
+  permission_mode: PermissionMode.optional(),
   client_version: z
     .string()
     .regex(/^\d+\.\d+\.\d+$/)
@@ -284,7 +288,7 @@ export const WhoamiSchema = z.object({
   team: z.object({ id: z.string(), name: z.string() }),
   role: z.enum(ROLES),
   handle: z.string(),
-  agent: z.object({ id: z.string(), label: z.string() }).nullable(),
+  agent: z.object({ id: z.string(), label: z.string(), permission_mode: z.string().nullable() }).nullable(),
   paused: z.boolean(),
   push_allowed_modes: z.array(z.enum(PUSH_MODES)),
 });

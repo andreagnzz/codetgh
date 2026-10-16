@@ -157,6 +157,8 @@ export const agent = pgTable(
     // What the session reported at start: the plugin's push mode and the Claude Code version.
     pushMode: text("push_mode"),
     clientVersion: text("client_version"),
+    // Claude Code's permission mode, kept current by the prompt hook.
+    permissionMode: text("permission_mode"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("agent_session_uq").on(t.teamId, t.userId, t.sessionId), index("agent_team_seen_idx").on(t.teamId, t.lastSeenAt)],
