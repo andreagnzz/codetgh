@@ -620,11 +620,21 @@ export function createApp({
     readFile(join(config.distDir, name)).catch(() => {
       throw new HubError("E_NOT_FOUND", `${name} is not built on this hub: run pnpm build`);
     });
+  // Read and hashed once: the zip only changes with a new build, and the digest must match the bytes served. A miss is retried.
+  let plugin: Promise<{ zip: Buffer; sha256: string }> | undefined;
+  const pluginZip = () => {
+    plugin ??= bundle("plugin.zip").then(
+      (zip) => ({ zip, sha256: createHash("sha256").update(zip).digest("hex") }),
+      (e) => {
+        plugin = undefined;
+        throw e;
+      },
+    );
+    return plugin;
+  };
   app.get("/plugin/marketplace.json", async (c) => {
     try {
-      const sha256 = createHash("sha256")
-        .update(await bundle("plugin.zip"))
-        .digest("hex");
+      const { sha256 } = await pluginZip();
       return c.json({
         name: "codetgh",
         owner: { name: "CodeTgh hub" },
@@ -642,8 +652,8 @@ export function createApp({
     }
   });
   app.get("/plugin/codetgh.zip", async (c) =>
-    bundle("plugin.zip").then(
-      (b) => c.body(new Uint8Array(b), 200, { "content-type": "application/zip" }),
+    pluginZip().then(
+      ({ zip }) => c.body(new Uint8Array(zip), 200, { "content-type": "application/zip" }),
       (e) => errorResponse(c, e),
     ),
   );
