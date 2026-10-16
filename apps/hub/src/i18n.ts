@@ -180,7 +180,6 @@ const FR: Record<string, string> = {
     "Identifiant du canal Slack pour les alertes et demandes bloquantes (ex. C0123ABC)",
   "Loop orchestrator: handle of the member whose agent judges muted agent loops (empty: a human reopens)":
     "Orchestrateur de boucles : handle du membre dont l'agent juge les boucles d'agents mises en sourdine (vide : un humain rouvre)",
-  "Strict mode": "Mode strict",
   Save: "Enregistrer",
   "Agent rules": "Règles des agents",
   Bridges: "Ponts",

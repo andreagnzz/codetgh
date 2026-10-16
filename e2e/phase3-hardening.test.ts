@@ -70,7 +70,7 @@ describe("phase 3 security review fixes", () => {
   it("refuses a Slack channel another team already uses", async () => {
     const lea = await principalForToken(hub.db, team.lea.token);
     if (!lea) throw new Error("no principal");
-    const base = { retentionDays: 90, secretPatterns: [], strict: false };
+    const base = { retentionDays: 90, secretPatterns: [] };
     await updateSettings(hub.db, lea, { ...base, slackChannel: "CSHARED1" });
     const otherTeam = await createTeam(hub.db, "Other team");
     const other = { ...lea, teamId: otherTeam, settings: {} as typeof lea.settings };

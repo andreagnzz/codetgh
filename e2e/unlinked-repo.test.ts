@@ -21,7 +21,10 @@ const CLIENT = "git@github.com:client-under-nda/secret-app.git";
 it("creates no project and no agent for a repository nobody linked, and says so", async () => {
   const repo = gitRepo(CLIENT);
   const r = await runHook("session-start", { session_id: "sam-nda", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
-  expect(r.out).toBeNull();
+  expect(r.out).toEqual({
+    systemMessage:
+      "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. An admin links it with: codetgh project new <name> (run in the repository).",
+  });
   expect(
     await hub.db
       .select()

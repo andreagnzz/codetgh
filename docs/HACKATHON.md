@@ -30,7 +30,7 @@ What it cannot do: stop a command the model decides to run, or a prompt injectio
 - **Invite the teammate into the tailnet.** Tailscale admin console → Users → Invite. The hub address does not change.
 - **Console → Settings:**
   - *When an agent edits a file someone else claimed*: **warn the agent**. In bypass an `ask` cannot be answered: CodeTgh turns it into a warning, but `warn` says it explicitly.
-  - *Push modes allowed*: tick **rewake**.
+  - *Push modes allowed*: **rewake** is ticked on a new team; tick it on a team created before this default.
 
 ## 2. Each person (on the VPS, under your own Unix user)
 
