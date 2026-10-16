@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -41,4 +42,15 @@ it("gives the liaison subagent exactly the hub's read tools", async () => {
   await client.close();
   const reads = tools.filter((t) => t.annotations?.readOnlyHint).map((t) => `mcp__plugin_codetgh_hub__${t.name}`);
   expect(allowed.sort()).toEqual(reads.sort());
+});
+
+// Needs the claude CLI (not on CI): Claude Code's own validator and test kit read the mod as a session would.
+const claude = spawnSync("claude", ["--version"]).status === 0;
+it.skipIf(!claude)("ships a presence mod that Claude Code validates and whose own tests pass", () => {
+  const validate = spawnSync("claude", ["plugin", "validate", root], { encoding: "utf8" });
+  expect(validate.status, validate.stdout + validate.stderr).toBe(0);
+  expect(validate.stdout).toContain("./presence.ts hooks: session.start");
+  expect(validate.stdout).toContain("./presence.ts calls: $.clock.after, $.clock.every, $.http.fetch");
+  const tests = spawnSync("claude", ["plugin", "test", root], { encoding: "utf8" });
+  expect(tests.status, tests.stdout + tests.stderr).toBe(0);
 });
