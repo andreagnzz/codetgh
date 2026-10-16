@@ -284,3 +284,24 @@ Measured:
 - **Result.** The answer, written in the same turn after the Read tool, quoted PELICAN-42.
 
 So a message delivered by the `inbox` hook is read between two tool calls, without waiting for the turn to end.
+
+### Presence mod: status line under the prompt (2026-10-16, Claude Code 2.1.301, Linux)
+
+Docs read 2026-10-16 ([Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [API](https://code.claude.com/docs/en/plugins/mods/api), [Events](https://code.claude.com/docs/en/plugins/mods/events), [Admin](https://code.claude.com/docs/en/plugins/mods/admin), [Reference](https://code.claude.com/docs/en/plugins/mods/reference), [Test](https://code.claude.com/docs/en/plugins/mods/test), [Manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference)):
+
+| Fact | Status | Source |
+| --- | --- | --- |
+| A mod is a hooks module named by `hooks/hooks.json` under `modules` (one path); the same file keeps its settings hooks under `hooks` | doc · **real** | Reference § Files |
+| `register(on, options)`: `options` holds the `userConfig` values, defaults filled in; a required field with no value fails the module's load. `CLAUDE_PLUGIN_OPTION_<KEY>` is for hook *processes*, not mods | doc · **real** (the sensitive `codetgh_token` reached `options` for a `--plugin-dir` plugin whose values sat in `pluginConfigs["codetgh@inline"]` of a `--settings` file) | Reference § Files; Manifest reference § Reference a saved value; types `PluginOptions` |
+| `manifest.types` is needed only for `$.state` or an added noun; the mod uses neither | doc | Manifest reference § Fields; Reference § Files |
+| `session.start` fires once per loaded mod before the first prompt and is awaited; not after `/clear` or `/resume`. Timers started there (`$.clock.every`, `$.clock.after`) run between turns until the module reloads; a callback that throws goes to the debug log and the timer runs again | doc · **real** | API § Run work in the background; Reference § Session |
+| `$.ui.status(text)` pins one line per plugin under the prompt, shown as `⚠ <plugin>: <text>`; `undefined` clears it. `$.ui.toast(text)` shows for 4 s | doc · **real** (`⚠ codetgh: CodeTgh · 2 online · 0 unread`; toast in the debug log as `$.ui.toast (codetgh): …`) | API § Show something without starting a turn; Reference § Limits |
+| `$.http.fetch` goes through the host: 30 s per call, 4 MiB body; an organization that disallows WebFetch also refuses every mod's `$.http.fetch`; a policy mod can refuse it by hooking `http.fetch` (the call then rejects). A WebFetch deny rule or `CLAUDE_CODE_DISABLE_WEB_FETCH` does not stop it | doc · **tested** (a refused fetch clears the line) | Admin § Know which controls still apply; Reference § Limits |
+| A function that receives `$` must be declared at the top of the module (not a closure), or the module does not load | **validated** (`claude plugin validate` refused a closure) | `claude plugin validate packages/plugin` |
+| `claude plugin test <dir>` runs every `*.test.ts` under the folder with the `claude-code/testing` kit (stubs per `$` call, `mock.clock`, `test(name, { options }, body)`) | doc · **tested** | Test § Write a test, § Test a timer |
+| Loading a `--plugin-dir` mod in an interactive session writes `.claude-plugin/types/` (API types and the connected MCP tools' names, with a `.gitignore` of `*`) and a `tsconfig.json` at the plugin root | **real** | observed; `scripts/bundles.mjs` leaves `.claude-plugin/types` out of `plugin.zip` |
+| Minimum Claude Code for mods: v2.1.287 in the terminal, v2.1.286 in Desktop. What an older Claude Code does with `modules` in `hooks.json` | doc · **non vérifié** for older versions | Overview § Turn mods on or off |
+
+Real run (tmux, throwaway hub from `apps/hub/test/harness.ts`, Léa and Malik online, Sam's token): the line read `CodeTgh · 2 online · 0 unread`; after Léa sent Sam a note it read `· 1 unread` within 30 s and the toast `CodeTgh: 1 unread` was raised; with the hub stopped the line disappeared at the next refresh. The token appeared 0 times in the debug log.
+
+Limits: `/v1/status` counts the unread of the token's member (messages to the person, or to the token's REST agent), not of one Claude session's agent; the REST agent `cli-<token>` it registers, like any teammate's, counts as online.
