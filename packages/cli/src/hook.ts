@@ -80,6 +80,12 @@ function warnOnce(input: Input, message: string) {
   return { systemMessage: message };
 }
 
+// One deadline per hook process, counted from its start (performance.now): each call gets what is left, so slow steps
+// in a row stay under Claude Code's timeout.
+const left = (budgetMs: number) => Math.max(1, Math.round(budgetMs - performance.now()));
+const START_BUDGET_MS = 4500;
+const BUDGET_MS = 2500;
+
 type Reply = { status: number; ok: boolean; etag: string | undefined; json: () => Promise<unknown> };
 
 // Each hook is a fresh process, so module load time counts. On Node 24, fetch's first call costs ~100 ms and loading
@@ -128,7 +134,7 @@ async function sessionStart(input: Input) {
     git(input.cwd, ["remote", "get-url", "origin"]),
     // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
     // through a shell; the arguments are fixed, so nothing can be injected.
-    run("claude", ["--version"], { timeout: 1000, shell: process.platform === "win32" }).then(
+    run("claude", ["--version"], { timeout: Math.min(1000, left(START_BUDGET_MS)), shell: process.platform === "win32" }).then(
       (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
       () => undefined,
     ),
@@ -138,7 +144,7 @@ async function sessionStart(input: Input) {
   const register = (withBranch: boolean) =>
     hub("/v1/agents/session", {
       method: "POST",
-      timeoutMs: 2400,
+      timeoutMs: Math.min(2400, left(START_BUDGET_MS)),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         session_id: input.session_id ?? "unknown",
@@ -159,7 +165,8 @@ async function sessionStart(input: Input) {
       return null;
     }
     if (fingerprint && branch && !body.paused) {
-      res = await register(true);
+      // Out of time for the second answer: the first one still holds.
+      res = await register(true).catch(() => res);
       if (res.ok) body = (await res.json()) as typeof body;
     }
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
@@ -266,7 +273,7 @@ async function preEdit(input: Input) {
   try {
     const res = await hub("/v1/claims/pre-edit", {
       method: "POST",
-      timeoutMs: 2500,
+      timeoutMs: left(BUDGET_MS),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: input.session_id, path }),
     });
@@ -302,7 +309,10 @@ async function stop(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   // Raw output: porcelain lines start with a status column that may be a space.
-  const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: input.cwd, timeout: 1000 })
+  const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+    cwd: input.cwd,
+    timeout: Math.min(1000, left(BUDGET_MS)),
+  })
     .then((r) => r.stdout)
     .catch(() => "");
   const changed = status
@@ -315,7 +325,7 @@ async function stop(input: Input) {
   try {
     const res = await hub("/v1/claims/check", {
       method: "POST",
-      timeoutMs: 2000,
+      timeoutMs: Math.min(2000, left(BUDGET_MS)),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: input.session_id, paths: changed }),
     });
