@@ -2,9 +2,9 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { and, asc, desc, eq, gt, inArray, isNull, lte, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, message, receipt, thread, threadKey, user } from "../db/schema.js";
+import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -442,6 +442,14 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     recipientUserIds: result.recipientUserIds,
   });
   return result.row;
+}
+
+// Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
+export async function purgeMessages(db: Db) {
+  for (const t of await db.select({ id: team.id, settings: team.settings }).from(team)) {
+    const cutoff = new Date(Date.now() - (t.settings.retention_days ?? 90) * 86_400_000);
+    await db.delete(message).where(and(eq(message.teamId, t.id), lt(message.createdAt, cutoff)));
+  }
 }
 
 // Stream feed: one row per message received after `seq`, ids only. A message's receipts share a transaction, so max(seq) covers them all.

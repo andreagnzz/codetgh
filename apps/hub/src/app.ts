@@ -39,6 +39,7 @@ import {
   inboxHeader,
   lastReceiptSeq,
   type MessagingDeps,
+  purgeMessages,
   receivedSince,
   sendMessage,
   unread,
@@ -61,6 +62,7 @@ type Env = { Variables: { principal: Principal } };
 
 const PROMPT_BATCH = 5;
 const CHECKPOINT_EVERY_MS = 10 * 60_000;
+const PURGE_EVERY_MS = 60 * 60_000;
 const PROMPT_BUDGET = 9500;
 
 // Request lines carry ids, status and latency only: never headers, tokens or message text.
@@ -105,6 +107,11 @@ export function createApp({
   };
   const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
   checkpointTimer.unref();
+  const purgeTimer = setInterval(
+    () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),
+    PURGE_EVERY_MS,
+  );
+  purgeTimer.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
@@ -633,6 +640,7 @@ export function createApp({
     auditKey,
     close: () => {
       clearInterval(checkpointTimer);
+      clearInterval(purgeTimer);
       stopSlack();
       return mcp.close();
     },
