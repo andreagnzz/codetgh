@@ -32,7 +32,7 @@ export const SessionStarted = z.object({
   status_line: z.string().optional(),
 });
 export const SessionEndInput = z.object({ session_id: z.string().min(1).max(200) });
-export const PreEditDecision = z.object({ decision: z.enum(["warn", "ask", "deny"]), reason: z.string() });
+export const PreEditDecision = z.object({ decision: z.enum(["warn", "ask"]), reason: z.string() });
 export const ClaimsCheckOutput = z.object({
   paths: z.array(
     z.object({

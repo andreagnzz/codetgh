@@ -283,19 +283,18 @@ export async function checkPaths(db: Db, p: Principal, a: Agent, paths: string[]
   };
 }
 
-export type PreEditDecision = { decision: "warn" | "ask" | "deny"; reason: string };
+export type PreEditDecision = { decision: "warn" | "ask"; reason: string };
 
 // One round trip for the PreToolUse hook. Never answers "allow": the permission system stays in charge.
 export async function preEdit(db: Db, p: Principal, a: Agent, path: string): Promise<PreEditDecision | null> {
   if (p.paused || !a.projectId || isExcluded(path) || a.trustLevel === "quarantined" || p.role === "guest") return null;
-  const enforcement = p.settings.claims_enforcement ?? "ask";
-  if (enforcement === "off") return null;
+  // Older teams may have stored off (now warn) or block (now ask).
+  const decision = p.settings.claims_enforcement === "warn" || p.settings.claims_enforcement === "off" ? "warn" : "ask";
   return db.transaction(async (tx) => {
     await lock(tx, p.teamId);
     const others = (await othersLive(tx, p, a)).filter((h) => covers(h, path));
     const conflicts = others.filter((h) => compat("intent", h.mode) === "conflict");
     if (conflicts.length) {
-      const decision = enforcement === "block" ? "deny" : enforcement === "warn" ? "warn" : "ask";
       const reason = `${path} is claimed by ${conflicts.map((h) => describe(h, decision === "ask")).join("; ")}. Wait, or write to them (send_message to ${conflicts.map((h) => `@${h.handle}`).join(", ")})?`;
       return { decision, reason };
     }

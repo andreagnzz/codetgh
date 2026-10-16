@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { agent } from "../apps/hub/src/db/schema.js";
+import { agent, team as teamTable } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, fakeGithubToken, gitRepo, hookEnv, runHook } from "./helpers.js";
 
@@ -20,7 +20,10 @@ afterAll(() => hub.stop());
 
 const mode = async (session: string) =>
   (await hub.db.select({ m: agent.permissionMode }).from(agent).where(eq(agent.sessionId, session)))[0]?.m;
-type Out = { systemMessage?: string; hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } } | null;
+type Out = {
+  systemMessage?: string;
+  hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string; additionalContext?: string };
+} | null;
 
 it("shows a bypass session to its person and to the team, and follows a mode change", async () => {
   const start = await runHook(
@@ -50,7 +53,7 @@ it("shows a bypass session to its person and to the team, and follows a mode cha
   await lea.close();
 });
 
-it("still blocks secrets and claim denials in bypass", async () => {
+it("still blocks secrets in bypass, and warns on a claim conflict", async () => {
   const key = fakeGithubToken();
   const secret = (
     await runHook(
@@ -72,11 +75,14 @@ it("still blocks secrets and claim denials in bypass", async () => {
   expect(JSON.parse(r.text).code).toBe("E_SECRET_BLOCKED");
   await samMcp.close();
 
-  // A team that blocks claim conflicts keeps blocking them in bypass: only ask turns into a warning.
+  // A team that stored the old block level now asks, and in bypass an ask turns into a warning.
   const lea = await mcpClient(hub.url, team.lea.token);
   expect((await call(lea, "claim", { scope: ["src/**"], mode: "exclusive" })).isError).toBe(false);
   await lea.close();
-  await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", claims_enforcement: "block" });
+  await hub.db
+    .update(teamTable)
+    .set({ settings: { claims_enforcement: "block" } })
+    .where(eq(teamTable.id, team.teamId));
   const edit = (
     await runHook(
       "pre-edit",
@@ -90,5 +96,6 @@ it("still blocks secrets and claim denials in bypass", async () => {
       sam,
     )
   ).out as Out;
-  expect(edit?.hookSpecificOutput?.permissionDecision).toBe("deny");
+  expect(edit?.hookSpecificOutput?.permissionDecision).toBeUndefined();
+  expect(edit?.hookSpecificOutput?.additionalContext).toMatch(/^CodeTgh: .*Léa/s);
 });
