@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { INVITE_HEADER } from "../src/auth.js";
 import { auditEvent, membership } from "../src/db/schema.js";
 import { verifyChain } from "../src/domain/audit.js";
-import { createInvitation } from "../src/domain/teams.js";
+import { createInvitation, createTeam } from "../src/domain/teams.js";
+import { principalForUser } from "../src/principal.js";
 import { call, type Hub, mcpClient, startHub } from "./harness.js";
 
 let hub: Hub;
@@ -136,6 +137,28 @@ describe("sign-up", () => {
     expect(res.ok).toBe(true);
     const [m] = await hub.db.select().from(membership).where(eq(membership.handle, "omar"));
     expect(m?.role).toBe("guest");
+  });
+
+  it("joins only the team whose link was used, even when another team invited the same email", async () => {
+    const hostile = await createTeam(hub.db, "Hostile");
+    await createInvitation(hub.db, { teamId: hostile, email: "ines@acme.test", role: "admin", invitedBy: null, via: "system" });
+    const { token } = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "ines@acme.test",
+      role: "member",
+      invitedBy: null,
+      via: "system",
+    });
+    const res = await fetch(`${hub.url}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: hub.url, [INVITE_HEADER]: token },
+      body: JSON.stringify({ name: "Ines", email: "ines@acme.test", password: "ines-password-123" }),
+    });
+    expect(res.ok).toBe(true);
+    const { user } = (await res.json()) as { user: { id: string } };
+    const teams = await hub.db.select().from(membership).where(eq(membership.userId, user.id));
+    expect(teams.map((m) => m.teamId)).toEqual([team.teamId]);
+    expect((await principalForUser(hub.db, user.id, "console"))?.teamId).toBe(team.teamId);
   });
 
   it("is refused without an invitation", async () => {
