@@ -504,6 +504,23 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
       (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
     if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
+    // A third-party marketplace does not auto-update unless its entry says so; Claude Code declared it in the user settings.
+    const userSettings = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "settings.json");
+    const autoUpdate =
+      ok &&
+      (() => {
+        try {
+          const settings = JSON.parse(readFileSync(userSettings, "utf8"));
+          const entry = settings.extraKnownMarketplaces?.codetgh;
+          if (!entry) return false;
+          entry.autoUpdate ??= true;
+          writeFileSync(userSettings, `${JSON.stringify(settings, null, 2)}\n`);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+    if (ok && !autoUpdate) io.out("turn on plugin updates in Claude Code: /plugin → Marketplaces → codetgh → Enable auto-update");
     // The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
     const configured =
       ok &&
@@ -759,7 +776,10 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`${path} is not valid JSON: fix it, then run this again`);
         }
-        settings.extraKnownMarketplaces = { ...settings.extraKnownMarketplaces, codetgh: { source: { source: "url", url: marketplace } } };
+        settings.extraKnownMarketplaces = {
+          ...settings.extraKnownMarketplaces,
+          codetgh: { source: { source: "url", url: marketplace }, autoUpdate: true },
+        };
         settings.enabledPlugins = { ...settings.enabledPlugins, "codetgh@codetgh": true };
         mkdirSync(join(root, ".claude"), { recursive: true });
         writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);

@@ -89,7 +89,7 @@ describe("codetgh project new", () => {
     const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));
     expect(settings).toEqual({
       permissions: { allow: ["Bash(pnpm test)"] },
-      extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` } } },
+      extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` }, autoUpdate: true } },
       enabledPlugins: { "codetgh@codetgh": true },
     });
     expect(JSON.parse(readFileSync(join(validated, "validated.json"), "utf8")).name).toBe("codetgh");
