@@ -13,6 +13,8 @@ mkdirSync(out, { recursive: true });
 
 const files = {};
 const add = (path) => {
+  // Claude Code lays its API types (and the names of your connected MCP tools) there when it loads the mod from disk.
+  if (path === join(plugin, ".claude-plugin/types")) return;
   if (statSync(path).isDirectory()) for (const name of readdirSync(path)) add(join(path, name));
   else files[`codetgh/${relative(plugin, path).split(sep).join("/")}`] = readFileSync(path);
 };

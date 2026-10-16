@@ -42,3 +42,6 @@ CLAUDE.local.md
 
 # Hub database dumps (deploy/backup.sh)
 deploy/backups/
+
+# Written by Claude Code when it loads the plugin from disk
+packages/plugin/tsconfig.json
