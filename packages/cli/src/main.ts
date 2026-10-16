@@ -731,6 +731,29 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     });
 
   cli
+    .command("upgrade")
+    .description("update this command and the Claude Code plugin from your team's hub")
+    .action(async () => {
+      const { url } = await credentials(deps.keyring);
+      if (!url) throw new Error("no hub URL: run codetgh setup (or codetgh login)");
+      const tgz = `${hubAddress(url)}/cli/codetgh.tgz`;
+      // exec goes through cross-spawn, so npm.cmd on Windows works like claude.cmd does.
+      const npm = await exec("npm", ["install", "-g", tgz], { timeout: 5 * 60_000 }).catch(() => {
+        throw new Error(`npm could not install the CLI: run npm install -g ${tgz}`);
+      });
+      io.out(`codetgh: ${npm.stdout.trim() || "installed"}`);
+      const plugin = await exec("claude", ["plugin", "marketplace", "update", "codetgh"], { timeout: 60_000 })
+        .then(() => exec("claude", ["plugin", "update", "codetgh@codetgh"], { timeout: 5 * 60_000 }))
+        .catch(() => {
+          throw new Error(
+            "the plugin was not updated: run claude plugin marketplace update codetgh && claude plugin update codetgh@codetgh",
+          );
+        });
+      io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
+      io.out("restart Claude Code to load the new plugin");
+    });
+
+  cli
     .command("project")
     .description("team projects")
     .command("new <name>")
