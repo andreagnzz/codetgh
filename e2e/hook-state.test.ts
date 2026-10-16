@@ -84,3 +84,14 @@ it.skipIf(process.platform === "win32")("keeps both hooks' fields when one saves
   expect(state.etag).toBeTruthy();
   expect(state.root).toBeTruthy();
 });
+
+it("marks the agent offline at session end", async () => {
+  const session = `sam-end-${Date.now()}`;
+  const { agent_id } = await startSession(hub.url, team.sam.token, session, { repo: ACME_REPO });
+  const r = await runHook("session-end", { session_id: session, reason: "prompt_input_exit" }, hookEnv(hub.url, team.sam.token));
+  expect(r.code).toBe(0);
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const overview = (await call(lea, "team_overview")).json();
+  expect(overview.agents.find((a: { id: string }) => a.id === agent_id)?.presence).toBe("offline");
+  await lea.close();
+});
