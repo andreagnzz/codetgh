@@ -41,7 +41,7 @@ export function createAuth(
             if (invite) return (await invitationMatches(db, invite, u.email)) || false;
             return (u.emailVerified && (await hasPendingInvitation(db, u.email))) || false;
           },
-          after: async (u) => acceptInvitations(db, u),
+          after: async (u, ctx) => acceptInvitations(db, u, ctx?.headers?.get(INVITE_HEADER)),
         },
       },
     },
