@@ -29,6 +29,9 @@ export function createBot(opts: { publicKey: string; repo: string; ciStatus: () 
       const timestamp = headers["x-signature-timestamp"] ?? "";
       const valid = /^[0-9a-f]{128}$/.test(signature) && verify(null, Buffer.from(timestamp + rawBody), key, Buffer.from(signature, "hex"));
       if (!valid) return { status: 401, body: { error: "invalid request signature" } };
+      // The signature never expires: the timestamp it covers bounds a replay to 5 minutes.
+      const ts = Number(timestamp);
+      if (!ts || Math.abs(Date.now() / 1000 - ts) > 300) return { status: 401, body: { error: "stale request" } };
       const interaction = JSON.parse(rawBody) as { type: number; data?: { name?: string } };
       if (interaction.type === 1) return { status: 200, body: { type: 1 } };
       const answer = answers[interaction.data?.name ?? ""];

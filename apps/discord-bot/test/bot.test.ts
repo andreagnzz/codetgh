@@ -24,6 +24,9 @@ describe("Discord interactions", () => {
     expect((await bot.handle(ok.body, {})).status).toBe(401);
     // A valid signature on a different body is still refused.
     expect((await bot.handle(JSON.stringify({ type: 1, x: 1 }), ok.headers)).status).toBe(401);
+    // A captured request replayed more than 5 minutes later is refused, though its signature still holds.
+    const old = signed(JSON.stringify({ type: 1 }), String(Math.floor(Date.now() / 1000) - 301));
+    expect((await bot.handle(old.body, old.headers)).status).toBe(401);
   });
 
   it("answers the project's commands, with no mentions allowed", async () => {
