@@ -18,7 +18,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { type Logger, pino } from "pino";
 import { ulid } from "ulid";
-import type { Auth } from "./auth.js";
+import { type Auth, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
@@ -140,7 +140,7 @@ export function createApp({
         return forbidden(e);
       }
     },
-    { resource },
+    { resource, requiredScopes: [MCP_SCOPE] },
   );
 
   // Reject oversized bodies before parsing; message limits (8 KB) apply later with stable error codes.

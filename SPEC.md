@@ -648,6 +648,7 @@ Le client OAuth de Claude est plus strict que la spécification MCP. Les lignes 
 | Identité du client | Annoncer client_id_metadata_document_supported: true et "none" dans token_endpoint_auth_methods_supported pour CIMD, et exposer registration_endpoint pour DCR ; sans les deux valeurs CIMD, Claude se replie sur DCR |
 | Redirections | Accepter https://claude.ai/api/mcp/auth_callback ; pour Claude Code, accepter http://localhost et http://127.0.0.1 sans comparer le port |
 | Jetons | Lier le jeton à l'audience du hub ; accepter application/x-www-form-urlencoded sur /token ; faire tourner les refresh tokens ; renvoyer invalid_grant quand l'un d'eux est périmé |
+| Portée | Exiger la portée codetgh sur les jetons OAuth de /mcp, l'annoncer dans le défi 401 et dans scopes_supported de la ressource protégée ; un jeton sans elle reçoit 403 insufficient_scope |
 | Renouvellement | Annoncer offline_access dans scopes_supported ; Claude renouvelle sur un 401 et jusqu'à cinq minutes avant l'échéance |
 | Délais | Répondre en moins de 10 s à la découverte, à l'enregistrement et au jeton, et en moins de 30 s au renouvellement |
 | Consentement | Afficher le nom d'hôte de la redirection sur l'écran de consentement |

@@ -67,7 +67,8 @@ export function createAuth(
         loginPage: "/login",
         consentPage: "/consent",
         resource: `${config.publicUrl}/mcp`,
-        scopes: ["openid", "profile", "email", "offline_access"],
+        // MCP_SCOPE is the one resource scope, so it alone lands in the /mcp challenge and protected resource metadata.
+        scopes: [MCP_SCOPE, "openid", "profile", "email", "offline_access"],
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
       }),
@@ -93,6 +94,7 @@ export function createAuth(
   });
 }
 
+export const MCP_SCOPE = "codetgh";
 export const INVITE_HEADER = "x-codetgh-invite";
 export const SSO_PROVIDER = "sso";
 const ID_PREFIX: Record<string, string> = { user: "usr", session: "ses", account: "acc", verification: "ver" };
