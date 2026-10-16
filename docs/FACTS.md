@@ -188,7 +188,7 @@ Result:
 
 Not tried: the plugin's own `channel` server through `--dangerously-load-development-channels plugin:codetgh@<marketplace>` (it needs the interactive `userConfig` values), and a Team or Enterprise org where `channelsEnabled` must be on.
 
-### claude.ai connector checklist (Annex C point 8, claude.ai side), automated 2026-10-14; real run pending (P5)
+### claude.ai connector checklist (Annex C point 8, claude.ai side), automated 2026-10-14; real run 2026-10-16 (P5 below)
 
 `apps/hub/test/claude-ai.test.ts` checks each row of SPEC « claude.ai et autres clients » that a test can reach:
 - 401 with `WWW-Authenticate: Bearer resource_metadata=…`;
@@ -353,3 +353,11 @@ Real sessions on the team's hub, in a linked repository, plugin installed from t
 - **Bypass** (`claude --dangerously-skip-permissions`, warning accepted). **SessionStart input carries no `permission_mode` on 2.1.301**: the agent row had none after start, so the start line cannot show `bypass`. The first prompt sent it and the row read `bypassPermissions`.
 - `/exit` ended the session on the hub (`ended_at` set) within the SessionEnd budget.
 - The mod's first `GET /v1/status` registers the token's REST agent (`<handle>@cli`), which then counts as online for 90 s; later polls do not refresh it.
+
+### P5: claude.ai custom connector on the production hub (2026-10-16)
+
+Hub public through Tailscale Funnel; claude.ai → Settings → Connectors → custom connector `<hub>/mcp`.
+- claude.ai registered by **CIMD**: client `https://claude.ai/oauth/mcp-oauth-client-metadata`, `token_endpoint_auth_method: none`; no DCR call. Authorize carried `scope=codetgh offline_access`, `resource=<hub>/mcp`, `redirect_uri=https://claude.ai/api/mcp/auth_callback`; MCP requests used protocol `2026-07-28` (first call `server/discover`), user agent `Claude-User`.
+- First attempt: tokens were right (`aud=<hub>/mcp`, `iss=<hub>/api/auth`, scope `codetgh`) but /mcp answered 401 "no token payload": the hub fetched its JWKS through its public URL, which the container cannot reach behind Funnel. Fixed in #64 (`jwksUrl` on the hub's own socket).
+- After the fix: one 401 (the unauthenticated first call), then /mcp 200 for claude.ai's tool calls.
+
