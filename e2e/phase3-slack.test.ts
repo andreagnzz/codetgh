@@ -58,8 +58,8 @@ const signed = (path: string, body: string, contentType: string, ts = Math.floor
     },
     body,
   });
-const event = (e: Record<string, unknown>) =>
-  signed("/bridges/slack/events", JSON.stringify({ type: "event_callback", event: e }), "application/json");
+const event = (e: Record<string, unknown>, eventId?: string) =>
+  signed("/bridges/slack/events", JSON.stringify({ type: "event_callback", event_id: eventId, event: e }), "application/json");
 const until = async (check: () => boolean) => {
   for (let i = 0; i < 50 && !check(); i++) await new Promise((r) => setTimeout(r, 50));
 };
@@ -135,6 +135,18 @@ describe("Slack bridge (phase 3)", () => {
       if (!reply) await new Promise((r) => setTimeout(r, 50));
     }
     expect(reply).toMatchObject({ authoredBy: "human", fromUserId: team.lea.userId, kind: "answer", replyTo: request?.id });
+  });
+
+  it("relays a replayed signed event once", async () => {
+    const reply = { type: "message", channel: "C123", user: "U_LEA", text: "Said once", thread_ts: threadTs, ts: "1.2" };
+    expect((await event(reply, "Ev_ONCE")).status).toBe(200);
+    expect((await event(reply, "Ev_ONCE")).status).toBe(200);
+    let rows: Array<typeof message.$inferSelect> = [];
+    for (let i = 0; i < 20; i++) {
+      rows = await hub.db.select().from(message).where(eq(message.body, "Said once"));
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(rows).toHaveLength(1);
   });
 
   it("ignores bots and unknown threads, and tells unlinked people how to link", async () => {
