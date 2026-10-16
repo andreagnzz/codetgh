@@ -23,8 +23,8 @@
     "push_mode": {
       "type": "string",
       "title": "Push mode",
-      "description": "hooks: messages show up at your next prompt. rewake: an idle session wakes up (your admin must allow it). channel: needs claude --dangerously-load-development-channels plugin:codetgh@<marketplace>.",
-      "options": ["hooks", "rewake", "channel"],
+      "description": "rewake: an idle session wakes up when a message arrives; hooks: messages show up at your next prompt and between tool calls",
+      "options": ["hooks", "rewake"],
       "default": "hooks"
     }
   }

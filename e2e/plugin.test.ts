@@ -45,6 +45,12 @@ it("gives the liaison subagent exactly the hub's read tools", async () => {
   expect(allowed.sort()).toEqual(reads.sort());
 });
 
+it("offers only the hooks and rewake push modes to members", () => {
+  const manifest = JSON.parse(readFileSync(`${root}.claude-plugin/plugin.json`, "utf8"));
+  expect(manifest.userConfig.push_mode.options).toEqual(["hooks", "rewake"]);
+  expect(manifest.userConfig.push_mode.description).not.toContain("channel");
+});
+
 // Needs the claude CLI (not on CI): Claude Code's own validator and test kit read the mod as a session would.
 const claude = spawnSync("claude", ["--version"]).status === 0;
 it.skipIf(!claude)("ships a presence mod that Claude Code validates and whose own tests pass", () => {

@@ -22,7 +22,7 @@ const mcp = new Server(
 mcp.onclose = () => process.exit(0);
 await mcp.connect(new StdioServerTransport());
 
-// Only when the member picked the channel push mode: otherwise every session would hold a stream to the hub for nothing.
+// Only with CODETGH_PUSH_MODE=channel (a developer option, not offered in the plugin's push_mode): otherwise every session would hold a stream to the hub for nothing.
 if (process.env.CODETGH_PUSH_MODE === "channel" && url && token) void relay();
 
 async function relay() {

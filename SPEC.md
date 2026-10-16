@@ -547,7 +547,7 @@ Outils : ask_peer, send_message, inbox_read, claim_check, handoff. Règles : ski
 
 ### Poussée vers une session inactive
 
-Les hooks ne s'exécutent qu'à des moments précis. Pour réveiller une session inactive, le réglage push.mode choisit parmi quatre modes ; un administrateur peut restreindre la liste (push.allowed_modes).
+Les hooks ne s'exécutent qu'à des moments précis. Pour réveiller une session inactive, le réglage push.mode choisit parmi quatre modes ; un administrateur peut restreindre la liste (push.allowed_modes). Le plugin ne propose aux membres que hooks et rewake (option push_mode) ; une valeur qu'il ne propose plus, comme channel d'une ancienne installation, vaut hooks. Le pont channel reste disponible pour les développeurs (variable CODETGH_PUSH_MODE=channel, docs/FACTS.md).
 
 | Mode | Principe | Réveille une session inactive | Prérequis et limites |
 | --- | --- | --- | --- |

@@ -59,3 +59,14 @@ it("shows each session's push mode and Claude Code version to the team", async (
   const overview = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
   expect(overview.agents).toContainEqual(expect.objectContaining({ handle: "sam", push_mode: "rewake", client_version: "2.1.299" }));
 });
+
+it("treats a push mode the plugin no longer offers (an old channel install) as hooks", async () => {
+  const r = await runHook(
+    "session-start",
+    { session_id: "sam-legacy", source: "startup", cwd: repo },
+    { ...env, CLAUDE_PLUGIN_OPTION_PUSH_MODE: "channel" },
+  );
+  expect(String((r.out as { systemMessage?: string } | null)?.systemMessage)).toContain("· push hooks ·");
+  const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-legacy"));
+  expect(row?.pushMode).toBe("hooks");
+});

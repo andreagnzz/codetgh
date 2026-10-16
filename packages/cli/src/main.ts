@@ -663,7 +663,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         unset.length ? `plugin options unset: ${unset.join(", ")}` : "plugin options: hub URL and token set",
         "run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh",
       );
-      const mode = options.inputs?.push_mode ?? "hooks";
+      const mode = options.inputs?.push_mode === "rewake" ? "rewake" : "hooks";
       check(
         mode !== "rewake" || allowedModes === null || allowedModes.includes("rewake"),
         mode === "rewake" && allowedModes && !allowedModes.includes("rewake")
