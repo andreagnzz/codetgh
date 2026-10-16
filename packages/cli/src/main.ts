@@ -324,6 +324,12 @@ async function saveLogin(keyring: () => Promise<Keyring>, url: string, token: st
   return who;
 }
 
+const ONE_COMMAND_INSTALL = "2.1.292";
+const atLeast = (version: string, min: string) => {
+  const n = (v: string) => v.split(".").reduce((a, x) => a * 1000 + Number(x), 0);
+  return Boolean(version) && n(version) >= n(min);
+};
+
 type Choice = { value: string; name: string };
 // The same questions as SETUP.md, one at a time with a default; --answers <file> gives them without a terminal.
 async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { answers?: string; tokenStdin?: boolean }) {
@@ -478,20 +484,32 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
     "claude plugin disable codetgh@codetgh --scope user",
   ];
   if (await confirm("install_plugin", "Install the CodeTgh plugin in Claude Code now?", true)) {
+    // The best push mode the team allows: rewake wakes an idle session for a message; hooks waits for a tool call or a prompt.
+    const pushMode = who.push_allowed_modes?.includes("rewake") ? "rewake" : "hooks";
+    const version = await exec("claude", ["--version"], { timeout: 5000 }).then(
+      (r) => r.stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? "",
+      () => "",
+    );
+    // install --marketplace (2.1.292) adds the marketplace and takes the plugin's options in the same command.
+    const oneCommand = atLeast(version, ONE_COMMAND_INSTALL);
+    const options = { codetgh_url: url, codetgh_token: token, push_mode: pushMode };
     const ok =
-      (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
-      (await run("claude", ["plugin", "install", "codetgh@codetgh"])) &&
+      (oneCommand
+        ? await run("claude", [
+            ...["plugin", "install", "codetgh", "--marketplace", marketplace, "--scope", "user", "-y"],
+            ...["--config", `codetgh_url=${url}`, "--config", `push_mode=${pushMode}`],
+          ])
+        : (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
+          (await run("claude", ["plugin", "install", "codetgh@codetgh"]))) &&
       // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
       (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
     if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
-    // The best push mode the team allows: rewake wakes an idle session for a message; hooks waits for a tool call or a prompt.
-    const pushMode = who.push_allowed_modes?.includes("rewake") ? "rewake" : "hooks";
-    // The plugin's own settings (its MCP server needs them), through stdin: the token never shows in a process list.
+    // The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
     const configured =
       ok &&
       (await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
         timeout: 30_000,
-        input: JSON.stringify({ codetgh_url: url, codetgh_token: token, push_mode: pushMode }),
+        input: JSON.stringify(oneCommand ? { codetgh_token: token } : options),
       }).then(
         () => true,
         () => false,
@@ -569,6 +587,10 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       .reduce((a, n) => a * 1000 + n, 0) < 2_001_296
   )
     io.out(`warn Claude Code ${version} is older than 2.1.296, the version CodeTgh is tested with: claude update`);
+  if (recent && version && !atLeast(version, ONE_COMMAND_INSTALL))
+    io.out(
+      `warn Claude Code ${version} is older than ${ONE_COMMAND_INSTALL}, which codetgh setup needs to install the plugin in one command`,
+    );
   if (version) {
     const list = await run("claude", ["plugin", "list", "--json"], 15000);
     const plugin = (JSON.parse(list ?? "[]") as Array<{ id: string; version?: string; enabled?: boolean; installPath?: string }>).find(
