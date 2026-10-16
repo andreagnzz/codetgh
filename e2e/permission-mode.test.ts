@@ -1,0 +1,94 @@
+import { join } from "node:path";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { agent } from "../apps/hub/src/db/schema.js";
+import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { consolePost, fakeGithubToken, gitRepo, hookEnv, runHook } from "./helpers.js";
+
+let hub: Hub;
+let team: Awaited<ReturnType<Hub["seed"]>>;
+let repo: string;
+let sam: Record<string, string>;
+beforeAll(async () => {
+  hub = await startHub();
+  team = await hub.seed();
+  repo = gitRepo();
+  sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "lea-pm", source: "startup", cwd: repo }, hookEnv(hub.url, team.lea.token));
+});
+afterAll(() => hub.stop());
+
+const mode = async (session: string) =>
+  (await hub.db.select({ m: agent.permissionMode }).from(agent).where(eq(agent.sessionId, session)))[0]?.m;
+type Out = { systemMessage?: string; hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } } | null;
+
+it("shows a bypass session to its person and to the team, and follows a mode change", async () => {
+  const start = await runHook(
+    "session-start",
+    { session_id: "sam-pm", source: "startup", cwd: repo, permission_mode: "bypassPermissions" },
+    sam,
+  );
+  const line = String((start.out as Out)?.systemMessage ?? "");
+  expect(line).toMatch(/· bypass ·/);
+  expect(line).toContain("⚠ bypass: permission prompts are off");
+  expect(await mode("sam-pm")).toBe("bypassPermissions");
+
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const overview = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
+  expect(overview.agents).toContainEqual(expect.objectContaining({ handle: "sam", permission_mode: "bypassPermissions" }));
+  const who = await (
+    await fetch(`${hub.url}/v1/whoami?session_id=sam-pm`, { headers: { authorization: `Bearer ${team.sam.token}` } })
+  ).json();
+  expect(who.agent.permission_mode).toBe("bypassPermissions");
+  const html = await (await fetch(`${hub.url}/console/agents`, { headers: { cookie: team.lea.cookie } })).text();
+  expect(html).toContain("Permissions");
+  expect(html).toContain("bypass");
+
+  // shift+tab back to Manual: the next prompt reports it.
+  await runHook("user-prompt-submit", { session_id: "sam-pm", cwd: repo, prompt: "go on", permission_mode: "default" }, sam);
+  expect(await mode("sam-pm")).toBe("default");
+  await lea.close();
+});
+
+it("still blocks secrets and claim denials in bypass", async () => {
+  const key = fakeGithubToken();
+  const secret = (
+    await runHook(
+      "pre-tool-use",
+      {
+        session_id: "sam-pm",
+        permission_mode: "bypassPermissions",
+        tool_name: "mcp__plugin_codetgh_hub__send_message",
+        tool_input: { to: "@lea", kind: "note", body: `key ${key}` },
+      },
+      sam,
+    )
+  ).out as Out;
+  expect(secret?.hookSpecificOutput?.permissionDecision).toBe("deny");
+
+  // The hub refuses the secret whatever the session's mode.
+  const samMcp = await mcpClient(hub.url, team.sam.token);
+  const r = await call(samMcp, "send_message", { to: "@lea", kind: "note", body: `key ${key}` });
+  expect(JSON.parse(r.text).code).toBe("E_SECRET_BLOCKED");
+  await samMcp.close();
+
+  // A team that blocks claim conflicts keeps blocking them in bypass: only ask turns into a warning.
+  const lea = await mcpClient(hub.url, team.lea.token);
+  expect((await call(lea, "claim", { scope: ["src/**"], mode: "exclusive" })).isError).toBe(false);
+  await lea.close();
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", claims_enforcement: "block" });
+  const edit = (
+    await runHook(
+      "pre-edit",
+      {
+        session_id: "sam-pm",
+        cwd: repo,
+        permission_mode: "bypassPermissions",
+        tool_name: "Edit",
+        tool_input: { file_path: join(repo, "src/a.ts") },
+      },
+      sam,
+    )
+  ).out as Out;
+  expect(edit?.hookSpecificOutput?.permissionDecision).toBe("deny");
+});

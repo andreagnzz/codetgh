@@ -65,7 +65,7 @@ import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { Action, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
+import { Action, Bypass, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -554,6 +554,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             _("Kind"),
             _("Branch"),
             _("Push"),
+            _("Permissions"),
             _("Claude Code"),
             _("Last seen"),
             _("Trust"),
@@ -570,6 +571,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             r.agent.kind,
             r.agent.branch ?? "",
             r.agent.pushMode ?? "",
+            r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
             r.agent.clientVersion ?? "",
             <>
               <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />

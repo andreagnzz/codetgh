@@ -71,7 +71,7 @@ export function whoami(p: Principal, a: Agent | null): Whoami {
     team: { id: p.teamId, name: p.teamName },
     role: p.role,
     handle: p.handle,
-    agent: a ? { id: a.id, label: a.label } : null,
+    agent: a ? { id: a.id, label: a.label, permission_mode: a.permissionMode } : null,
     paused: p.paused,
     push_allowed_modes: ["hooks", ...(p.settings.push_allowed_modes ?? []).filter((m) => m === "rewake")],
   };
@@ -89,11 +89,12 @@ function forModel(ov: Awaited<ReturnType<typeof teamOverview>>) {
   ];
   return {
     ...rest,
-    agents: agents.map(({ id, handle, presence, push_mode, client_version, last_seen }) => ({
+    agents: agents.map(({ id, handle, presence, push_mode, permission_mode, client_version, last_seen }) => ({
       id,
       handle,
       presence,
       push_mode,
+      permission_mode,
       client_version,
       last_seen,
     })),
