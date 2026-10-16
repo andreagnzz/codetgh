@@ -4,8 +4,10 @@ import { mcp } from "@better-auth/mcp";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, jwt, magicLink } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
 import type { Config } from "./config.js";
 import type { Db } from "./db/index.js";
+import { user } from "./db/schema.js";
 import { acceptInvitations, hasPendingInvitation, invitationMatches } from "./domain/teams.js";
 import { newId } from "./ids.js";
 import type { Mailer } from "./mailer.js";
@@ -51,6 +53,9 @@ export function createAuth(
       magicLink({
         expiresIn: 600,
         sendMagicLink: async ({ email, url }) => {
+          // Same answer either way (no enumeration), but a link goes only to a member or an invited address.
+          const [known] = db ? await db.select({ id: user.id }).from(user).where(eq(user.email, email.toLowerCase())).limit(1) : [];
+          if (!known && !(db && (await hasPendingInvitation(db, email)))) return;
           await mailer?.send({
             to: email,
             subject: "Your CodeTgh sign-in link",
