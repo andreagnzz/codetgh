@@ -129,7 +129,7 @@ Dans le dépôt de l'équipe :
 codetgh project new <projet>
 ```
 
-La commande écrit `.claude/settings.json` (la place de marché du plugin) et un bloc dans `CLAUDE.md`, puis imprime le message à envoyer aux coéquipiers. Fais committer ces deux fichiers.
+Cette étape est facultative : la première session Claude Code d'un membre dans un dépôt crée son projet, au nom du dépôt (un administrateur peut couper ce réglage dans Réglages). La commande choisit le nom, écrit `.claude/settings.json` (la place de marché du plugin) et un bloc dans `CLAUDE.md`, puis imprime le message à envoyer aux coéquipiers. Fais committer ces deux fichiers.
 Invite ensuite chaque coéquipier avec `codetgh invite <e-mail>` : le lien est valable 7 jours.
 
 ### Vérification finale

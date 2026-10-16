@@ -55,6 +55,7 @@ export async function updateSettings(
     claimsEnforcement?: TeamSettings["claims_enforcement"];
     memoryAcceptBy?: TeamSettings["memory_accept_by"];
     memoryAcceptViaMcp?: boolean;
+    autoLinkProjects?: boolean;
     pushAllowedModes?: TeamSettings["push_allowed_modes"];
     slackChannel?: string;
     loopOrchestrator?: string;
@@ -86,6 +87,7 @@ export async function updateSettings(
     claims_enforcement: input.claimsEnforcement ?? p.settings.claims_enforcement,
     memory_accept_by: input.memoryAcceptBy ?? p.settings.memory_accept_by,
     memory_accept_via_mcp: input.memoryAcceptViaMcp ?? p.settings.memory_accept_via_mcp,
+    auto_link_projects: input.autoLinkProjects ?? p.settings.auto_link_projects,
     push_allowed_modes: input.pushAllowedModes ?? p.settings.push_allowed_modes,
     slack_channel: input.slackChannel,
     loop_orchestrator: input.loopOrchestrator,

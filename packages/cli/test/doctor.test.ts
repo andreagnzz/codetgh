@@ -126,3 +126,11 @@ it("rejects a wrong token with the way to get a new one", async () => {
   expect(out).toContain("→ run codetgh login --url <hub address> again and confirm in the browser");
   expect(code).toBe(1);
 });
+
+it("says when the plugin is installed but off, as an earlier codetgh setup left it", async () => {
+  fakeClaude("2.1.296", [{ ...installedPlugin(), enabled: false }]);
+  const { out, code } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("FAIL plugin codetgh@codetgh installed but off");
+  expect(out).toContain("→ claude plugin enable codetgh@codetgh --scope user");
+  expect(code).toBe(1);
+});

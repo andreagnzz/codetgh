@@ -1,4 +1,5 @@
 import type { AgentSessionInput } from "@codetgh/shared";
+import { CreateProjectInput } from "@codetgh/shared/rest";
 import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
@@ -31,18 +32,26 @@ async function personTrust(db: Db, p: Principal) {
   return q ? ("quarantined" as const) : ("trusted" as const);
 }
 
+// Members link a new repository by starting a session in it; never a guest, a quarantined person, or once an admin
+// turned auto_link_projects off.
+export async function canAutoLink(db: Db, p: Principal) {
+  return p.role !== "guest" && p.settings.auto_link_projects !== false && (await personTrust(db, p)) === "trusted";
+}
+
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
     let projectId: string | null = null;
-    // Only repositories someone linked (codetgh project new) are known: anything else stays off the hub entirely.
+    // An unknown repository stays off the hub, unless the session sends its name to link it and may do so.
     if (input.repo_fingerprint) {
       const [row] = await tx
         .select({ id: project.id })
         .from(project)
         .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)));
-      if (!row) return null;
-      projectId = row.id;
+      const link = CreateProjectInput.safeParse({ name: input.repo_name, repo_fingerprint: input.repo_fingerprint });
+      if (row) projectId = row.id;
+      else if (link.success && (await canAutoLink(tx, p))) projectId = (await createProject(tx, p, link.data)).id;
+      else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
     const values = {

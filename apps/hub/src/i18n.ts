@@ -28,8 +28,8 @@ const FR: Record<string, string> = {
   "Open claude.ai/code": "Ouvrir claude.ai/code",
   "Not in a project": "Hors projet",
   "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
-  "No project yet. A project appears when someone runs codetgh project new in a team repository.":
-    "Aucun projet pour l'instant. Un projet apparaît quand quelqu'un lance codetgh project new dans un dépôt de l'équipe.",
+  "No project yet. A project appears when a member opens Claude Code in a repository, or runs codetgh project new there.":
+    "Aucun projet pour l'instant. Un projet apparaît quand un membre ouvre Claude Code dans un dépôt, ou y lance codetgh project new.",
   Claims: "Réservations",
   Tasks: "Tâches",
   Memory: "Mémoire",
@@ -182,6 +182,8 @@ const FR: Record<string, string> = {
   "and above": "et plus",
   "Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)":
     "Autoriser l'acceptation de la mémoire depuis Claude Code (demande à chaque fois ; claude.ai et l'Agent SDK ne peuvent pas le garantir)",
+  "Link a new repository when a member starts a session in it (otherwise an admin runs codetgh project new)":
+    "Lier un nouveau dépôt quand un membre y ouvre une session (sinon un administrateur lance codetgh project new)",
   "Allow rewake push: an idle Claude Code session wakes up when a message arrives (each member also turns it on in the plugin)":
     "Autoriser le réveil : une session Claude Code inactive se réveille à l'arrivée d'un message (chaque membre l'active aussi dans le plugin)",
   "Slack channel id for alerts and blocking requests (e.g. C0123ABC)":

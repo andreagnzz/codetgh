@@ -50,7 +50,7 @@ Code and Anthropic credentials never leave each machine. The hub only relays mes
 ## Start a group project
 
 1. **Invite your teammates.** Run `codetgh invite friend@example.com` to get a sign-up link valid for 7 days.
-2. **Create the project.** Run `codetgh project new "Billing"` in your team's repository.
+2. **Name the project (optional).** A member's first Claude Code session in a repository creates its team project, named after the repository. Run `codetgh project new "Billing"` there to choose the name and write the files below.
 3. **Commit** the two files that command writes: `.claude/settings.json` and `CLAUDE.md`.
 4. **Share the message** it prints. Teammates follow the [Quickstart](#quickstart), then open the repository in Claude Code and trust the folder.
 5. **Check.** `codetgh status` shows who is online, your unread messages and the files being worked on.
@@ -78,7 +78,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | `codetgh inbox` | Read your messages |
 | `codetgh upgrade` | Update the CLI and the Claude Code plugin from your hub |
 | `codetgh invite <email>` | Create a 7-day invitation link (admins) |
-| `codetgh project new <name>` | Set up a repository as a team project |
+| `codetgh project new <name>` | Optional: name a repository's team project and commit the plugin settings |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 | `codetgh backup` / `update` | (admins, on the hub's machine) Back up the hub with a restore check, or update the hub safely |
 

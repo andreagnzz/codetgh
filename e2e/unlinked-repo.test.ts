@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { agent, project } from "../apps/hub/src/db/schema.js";
-import { type Hub, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { agent, membership, project } from "../apps/hub/src/db/schema.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { consolePost, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -17,20 +17,47 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const CLIENT = "git@github.com:client-under-nda/secret-app.git";
+const ASK_ADMIN =
+  "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).";
+const projectsOf = (origin: string) =>
+  hub.db
+    .select()
+    .from(project)
+    .where(eq(project.repoFingerprint, repoFingerprint(origin)));
+const line = (r: Awaited<ReturnType<typeof runHook>>) => String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
 
-it("creates no project and no agent for a repository nobody linked, and says so", async () => {
+it("links a member's new repository as a team project named after it", async () => {
+  const repo = gitRepo("git@github.com:acme/landing-page.git");
+  const r = await runHook("session-start", { session_id: "sam-auto", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
+  expect(line(r)).toMatch(/^CodeTgh ✓ landing-page · @sam/);
+  const [prj] = await projectsOf("git@github.com:acme/landing-page.git");
+  expect(prj?.name).toBe("landing-page");
+  const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-auto"));
+  expect(row?.projectId).toBe(prj?.id);
+
+  const lea = await mcpClient(hub.url, team.lea.token);
+  await startSession(hub.url, team.lea.token, "lea-auto", { repo: ACME_REPO });
+  expect((await call(lea, "team_overview", { scope: "team" })).text).toContain("landing-page");
+  const html = await (await fetch(`${hub.url}/console/projects`, { headers: { cookie: team.lea.cookie } })).text();
+  expect(html).toContain("landing-page");
+});
+
+it("does not link a repository for a guest, and says to ask an admin", async () => {
+  await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+  const repo = gitRepo(CLIENT);
+  const r = await runHook("session-start", { session_id: "malik-nda", source: "startup", cwd: repo }, hookEnv(hub.url, team.malik.token));
+  await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
+  expect(r.out).toEqual({ systemMessage: ASK_ADMIN });
+  expect(await projectsOf(CLIENT)).toHaveLength(0);
+  expect(await hub.db.select().from(agent).where(eq(agent.sessionId, "malik-nda"))).toHaveLength(0);
+});
+
+it("does not link a repository once an admin turns auto-linking off", async () => {
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "" });
   const repo = gitRepo(CLIENT);
   const r = await runHook("session-start", { session_id: "sam-nda", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
-  expect(r.out).toEqual({
-    systemMessage:
-      "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. An admin links it with: codetgh project new <name> (run in the repository).",
-  });
-  expect(
-    await hub.db
-      .select()
-      .from(project)
-      .where(eq(project.repoFingerprint, repoFingerprint(CLIENT))),
-  ).toHaveLength(0);
+  expect(r.out).toEqual({ systemMessage: ASK_ADMIN });
+  expect(await projectsOf(CLIENT)).toHaveLength(0);
   expect(await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-nda"))).toHaveLength(0);
 });
 

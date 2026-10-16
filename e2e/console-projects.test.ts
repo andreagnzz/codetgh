@@ -17,7 +17,7 @@ const page = async (cookie: string, lang = "en") =>
 describe("console: sessions by project", () => {
   it("says what to do when no repository is linked yet", async () => {
     await hub.db.delete(project);
-    expect(await page(team.sam.cookie)).toContain("No project yet. A project appears when someone runs codetgh project new");
+    expect(await page(team.sam.cookie)).toContain("No project yet. A project appears when a member opens Claude Code in a repository");
     // Linked again, as codetgh project new would, for the tests below.
     for (const repo of ["acme/webapp", "acme/billing"])
       await hub.db.insert(project).values({

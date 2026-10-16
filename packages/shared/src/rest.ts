@@ -29,6 +29,8 @@ export const SessionStarted = z.object({
   paused: z.boolean(),
   context: z.string(),
   linked: z.boolean(),
+  // Unlinked: true when this caller may link the repository by sending its repo_name.
+  can_link: z.boolean().optional(),
   status_line: z.string().optional(),
 });
 export const SessionEndInput = z.object({ session_id: z.string().min(1).max(200) });

@@ -146,7 +146,15 @@ async function sessionStart(input: Input) {
   // An install that kept a mode the plugin no longer offers (channel) runs as hooks.
   const pushMode = process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE === "rewake" ? "rewake" : "hooks";
   const fingerprint = origin ? repoFingerprint(origin) : undefined;
-  const register = (withBranch: boolean) =>
+  // The origin's last path segment: git@host:acme/web-app.git → web-app.
+  const repoName = origin
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split(/[/:]/)
+    .pop()
+    ?.replace(/[^\w.-]/g, "")
+    .slice(0, 100);
+  const register = (withBranch: boolean, name?: string) =>
     hub("/v1/agents/session", {
       method: "POST",
       timeoutMs: Math.min(2400, left(START_BUDGET_MS)),
@@ -156,6 +164,7 @@ async function sessionStart(input: Input) {
         source: input.source,
         repo_fingerprint: fingerprint,
         branch: withBranch && branch ? branch : undefined,
+        repo_name: name,
         push_mode: pushMode,
         permission_mode: input.permission_mode,
         client_version: version,
@@ -165,20 +174,27 @@ async function sessionStart(input: Input) {
     // In a repository, ask with the fingerprint alone first: one nobody linked never sends its branch or file paths.
     let res = await register(!fingerprint);
     if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
-    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean; status_line?: string };
+    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean; can_link?: boolean; status_line?: string };
+    // A member may link it: only then do the repository's name and branch leave the machine, in one more call.
+    const linking = body.linked === false && body.can_link === true && Boolean(repoName);
+    if (linking) {
+      res = await register(true, repoName);
+      if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
+      body = (await res.json()) as typeof body;
+    }
     if (body.linked === false) {
       if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
       // Said once at start so the person knows CodeTgh is off on purpose, not broken.
       return input.source === "startup" || input.source === "resume"
         ? {
             systemMessage:
-              "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. An admin links it with: codetgh project new <name> (run in the repository).",
+              "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).",
           }
         : null;
     }
     if (input.session_id && input.permission_mode)
       saveState(input.session_id, { ...loadState(input.session_id), mode: input.permission_mode });
-    if (fingerprint && branch && !body.paused) {
+    if (fingerprint && branch && !body.paused && !linking) {
       // Out of time for the second answer: the first one still holds.
       res = await register(true).catch(() => res);
       if (res.ok) body = (await res.json()) as typeof body;

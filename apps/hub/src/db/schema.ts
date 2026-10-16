@@ -13,6 +13,8 @@ export type TeamSettings = {
   claims_enforcement?: "off" | "warn" | "ask" | "block";
   memory_accept_by?: "member" | "admin" | "owner";
   memory_accept_via_mcp?: boolean;
+  // A member's session in a repository no project has creates that project (on unless false).
+  auto_link_projects?: boolean;
   push_allowed_modes?: Array<"hooks" | "rewake">;
   // The team's GitHub webhook: its URL id and the nonce its secret is derived from (the secret itself is never stored).
   github_hook?: { id: string; nonce: string };

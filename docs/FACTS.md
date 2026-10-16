@@ -284,7 +284,7 @@ Measured with a throwaway `CLAUDE_CONFIG_DIR`:
 - In a folder whose `.claude/settings.json` has `"enabledPlugins": {"codetgh@codetgh": true}`, `claude plugin list --json` shows the plugin `enabled: true`.
 - In any other folder it shows `enabled: false`.
 
-So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relies on this: it installs the plugin off, and `codetgh project new` turns it on in each team repository. Sessions in other repositories never run CodeTgh's hooks.
+So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relied on this until 2026-10-16: it installed the plugin off, and `codetgh project new` turned it on in each team repository. It now leaves the plugin on at user scope (in a repository no project has, the hook sends only the fingerprint), so `codetgh doctor` reports a plugin left off by an earlier setup, with `claude plugin enable codetgh@codetgh --scope user`.
 
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
 
@@ -310,7 +310,7 @@ From [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-ref
 
 - `claude plugin install` documents no stdin or file channel for option values. `claude plugin configure <name@marketplace> --values-stdin` (2.1.285) reads a JSON object of single-line strings from stdin; options left out keep their saved values.
 
-`codetgh setup` therefore runs, on 2.1.292 or later, `claude plugin install codetgh --marketplace <hub>/plugin/marketplace.json --scope user -y --config codetgh_url=<hub> --config push_mode=<mode>`, then `claude plugin disable codetgh@codetgh --scope user`, then `claude plugin configure codetgh@codetgh --values-stdin` with `{"codetgh_token": …}`. The token never goes through `--config`: process arguments are readable by every user of a shared machine (`ps`, `/proc`). On older versions setup keeps marketplace add, install, and the same configure step with all three options. Tested with a fake `claude` (`packages/cli/test/setup.test.ts`).
+`codetgh setup` therefore runs, on 2.1.292 or later, `claude plugin install codetgh --marketplace <hub>/plugin/marketplace.json --scope user -y --config codetgh_url=<hub> --config push_mode=<mode>`, then `claude plugin configure codetgh@codetgh --values-stdin` with `{"codetgh_token": …}`. The token never goes through `--config`: process arguments are readable by every user of a shared machine (`ps`, `/proc`). On older versions setup keeps marketplace add, install, and the same configure step with all three options. Tested with a fake `claude` (`packages/cli/test/setup.test.ts`).
 
 ### MCP authorization 2026-07-28 and the `codetgh` scope (2026-10-16, Claude Code 2.1.301, Linux)
 
