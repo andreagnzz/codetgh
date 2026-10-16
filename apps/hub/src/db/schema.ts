@@ -17,6 +17,8 @@ export type TeamSettings = {
   // The team's GitHub webhook: its URL id and the nonce its secret is derived from (the secret itself is never stored).
   github_hook?: { id: string; nonce: string };
   slack_channel?: string;
+  // Handle of the member whose agent judges muted agent loops (and may reopen a thread once).
+  loop_orchestrator?: string;
 };
 
 export const team = pgTable("team", {
@@ -248,7 +250,7 @@ export const alert = pgTable(
     teamId: text("team_id")
       .notNull()
       .references(() => team.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["instruction_like", "secret_blocked", "loop_guard", "audit_tamper"] }).notNull(),
+    kind: text("kind", { enum: ["instruction_like", "secret_blocked", "loop_guard", "loop_needs_human", "audit_tamper"] }).notNull(),
     status: text("status", { enum: ["open", "dismissed", "false_positive", "fingerprint_allowed"] })
       .notNull()
       .default("open"),

@@ -12,18 +12,18 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-it("mutes a thread after 6 agent hops and lets a human reopen it (scenario 8)", async () => {
+it("mutes a thread after 5 agent messages in a row and lets a human reopen it (scenario 8)", async () => {
   const sam = await mcpClient(hub.url, team.sam.token);
   const lea = await mcpClient(hub.url, team.lea.token);
   let last = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "question", body: "Format des dates ?" })).text);
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 4; i++) {
     const who = i % 2 ? lea : sam;
     const r = await call(who, "send_message", { kind: "answer", reply_to: last.id, body: `réponse ${i}` });
     expect(r.isError).toBe(false);
     last = JSON.parse(r.text);
     expect(last.hop).toBe(i);
   }
-  // Message 7 (hop 6) was Sam's; Léa's turn would be hop 7.
+  // Message 5 (hop 4) was Sam's; Léa's sixth agent message in a row is refused.
   const blocked = await call(lea, "send_message", { kind: "answer", reply_to: last.id, body: "encore" });
   expect(JSON.parse(blocked.text).code).toBe("E_LOOP_GUARD");
   const again = await call(lea, "send_message", { kind: "note", reply_to: last.id, body: "et encore" });

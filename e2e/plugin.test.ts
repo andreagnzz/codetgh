@@ -26,7 +26,8 @@ it("keeps skill descriptions short and user commands out of the model's reach", 
     const fm = frontmatter(`${root}skills/${name}/SKILL.md`);
     expect(fm.name).toBe(name);
     expect(String(fm.description).length).toBeLessThanOrEqual(200);
-    if (name !== "codetgh") expect(fm["disable-model-invocation"]).toBe("true");
+    // The orchestrator's model loads its role on its own; the hub refuses a verdict from anyone else.
+    if (name !== "codetgh" && name !== "orchestrate") expect(fm["disable-model-invocation"]).toBe("true");
   }
 });
 

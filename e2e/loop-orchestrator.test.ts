@@ -1,0 +1,109 @@
+import { and, eq } from "drizzle-orm";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { alert, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { consolePost } from "./helpers.js";
+
+let hub: Hub;
+let team: Awaited<ReturnType<Hub["seed"]>>;
+beforeAll(async () => {
+  hub = await startHub();
+  team = await hub.seed();
+});
+afterAll(() => hub.stop());
+
+const code = (r: { isError: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);
+
+type Member = (typeof team)["sam"];
+// Two members' agents reply to each other until the hub mutes the thread; returns the last message.
+// Each scenario uses its own pair: the 12-per-10-minutes pair limit stays a backstop across threads.
+async function loop(a: Member, b: Member, start?: { id: string }) {
+  const first = await mcpClient(hub.url, a.token);
+  const second = await mcpClient(hub.url, b.token);
+  let last =
+    start ?? JSON.parse((await call(first, "send_message", { to: `@${b.handle}`, kind: "question", body: "Dates in UTC or local?" })).text);
+  for (let i = start ? 0 : 1; i < 5; i++) {
+    const r = await call(i % 2 ? second : first, "send_message", {
+      to: i % 2 ? `@${a.handle}` : `@${b.handle}`,
+      kind: "answer",
+      reply_to: last.id,
+      body: `reply ${i}`,
+    });
+    expect(r.isError, `message ${i + 1}: ${r.text}`).toBe(false);
+    last = JSON.parse(r.text);
+  }
+  // Five agent messages in a row (a wrote the fifth): b's sixth is refused and the thread muted.
+  expect(code(await call(second, "send_message", { to: `@${a.handle}`, kind: "answer", reply_to: last.id, body: "again" }))).toBe(
+    "E_LOOP_GUARD",
+  );
+  return last as { id: string; thread: string };
+}
+
+it("without an orchestrator, mutes after five agent messages and waits for a human", async () => {
+  const last = await loop(team.sam, team.malik);
+  const [t] = await hub.db.select().from(thread).where(eq(thread.id, last.thread));
+  expect(t?.mutedReason).toBe("loop_guard");
+});
+
+it("lets the team's orchestrator judge a loop, reopen it once, and leaves the second loop to a human", async () => {
+  expect(
+    (
+      await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+        retention_days: "90",
+        secret_patterns: "",
+        loop_orchestrator: "malik",
+      })
+    ).status,
+  ).toBeLessThan(400);
+  const [settings] = await hub.db.select({ s: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
+  expect(settings?.s.loop_orchestrator).toBe("malik");
+
+  const last = await loop(team.sam, team.lea);
+  const malik = await mcpClient(hub.url, team.malik.token);
+  // The orchestrator now has the loop in its inbox and can read the whole thread.
+  const inbox = (await call(malik, "inbox_read", { thread: last.thread })).text;
+  expect(inbox).toContain("Dates in UTC or local?");
+  expect(inbox).toContain("reply 4");
+
+  // Nobody else may post a verdict.
+  const lea = await mcpClient(hub.url, team.lea.token);
+  expect(code(await call(lea, "send_message", { kind: "status", reply_to: last.id, body: "done", loop_verdict: { reopen: true } }))).toBe(
+    "E_FORBIDDEN",
+  );
+
+  const verdict = await call(malik, "send_message", {
+    kind: "status",
+    reply_to: last.id,
+    body: "Use UTC everywhere. Sam updates the API, Léa the UI. Stop debating.",
+    loop_verdict: { reopen: true },
+  });
+  expect(verdict.isError).toBe(false);
+  // Both looping agents receive the verdict, and the thread is open again.
+  expect((await call(lea, "inbox_read", { thread: last.thread })).text).toContain("Use UTC everywhere");
+  const sam = await mcpClient(hub.url, team.sam.token);
+  expect((await call(sam, "inbox_read", { thread: last.thread })).text).toContain("Use UTC everywhere");
+  const [open] = await hub.db.select().from(thread).where(eq(thread.id, last.thread));
+  expect(open?.mutedAt).toBeNull();
+
+  // A second loop on the same thread: the orchestrator may judge it, but not reopen it.
+  const again = await loop(team.sam, team.lea, JSON.parse(verdict.text));
+  const second = await call(malik, "send_message", {
+    kind: "status",
+    reply_to: again.id,
+    body: "Still stuck.",
+    loop_verdict: { reopen: true },
+  });
+  expect(second.isError, second.text).toBe(false);
+  const [muted] = await hub.db.select().from(thread).where(eq(thread.id, last.thread));
+  expect(muted?.mutedAt).not.toBeNull();
+  expect(
+    await hub.db
+      .select()
+      .from(alert)
+      .where(and(eq(alert.threadId, last.thread), eq(alert.kind, "loop_needs_human"))),
+  ).toHaveLength(1);
+  // One verdict per muting.
+  expect(
+    code(await call(malik, "send_message", { kind: "status", reply_to: again.id, body: "Again.", loop_verdict: { reopen: false } })),
+  ).toBe("E_INVALID");
+});

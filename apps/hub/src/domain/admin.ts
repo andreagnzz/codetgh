@@ -58,9 +58,17 @@ export async function updateSettings(
     memoryAcceptViaMcp?: boolean;
     pushAllowedModes?: TeamSettings["push_allowed_modes"];
     slackChannel?: string;
+    loopOrchestrator?: string;
   },
 ) {
   requireAdmin(p);
+  if (input.loopOrchestrator) {
+    const [m] = await db
+      .select({ role: membership.role })
+      .from(membership)
+      .where(and(eq(membership.teamId, p.teamId), eq(membership.handle, input.loopOrchestrator), eq(membership.status, "active")));
+    if (!m || m.role === "guest") throw new HubError("E_INVALID", `no active member @${input.loopOrchestrator} to orchestrate loops`);
+  }
   for (const pattern of input.secretPatterns) {
     try {
       new RegExp(pattern);
@@ -82,6 +90,7 @@ export async function updateSettings(
     memory_accept_via_mcp: input.memoryAcceptViaMcp ?? p.settings.memory_accept_via_mcp,
     push_allowed_modes: input.pushAllowedModes ?? p.settings.push_allowed_modes,
     slack_channel: input.slackChannel,
+    loop_orchestrator: input.loopOrchestrator,
   };
   await db.transaction(async (tx) => {
     // The Slack bot is shared by the hub: one team's admin must not aim its posts at another team's channel.
