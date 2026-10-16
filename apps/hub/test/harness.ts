@@ -27,7 +27,7 @@ const SECRET = randomBytes(32).toString("base64");
 export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; config?: Partial<Config> } = {}) {
   let app: ReturnType<typeof createApp> | undefined;
   const server = await new Promise<Server>((resolve) => {
-    const s = serve({ port: 0, fetch: (req) => (app ? app.fetch(req) : new Response("starting", { status: 503 })) }, () =>
+    const s = serve({ port: 0, fetch: (req, env) => (app ? app.fetch(req, env) : new Response("starting", { status: 503 })) }, () =>
       resolve(s as Server),
     );
   });

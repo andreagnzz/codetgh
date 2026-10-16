@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
+import { UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
@@ -44,6 +45,7 @@ import { listAgents, presence } from "../domain/agents.js";
 import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
+import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
@@ -77,6 +79,7 @@ type Deps = {
   mailer: Mailer;
   auditKey: AuditKey;
   hold: (key: string, max: number) => () => void;
+  device: DeviceAuth;
 };
 
 const FRESH_AUTH_MS = 10 * 60_000;
@@ -88,7 +91,7 @@ const ASSETS: Record<string, [string, string]> = {
   "sse.js": [readFileSync(require.resolve("htmx-ext-sse/dist/sse.min.js"), "utf8"), "text/javascript"],
 };
 
-export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, hold }: Deps) {
+export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, hold, device }: Deps) {
   const app = new Hono<Env>();
   const csrfFor = (sessionId: string) => createHmac("sha256", config.secret).update(`csrf:${sessionId}`).digest("base64url");
   const csp = secureHeaders({
@@ -122,7 +125,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.use(async (c, next) => {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const principal = session ? await principalForUser(db, session.user.id, "console").catch(() => null) : null;
-    if (!session || !principal) return c.redirect("/login");
+    // The device page is opened from a terminal: back to it after signing in.
+    if (!session || !principal) return c.redirect(c.req.path === "/console/device" ? "/login?next=/console/device" : "/login");
     c.set("principal", principal);
     c.set("csrf", csrfFor(session.session.id));
     c.set("sessionCreatedAt", new Date(session.session.createdAt));
@@ -813,6 +817,71 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <pre>{`codetgh login --url ${config.publicUrl}\nclaude plugin install codetgh@<marketplace>   # hub URL: ${config.publicUrl}, token: the value above`}</pre>
       </Result>,
     );
+  });
+
+  // Browser sign-in: the person types the code their terminal shows, checks the machine, then approves or denies.
+  consoleApp.get("/device", (c) => {
+    const _ = tr(c);
+    return page(
+      c,
+      "Sign in a terminal",
+      <>
+        <form hx-post="/console/device" hx-target="#device">
+          <label>
+            {_("Code shown in your terminal")} <input name="user_code" required maxlength={20} autocomplete="off" />
+          </label>
+          <button type="submit">{_("Continue")}</button>
+        </form>
+        <div id="device" />
+      </>,
+    );
+  });
+  const deviceInput = async (c: Context<Env>) => {
+    const parsed = UserCodeForm.safeParse(await form(c));
+    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Type the 8-letter code your terminal shows."));
+    return { code: parsed.data.user_code, keys: { user: c.get("principal").user.id, ip: clientIp(c, config.trustedProxy) } };
+  };
+  consoleApp.post("/device", async (c) => {
+    const _ = tr(c);
+    const { code, keys } = await deviceInput(c);
+    const entry = device.find(code, keys);
+    const vals = JSON.stringify({ user_code: code });
+    return c.html(
+      <Result>
+        <p>
+          {_("Machine")}: <strong>{entry.label}</strong>
+        </p>
+        <p>{_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}</p>
+        <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
+          {_("Approve")}
+        </button>{" "}
+        <button type="button" class="quiet" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+          {_("Deny")}
+        </button>
+      </Result>,
+    );
+  });
+  consoleApp.post("/device/approve", async (c) => {
+    const p = c.get("principal");
+    const { code, keys } = await deviceInput(c);
+    const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
+    await db.transaction((tx) =>
+      appendAudit(tx, {
+        teamId: p.teamId,
+        actorType: "user",
+        actorUserId: p.user.id,
+        via: "console",
+        action: "device.approved",
+        subjectId: entry.id,
+        data: { label: entry.label },
+      }),
+    );
+    return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
+  });
+  consoleApp.post("/device/deny", async (c) => {
+    const { code, keys } = await deviceInput(c);
+    device.decide(code, keys, { deny: true });
+    return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
   });
 
   consoleApp.post("/tokens/:id/revoke", async (c) => {
