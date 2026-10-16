@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
+import { approveDevice } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -29,8 +30,7 @@ function fakeKeyring(): Keyring & { store: Map<string, string> } {
   };
 }
 
-async function run(args: string[], keyring: Keyring, stdin = "") {
-  const out: string[] = [];
+async function run(args: string[], keyring: Keyring, stdin = "", out: string[] = []) {
   const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([stdin]) };
   process.exitCode = 0;
   await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", ...args]);
@@ -44,6 +44,21 @@ it("logs in with a token from stdin and keeps it in the keychain only", async ()
   const { out } = await run(["login", "--url", hub.url, "--token-stdin"], keyring, team.sam.token);
   expect(out).toContain("Logged in as Sam (@sam, member) in Acme web.");
   expect(keyring.store.get(hub.url)).toBe(team.sam.token);
+});
+
+it("logs in through the browser: prints a link and a code, then stores the token once approved", async () => {
+  const keyring = fakeKeyring();
+  const out: string[] = [];
+  const [{ out: text }, approved] = await Promise.all([
+    run(["login", "--url", hub.url], keyring, "", out),
+    approveDevice(hub.url, team.sam.cookie, out),
+  ]);
+  expect(approved.status).toBe(200);
+  expect(text).toContain(`${hub.url}/console/device`);
+  expect(text).toContain("Logged in as Sam (@sam, member) in Acme web.");
+  const token = keyring.store.get(hub.url) ?? "";
+  expect(token).toMatch(/^ctgh_/);
+  expect(text).not.toContain(token);
 });
 
 it("refuses a wrong token", async () => {
