@@ -85,6 +85,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
         project: free(r.project),
         branch: free(r.agent.branch),
         push_mode: r.agent.pushMode,
+        permission_mode: r.agent.permissionMode,
         client_version: r.agent.clientVersion,
         presence: presence(r.agent),
         status: r.agent.statusExpiresAt && r.agent.statusExpiresAt > new Date() ? free(r.agent.statusText) : "",
@@ -186,11 +187,15 @@ export async function statusLine(db: Db, p: Principal, me: Agent) {
     `CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`,
     `@${p.handle}`,
     `push ${mode}`,
+    ...(me.permissionMode === "bypassPermissions" ? ["bypass"] : []),
     ...(me.clientVersion ? [`Claude Code ${me.clientVersion}`] : []),
     ...(online === null ? [] : [`${online} online`]),
     `${unread} unread`,
   ];
   const warnings = [
+    ...(me.permissionMode === "bypassPermissions"
+      ? ["bypass: permission prompts are off; CodeTgh still blocks secrets and turns claim asks into warnings"]
+      : []),
     ...(mode === "rewake" && !(p.settings.push_allowed_modes ?? []).includes("rewake")
       ? ["rewake is off for this team: messages arrive between tool calls and at your prompts (an admin can allow it in Settings)"]
       : []),

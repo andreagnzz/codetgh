@@ -6,6 +6,7 @@ import {
   ERROR_CODES,
   InboxReadInput,
   MESSAGE_KINDS,
+  PermissionMode,
   PRIORITIES,
   PreEditInput,
   SendMessageInput,
@@ -14,6 +15,12 @@ import {
 
 // The /v1 REST API in one table: the hub validates with these schemas, /v1/openapi.json and @codetgh/sdk are built from it.
 const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
+// permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes.
+export const PromptQuery = z.object({
+  session_id: z.string().max(200),
+  wait_s: z.coerce.number().int().min(0).max(55).optional(),
+  permission_mode: PermissionMode.optional(),
+});
 
 export const ErrorBody = z.object({ code: z.enum(ERROR_CODES), message: z.string() });
 
@@ -163,7 +170,7 @@ export const REST_ROUTES = {
     method: "GET",
     path: "/v1/inbox/prompt",
     summary: "Unread envelopes for the prompt hook; wait_s holds the request (rewake push)",
-    query: z.object({ session_id: z.string().max(200), wait_s: z.coerce.number().int().min(0).max(55).optional() }),
+    query: PromptQuery,
     output: PromptOutput,
     empty: [204, 304],
   },

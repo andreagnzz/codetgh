@@ -267,6 +267,16 @@ Not measured: an interactive or Remote Control session in bypass, where `ask` mi
 
 CodeTgh therefore turns an `ask` into a warning when the hook input says `bypassPermissions` (`packages/cli/src/hook.ts`, `preEdit`). Teams running autonomous sessions should set claims enforcement to `warn`.
 
+### Hook `deny` and the `permission_mode` field under bypassPermissions (2026-10-16, docs read, Claude Code 2.1.301)
+
+From [Hooks](https://code.claude.com/docs/en/hooks), [Permissions](https://code.claude.com/docs/en/permissions) and [Permission modes](https://code.claude.com/docs/en/permission-modes):
+- **`deny`.** PreToolUse "`"deny"` prevents the tool call", and "When multiple PreToolUse hooks return different decisions, precedence is `deny` > `defer` > `ask` > `allow`." No page exempts `bypassPermissions` from a hook's `deny`; the mode page says "Deny rules block in every mode, including `bypassPermissions`" (rules, not hooks). Together with the measurement above (a hook `deny` stops the write under `--dangerously-skip-permissions`), CodeTgh relies on a hook `deny` holding in bypass.
+- **What bypass is for.** "Only use this mode in isolated environments like containers, VMs, or dev containers without internet access, where Claude Code cannot damage your host system", and "`bypassPermissions` offers no protection against prompt injection or unintended actions."
+- **Mode changes.** "press `Shift+Tab` to cycle permission modes"; `bypassPermissions` is in the cycle only when the session started with it enabled.
+- **`permission_mode` in hook input.** "Not all events receive this field." The UserPromptSubmit and PreToolUse examples carry it; the SessionStart input table and example do not.
+
+CodeTgh therefore sends `permission_mode` at SessionStart when the input has it, and the prompt hook reports it on its existing `/v1/inbox/prompt` call whenever it differs from the last one sent. Not measured: whether SessionStart input carries the field in practice.
+
 ### A plugin off at user scope, on in one project (2026-10-14, Claude Code 2.1.296, Linux)
 
 Measured with a throwaway `CLAUDE_CONFIG_DIR`:

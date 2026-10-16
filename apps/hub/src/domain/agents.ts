@@ -55,6 +55,8 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       endedAt: null,
       removedAt: null,
       pushMode: input.push_mode ?? null,
+      // SessionStart input may not carry the mode (resume, compact): keep the last one reported.
+      ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
     };
@@ -139,6 +141,11 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
         subjectId: row.id,
       });
   });
+}
+
+// shortcut: not audited, like presence; the prompt hook only sends it when it changed.
+export async function setPermissionMode(db: Db, agentId: string, mode: string) {
+  await db.update(agent).set({ permissionMode: mode }).where(eq(agent.id, agentId));
 }
 
 export async function agentBySession(db: Db, p: Principal, sessionId: string) {

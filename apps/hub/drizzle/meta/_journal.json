@@ -99,6 +99,13 @@
       "when": 1791997176080,
       "tag": "0013_agent_session_status",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792144912389,
+      "tag": "0014_agent_permission_mode",
+      "breakpoints": true
     }
   ]
 }
