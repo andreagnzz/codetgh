@@ -22,13 +22,14 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const deliver = (event: string, payload: unknown, signature?: string, url = hookUrl) => {
+const deliver = (event: string, payload: unknown, signature?: string, url = hookUrl, delivery?: string) => {
   const body = JSON.stringify(payload);
   return fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-github-event": event,
+      ...(delivery && { "x-github-delivery": delivery }),
       ...(signature !== "none" && {
         "x-hub-signature-256": signature ?? `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`,
       }),
@@ -84,7 +85,9 @@ describe("GitHub bridge (phase 3)", () => {
   });
 
   it("reports a failed check suite as an alert, and many events never mute the thread", async () => {
-    for (let i = 0; i < 8; i++) expect((await deliver("pull_request", pr("synchronize"))).status).toBe(202);
+    // Within the bridge agent's burst of 10, so the replay test below still relays.
+    for (let i = 0; i < 5; i++)
+      expect((await deliver("pull_request", pr("synchronize", { head: { ref: "feat/pages", sha: `abcdef${i}` } }))).status).toBe(202);
     const failed = {
       action: "completed",
       repository: { full_name: "acme/webapp", html_url: "https://github.com/acme/webapp" },
@@ -98,6 +101,14 @@ describe("GitHub bridge (phase 3)", () => {
       .from(thread)
       .where(eq(thread.id, alerts[0]?.threadId ?? ""));
     expect(t?.mutedAt).toBeNull();
+  });
+
+  it("stores a replayed signed body once, whatever delivery id comes with it", async () => {
+    const before = (await hub.db.select().from(message)).length;
+    const body = pr("closed", { merged: true });
+    expect((await deliver("pull_request", body, undefined, hookUrl, "delivery-1")).status).toBe(202);
+    expect((await deliver("pull_request", body, undefined, hookUrl, "delivery-2")).status).toBe(202);
+    expect((await hub.db.select().from(message)).length).toBe(before + 1);
   });
 
   it("ignores repositories it does not know", async () => {

@@ -65,7 +65,11 @@ export function startSlackRelay(deps: MessagingDeps, config: Config, log: Logger
       const channel = await channelOf(e.teamId);
       if (!channel) return;
       const m = row.message;
-      const what = row.kind === "team" && !m.encrypted ? escapeSlack(m.body.slice(0, 1500)) : "(direct message: open it in the console)";
+      // A reply addressed to one person stays theirs, as in the console and over MCP, even inside a team thread.
+      const what =
+        row.kind === "team" && m.to.includes("@team") && !m.encrypted
+          ? escapeSlack(m.body.slice(0, 1500))
+          : "(direct message: open it in the console)";
       const sent = await call("chat.postMessage", {
         channel,
         text: `*Blocking request* from ${escapeSlack(row.name)} to ${escapeSlack(m.to.join(", "))}: ${what}\n${config.publicUrl}/console/threads/${m.threadId}\nReply in this Slack thread to answer (link your account first: /codetgh-link).`,

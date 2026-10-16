@@ -480,12 +480,23 @@ export function createApp({
       }
     })();
     if (payload)
-      await handleGithubEvent(deps, logger, hook.teamId, c.req.header("x-github-event") ?? "", payload, c.req.header("x-github-delivery"));
+      await handleGithubEvent(
+        deps,
+        logger,
+        hook.teamId,
+        c.req.header("x-github-event") ?? "",
+        payload,
+        // The signature covers the body, not X-GitHub-Delivery: a replayed body keeps its key whatever id comes with it.
+        // Hex: the secret scanner reads a base64 digest as a secret.
+        createHash("sha256").update(body).digest("hex"),
+      );
     return c.body(null, 202);
   });
 
   // Slack app: events (thread replies) and the /codetgh-link command, both signed by Slack.
   const stopSlack = startSlackRelay(deps, config, logger);
+  // shortcut: in memory and single process, like the rate limiter; move to Postgres with replicas.
+  const slackEventsSeen = new Set<string>();
   const slackBody = async (c: Context) => {
     const body = await c.req.text();
     const ok =
@@ -500,13 +511,24 @@ export function createApp({
     if (c.req.header("x-slack-retry-num")) return c.body(null, 200);
     const payload = (() => {
       try {
-        return JSON.parse(body) as { type?: string; challenge?: string; event?: Parameters<typeof handleSlackEvent>[2] };
+        return JSON.parse(body) as {
+          type?: string;
+          challenge?: string;
+          event_id?: string;
+          event?: Parameters<typeof handleSlackEvent>[2];
+        };
       } catch {
         return null;
       }
     })();
     if (!payload) return c.json({ code: "E_INVALID", message: "body is not JSON" }, 400);
     if (payload.type === "url_verification") return c.json({ challenge: payload.challenge });
+    // A signed body replayed within Slack's 5-minute window carries the same event_id: relay it once.
+    if (payload.event_id) {
+      if (slackEventsSeen.has(payload.event_id)) return c.body(null, 200);
+      slackEventsSeen.add(payload.event_id);
+      if (slackEventsSeen.size > 10_000) slackEventsSeen.delete(slackEventsSeen.values().next().value as string);
+    }
     // Slack wants an answer within 3 s: acknowledge, then relay.
     if (payload.type === "event_callback" && payload.event)
       void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.message }, "slack event not relayed"));
@@ -536,8 +558,12 @@ export function createApp({
       const token = bearerToken(c.req.header("authorization"));
       const p = token ? await principalForToken(db, token, "a2a") : null;
       if (!p) throw new HubError("E_UNAUTHORIZED", "A2A token required");
+      const agent = await a2aAgentForToken(db, p);
+      // Every call counts, not only sends: task reads and failed calls cost the hub too.
+      const wait = limiter.take(`a2a:${agent.id}`);
+      if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many A2A requests: wait and retry", wait);
       const body = await c.req.json().catch(() => null);
-      return c.json(await a2a.handle(body, { p, agent: await a2aAgentForToken(db, p) }, c.req.header("a2a-version")));
+      return c.json(await a2a.handle(body, { p, agent }, c.req.header("a2a-version")));
     } catch (e) {
       return errorResponse(c, e);
     }

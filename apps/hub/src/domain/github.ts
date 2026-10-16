@@ -91,7 +91,7 @@ function describe(event: string, e: Payload) {
   return null;
 }
 
-export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId: string, event: string, e: Payload, delivery?: string) {
+export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId: string, event: string, e: Payload, bodyHash: string) {
   const { db } = deps;
   const what = describe(event, e);
   if (!what || !e.repository?.full_name) return;
@@ -106,8 +106,8 @@ export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId
     const sent = await sendMessage(
       deps,
       { p: author.p, agent: author.agent, via: "rest" },
-      // A replayed delivery (same GitHub delivery id) is stored once.
-      { ...what, to: existing ? `thread:${existing}` : "@team", idempotency_key: delivery?.slice(0, 64) },
+      // A replayed delivery (same signed body) is stored once.
+      { ...what, to: existing ? `thread:${existing}` : "@team", idempotency_key: bodyHash },
     );
     if (!existing) await db.update(thread).set({ projectId: p.id }).where(eq(thread.id, sent.threadId));
   } catch (err) {
