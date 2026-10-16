@@ -69,7 +69,7 @@ export const AckOutput = z.object({ acked: z.number() });
 export const PublishKeyInput = z.object({ public_key: z.string().min(40).max(200) });
 export const KeysQuery = z.object({ handles: z.string().max(500) });
 export const KeysOutput = z.object({ keys: z.array(z.object({ handle: z.string(), public_key: z.string().nullable() })) });
-export const ThreadKeyOutput = z.object({ thread: z.string(), wrapped: z.string() });
+export const ThreadKeyOutput = z.object({ thread: z.string(), wrapped: z.string(), ciphertext: z.string() });
 export const CreateProjectInput = z.object({
   name: z.string().trim().min(1).max(100),
   repo_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
@@ -187,7 +187,7 @@ export const REST_ROUTES = {
   threadKey: {
     method: "GET",
     path: "/v1/messages/{message_id}/thread-key",
-    summary: "The thread of a message and your wrapped key for it, to reply in an encrypted thread",
+    summary: "The thread of a message, your wrapped key for it and the message's ciphertext, to reply in an encrypted thread",
     params: z.object({ message_id: z.string().regex(/^msg_[0-9A-Z]{26}$/) }),
     output: ThreadKeyOutput,
   },

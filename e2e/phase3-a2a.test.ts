@@ -83,6 +83,14 @@ describe("A2A (phase 3)", () => {
     expect((await consolePost(hub.url, team.lea.cookie, `/console/agents/${a?.id}/trusted`)).status).toBe(403);
   });
 
+  it("limits each external agent's requests", async () => {
+    const post = () => fetch(`${hub.url}/a2a`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: "{}" });
+    let res = await post();
+    for (let i = 0; i < 12 && res.status !== 429; i++) res = await post();
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
   it("only lets admins add external agents", async () => {
     expect((await consolePost(hub.url, team.sam.cookie, "/console/agents/a2a", { name: "x" })).status).toBe(403);
   });

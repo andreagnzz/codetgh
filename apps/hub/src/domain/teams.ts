@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { ROLES, type Role } from "@codetgh/shared";
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, invitation, membership, oauthAccessToken, oauthRefreshToken, personalToken, session, team, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { requireAdmin } from "./admin.js";
+import { RESERVED_HANDLE, requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -126,8 +126,6 @@ export async function revokeInvitations(db: Db, p: Principal, by: { id: string }
   });
 }
 
-// Handles are addresses (@handle): lowercase letters, digits and dashes; bridge- and a2a- belong to the hub's own members.
-const RESERVED_HANDLE = /^(bridge|a2a)-/;
 export async function setMemberHandle(db: Db, p: Principal, membershipId: string, handle: string) {
   requireAdmin(p);
   if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(handle))
@@ -219,11 +217,23 @@ export async function findInvitation(db: Db, token: string) {
   return row ?? null;
 }
 
-// Turns every pending invitation for this email into a membership with a unique handle.
-export async function acceptInvitations(db: Db, user: { id: string; name: string; email: string }) {
-  const invites = await db.select().from(invitation).where(pending(user.email));
-  for (const inv of invites) {
+// Turns one pending invitation into a membership with a unique handle: the one whose link was used, else the oldest.
+// One team per person: another team inviting the same email must not add a second one.
+export async function acceptInvitations(db: Db, user: { id: string; name: string; email: string }, token?: string | null) {
+  const [inv] = await db
+    .select()
+    .from(invitation)
+    .where(token ? and(eq(invitation.tokenHash, hashToken(token)), pending(user.email)) : pending(user.email))
+    .orderBy(asc(invitation.createdAt))
+    .limit(1);
+  if (inv)
     await db.transaction(async (tx) => {
+      const [active] = await tx
+        .select({ id: membership.id })
+        .from(membership)
+        .where(and(eq(membership.userId, user.id), eq(membership.status, "active")))
+        .limit(1);
+      if (active) return;
       const taken = new Set(
         (await tx.select({ h: membership.handle }).from(membership).where(eq(membership.teamId, inv.teamId))).map((r) => r.h),
       );
@@ -244,7 +254,6 @@ export async function acceptInvitations(db: Db, user: { id: string; name: string
         data: { role: inv.role },
       });
     });
-  }
 }
 
 // Cuts every way in at once: tokens, OAuth grants, console sessions, agents. The principal check runs on every request.

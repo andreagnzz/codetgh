@@ -10,8 +10,9 @@ const zip = zipSync({ "codetgh/.claude-plugin/plugin.json": strToU8('{"name":"co
 const tgz = Buffer.from("not really a tarball");
 let hub: Hub;
 let empty: Hub;
+let distDir = "";
 beforeAll(async () => {
-  const distDir = mkdtempSync(join(tmpdir(), "codetgh-dist-"));
+  distDir = mkdtempSync(join(tmpdir(), "codetgh-dist-"));
   writeFileSync(join(distDir, "plugin.zip"), zip);
   writeFileSync(join(distDir, "codetgh-cli.tgz"), tgz);
   hub = await startHub({ config: { distDir } });
@@ -40,6 +41,15 @@ describe("the hub distributes its plugin and CLI", () => {
     const file = await fetch(`${hub.url}/plugin/codetgh.zip`);
     expect(file.headers.get("content-type")).toBe("application/zip");
     expect(Buffer.from(await file.arrayBuffer()).equals(Buffer.from(zip))).toBe(true);
+  });
+
+  it("reads the zip once, so the digest always matches the bytes it serves", async () => {
+    await fetch(`${hub.url}/plugin/marketplace.json`);
+    writeFileSync(join(distDir, "plugin.zip"), zipSync({ "codetgh/other.txt": strToU8("changed on disk") }));
+    const m = await (await fetch(`${hub.url}/plugin/marketplace.json`)).json();
+    expect(m.plugins[0].source.sha256).toBe(createHash("sha256").update(zip).digest("hex"));
+    const file = Buffer.from(await (await fetch(`${hub.url}/plugin/codetgh.zip`)).arrayBuffer());
+    expect(file.equals(Buffer.from(zip))).toBe(true);
   });
 
   it("serves the CLI as an npm tarball", async () => {

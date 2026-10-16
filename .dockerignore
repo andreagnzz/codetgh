@@ -3,4 +3,8 @@ node_modules
 **/dist
 **/data
 .git
-deploy/.env
+# Secrets and backups never enter the build context; the example env stays as documentation.
+**/.env*
+!deploy/.env.example
+deploy/backups
+**/*.dump

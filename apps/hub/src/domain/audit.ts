@@ -2,14 +2,17 @@ import {
   type AuditRecord,
   type auditKeyFromSeed,
   type Checkpoint,
+  chainBreak,
+  checkpointSigned,
   eventHash,
   GENESIS,
   signCheckpoint,
   verifyAudit,
 } from "@codetgh/shared/audit";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { auditCheckpoint, auditEvent } from "../db/schema.js";
+import { alert, auditCheckpoint, auditEvent } from "../db/schema.js";
+import { newId } from "../ids.js";
 
 export type AuditKey = ReturnType<typeof auditKeyFromSeed>;
 
@@ -77,17 +80,52 @@ export async function appendAudit(tx: Db, input: AuditInput) {
   await tx.insert(auditEvent).values({ ...row, prevHash, hash: eventHash(prevHash, record) });
 }
 
-// Signs the current head when it moved since the last checkpoint. Runs on an interval and before each export.
+// Highest checkpoint this process signed per team: the database alone cannot show that signed checkpoints were deleted.
+const lastSigned = new Map<string, number>();
+
+// Signs the current head when it moved since the last checkpoint, and only on top of a chain that still matches that
+// checkpoint: a hub that signed whatever head it finds would vouch for a log rewritten in the database. Runs on an
+// interval and before each export.
 export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
-  await db.transaction(async (tx) => {
+  const signed = await db.transaction(async (tx) => {
     await lockTeam(tx, teamId);
-    const [head] = await tx.select().from(auditEvent).where(eq(auditEvent.teamId, teamId)).orderBy(desc(auditEvent.seq)).limit(1);
     const [prev] = await tx
       .select()
       .from(auditCheckpoint)
       .where(eq(auditCheckpoint.teamId, teamId))
       .orderBy(desc(auditCheckpoint.seq))
       .limit(1);
+    const events = (
+      await tx
+        .select()
+        .from(auditEvent)
+        .where(and(eq(auditEvent.teamId, teamId), prev ? gte(auditEvent.seq, prev.seq) : undefined))
+        .orderBy(asc(auditEvent.seq))
+    ).map(toRecord);
+    const [anchor] = events;
+    const head = events.at(-1);
+    const known = lastSigned.get(teamId);
+    const broken = chainBreak(events, prev ? anchor?.prev_hash : GENESIS);
+    const problem =
+      known !== undefined && (prev?.seq ?? 0) < known
+        ? `signed checkpoint ${known} is gone`
+        : prev && !checkpointSigned(toCheckpoint(prev), key.publicKey)
+          ? `checkpoint at seq ${prev.seq} is not signed by this hub`
+          : prev && (anchor?.seq !== prev.seq || anchor.hash !== prev.hash)
+            ? `the chain at seq ${prev.seq} differs from the signed checkpoint`
+            : broken !== null
+              ? `first break at seq ${broken}`
+              : null;
+    if (problem) {
+      const [open] = await tx
+        .select({ id: alert.id })
+        .from(alert)
+        .where(and(eq(alert.teamId, teamId), eq(alert.kind, "audit_tamper"), eq(alert.status, "open")))
+        .limit(1);
+      if (!open)
+        await tx.insert(alert).values({ id: newId("alr"), teamId, kind: "audit_tamper", excerpt: `audit log not signed: ${problem}` });
+      return;
+    }
     if (!head || (prev && prev.seq >= head.seq)) return;
     const c = signCheckpoint(key, {
       team_id: teamId,
@@ -105,7 +143,9 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
       keyId: c.key_id,
       sig: c.sig,
     });
+    return c.seq;
   });
+  if (signed !== undefined) lastSigned.set(teamId, signed);
 }
 
 export async function exportAudit(db: Db, teamId: string) {
@@ -123,7 +163,5 @@ export async function verifyTeamAudit(db: Db, teamId: string, publicKey: string 
 
 // Returns the seq of the first broken event, or null when the chain is intact (chain only, no checkpoints).
 export async function verifyChain(db: Db, teamId: string) {
-  const { events } = await exportAudit(db, teamId);
-  const r = verifyAudit(events, [], null);
-  return r.ok ? null : r.seq;
+  return chainBreak((await exportAudit(db, teamId)).events);
 }

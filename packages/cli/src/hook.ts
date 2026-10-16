@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ClientRequest as ClientRequestType, IncomingMessage, RequestOptions } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -56,10 +56,18 @@ function loadState(sessionId: string): State {
   }
 }
 
+// Hooks run in parallel: write beside the file, then rename over it, so a reader never sees half a file.
 function saveState(sessionId: string, state: State) {
+  const file = statePath(sessionId);
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
-    writeFileSync(statePath(sessionId), JSON.stringify(state), { mode: 0o600 });
-  } catch {}
+    writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+    renameSync(tmp, file);
+  } catch {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {}
+  }
 }
 
 function warnOnce(input: Input, message: string) {
@@ -71,6 +79,12 @@ function warnOnce(input: Input, message: string) {
   saveState(sessionId, { ...state, warned: true });
   return { systemMessage: message };
 }
+
+// One deadline per hook process, counted from its start (performance.now): each call gets what is left, so slow steps
+// in a row stay under Claude Code's timeout.
+const left = (budgetMs: number) => Math.max(1, Math.round(budgetMs - performance.now()));
+const START_BUDGET_MS = 4500;
+const BUDGET_MS = 2500;
 
 type Reply = { status: number; ok: boolean; etag: string | undefined; json: () => Promise<unknown> };
 
@@ -120,7 +134,7 @@ async function sessionStart(input: Input) {
     git(input.cwd, ["remote", "get-url", "origin"]),
     // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
     // through a shell; the arguments are fixed, so nothing can be injected.
-    run("claude", ["--version"], { timeout: 1000, shell: process.platform === "win32" }).then(
+    run("claude", ["--version"], { timeout: Math.min(1000, left(START_BUDGET_MS)), shell: process.platform === "win32" }).then(
       (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
       () => undefined,
     ),
@@ -130,7 +144,7 @@ async function sessionStart(input: Input) {
   const register = (withBranch: boolean) =>
     hub("/v1/agents/session", {
       method: "POST",
-      timeoutMs: 2400,
+      timeoutMs: Math.min(2400, left(START_BUDGET_MS)),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         session_id: input.session_id ?? "unknown",
@@ -151,7 +165,8 @@ async function sessionStart(input: Input) {
       return null;
     }
     if (fingerprint && branch && !body.paused) {
-      res = await register(true);
+      // Out of time for the second answer: the first one still holds.
+      res = await register(true).catch(() => res);
       if (res.ok) body = (await res.json()) as typeof body;
     }
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
@@ -180,7 +195,7 @@ async function userPromptSubmit(input: Input) {
       headers: state.etag ? { "If-None-Match": state.etag } : {},
     });
     if (res.status !== 200) return null;
-    saveState(input.session_id, { ...state, etag: res.etag });
+    saveState(input.session_id, { ...loadState(input.session_id), etag: res.etag });
     const { context } = (await res.json()) as { context: string };
     return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } };
   } catch {
@@ -252,12 +267,13 @@ async function preEdit(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   const path = await repoPath(input, state);
-  saveState(input.session_id, state);
+  // Other hooks may have saved while git ran: merge the one field this hook owns.
+  if (state.root) saveState(input.session_id, { ...loadState(input.session_id), root: state.root });
   if (!path) return null;
   try {
     const res = await hub("/v1/claims/pre-edit", {
       method: "POST",
-      timeoutMs: 2500,
+      timeoutMs: left(BUDGET_MS),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: input.session_id, path }),
     });
@@ -280,8 +296,9 @@ async function postEdit(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   const path = await repoPath(input, state);
-  if (path) state.touched = [...new Set([...(state.touched ?? []), path])].slice(-500);
-  saveState(input.session_id, state);
+  const latest = loadState(input.session_id);
+  const touched = path ? [...new Set([...(latest.touched ?? []), path])].slice(-500) : latest.touched;
+  saveState(input.session_id, { ...latest, root: state.root ?? latest.root, touched });
   return null;
 }
 
@@ -292,7 +309,10 @@ async function stop(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   // Raw output: porcelain lines start with a status column that may be a space.
-  const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: input.cwd, timeout: 1000 })
+  const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+    cwd: input.cwd,
+    timeout: Math.min(1000, left(BUDGET_MS)),
+  })
     .then((r) => r.stdout)
     .catch(() => "");
   const changed = status
@@ -305,7 +325,7 @@ async function stop(input: Input) {
   try {
     const res = await hub("/v1/claims/check", {
       method: "POST",
-      timeoutMs: 2000,
+      timeoutMs: Math.min(2000, left(BUDGET_MS)),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: input.session_id, paths: changed }),
     });
@@ -317,9 +337,10 @@ async function stop(input: Input) {
       .flatMap((p) => p.holders.map((h) => ({ ...h, path: p.path })))
       .filter((h) => !(state.reported ?? []).includes(`${h.path}:${h.claim_id}`));
     if (!fresh.length) return null;
+    const latest = loadState(input.session_id);
     saveState(input.session_id, {
-      ...state,
-      reported: [...(state.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
+      ...latest,
+      reported: [...(latest.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
     });
     return {
       systemMessage: `CodeTgh: changed outside the editor tools, but claimed by someone else: ${fresh.map((h) => `${h.path} (${h.name}, ${h.mode})`).join("; ")}.`,

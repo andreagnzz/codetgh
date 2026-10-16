@@ -47,6 +47,7 @@ const FR: Record<string, string> = {
   secret_blocked: "secret bloqué",
   loop_guard: "boucle d'agents",
   loop_needs_human: "boucle : décision humaine",
+  audit_tamper: "journal d'audit altéré",
   online: "en ligne",
   idle: "inactif",
   offline: "hors ligne",

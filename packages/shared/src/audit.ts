@@ -65,33 +65,59 @@ export function signCheckpoint(key: ReturnType<typeof auditKeyFromSeed>, c: Omit
   return { ...c, key_id: key.keyId, sig: sign(null, Buffer.from(signedPayload(c)), key.privateKey).toString("base64") };
 }
 
-export type VerifyResult =
-  | { ok: true; events: number; checkpoints: number }
-  | { ok: false; problem: "broken_link" | "checkpoint_mismatch" | "truncated" | "bad_signature"; seq: number; message: string };
+export const checkpointSigned = (c: Checkpoint, publicKeyB64: string) =>
+  verifySig(
+    null,
+    Buffer.from(signedPayload(c)),
+    createPublicKey({ key: Buffer.concat([SPKI_PREFIX, Buffer.from(publicKeyB64, "base64")]), format: "der", type: "spki" }),
+    Buffer.from(c.sig, "base64"),
+  );
 
-// Replays the chain; signed checkpoints catch a chain rewritten end to end, or cut short.
-export function verifyAudit(events: AuditRecord[], checkpoints: Checkpoint[], publicKeyB64: string | null): VerifyResult {
-  const publicKey = publicKeyB64
-    ? createPublicKey({ key: Buffer.concat([SPKI_PREFIX, Buffer.from(publicKeyB64, "base64")]), format: "der", type: "spki" })
-    : null;
-  const sorted = [...events].sort((a, b) => a.seq - b.seq);
-  const hashAt = new Map<number, string>();
-  let prev = GENESIS;
-  for (const e of sorted) {
-    if (e.prev_hash !== prev || e.hash !== eventHash(prev, e))
-      return { ok: false, problem: "broken_link", seq: e.seq, message: `first break at seq ${e.seq}` };
-    hashAt.set(e.seq, e.hash);
+// Seq of the first event that does not chain from `prev` (sorted by seq), or null when the chain holds.
+export function chainBreak(events: AuditRecord[], prev = GENESIS): number | null {
+  for (const e of events) {
+    if (e.prev_hash !== prev || e.hash !== eventHash(prev, e)) return e.seq;
     prev = e.hash;
   }
+  return null;
+}
+
+export type VerifyResult =
+  | { ok: true; events: number; checkpoints: number }
+  | {
+      ok: false;
+      problem: "broken_link" | "checkpoint_mismatch" | "truncated" | "bad_signature" | "no_checkpoint" | "missing_checkpoint";
+      seq: number;
+      message: string;
+    };
+
+// Replays the chain; signed checkpoints catch a chain rewritten end to end, or cut short. Each checkpoint names
+// the one before it, so deleting checkpoints shows, and a chain no checkpoint covers is not trusted.
+export function verifyAudit(events: AuditRecord[], checkpoints: Checkpoint[], publicKeyB64: string | null): VerifyResult {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  const broken = chainBreak(sorted);
+  if (broken !== null) return { ok: false, problem: "broken_link", seq: broken, message: `first break at seq ${broken}` };
+  const hashAt = new Map(sorted.map((e) => [e.seq, e.hash]));
   const last = sorted.at(-1)?.seq ?? 0;
+  if (sorted.length && !checkpoints.length)
+    return { ok: false, problem: "no_checkpoint", seq: last, message: "no signed checkpoint covers this chain" };
+  let before: number | null = null;
   for (const c of [...checkpoints].sort((a, b) => a.seq - b.seq)) {
-    if (!publicKey || !verifySig(null, Buffer.from(signedPayload(c)), publicKey, Buffer.from(c.sig, "base64")))
+    if (!publicKeyB64 || !checkpointSigned(c, publicKeyB64))
       return {
         ok: false,
         problem: "bad_signature",
         seq: c.seq,
         message: `checkpoint at seq ${c.seq} is not signed by this hub's audit key`,
       };
+    if (c.prev_checkpoint_seq !== before)
+      return {
+        ok: false,
+        problem: "missing_checkpoint",
+        seq: c.seq,
+        message: `checkpoint at seq ${c.seq} follows checkpoint ${c.prev_checkpoint_seq ?? "none"}, the export has ${before ?? "none"}: a signed checkpoint is missing`,
+      };
+    before = c.seq;
     if (c.seq > last)
       return {
         ok: false,

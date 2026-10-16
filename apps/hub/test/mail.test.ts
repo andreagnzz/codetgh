@@ -57,7 +57,18 @@ it("signs up an invited person by magic link and refuses an uninvited one", asyn
   expect(m?.role).toBe("member");
 
   expect((await ask("mallory@evil.test")).ok).toBe(true); // no account enumeration
-  const evil = mailer.outbox.find((x) => x.to === "mallory@evil.test")?.text.match(/http\S+/)?.[0] ?? "";
-  const refused = await fetch(evil, { redirect: "manual" });
-  expect(new URL(refused.headers.get("location") ?? "", hub.url).searchParams.get("error")).toBeTruthy();
+  expect(mailer.outbox.some((x) => x.to === "mallory@evil.test")).toBe(false);
+});
+
+it("mails a sign-in link to an existing member", async () => {
+  expect(
+    (
+      await fetch(`${hub.url}/api/auth/sign-in/magic-link`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: hub.url },
+        body: JSON.stringify({ email: team.sam.email, callbackURL: "/console" }),
+      })
+    ).ok,
+  ).toBe(true);
+  expect(mailer.outbox.some((x) => x.to === team.sam.email)).toBe(true);
 });

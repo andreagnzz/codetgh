@@ -39,6 +39,7 @@ import {
   inboxHeader,
   lastReceiptSeq,
   type MessagingDeps,
+  purgeMessages,
   receivedSince,
   sendMessage,
   unread,
@@ -61,6 +62,7 @@ type Env = { Variables: { principal: Principal } };
 
 const PROMPT_BATCH = 5;
 const CHECKPOINT_EVERY_MS = 10 * 60_000;
+const PURGE_EVERY_MS = 60 * 60_000;
 const PROMPT_BUDGET = 9500;
 
 // Request lines carry ids, status and latency only: never headers, tokens or message text.
@@ -105,6 +107,11 @@ export function createApp({
   };
   const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
   checkpointTimer.unref();
+  const purgeTimer = setInterval(
+    () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),
+    PURGE_EVERY_MS,
+  );
+  purgeTimer.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
@@ -473,12 +480,23 @@ export function createApp({
       }
     })();
     if (payload)
-      await handleGithubEvent(deps, logger, hook.teamId, c.req.header("x-github-event") ?? "", payload, c.req.header("x-github-delivery"));
+      await handleGithubEvent(
+        deps,
+        logger,
+        hook.teamId,
+        c.req.header("x-github-event") ?? "",
+        payload,
+        // The signature covers the body, not X-GitHub-Delivery: a replayed body keeps its key whatever id comes with it.
+        // Hex: the secret scanner reads a base64 digest as a secret.
+        createHash("sha256").update(body).digest("hex"),
+      );
     return c.body(null, 202);
   });
 
   // Slack app: events (thread replies) and the /codetgh-link command, both signed by Slack.
   const stopSlack = startSlackRelay(deps, config, logger);
+  // shortcut: in memory and single process, like the rate limiter; move to Postgres with replicas.
+  const slackEventsSeen = new Set<string>();
   const slackBody = async (c: Context) => {
     const body = await c.req.text();
     const ok =
@@ -493,13 +511,24 @@ export function createApp({
     if (c.req.header("x-slack-retry-num")) return c.body(null, 200);
     const payload = (() => {
       try {
-        return JSON.parse(body) as { type?: string; challenge?: string; event?: Parameters<typeof handleSlackEvent>[2] };
+        return JSON.parse(body) as {
+          type?: string;
+          challenge?: string;
+          event_id?: string;
+          event?: Parameters<typeof handleSlackEvent>[2];
+        };
       } catch {
         return null;
       }
     })();
     if (!payload) return c.json({ code: "E_INVALID", message: "body is not JSON" }, 400);
     if (payload.type === "url_verification") return c.json({ challenge: payload.challenge });
+    // A signed body replayed within Slack's 5-minute window carries the same event_id: relay it once.
+    if (payload.event_id) {
+      if (slackEventsSeen.has(payload.event_id)) return c.body(null, 200);
+      slackEventsSeen.add(payload.event_id);
+      if (slackEventsSeen.size > 10_000) slackEventsSeen.delete(slackEventsSeen.values().next().value as string);
+    }
     // Slack wants an answer within 3 s: acknowledge, then relay.
     if (payload.type === "event_callback" && payload.event)
       void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.message }, "slack event not relayed"));
@@ -529,8 +558,12 @@ export function createApp({
       const token = bearerToken(c.req.header("authorization"));
       const p = token ? await principalForToken(db, token, "a2a") : null;
       if (!p) throw new HubError("E_UNAUTHORIZED", "A2A token required");
+      const agent = await a2aAgentForToken(db, p);
+      // Every call counts, not only sends: task reads and failed calls cost the hub too.
+      const wait = limiter.take(`a2a:${agent.id}`);
+      if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many A2A requests: wait and retry", wait);
       const body = await c.req.json().catch(() => null);
-      return c.json(await a2a.handle(body, { p, agent: await a2aAgentForToken(db, p) }, c.req.header("a2a-version")));
+      return c.json(await a2a.handle(body, { p, agent }, c.req.header("a2a-version")));
     } catch (e) {
       return errorResponse(c, e);
     }
@@ -587,11 +620,21 @@ export function createApp({
     readFile(join(config.distDir, name)).catch(() => {
       throw new HubError("E_NOT_FOUND", `${name} is not built on this hub: run pnpm build`);
     });
+  // Read and hashed once: the zip only changes with a new build, and the digest must match the bytes served. A miss is retried.
+  let plugin: Promise<{ zip: Buffer; sha256: string }> | undefined;
+  const pluginZip = () => {
+    plugin ??= bundle("plugin.zip").then(
+      (zip) => ({ zip, sha256: createHash("sha256").update(zip).digest("hex") }),
+      (e) => {
+        plugin = undefined;
+        throw e;
+      },
+    );
+    return plugin;
+  };
   app.get("/plugin/marketplace.json", async (c) => {
     try {
-      const sha256 = createHash("sha256")
-        .update(await bundle("plugin.zip"))
-        .digest("hex");
+      const { sha256 } = await pluginZip();
       return c.json({
         name: "codetgh",
         owner: { name: "CodeTgh hub" },
@@ -609,8 +652,8 @@ export function createApp({
     }
   });
   app.get("/plugin/codetgh.zip", async (c) =>
-    bundle("plugin.zip").then(
-      (b) => c.body(new Uint8Array(b), 200, { "content-type": "application/zip" }),
+    pluginZip().then(
+      ({ zip }) => c.body(new Uint8Array(zip), 200, { "content-type": "application/zip" }),
       (e) => errorResponse(c, e),
     ),
   );
@@ -633,6 +676,7 @@ export function createApp({
     auditKey,
     close: () => {
       clearInterval(checkpointTimer);
+      clearInterval(purgeTimer);
       stopSlack();
       return mcp.close();
     },

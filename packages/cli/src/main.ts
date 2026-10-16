@@ -194,8 +194,15 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
   const { textFlags } = await import("@codetgh/guard");
   const flags = textFlags(m.body).filter((f) => ["instruction-like", "secret-suspect", "external-link"].includes(f));
   if (m.reply_to) {
-    const { wrapped } = await client.threadKey(m.reply_to);
-    return { body: sealBody(m.body, unwrapKey(wrapped, privateKey)), encrypted: { flags } };
+    const { wrapped, ciphertext } = await client.threadKey(m.reply_to);
+    const key = unwrapKey(wrapped, privateKey);
+    // Key confirmation: the wrap is anonymous, so a hub could wrap a key of its own; the real one opens the message replied to.
+    try {
+      openBody(ciphertext, key);
+    } catch {
+      throw new Error("the thread key the hub sent opens no message of this thread: not sealing a reply with it");
+    }
+    return { body: sealBody(m.body, key), encrypted: { flags } };
   }
   const me = `@${(await client.whoami()).handle}`;
   const handles = [...new Set([...(Array.isArray(m.to) ? m.to : [m.to ?? ""]), me])];

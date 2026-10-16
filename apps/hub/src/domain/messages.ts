@@ -2,9 +2,9 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lte, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, message, receipt, thread, threadKey, user } from "../db/schema.js";
+import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -242,6 +242,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       throw new HubError("E_FORBIDDEN", "guests and quarantined agents cannot send encrypted messages");
     if (!isSealed(input.body) || (input.encrypted.keys ?? []).some((k) => !isWrapped(k.wrapped)))
       throw new HubError("E_INVALID", "this is not codetgh ciphertext: encrypt with codetgh send --encrypt");
+    if (input.subject || input.refs.length || input.capsule)
+      throw new HubError("E_INVALID", "an encrypted message keeps no subject, refs or capsule in clear: put them in the body");
   }
   // An encrypted body is ciphertext: the client scanned and flagged the plain text before sealing it.
   const text = input.encrypted ? "" : `${input.subject ?? ""}\n${input.body}`;
@@ -530,6 +532,14 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     recipientUserIds: result.recipientUserIds,
   });
   return result.row;
+}
+
+// Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
+export async function purgeMessages(db: Db) {
+  for (const t of await db.select({ id: team.id, settings: team.settings }).from(team)) {
+    const cutoff = new Date(Date.now() - (t.settings.retention_days ?? 90) * 86_400_000);
+    await db.delete(message).where(and(eq(message.teamId, t.id), lt(message.createdAt, cutoff)));
+  }
 }
 
 // Stream feed: one row per message received after `seq`, ids only. A message's receipts share a transaction, so max(seq) covers them all.
