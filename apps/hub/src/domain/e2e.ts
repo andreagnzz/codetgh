@@ -60,11 +60,11 @@ export async function wrappedKeys(db: Db, p: Principal, threadIds: string[]) {
 
 export async function threadKeyForMessage(db: Db, p: Principal, messageId: string) {
   const [m] = await db
-    .select({ threadId: message.threadId })
+    .select({ threadId: message.threadId, body: message.body })
     .from(message)
     .where(and(eq(message.id, messageId), eq(message.teamId, p.teamId)));
   const wrapped = m && (await wrappedKeys(db, p, [m.threadId])).get(m.threadId);
   // Same answer for an unknown message and a thread you hold no key for.
   if (!m || !wrapped) throw new HubError("E_NOT_FOUND", "no key of yours for this message's thread");
-  return { thread: m.threadId, wrapped };
+  return { thread: m.threadId, wrapped, ciphertext: m.body };
 }

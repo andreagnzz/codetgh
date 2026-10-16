@@ -222,6 +222,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       throw new HubError("E_FORBIDDEN", "guests and quarantined agents cannot send encrypted messages");
     if (!isSealed(input.body) || (input.encrypted.keys ?? []).some((k) => !isWrapped(k.wrapped)))
       throw new HubError("E_INVALID", "this is not codetgh ciphertext: encrypt with codetgh send --encrypt");
+    if (input.subject || input.refs.length || input.capsule)
+      throw new HubError("E_INVALID", "an encrypted message keeps no subject, refs or capsule in clear: put them in the body");
   }
   // An encrypted body is ciphertext: the client scanned and flagged the plain text before sealing it.
   const text = input.encrypted ? "" : `${input.subject ?? ""}\n${input.body}`;

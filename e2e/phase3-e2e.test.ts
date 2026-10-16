@@ -2,10 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { newKeyPair, publicKeyOf } from "@codetgh/shared/e2e";
-import { eq, sql } from "drizzle-orm";
+import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message, thread } from "../apps/hub/src/db/schema.js";
+import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 
@@ -93,6 +93,47 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect(
       (await fetch(`${hub.url}/v1/messages/${sentId}/thread-key`, { headers: { Authorization: `Bearer ${team.malik.token}` } })).status,
     ).toBe(404);
+  });
+
+  it("refuses to reply with a thread key that opens none of the thread's messages", async () => {
+    // A hostile hub wraps a key of its own to Léa's real public key, hoping to read her reply.
+    const threadId = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.threadId ?? "";
+    const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
+    const [real] = await hub.db.select().from(threadKey).where(mine);
+    const own = wrapKey(newThreadKey(), publicKeyOf(keyring("lea").get(`${hub.url}#e2e`) ?? ""));
+    await hub.db.update(threadKey).set({ wrapped: own }).where(mine);
+    const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("opens no message of this thread");
+    expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: real?.wrapped ?? "" })
+      .where(mine);
+  });
+
+  it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
+    await expect(cli("sam", ["send", "--encrypt", "--to", "@lea", "--subject", "users table migration", "--body", "x"])).rejects.toThrow(
+      "no subject",
+    );
+    const send = (body: Record<string, unknown>) =>
+      fetch(`${hub.url}/v1/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const sealed = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.body;
+    expect((await send({ reply_to: sentId, kind: "note", body: sealed, subject: "in clear", encrypted: { flags: [] } })).status).toBe(400);
+    const refs = await send({
+      reply_to: sentId,
+      kind: "note",
+      body: sealed,
+      refs: [{ type: "file", path: "db/users.sql" }],
+      encrypted: { flags: [] },
+    });
+    expect(refs.status).toBe(400);
+    expect(((await refs.json()) as { code: string }).code).toBe("E_INVALID");
   });
 
   it("checks the shape of what claims to be encrypted, and marks it as unscanned by the hub", async () => {
