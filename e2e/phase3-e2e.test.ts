@@ -2,10 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { newKeyPair, publicKeyOf } from "@codetgh/shared/e2e";
-import { eq, sql } from "drizzle-orm";
+import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message, thread } from "../apps/hub/src/db/schema.js";
+import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 
@@ -93,6 +93,24 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect(
       (await fetch(`${hub.url}/v1/messages/${sentId}/thread-key`, { headers: { Authorization: `Bearer ${team.malik.token}` } })).status,
     ).toBe(404);
+  });
+
+  it("refuses to reply with a thread key that opens none of the thread's messages", async () => {
+    // A hostile hub wraps a key of its own to Léa's real public key, hoping to read her reply.
+    const threadId = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.threadId ?? "";
+    const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
+    const [real] = await hub.db.select().from(threadKey).where(mine);
+    const own = wrapKey(newThreadKey(), publicKeyOf(keyring("lea").get(`${hub.url}#e2e`) ?? ""));
+    await hub.db.update(threadKey).set({ wrapped: own }).where(mine);
+    const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("opens no message of this thread");
+    expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: real?.wrapped ?? "" })
+      .where(mine);
   });
 
   it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
