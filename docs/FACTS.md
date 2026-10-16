@@ -156,7 +156,7 @@ query({ prompt: "…read your inbox, answer with send_message (kind answer, repl
 
 Result: the server connected with the personal token in `headers`; the agent called `inbox_read`, `send_message` (kind `answer`, `reply_to` the question) and `ack`. Léa's `POST /v1/inbox` (through `@codetgh/sdk`'s route) returned the answer "42" in `<peer_message … kind="answer" authored_by="agent" … trust="untrusted-peer">`. The agent's first `send_message` used a bare agent id as the address and was refused; it retried with `agent:<id>`. Plugin hooks under the Agent SDK (point 13) were not tried in this run.
 
-### Channels (Annex C point 4), docs read 2026-10-14; real run pending (P8)
+### Channels (Annex C point 4), docs read 2026-10-14; real run 2026-10-16 (P8 below)
 
 From [Channels reference](https://code.claude.com/docs/en/channels-reference):
 - A channel is a **stdio** MCP server that declares `capabilities.experimental["claude/channel"]: {}` and emits `notifications/claude/channel` with `{ content, meta }`. `meta` keys must be identifiers (letters, digits, underscores); others are silently dropped.
@@ -164,7 +164,26 @@ From [Channels reference](https://code.claude.com/docs/en/channels-reference):
 - **Research preview**: custom channels are not on the allowlist. Testing needs `claude --dangerously-load-development-channels plugin:<plugin>@<marketplace>` (or `server:<name>`) in an **interactive** session; the flag is ignored with `-p` and the Agent SDK. Team and Enterprise orgs must enable channels (`channelsEnabled`).
 - `claude/channel/permission` opts into permission relay; CodeTgh does not declare it (a teammate must never approve tools in your session).
 
-CodeTgh: `packages/channel-bridge` (bundled to `packages/plugin/dist/channel.js`, plugin `.mcp.json` server `channel`) streams only when the member picked `push_mode: channel`, and pushes the hub's escaped envelope as `content` with `message_id`, `kind`, `priority`, `thread` as meta. Tested with a v1 stdio client (`e2e/phase3-channel.test.ts`); the real session run is procedure P8 in the phase 3 report.
+CodeTgh: `packages/channel-bridge` (bundled to `packages/plugin/dist/channel.js`, plugin `.mcp.json` server `channel`) streams only when the member picked `push_mode: channel`, and pushes the hub's escaped envelope as `content` with `message_id`, `kind`, `priority`, `thread` as meta. Tested with a v1 stdio client (`e2e/phase3-channel.test.ts`); the real session run is P8 below.
+
+### P8: channel push in a real session (2026-10-16, Claude Code 2.1.301, Linux, Claude Max)
+
+Local test hub (test harness, throwaway Sam and Léa). The bridge declared in a project `.mcp.json` of an empty folder as `codetgh_channel` (`node packages/plugin/dist/channel.js`, env `CODETGH_URL`, `CODETGH_TOKEN=<Sam>`, `CODETGH_PUSH_MODE=channel`), then an interactive session in tmux:
+
+```bash
+claude --dangerously-load-development-channels server:codetgh_channel --model haiku
+# accept the folder, the project MCP server and the development-channels warning
+# prompt "Reply with the single word READY", then leave the session idle
+# 20 s later: POST /v1/messages as Léa → @sam, kind question, "P8 probe from Lea: what is 2+3?"
+```
+
+Result:
+- **`server:<name>` only finds servers from `.mcp.json` or `~/.claude.json`.** A server given with `--mcp-config` connects (it shows in `/mcp`), but the startup notice says `server:<name> · no MCP server configured with that name` and the channel is not registered.
+- With the project `.mcp.json`, the notice reads `Channels (experimental) messages from server:codetgh_channel inject directly in this session`.
+- Sent at 00:15:11.546Z; the transcript has a new user turn at 00:15:11.652Z (about 0.1 s) carrying `<channel source="codetgh_channel" message_id="msg_…" kind="question" priority="normal" thread="thr_…"><peer_message id="msg_…" from="Léa" … trust="untrusted-peer">P8 probe from Lea: what is 2+3?</peer_message></channel>`. The terminal shows `← codetgh_channel: <peer_message …`. Claude started the turn by itself on an idle session.
+- Claude answered "5" and treated the text as a peer's question. The hub MCP server was not loaded in this run, so it could not reply or `ack`; it looked for a send tool, found only the user's unrelated claude.ai connectors and used none.
+
+Not tried: the plugin's own `channel` server through `--dangerously-load-development-channels plugin:codetgh@<marketplace>` (it needs the interactive `userConfig` values), and a Team or Enterprise org where `channelsEnabled` must be on.
 
 ### claude.ai connector checklist (Annex C point 8, claude.ai side), automated 2026-10-14; real run pending (P5)
 
