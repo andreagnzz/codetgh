@@ -174,6 +174,8 @@ const FR: Record<string, string> = {
   "and above": "et plus",
   "Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)":
     "Autoriser l'acceptation de la mémoire depuis Claude Code (demande à chaque fois ; claude.ai et l'Agent SDK ne peuvent pas le garantir)",
+  "Link a new repository when a member starts a session in it (otherwise an admin runs codetgh project new)":
+    "Lier un nouveau dépôt quand un membre y ouvre une session (sinon un administrateur lance codetgh project new)",
   "Allow rewake push: an idle Claude Code session wakes up when a message arrives (each member also turns it on in the plugin)":
     "Autoriser le réveil : une session Claude Code inactive se réveille à l'arrivée d'un message (chaque membre l'active aussi dans le plugin)",
   "Slack channel id for alerts and blocking requests (e.g. C0123ABC)":

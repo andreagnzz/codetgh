@@ -34,6 +34,7 @@ import { team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
 import {
   agentBySession,
+  canAutoLink,
   createProject,
   endSession,
   registerSession,
@@ -208,7 +209,8 @@ export function createApp({
     takeWrite(limiter, p.user.id);
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
-    if (!p.paused && !agent) return c.json({ agent_id: null, paused: false, context: "", linked: false });
+    if (!p.paused && !agent)
+      return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
     bus.emit("presence", { teamId: p.teamId });
     return c.json({
       agent_id: agent?.id ?? null,

@@ -163,7 +163,7 @@ Le hub stocke douze types d'objets métier, tous rattachés à une équipe ; cha
 | team | Périmètre d'isolation de toutes les données | name, slug, settings (rétention, interrupteur d'arrêt) |
 | user | Une personne, connectée par GitHub, Google ou lien magique | display_name, email, auth_provider |
 | membership | Lien entre un utilisateur et une équipe | role (owner, admin, member, guest), status |
-| project | Un dépôt Git suivi par l'équipe | repo_fingerprint (SHA-256 de l'URL origin normalisée), default_branch |
+| project | Un dépôt Git suivi par l'équipe ; créé par codetgh project new ou, si le réglage auto_link_projects le permet (par défaut), à la première session d'un membre dans le dépôt | repo_fingerprint (SHA-256 de l'URL origin normalisée), default_branch |
 | agent | Une instance de Claude connectée pour un utilisateur | kind (claude-code, claude-ai, agent-sdk, other), label, session_id, trust_level, last_seen_at, branch |
 | thread | Fil de discussion : canal de projet, message direct ou fil de tâche | kind, task_id, muted_until |
 | message | Unité d'échange | kind, priority, body, refs, requires_ack, hop |
@@ -510,7 +510,7 @@ Les hooks utilisent la forme exec (command et args) : elle se comporte pareil so
 
 | Événement | Filtre | Délai | Rôle | Hub injoignable |
 | --- | --- | --- | --- | --- |
-| SessionStart | startup, resume, clear, compact | 5 s | Enregistre ou reprend l'agent, injecte le paquet de contexte, lance le démon si le mode de poussée l'exige | Un seul avertissement, puis silence |
+| SessionStart | startup, resume, clear, compact | 5 s | Enregistre ou reprend l'agent, injecte le paquet de contexte, lance le démon si le mode de poussée l'exige. Dans un dépôt sans projet, n'envoie que l'empreinte ; si le hub répond can_link (membre, administrateur ou propriétaire non mis en quarantaine, auto_link_projects actif), un second appel envoie le nom du dépôt et la branche, et le hub crée le projet ; sinon une ligne dit de demander codetgh project new à un administrateur | Un seul avertissement, puis silence |
 | UserPromptSubmit | tous | 3 s | Injecte les messages non lus (5 au plus, blocking d'abord) | Rien n'est injecté |
 | PreToolUse | Edit, Write, MultiEdit, NotebookEdit | 3 s | Interroge les réservations, pose une réservation intent, ajoute du contexte (warn), répond ask ou deny selon claims.enforcement, et ne répond rien sans conflit | Aucune décision : le flux normal des permissions s'applique |
 | PreToolUse | Tous les outils du hub (matcher mcp__plugin_codetgh_hub__.*) | 3 s | Cherche des secrets dans les arguments texte (secretlint, sans réseau) et refuse l'appel (deny) s'il en trouve | Le contrôle est local : il continue de s'appliquer |
@@ -841,7 +841,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle, révoquer | Administrateur | 1 |
 | Interrupteur d'arrêt | Couper puis rétablir le trafic des agents, avec un motif obligatoire | Administrateur | 1 |
 | Audit | Parcourir et filtrer les événements ; vérifier la chaîne ; exporter en JSON | Administrateur | 1 (liste), 2 (vérification, export) |
-| Réglages | Phase 1 : rétention, motifs de secrets. Phase 2 : claims.enforcement, memory.accept_by, memory.accept_via_mcp, push.allowed_modes | Administrateur | 1 et 2 |
+| Réglages | Phase 1 : rétention, motifs de secrets. Phase 2 : claims.enforcement, memory.accept_by, memory.accept_via_mcp, push.allowed_modes, auto_link_projects | Administrateur | 1 et 2 |
 | Réservations | Voir les réservations actives, leur détenteur et leur durée ; en libérer une | Membre (lecture), administrateur (libération) | 2 |
 | Tâches | Voir le tableau par statut ; créer, assigner, suivre l'historique | Membre | 2 |
 | Mémoire | Lire, chercher, épingler ; accepter ou rejeter les éléments proposed en les comparant à la version remplacée | Selon memory.accept_by | 2 |

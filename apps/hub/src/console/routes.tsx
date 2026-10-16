@@ -1074,6 +1074,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               {_("Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)")}
             </label>
             <label>
+              <input type="checkbox" name="auto_link_projects" value="on" checked={p.settings.auto_link_projects !== false} />{" "}
+              {_("Link a new repository when a member starts a session in it (otherwise an admin runs codetgh project new)")}
+            </label>
+            <label>
               <input type="checkbox" name="push_rewake" value="on" checked={(p.settings.push_allowed_modes ?? []).includes("rewake")} />{" "}
               {_(
                 "Allow rewake push: an idle Claude Code session wakes up when a message arrives (each member also turns it on in the plugin)",
@@ -1150,6 +1154,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .filter(Boolean),
       // Prompt-time reading (hooks) is always on; rewake push is the team's opt-in.
       pushAllowedModes: f.push_rewake === "on" ? ["hooks", "rewake"] : ["hooks"],
+      autoLinkProjects: f.auto_link_projects === "on",
       slackChannel: /^[A-Z0-9]{1,40}$/.test(f.slack_channel ?? "") ? f.slack_channel : undefined,
       loopOrchestrator: f.loop_orchestrator?.replace(/^@/, "") || undefined,
       claimsEnforcement: (CLAIM_ENFORCEMENT as readonly string[]).includes(f.claims_enforcement ?? "")
