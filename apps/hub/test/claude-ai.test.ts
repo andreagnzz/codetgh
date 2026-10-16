@@ -28,11 +28,12 @@ describe("claude.ai connector checklist", () => {
     expect(as.code_challenge_methods_supported).toEqual(["S256"]);
     expect(as.client_id_metadata_document_supported).toBe(true);
     expect(as.token_endpoint_auth_methods_supported).toContain("none");
-    expect(as.registration_endpoint).toMatch(/^http/);
+    // No DCR: claude.ai identifies with its client metadata document (CIMD).
+    expect(as.registration_endpoint).toBeUndefined();
     expect(as.scopes_supported).toContain("offline_access");
   });
 
-  it("registers a client with claude.ai's callback and shows its host on the consent screen", async () => {
+  it("refuses DCR for claude.ai's callback and still shows its host on the consent screen", async () => {
     const res = await fetch(`${hub.url}/api/auth/oauth2/register`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: hub.url },
@@ -44,7 +45,7 @@ describe("claude.ai connector checklist", () => {
         response_types: ["code"],
       }),
     });
-    expect(res.status).toBe(201);
+    expect(res.status).toBeGreaterThanOrEqual(400);
     const consent = await (
       await fetch(
         `${hub.url}/consent?client_id=x&scope=openid&redirect_uri=${encodeURIComponent("https://claude.ai/api/mcp/auth_callback")}`,
