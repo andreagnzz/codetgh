@@ -46,6 +46,7 @@ const FR: Record<string, string> = {
   instruction_like: "ressemble à une consigne",
   secret_blocked: "secret bloqué",
   loop_guard: "boucle d'agents",
+  audit_tamper: "journal d'audit altéré",
   online: "en ligne",
   idle: "inactif",
   offline: "hors ligne",

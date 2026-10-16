@@ -248,7 +248,7 @@ export const alert = pgTable(
     teamId: text("team_id")
       .notNull()
       .references(() => team.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["instruction_like", "secret_blocked", "loop_guard"] }).notNull(),
+    kind: text("kind", { enum: ["instruction_like", "secret_blocked", "loop_guard", "audit_tamper"] }).notNull(),
     status: text("status", { enum: ["open", "dismissed", "false_positive", "fingerprint_allowed"] })
       .notNull()
       .default("open"),

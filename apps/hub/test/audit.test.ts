@@ -1,8 +1,8 @@
-import { auditKeyFromSeed, signCheckpoint, verifyAudit } from "@codetgh/shared/audit";
-import { desc, eq, gt } from "drizzle-orm";
+import { auditKeyFromSeed, eventHash, signCheckpoint, verifyAudit } from "@codetgh/shared/audit";
+import { and, asc, desc, eq, gt, gte } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { auditCheckpoint, auditEvent } from "../src/db/schema.js";
-import { appendAudit, exportAudit, writeCheckpoint } from "../src/domain/audit.js";
+import { alert, auditCheckpoint, auditEvent } from "../src/db/schema.js";
+import { appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../src/domain/audit.js";
 import { type Hub, startHub } from "./harness.js";
 
 let hub: Hub;
@@ -81,6 +81,20 @@ describe("signed audit chain", () => {
     expect(verifyAudit(events, forged, key().publicKey)).toMatchObject({ ok: false, problem: "bad_signature" });
   });
 
+  it("fails a chain that no signed checkpoint covers", async () => {
+    const { events } = await exportAudit(hub.db, team.teamId);
+    expect(verifyAudit(events, [], key().publicKey)).toMatchObject({ ok: false, problem: "no_checkpoint" });
+  });
+
+  it("fails when a checkpoint's predecessor is missing", async () => {
+    const { events, checkpoints } = await exportAudit(hub.db, team.teamId);
+    expect(verifyAudit(events, checkpoints.slice(1), key().publicKey)).toMatchObject({
+      ok: false,
+      problem: "missing_checkpoint",
+      seq: checkpoints[1]?.seq,
+    });
+  });
+
   it("signs a new head only when the chain moved", async () => {
     const count = async () => (await hub.db.select().from(auditCheckpoint).where(eq(auditCheckpoint.teamId, team.teamId))).length;
     const before = await count();
@@ -93,6 +107,99 @@ describe("signed audit chain", () => {
         .from(auditEvent)
         .where(gt(auditEvent.seq, head?.seq ?? 0)),
     ).toEqual([]);
+  });
+});
+
+describe("checkpoint anchor", () => {
+  let other: Hub;
+  let t: Awaited<ReturnType<Hub["seed"]>>;
+  beforeAll(async () => {
+    other = await startHub();
+    t = await other.seed();
+  });
+  afterAll(() => other.stop());
+
+  const append = async (n: number) => {
+    for (let i = 0; i < n; i++)
+      await other.db.transaction((tx) =>
+        appendAudit(tx, { teamId: t.teamId, actorType: "hub", via: "system", action: "test.event", data: { i } }),
+      );
+  };
+  // What a DB writer can do without the audit key: rewrite events from `fromSeq` on and recompute every hash after.
+  const rewriteFrom = async (fromSeq: number) => {
+    const { events } = await exportAudit(other.db, t.teamId);
+    let prev = events.find((e) => e.seq === fromSeq)?.prev_hash ?? "";
+    for (const e of events.filter((e) => e.seq >= fromSeq)) {
+      const data = { ...e.data, forged: true };
+      const hash = eventHash(prev, { ...e, data });
+      await other.db.update(auditEvent).set({ data, prevHash: prev, hash }).where(eq(auditEvent.seq, e.seq));
+      prev = hash;
+    }
+  };
+  const checkpoints = () => other.db.select().from(auditCheckpoint).where(eq(auditCheckpoint.teamId, t.teamId));
+  const tamperAlerts = () =>
+    other.db
+      .select()
+      .from(alert)
+      .where(and(eq(alert.teamId, t.teamId), eq(alert.kind, "audit_tamper")));
+
+  it("refuses to sign a forged head once the signed checkpoints were deleted", async () => {
+    await append(30);
+    await writeCheckpoint(other.db, t.teamId, other.app.auditKey);
+    const [tenth] = await other.db
+      .select()
+      .from(auditEvent)
+      .where(eq(auditEvent.teamId, t.teamId))
+      .orderBy(asc(auditEvent.seq))
+      .offset(10)
+      .limit(1);
+    await rewriteFrom(tenth?.seq ?? 0);
+    await other.db.delete(auditCheckpoint).where(eq(auditCheckpoint.teamId, t.teamId));
+    await append(5);
+    await writeCheckpoint(other.db, t.teamId, other.app.auditKey);
+    expect(await checkpoints()).toEqual([]);
+    expect(await tamperAlerts()).toHaveLength(1);
+    expect(await verifyTeamAudit(other.db, t.teamId, other.app.auditKey.publicKey)).toMatchObject({
+      ok: false,
+      problem: "no_checkpoint",
+    });
+    await writeCheckpoint(other.db, t.teamId, other.app.auditKey);
+    expect(await tamperAlerts()).toHaveLength(1);
+  });
+
+  it("refuses to sign when the chain no longer matches the last checkpoint", async () => {
+    const fresh = await startHub();
+    try {
+      const s = await fresh.seed();
+      for (let i = 0; i < 10; i++)
+        await fresh.db.transaction((tx) =>
+          appendAudit(tx, { teamId: s.teamId, actorType: "hub", via: "system", action: "test.event", data: { i } }),
+        );
+      await writeCheckpoint(fresh.db, s.teamId, fresh.app.auditKey);
+      const [cp] = await fresh.db.select().from(auditCheckpoint).where(eq(auditCheckpoint.teamId, s.teamId));
+      const after = await fresh.db
+        .select()
+        .from(auditEvent)
+        .where(and(eq(auditEvent.teamId, s.teamId), gte(auditEvent.seq, cp?.seq ?? 0)))
+        .limit(1);
+      await fresh.db
+        .update(auditEvent)
+        .set({ data: { forged: true } })
+        .where(eq(auditEvent.seq, after[0]?.seq ?? 0));
+      await fresh.db.transaction((tx) =>
+        appendAudit(tx, { teamId: s.teamId, actorType: "hub", via: "system", action: "test.event", data: {} }),
+      );
+      await writeCheckpoint(fresh.db, s.teamId, fresh.app.auditKey);
+      expect(await fresh.db.select().from(auditCheckpoint).where(eq(auditCheckpoint.teamId, s.teamId))).toHaveLength(1);
+      expect(
+        await fresh.db
+          .select()
+          .from(alert)
+          .where(and(eq(alert.teamId, s.teamId), eq(alert.kind, "audit_tamper"))),
+      ).toHaveLength(1);
+    } finally {
+      await fresh.stop();
+    }
   });
 });
 
