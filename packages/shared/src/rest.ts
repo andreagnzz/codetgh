@@ -126,6 +126,29 @@ export const LauncherTargets = z.object({
   targets: z.array(z.object({ project_id: z.string(), project_name: z.string(), desired: z.boolean() })),
 });
 export const LauncherReport = z.object({ project_id: z.string().max(64), running: z.boolean(), error: z.string().max(300).optional() });
+// Browser sign-in (RFC 8628 style): the CLI shows a short code that the person confirms in the console.
+export const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
+export const DeviceStartInput = z.object({ label: z.string().trim().min(1).max(60) });
+export const DeviceStartOutput = z.object({
+  device_code: z.string(),
+  user_code: z.string(),
+  verification_url: z.string(),
+  expires_in: z.number(),
+  interval: z.number(),
+});
+export const DeviceTokenInput = z.object({ device_code: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export const DeviceTokenOutput = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending") }),
+  z.object({ status: z.literal("approved"), token: z.string() }),
+]);
+// Typed by a person: case, spaces and the dash do not matter.
+export const UserCodeForm = z.object({
+  user_code: z
+    .string()
+    .max(20)
+    .transform((v) => v.toUpperCase().replace(/[\s-]/g, ""))
+    .pipe(z.string().regex(new RegExp(`^[${USER_CODE_ALPHABET}]{8}$`), "type the 8-letter code your terminal shows")),
+});
 export const StreamEvent = z.object({ message_id: z.string(), thread: z.string(), kind: z.string(), priority: z.string() });
 
 type Route = {
@@ -231,6 +254,20 @@ export const REST_ROUTES = {
     summary: "Revoke the pending invitations of an email address (admins); their links stop working",
     body: RevokeInvitationsInput,
     output: RevokedOutput,
+  },
+  deviceStart: {
+    method: "POST",
+    path: "/v1/device/start",
+    summary: "Start a browser sign-in (no token): a device code for the CLI, a user code to confirm at /console/device",
+    body: DeviceStartInput,
+    output: DeviceStartOutput,
+  },
+  deviceToken: {
+    method: "POST",
+    path: "/v1/device/token",
+    summary: "Poll a browser sign-in: pending, or the new personal token once (403 denied, 404 expired or used)",
+    body: DeviceTokenInput,
+    output: DeviceTokenOutput,
   },
   status: { method: "GET", path: "/v1/status", summary: "Who is online, your unread counts and the live claims", output: StatusOutput },
   pause: {

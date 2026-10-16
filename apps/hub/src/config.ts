@@ -19,6 +19,8 @@ export type Config = {
   publicDir: string;
   brandDir: string;
   port: number;
+  // The reverse proxy's own address: only its X-Forwarded-For is believed (per-address limits).
+  trustedProxy?: string;
   // Loopback unless HOST says otherwise: the container sets 0.0.0.0, its published port stays on 127.0.0.1.
   host: string;
 };
@@ -45,5 +47,6 @@ export function loadConfig(env = process.env): Config {
     brandDir: env.CODETGH_BRAND_DIR ?? "../../assets/brand",
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? "127.0.0.1",
+    trustedProxy: env.CODETGH_TRUSTED_PROXY,
   };
 }

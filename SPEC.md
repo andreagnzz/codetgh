@@ -424,8 +424,10 @@ Deux modes coexistent ; le spike de la phase 0 désigne celui qui sert de défau
 
 | Mode | Parcours | Avantages | Limites |
 | --- | --- | --- | --- |
-| Jeton personnel (défaut prévu en phase 1) | La console crée un jeton. Claude Code le demande à l'activation du plugin (userConfig, valeur sensible) et les hooks le reçoivent dans CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN | Une seule saisie ; fonctionne avec claude -p et en CI | Jeton durable : expiration à 90 jours, rotation, révocable par son propriétaire et par un administrateur |
+| Jeton personnel (défaut prévu en phase 1) | codetgh setup ou codetgh login obtient le jeton par une connexion dans le navigateur (flux d'appareil, voir ci-dessous) ; la console peut aussi en créer un, passé par --token-stdin. Claude Code le demande à l'activation du plugin (userConfig, valeur sensible) et les hooks le reçoivent dans CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN | Une seule saisie ; fonctionne avec claude -p et en CI | Jeton durable : expiration à 90 jours, rotation, révocable par son propriétaire et par un administrateur |
 | OAuth 2.1 | /mcp ouvre le navigateur pour le serveur MCP ; le CLI utilise un flux d'appareil | Aucun secret à coller ; seul mode qui identifie chaque personne sur claude.ai | Deux connexions : MCP et CLI |
+
+Connexion dans le navigateur (style RFC 8628) : le CLI appelle POST /v1/device/start, public et limité par adresse, avec le nom de la machine (60 caractères au plus). Il reçoit un code d'appareil secret (32 octets aléatoires), un code utilisateur de 8 lettres prises dans BCDFGHJKLMNPQRSTVWXZ (ABCD-EFGH), l'adresse <hub>/console/device, une durée de 10 minutes et un intervalle de 3 s. Il affiche l'adresse et le code, puis interroge POST /v1/device/token : « pending », puis le jeton une seule fois ; refus → 403, code expiré ou déjà utilisé → 404. Dans la console, avec sa session et le jeton CSRF, la personne tape le code, voit le nom de la machine (échappé), puis approuve ou refuse. Le hub ne garde que les empreintes SHA-256 des deux codes, en mémoire, dans un seul processus ; chaque code ne sert qu'une fois. Un code faux compte contre la personne (5 essais) et contre l'adresse (20 essais) sur 10 minutes ; au-delà, même le bon code est refusé. L'approbation écrit device.approved dans l'audit. Le jeton, créé au moment où le CLI le récupère, est un jeton personnel comme ceux de la console (90 jours, libellé = nom de la machine) et écrit token.created.
 
 La référence du manifeste indique que ${user_config.KEY} se substitue dans les headers d'un serveur MCP de plugin, y compris pour une valeur sensitive ; le point 1 de l'annexe C le confirme par un essai. Sinon, le jeton passe par la variable CODETGH_TOKEN, jamais par un nom en ANTHROPIC_*, que Claude Code lit comme vide dans l'adresse et les en-têtes d'un serveur distant.
 
@@ -863,7 +865,7 @@ Les messages directs ne s'affichent que pour leurs deux participants. Un adminis
 
 | Parcours | Étapes | Résultat |
 | --- | --- | --- |
-| Rejoindre l'équipe | L'administrateur invite par e-mail → la personne ouvre le lien et se connecte → elle crée un jeton → la page affiche la commande codetgh login et l'installation du plugin → son agent apparaît « en ligne » | Installation en moins de 5 minutes |
+| Rejoindre l'équipe | L'administrateur invite par e-mail → la personne ouvre le lien et crée son compte → codetgh setup affiche un lien et un code → elle les confirme dans la console (/console/device) → le jeton arrive dans le trousseau et le plugin s'installe → son agent apparaît « en ligne » | Installation en moins de 5 minutes |
 | Traiter un message suspect (scénario 4) | Le hub marque le message instruction-like → l'alerte montre le texte échappé, l'émetteur et le destinataire → l'administrateur ignore, met l'agent émetteur en quarantaine ou révoque son jeton | Aucune consigne exécutée ; trace dans l'audit |
 | Retirer un membre (scénario 6) | L'administrateur révoque → jetons, flux et session de la console sont coupés → ses agents passent hors ligne | Accès perdu en moins de 5 secondes |
 | Couper le trafic | L'administrateur actionne l'interrupteur et donne un motif → les écritures d'agents échouent avec E_KILL_SWITCH → la console reste utilisable → la reprise demande une confirmation | Flux coupés en moins de 5 secondes |
@@ -977,6 +979,8 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | /mcp | Point d'accès MCP (Streamable HTTP, révisions 2026-07-28 et 2025-11-25) | Jeton ou OAuth |
 | /v1/* | API REST de la console, du CLI et des hooks (un jeton personnel n'ouvre que les routes de portée agent) ; description dans /v1/openapi.json | Jeton ou session |
 | /v1/stream | Flux SSE du démon et de la console | Jeton ou session |
+| /v1/device/start, /v1/device/token | Connexion du CLI dans le navigateur (flux d'appareil) | Public, limité par adresse |
+| /console/device | Saisie du code et approbation d'une connexion du CLI | Session |
 | /console | Interface web | Session |
 | /.well-known/oauth-protected-resource et sa variante avec le chemin /mcp | Métadonnées de la ressource MCP (RFC 9728) | Public |
 | /.well-known/oauth-authorization-server | Métadonnées du serveur d'autorisation (RFC 8414) | Public |
@@ -1023,7 +1027,7 @@ volumes:
 
 | Sujet | Règle |
 | --- | --- |
-| TLS | Le proxy termine HTTPS ; le hub n'accepte les en-têtes X-Forwarded-* que de l'adresse du proxy configurée ; HSTS actif |
+| TLS | Le proxy termine HTTPS ; le hub n'accepte les en-têtes X-Forwarded-* que de l'adresse du proxy configurée (CODETGH_TRUSTED_PROXY ; il lit alors la dernière entrée de X-Forwarded-For) ; HSTS actif |
 | Migrations | Appliquées au démarrage sous verrou consultatif Postgres ; chacune reste compatible avec la version précédente du hub |
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |

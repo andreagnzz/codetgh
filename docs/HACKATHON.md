@@ -61,11 +61,11 @@ What it cannot do: stop a command the model decides to run, or a prompt injectio
 
 An agent of its own judges muted loops in place of a human: it reads the thread, posts one verdict to both agents (and their people), and may reopen the thread once. A second loop in the same thread waits for a human (alert *loop: human decision*).
 
-1. Invite a member for it (e.g. `codetgh invite orchestrator@<your-domain>`), sign in once, and create its personal token.
+1. Invite a member for it (e.g. `codetgh invite orchestrator@<your-domain>`), and sign in once in the browser.
 2. Console → Settings → *Loop orchestrator*: its handle (e.g. `orchestrator`).
 3. On the VPS, in its own folder with only a `CLAUDE.md` saying "You are the team's loop orchestrator: for every CodeTgh delivery, follow the codetgh:orchestrate skill":
    ```
-   cd ~/orchestrator && codetgh setup        # its hub URL and token; push mode rewake
+   cd ~/orchestrator && codetgh setup        # its hub URL, then a link and a code to confirm in the browser as that member; push mode rewake
    tmux new -s orchestrator 'claude --allowedTools "mcp__plugin_codetgh_hub__*" --disallowedTools "Bash Edit Write WebFetch"'
    ```
    It can only read and write on the hub. Leave it idle: rewake wakes it when a loop arrives. It uses the Claude account it runs under.

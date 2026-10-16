@@ -123,6 +123,6 @@ it("rejects a wrong token with the way to get a new one", async () => {
   fakeClaude("2.1.296", [installedPlugin()]);
   const { out, code } = await doctor(hub.url, "ctgh_wrong");
   expect(out).toContain("FAIL token refused by the hub");
-  expect(out).toContain("→ create a token in the console");
+  expect(out).toContain("→ run codetgh login --url <hub address> again and confirm in the browser");
   expect(code).toBe(1);
 });
