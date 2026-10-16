@@ -143,7 +143,8 @@ async function sessionStart(input: Input) {
       () => undefined,
     ),
   ]);
-  const pushMode = process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE || "hooks";
+  // An install that kept a mode the plugin no longer offers (channel) runs as hooks.
+  const pushMode = process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE === "rewake" ? "rewake" : "hooks";
   const fingerprint = origin ? repoFingerprint(origin) : undefined;
   const register = (withBranch: boolean) =>
     hub("/v1/agents/session", {
