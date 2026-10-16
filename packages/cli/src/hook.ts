@@ -167,7 +167,13 @@ async function sessionStart(input: Input) {
     let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean; status_line?: string };
     if (body.linked === false) {
       if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
-      return null;
+      // Said once at start so the person knows CodeTgh is off on purpose, not broken.
+      return input.source === "startup" || input.source === "resume"
+        ? {
+            systemMessage:
+              "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. An admin links it with: codetgh project new <name> (run in the repository).",
+          }
+        : null;
     }
     if (input.session_id && input.permission_mode)
       saveState(input.session_id, { ...loadState(input.session_id), mode: input.permission_mode });
