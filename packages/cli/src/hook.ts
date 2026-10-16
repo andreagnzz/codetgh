@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ClientRequest as ClientRequestType, IncomingMessage, RequestOptions } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -56,10 +56,18 @@ function loadState(sessionId: string): State {
   }
 }
 
+// Hooks run in parallel: write beside the file, then rename over it, so a reader never sees half a file.
 function saveState(sessionId: string, state: State) {
+  const file = statePath(sessionId);
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
-    writeFileSync(statePath(sessionId), JSON.stringify(state), { mode: 0o600 });
-  } catch {}
+    writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+    renameSync(tmp, file);
+  } catch {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {}
+  }
 }
 
 function warnOnce(input: Input, message: string) {
@@ -180,7 +188,7 @@ async function userPromptSubmit(input: Input) {
       headers: state.etag ? { "If-None-Match": state.etag } : {},
     });
     if (res.status !== 200) return null;
-    saveState(input.session_id, { ...state, etag: res.etag });
+    saveState(input.session_id, { ...loadState(input.session_id), etag: res.etag });
     const { context } = (await res.json()) as { context: string };
     return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } };
   } catch {
@@ -252,7 +260,8 @@ async function preEdit(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   const path = await repoPath(input, state);
-  saveState(input.session_id, state);
+  // Other hooks may have saved while git ran: merge the one field this hook owns.
+  if (state.root) saveState(input.session_id, { ...loadState(input.session_id), root: state.root });
   if (!path) return null;
   try {
     const res = await hub("/v1/claims/pre-edit", {
@@ -280,8 +289,9 @@ async function postEdit(input: Input) {
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
   const path = await repoPath(input, state);
-  if (path) state.touched = [...new Set([...(state.touched ?? []), path])].slice(-500);
-  saveState(input.session_id, state);
+  const latest = loadState(input.session_id);
+  const touched = path ? [...new Set([...(latest.touched ?? []), path])].slice(-500) : latest.touched;
+  saveState(input.session_id, { ...latest, root: state.root ?? latest.root, touched });
   return null;
 }
 
@@ -317,9 +327,10 @@ async function stop(input: Input) {
       .flatMap((p) => p.holders.map((h) => ({ ...h, path: p.path })))
       .filter((h) => !(state.reported ?? []).includes(`${h.path}:${h.claim_id}`));
     if (!fresh.length) return null;
+    const latest = loadState(input.session_id);
     saveState(input.session_id, {
-      ...state,
-      reported: [...(state.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
+      ...latest,
+      reported: [...(latest.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
     });
     return {
       systemMessage: `CodeTgh: changed outside the editor tools, but claimed by someone else: ${fresh.map((h) => `${h.path} (${h.name}, ${h.mode})`).join("; ")}.`,
