@@ -52,7 +52,6 @@ export async function updateSettings(
   input: {
     retentionDays: number;
     secretPatterns: string[];
-    strict: boolean;
     claimsEnforcement?: TeamSettings["claims_enforcement"];
     memoryAcceptBy?: TeamSettings["memory_accept_by"];
     memoryAcceptViaMcp?: boolean;
@@ -84,7 +83,6 @@ export async function updateSettings(
     ...p.settings,
     retention_days: Math.min(Math.max(input.retentionDays, 1), 3650),
     secret_patterns: input.secretPatterns.slice(0, 50),
-    strict: input.strict, // shortcut: stored only, no effect yet
     claims_enforcement: input.claimsEnforcement ?? p.settings.claims_enforcement,
     memory_accept_by: input.memoryAcceptBy ?? p.settings.memory_accept_by,
     memory_accept_via_mcp: input.memoryAcceptViaMcp ?? p.settings.memory_accept_via_mcp,
