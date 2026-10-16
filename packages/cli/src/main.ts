@@ -478,11 +478,7 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
 
   step("Claude Code plugin");
   const marketplace = `${url}/plugin/marketplace.json`;
-  const manual = [
-    `claude plugin marketplace add ${marketplace}`,
-    "claude plugin install codetgh@codetgh",
-    "claude plugin disable codetgh@codetgh --scope user",
-  ];
+  const manual = [`claude plugin marketplace add ${marketplace}`, "claude plugin install codetgh@codetgh"];
   if (await confirm("install_plugin", "Install the CodeTgh plugin in Claude Code now?", true)) {
     // The best push mode the team allows: rewake wakes an idle session for a message; hooks waits for a tool call or a prompt.
     const pushMode = who.push_allowed_modes?.includes("rewake") ? "rewake" : "hooks";
@@ -493,17 +489,14 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
     // install --marketplace (2.1.292) adds the marketplace and takes the plugin's options in the same command.
     const oneCommand = atLeast(version, ONE_COMMAND_INSTALL);
     const options = { codetgh_url: url, codetgh_token: token, push_mode: pushMode };
-    const ok =
-      (oneCommand
-        ? await run("claude", [
-            ...["plugin", "install", "codetgh", "--marketplace", marketplace, "--scope", "user", "-y"],
-            ...["--config", `codetgh_url=${url}`, "--config", `push_mode=${pushMode}`],
-          ])
-        : (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
-          (await run("claude", ["plugin", "install", "codetgh@codetgh"]))) &&
-      // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
-      (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
-    if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
+    // On everywhere: in a repository no project has, the hook sends only its fingerprint, and a member's session links it.
+    const ok = oneCommand
+      ? await run("claude", [
+          ...["plugin", "install", "codetgh", "--marketplace", marketplace, "--scope", "user", "-y"],
+          ...["--config", `codetgh_url=${url}`, "--config", `push_mode=${pushMode}`],
+        ])
+      : (await run("claude", ["plugin", "marketplace", "add", marketplace])) &&
+        (await run("claude", ["plugin", "install", "codetgh@codetgh"]));
     // A third-party marketplace does not auto-update unless its entry says so; Claude Code declared it in the user settings.
     const userSettings = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "settings.json");
     const autoUpdate =
@@ -614,7 +607,6 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       (p) => p.id.startsWith("codetgh@"),
     );
     const marketplace = url ? `${url}/plugin/marketplace.json` : "<hub>/plugin/marketplace.json";
-    // Off at user scope by design: it must be on only where this folder's settings turn it on.
     const wanted = (() => {
       try {
         return JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true;
@@ -623,17 +615,20 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       }
     })();
     check(
-      Boolean(plugin) && (plugin?.enabled === true || !wanted),
+      plugin?.enabled === true,
       !plugin
         ? "plugin codetgh@codetgh not installed"
         : plugin.enabled
           ? `plugin ${plugin.id} ${plugin.version ?? ""} enabled here`.replace("  ", " ")
           : wanted
             ? `plugin ${plugin.id} turned on in .claude/settings.json but not active`
-            : `plugin ${plugin.id} installed, on only in team repositories (not this folder)`,
-      plugin
-        ? "open Claude Code in this folder and trust it, or run: claude plugin enable codetgh@codetgh --scope project"
-        : `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`,
+            : `plugin ${plugin.id} installed but off`,
+      !plugin
+        ? `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`
+        : wanted
+          ? "open Claude Code in this folder and trust it, or run: claude plugin enable codetgh@codetgh --scope project"
+          : // An earlier codetgh setup turned it off at user scope.
+            "claude plugin enable codetgh@codetgh --scope user",
     );
     if (plugin?.installPath) {
       const files = ["dist/hook.js", "hooks/hooks.json"].every((f) => existsSync(join(plugin.installPath ?? "", f)));

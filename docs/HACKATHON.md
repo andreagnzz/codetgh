@@ -34,9 +34,9 @@ What it cannot do: stop a command the model decides to run, or a prompt injectio
 
 ## 2. Each person (on the VPS, under your own Unix user)
 
-1. Follow the member [Quickstart](../README.md#quickstart), installing the CLI in your home, never with sudo: run `npm config set prefix ~/.local` once first (`~/.local/bin` must be on PATH). Setup picks the push mode itself: **rewake** when the team allows it (section 1), otherwise `hooks`. Setup leaves the plugin **off at user scope**, so it only runs in team repositories.
+1. Follow the member [Quickstart](../README.md#quickstart), installing the CLI in your home, never with sudo: run `npm config set prefix ~/.local` once first (`~/.local/bin` must be on PATH). Setup picks the push mode itself: **rewake** when the team allows it (section 1), otherwise `hooks`. Setup leaves the plugin on: in a repository no project has, it sends the hub only the repository's fingerprint (a hash), and a member's first session there creates the team project.
 
-   If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`. Before the event, `codetgh upgrade` brings the CLI and the plugin up to date.
+   If an earlier setup turned the plugin off, `codetgh doctor` says so and gives `claude plugin enable codetgh@codetgh --scope user`. Before the event, `codetgh upgrade` brings the CLI and the plugin up to date.
 2. In the hackathon repository, the first person runs `codetgh project new "<name>"` and commits `.claude/settings.json` and `CLAUDE.md`. The other pulls them.
 3. Open Claude Code in the repository. Its first line says it all:
    ```

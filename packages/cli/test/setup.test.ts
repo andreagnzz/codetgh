@@ -118,8 +118,8 @@ describe("codetgh setup from an answers file", () => {
         .autoUpdate,
     ).toBe(true);
     expect(calls()).toContain("plugin install codetgh@codetgh");
-    // Off everywhere by default: project new turns it on in the team repositories only.
-    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
+    // On everywhere: a repository no project has only sends its fingerprint, and a member's session links it.
+    expect(calls()).not.toContain("plugin disable");
     expect(out).toContain("ok   token: Sam (@sam, member) in Acme web");
     expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled");
     // The plugin gets the hub URL and the token through stdin, never through its arguments.
@@ -151,7 +151,7 @@ describe("codetgh setup from an answers file", () => {
       theme: "dark",
       extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` }, autoUpdate: true } },
     });
-    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
+    expect(calls()).not.toContain("plugin disable");
     // The token reaches the plugin through configure's stdin, never through any argument: argv shows in ps.
     expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
     expect(calls()).not.toContain(team.sam.token);
