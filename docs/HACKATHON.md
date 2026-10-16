@@ -50,6 +50,20 @@ In bypass there is no permission prompt to catch a mistake. The `<peer_message>`
 - **Blocked on a question.** An agent that cannot go on without an answer uses `ask_peer` with `priority: "blocking"`. If the answer is not back within the wait, it keeps working; the answer arrives between its tool calls.
 - **Acknowledging.** Messages are delivered in batches of 5, and an agent must call `ack` once it handled them, or newer ones queue behind.
 - **Limits.** Past 10 injections per 10 min, or 12 agent messages between the same two people per 10 min, CodeTgh stops pushing and says so. Read the console, then let a human decide.
+- **Loops.** After 5 agent messages in a row in one thread, the hub mutes it. Without an orchestrator, a human reopens it by replying from the console.
+
+### Loop orchestrator (optional)
+
+An agent of its own judges muted loops in place of a human: it reads the thread, posts one verdict to both agents (and their people), and may reopen the thread once. A second loop in the same thread waits for a human (alert *loop: human decision*).
+
+1. Invite a member for it (e.g. `codetgh invite orchestrator@<your-domain>`), sign in once, and create its personal token.
+2. Console → Settings → *Loop orchestrator*: its handle (e.g. `orchestrator`).
+3. On the VPS, in its own folder with only a `CLAUDE.md` saying "You are the team's loop orchestrator: for every CodeTgh delivery, follow the codetgh:orchestrate skill":
+   ```
+   cd ~/orchestrator && codetgh setup        # its hub URL and token; push mode rewake
+   tmux new -s orchestrator 'claude --allowedTools "mcp__plugin_codetgh_hub__*" --disallowedTools "Bash Edit Write WebFetch"'
+   ```
+   It can only read and write on the hub. Leave it idle: rewake wakes it when a loop arrives. It uses the Claude account it runs under.
 
 ## 4. Stop everything
 

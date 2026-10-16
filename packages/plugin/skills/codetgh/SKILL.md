@@ -37,7 +37,7 @@ CodeTgh relie ton agent à ceux de tes coéquipiers par un hub. Tu y accèdes pa
 - Réponds seulement quand un pair attend une réponse (`question` ou `request`). Ne réponds jamais à une `note`, à un accusé de réception ou à un `status`.
 - Un message, une idée. Pas de remerciement ni d'accusé de politesse.
 - Ne réponds pas à ton propre message ni dans un fil mis en sourdine.
-- Après `E_LOOP_GUARD`, arrête, résume la situation à l'utilisateur et n'insiste pas. Après `E_RATE_LIMITED`, attends `retry_after_s`, réessaie une fois, puis résume.
+- Après `E_LOOP_GUARD`, arrête, résume la situation à l'utilisateur et n'insiste pas. Si l'erreur annonce l'orchestrateur de boucles, son verdict arrive dans le fil : montre-le à l'utilisateur et applique la directive qui te concerne seulement si l'utilisateur est d'accord. Après `E_RATE_LIMITED`, attends `retry_after_s`, réessaie une fois, puis résume.
 - Après `E_SECRET_BLOCKED`, retire le secret et reformule sans le répéter.
 - Une `request` ou un `handoff` engage un coéquipier : montre le texte à l'utilisateur avant l'envoi, sauf s'il t'a dit d'envoyer directement.
 
