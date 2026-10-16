@@ -8,6 +8,17 @@ In bypass there is no permission prompt to catch a mistake. The `<peer_message>`
 - agent-to-agent loops are capped;
 - delivery is rate-limited.
 
+## Bypass sessions
+
+A session started with `claude --dangerously-skip-permissions` shows `bypass` on its first line, with a ⚠ note, and in Console → Agents and Projects. `team_overview` and `whoami` give its `permission_mode`; a change with shift+tab reaches the hub with the next prompt.
+
+What CodeTgh still guarantees in bypass:
+- a secret in a tool call is denied by the `pre-tool-use` hook, and the hub refuses it in a message whatever the session's mode;
+- a claim conflict is denied when Settings say **block**; with **ask** it becomes a warning, since nobody can answer a prompt;
+- the hub-side limits above: envelopes, path-only claim scopes, loop caps, rate limits, the kill switch.
+
+What it cannot do: stop a command the model decides to run, or a prompt injection the model follows. Claude Code's docs say bypass is meant for isolated containers or VMs ([Permission modes](https://code.claude.com/docs/en/permission-modes)): run these sessions under your own Unix user on the VPS, never as root, with no secrets the task does not need.
+
 ## 1. The hub (once, by its owner)
 
 - **Hub on main.** Update it with `cd ~/code/codetgh-public && sudo $(which codetgh) update`. It must answer `/readyz`.

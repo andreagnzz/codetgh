@@ -5,7 +5,15 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
 import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreEditInput, SendMessageInput } from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
-import { CreateProjectInput, InviteInput, KeysQuery, LauncherReport, PublishKeyInput, RevokeInvitationsInput } from "@codetgh/shared/rest";
+import {
+  CreateProjectInput,
+  InviteInput,
+  KeysQuery,
+  LauncherReport,
+  PromptQuery,
+  PublishKeyInput,
+  RevokeInvitationsInput,
+} from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { sql } from "drizzle-orm";
@@ -24,7 +32,15 @@ import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
 import { team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
-import { agentBySession, createProject, endSession, registerSession, resolveAgent, setAgentsPaused } from "./domain/agents.js";
+import {
+  agentBySession,
+  createProject,
+  endSession,
+  registerSession,
+  resolveAgent,
+  setAgentsPaused,
+  setPermissionMode,
+} from "./domain/agents.js";
 import { writeCheckpoint } from "./domain/audit.js";
 import { Bus } from "./domain/bus.js";
 import { checkPaths, preEdit } from "./domain/claims.js";
@@ -303,6 +319,8 @@ export function createApp({
     const p = c.get("principal");
     const agent = await agentBySession(db, p, c.req.query("session_id") ?? "");
     if (!agent || agent.endedAt || p.paused) return c.body(null, 204);
+    const mode = PromptQuery.shape.permission_mode.safeParse(c.req.query("permission_mode")).data;
+    if (mode && mode !== agent.permissionMode) await setPermissionMode(db, agent.id, mode);
     const waitS = Math.min(Math.max(Number(c.req.query("wait_s")) || 0, 0), 55);
     if (waitS && !(p.settings.push_allowed_modes ?? []).includes("rewake"))
       throw new HubError("E_FORBIDDEN", "rewake push is not allowed for this team (console Settings)");

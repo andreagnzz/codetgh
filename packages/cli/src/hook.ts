@@ -34,6 +34,8 @@ type State = {
   unlinked?: boolean;
   polledAt?: number;
   injections?: number[];
+  // The permission mode the hub last heard about.
+  mode?: string;
 };
 
 const config = () => ({
@@ -154,6 +156,7 @@ async function sessionStart(input: Input) {
         repo_fingerprint: fingerprint,
         branch: withBranch && branch ? branch : undefined,
         push_mode: pushMode,
+        permission_mode: input.permission_mode,
         client_version: version,
       }),
     });
@@ -166,6 +169,8 @@ async function sessionStart(input: Input) {
       if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
       return null;
     }
+    if (input.session_id && input.permission_mode)
+      saveState(input.session_id, { ...loadState(input.session_id), mode: input.permission_mode });
     if (fingerprint && branch && !body.paused) {
       // Out of time for the second answer: the first one still holds.
       res = await register(true).catch(() => res);
@@ -191,11 +196,14 @@ async function userPromptSubmit(input: Input) {
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
   if (state.unlinked) return null;
+  // A mode changed with shift+tab rides on this call; it is not sent again while it stays the same.
+  const mode = input.permission_mode && input.permission_mode !== state.mode ? input.permission_mode : undefined;
   try {
-    const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}`, {
-      timeoutMs: 2000,
-      headers: state.etag ? { "If-None-Match": state.etag } : {},
-    });
+    const res = await hub(
+      `/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}${mode ? `&permission_mode=${encodeURIComponent(mode)}` : ""}`,
+      { timeoutMs: 2000, headers: state.etag ? { "If-None-Match": state.etag } : {} },
+    );
+    if (mode && res.status < 500) saveState(input.session_id, { ...loadState(input.session_id), mode });
     if (res.status !== 200) return null;
     saveState(input.session_id, { ...loadState(input.session_id), etag: res.etag });
     const { context } = (await res.json()) as { context: string };
