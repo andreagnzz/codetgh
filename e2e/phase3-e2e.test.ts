@@ -95,6 +95,29 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     ).toBe(404);
   });
 
+  it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
+    await expect(cli("sam", ["send", "--encrypt", "--to", "@lea", "--subject", "users table migration", "--body", "x"])).rejects.toThrow(
+      "no subject",
+    );
+    const send = (body: Record<string, unknown>) =>
+      fetch(`${hub.url}/v1/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const sealed = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.body;
+    expect((await send({ reply_to: sentId, kind: "note", body: sealed, subject: "in clear", encrypted: { flags: [] } })).status).toBe(400);
+    const refs = await send({
+      reply_to: sentId,
+      kind: "note",
+      body: sealed,
+      refs: [{ type: "file", path: "db/users.sql" }],
+      encrypted: { flags: [] },
+    });
+    expect(refs.status).toBe(400);
+    expect(((await refs.json()) as { code: string }).code).toBe("E_INVALID");
+  });
+
   it("checks the shape of what claims to be encrypted, and marks it as unscanned by the hub", async () => {
     const send = (body: Record<string, unknown>) =>
       fetch(`${hub.url}/v1/messages`, {
