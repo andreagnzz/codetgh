@@ -551,8 +551,12 @@ export function createApp({
       const token = bearerToken(c.req.header("authorization"));
       const p = token ? await principalForToken(db, token, "a2a") : null;
       if (!p) throw new HubError("E_UNAUTHORIZED", "A2A token required");
+      const agent = await a2aAgentForToken(db, p);
+      // Every call counts, not only sends: task reads and failed calls cost the hub too.
+      const wait = limiter.take(`a2a:${agent.id}`);
+      if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many A2A requests: wait and retry", wait);
       const body = await c.req.json().catch(() => null);
-      return c.json(await a2a.handle(body, { p, agent: await a2aAgentForToken(db, p) }, c.req.header("a2a-version")));
+      return c.json(await a2a.handle(body, { p, agent }, c.req.header("a2a-version")));
     } catch (e) {
       return errorResponse(c, e);
     }
