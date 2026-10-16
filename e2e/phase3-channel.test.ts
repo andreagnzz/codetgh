@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -83,5 +85,33 @@ describe("channel bridge (phase 3)", () => {
     await wait(() => pushed.length > 0, 800);
     await client.close();
     expect(pushed).toHaveLength(0);
+  });
+
+  // On the v2 runtime Claude Code probes stdio servers with server/discover and does not register a channel that answers
+  // as a 2026-07-28 server (https://code.claude.com/docs/en/mcp#push-messages-with-channels). A legacy server answers
+  // the probe with a non-modern error, and Claude Code falls back to initialize
+  // (https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
+  it("answers the 2026-07-28 probe as a legacy server, then initializes as a channel", async () => {
+    const child = spawn(process.execPath, [bundle], { env: { PATH: process.env.PATH ?? "", CODETGH_PUSH_MODE: "hooks" } });
+    const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+    const rpc = async (id: number, method: string, params: object) => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      return JSON.parse(String((await lines.next()).value)) as { result?: Record<string, unknown>; error?: { code: number } };
+    };
+    const meta = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
+    const probe = await rpc(1, "server/discover", {
+      _meta: { ...meta, "io.modelcontextprotocol/clientInfo": { name: "probe", version: "0" } },
+    });
+    expect(probe.result).toBeUndefined();
+    // -32601 (method not found) is not a modern error such as UnsupportedProtocolVersionError (-32022).
+    expect(probe.error?.code).toBe(-32601);
+    const init = await rpc(2, "initialize", {
+      protocolVersion: "2026-07-28",
+      capabilities: {},
+      clientInfo: { name: "probe", version: "0" },
+    });
+    expect(init.result?.protocolVersion).not.toBe("2026-07-28");
+    expect((init.result?.capabilities as { experimental?: object } | undefined)?.experimental).toEqual({ "claude/channel": {} });
+    child.kill();
   });
 });
