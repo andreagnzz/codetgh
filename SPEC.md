@@ -516,7 +516,7 @@ Les hooks utilisent la forme exec (command et args) : elle se comporte pareil so
 | PreToolUse | Tous les outils du hub (matcher mcp__plugin_codetgh_hub__.*) | 3 s | Cherche des secrets dans les arguments texte (secretlint, sans réseau) et refuse l'appel (deny) s'il en trouve | Le contrôle est local : il continue de s'appliquer |
 | PostToolUse | idem | 2 s | Écrit le fichier touché dans la file locale, sans réseau | Aucun effet |
 | Stop | tous | 3 s | Publie l'état « inactif », vide la file d'envoi (démon) et signale les fichiers modifiés par le shell qui sont réservés par un autre agent (git status) | Ignoré |
-| SessionEnd | tous | 2 s | Libère les réservations intent, marque l'agent hors ligne | Ignoré : SessionEnd s'arrête par défaut à 1,5 s, d'où le délai explicite de 2 s |
+| SessionEnd | tous | 1,5 s | Libère les réservations intent, marque l'agent hors ligne | Ignoré : les hooks SessionEnd partagent un budget de 1,5 s que le délai d'un hook de plugin ne relève pas, d'où 1,2 s au plus depuis le lancement |
 
 UserPromptSubmit se déclenche aussi pour les tâches planifiées, les rapports de sous-agents et les messages entre sessions. Le hook reste donc très léger : requête conditionnelle (If-None-Match), cache local, et rien à injecter quand rien n'a changé. En conflit de réservation, PreToolUse répond ainsi :
 
