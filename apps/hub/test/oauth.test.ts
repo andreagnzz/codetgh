@@ -38,6 +38,14 @@ beforeAll(async () => {
   await hub.seed();
   BASE = hub.url;
   RESOURCE = `${BASE}/mcp`;
+  // In production the hub cannot reach its own public URL (Tailscale Funnel does not loop back into the
+  // container): every key lookup it makes through that URL fails here, as it does there.
+  const realFetch = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+    String(input instanceof Request ? input.url : input).startsWith(`${BASE}/api/auth/jwks`)
+      ? Promise.reject(new TypeError("the hub's public URL is unreachable from the hub"))
+      : realFetch(input, init),
+  );
   const issuer = new URL(`${BASE}/api/auth`);
   as = await oauth.processDiscoveryResponse(issuer, await oauth.discoveryRequest(issuer, { algorithm: "oauth2", ...insecure }));
 });
