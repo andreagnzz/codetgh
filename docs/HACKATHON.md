@@ -34,15 +34,9 @@ What it cannot do: stop a command the model decides to run, or a prompt injectio
 
 ## 2. Each person (on the VPS, under your own Unix user)
 
-1. Install the CLI in your home (never with sudo), then run setup:
-   ```
-   npm config set prefix ~/.local    # once; ~/.local/bin must be on PATH
-   npm install -g https://<hub>/cli/codetgh.tgz
-   codetgh setup                     # member; the hub URL; the token from Console → Tokens
-   ```
-   `setup` does the rest. On Claude Code 2.1.292 or later one `claude plugin install … --marketplace …` adds the hub's marketplace, installs the plugin and gives it the hub URL and the push mode (**rewake** when the team allows it, otherwise `hooks`); setup then turns the plugin **off at user scope** and hands it your token through stdin, never on a command line. Older versions get the same result in several steps: `claude update` first if you can.
+1. Follow the member [Quickstart](../README.md#quickstart), installing the CLI in your home, never with sudo: run `npm config set prefix ~/.local` once first (`~/.local/bin` must be on PATH). Setup picks the push mode itself: **rewake** when the team allows it (section 1), otherwise `hooks`. Setup leaves the plugin **off at user scope**, so it only runs in team repositories.
 
-   If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`.
+   If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`. Before the event, `codetgh upgrade` brings the CLI and the plugin up to date.
 2. In the hackathon repository, the first person runs `codetgh project new "<name>"` and commits `.claude/settings.json` and `CLAUDE.md`. The other pulls them.
 3. Open Claude Code in the repository. Its first line says it all:
    ```

@@ -34,10 +34,17 @@ function fakeClaude(version = "2.1.296") {
     dir,
     "claude",
     `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 const calls = ${JSON.stringify(join(dir, "calls"))};
 const options = ${JSON.stringify(join(dir, "options.json"))};
 const args = process.argv.slice(2).join(" ");
 appendFileSync(calls, args + "\\n");
+// Like Claude Code: adding the marketplace declares it in the user settings.
+if (args.startsWith("plugin marketplace add") || args.includes("--marketplace")) {
+  const settings = join(process.env.CLAUDE_CONFIG_DIR, "settings.json");
+  const url = process.argv[process.argv.indexOf(args.includes("--marketplace") ? "--marketplace" : "add") + 1];
+  writeFileSync(settings, JSON.stringify({ theme: "dark", extraKnownMarketplaces: { codetgh: { source: { source: "url", url } } } }));
+}
 const saved = () => (existsSync(options) ? JSON.parse(readFileSync(options, "utf8")) : {});
 // Like Claude Code: each call saves the options it is given and keeps the others.
 if (args === "plugin configure codetgh@codetgh --values-stdin")
@@ -69,6 +76,7 @@ async function setup(answers: Record<string, unknown>, opts: { stdin?: string; k
   const out: string[] = [];
   const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([opts.stdin ?? ""]) };
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-setup-"));
+  process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-claude-config-"));
   process.exitCode = 0;
   await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "setup", "--answers", file, "--token-stdin"]);
   const code = process.exitCode;
@@ -105,6 +113,10 @@ describe("codetgh setup from an answers file", () => {
     expect(store.get(hub.url)).toBe(team.sam.token);
     expect(JSON.parse(readFileSync(join(process.env.CODETGH_CONFIG_DIR ?? "", "config.json"), "utf8"))).toEqual({ url: hub.url });
     expect(calls()).toContain(`plugin marketplace add ${hub.url}/plugin/marketplace.json`);
+    expect(
+      JSON.parse(readFileSync(join(process.env.CLAUDE_CONFIG_DIR ?? "", "settings.json"), "utf8")).extraKnownMarketplaces.codetgh
+        .autoUpdate,
+    ).toBe(true);
     expect(calls()).toContain("plugin install codetgh@codetgh");
     // Off everywhere by default: project new turns it on in the team repositories only.
     expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
@@ -134,6 +146,11 @@ describe("codetgh setup from an answers file", () => {
       `plugin install codetgh --marketplace ${hub.url}/plugin/marketplace.json --scope user -y --config codetgh_url=${hub.url} --config push_mode=hooks`,
     ]);
     expect(calls()).not.toContain("plugin marketplace add");
+    // Third-party marketplaces do not auto-update by default: setup turns it on in the entry Claude Code declared.
+    expect(JSON.parse(readFileSync(join(process.env.CLAUDE_CONFIG_DIR ?? "", "settings.json"), "utf8"))).toEqual({
+      theme: "dark",
+      extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` }, autoUpdate: true } },
+    });
     expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
     // The token reaches the plugin through configure's stdin, never through any argument: argv shows in ps.
     expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");

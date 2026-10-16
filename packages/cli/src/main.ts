@@ -504,6 +504,23 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       // Off in every other repository: no session there talks to the hub. project new turns it on per repository.
       (await run("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user"]));
     if (ok) io.out("the plugin is on only in team repositories: codetgh project new turns it on in one");
+    // A third-party marketplace does not auto-update unless its entry says so; Claude Code declared it in the user settings.
+    const userSettings = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "settings.json");
+    const autoUpdate =
+      ok &&
+      (() => {
+        try {
+          const settings = JSON.parse(readFileSync(userSettings, "utf8"));
+          const entry = settings.extraKnownMarketplaces?.codetgh;
+          if (!entry) return false;
+          entry.autoUpdate ??= true;
+          writeFileSync(userSettings, `${JSON.stringify(settings, null, 2)}\n`);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+    if (ok && !autoUpdate) io.out("turn on plugin updates in Claude Code: /plugin → Marketplaces → codetgh → Enable auto-update");
     // The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
     const configured =
       ok &&
@@ -676,30 +693,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   const cli = new Command("codetgh").description("CodeTgh: connect your Claude to your team's hub").exitOverride();
 
   cli
-    .command("login")
-    .description("store a personal token from the console in the OS keychain")
-    .requiredOption("--url <url>", "hub URL, e.g. https://codetgh.example.com")
-    .option("--token-stdin", "read the token from stdin")
-    .action(async (opts: { url: string; tokenStdin?: boolean }) => {
-      const url = hubAddress(opts.url);
-      const token = await readToken(io, Boolean(opts.tokenStdin));
-      if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…)");
-      const who = await saveLogin(deps.keyring, url, token);
-      io.out(`Logged in as ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}.`);
-      io.out(`Next: install the Claude Code plugin and give it the hub URL (${url}) and the same token.`);
-    });
-
-  cli
-    .command("logout")
-    .description("remove the token from the OS keychain")
-    .action(async () => {
-      const { url } = readConfig();
-      if (url) (await deps.keyring()).delete(url);
-      io.out("Logged out.");
-    });
-
-  cli
     .command("setup")
+    .helpGroup("Everyday:")
     .description("guided install: admin (create the hub) or member (join a team), then codetgh doctor")
     .option("--answers <file>", "JSON answers instead of questions (no terminal needed)")
     .option("--token-stdin", "read the personal token from stdin")
@@ -707,6 +702,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("doctor")
+    .helpGroup("Everyday:")
     .description("one-screen check: Node, hub, token, Claude Code, plugin and hooks; each failure says what to do")
     .action(() => {
       banner(io, "doctor");
@@ -715,6 +711,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("project")
+    .helpGroup("Admin:")
     .description("team projects")
     .command("new <name>")
     .description("create the team project of this repository, declare the plugin in .claude/settings.json, and print the invitation")
@@ -759,7 +756,10 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`${path} is not valid JSON: fix it, then run this again`);
         }
-        settings.extraKnownMarketplaces = { ...settings.extraKnownMarketplaces, codetgh: { source: { source: "url", url: marketplace } } };
+        settings.extraKnownMarketplaces = {
+          ...settings.extraKnownMarketplaces,
+          codetgh: { source: { source: "url", url: marketplace }, autoUpdate: true },
+        };
         settings.enabledPlugins = { ...settings.enabledPlugins, "codetgh@codetgh": true };
         mkdirSync(join(root, ".claude"), { recursive: true });
         writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
@@ -801,6 +801,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("invite <email>")
+    .helpGroup("Admin:")
     .description("invite someone to the team (admins): prints the 7-day sign-up link, also emailed when the hub has SMTP")
     .option("--role <role>", "member, admin, guest or owner", "member")
     .option("--days <n>", "how many days the link works, 1 to 30", "7")
@@ -829,6 +830,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("status")
+    .helpGroup("Everyday:")
     .description("who is online, your unread messages and the live claims")
     .action(async () => {
       const { url, token } = await credentials(deps.keyring);
@@ -860,6 +862,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   ] as const)
     cli
       .command(name)
+      .helpGroup("Advanced:")
       .description(paused ? "stop your agents from sending; you can still write from the console" : "let your agents send again")
       .action(async () => {
         const { url, token } = await credentials(deps.keyring);
@@ -873,7 +876,33 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       });
 
   cli
+    .command("login")
+    .helpGroup("Advanced:")
+    .description("store a personal token from the console in the OS keychain")
+    .requiredOption("--url <url>", "hub URL, e.g. https://codetgh.example.com")
+    .option("--token-stdin", "read the token from stdin")
+    .action(async (opts: { url: string; tokenStdin?: boolean }) => {
+      const url = hubAddress(opts.url);
+      const token = await readToken(io, Boolean(opts.tokenStdin));
+      if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…)");
+      const who = await saveLogin(deps.keyring, url, token);
+      io.out(`Logged in as ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}.`);
+      io.out(`Next: install the Claude Code plugin and give it the hub URL (${url}) and the same token.`);
+    });
+
+  cli
+    .command("logout")
+    .helpGroup("Advanced:")
+    .description("remove the token from the OS keychain")
+    .action(async () => {
+      const { url } = readConfig();
+      if (url) (await deps.keyring()).delete(url);
+      io.out("Logged out.");
+    });
+
+  cli
     .command("launcher")
+    .helpGroup("Admin:")
     .description("owner's machine: run Remote Control for the projects switched on in the console, only in folders listed locally")
     .option("--config <file>", "the local list of project folders", join(configDir(), "launcher.json"))
     .option("--interval <seconds>", "how often to check the hub", "15")
@@ -901,7 +930,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       }
     });
 
-  const audit = cli.command("audit").description("check the team's audit log");
+  const audit = cli.command("audit").helpGroup("Admin:").description("check the team's audit log");
   audit
     .command("verify <file>")
     .description("verify an audit export from the console (Audit → Export JSON) offline")
@@ -948,6 +977,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("send")
+    .helpGroup("Everyday:")
     .description("send a message to your team; kept in the outbox while the hub is unreachable")
     .option("--to <address>", "@handle, @team or thread:<id> (encrypted: @handles, comma-separated)")
     .option("--reply-to <message id>", "reply in that message's thread")
@@ -1004,6 +1034,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("inbox")
+    .helpGroup("Everyday:")
     .description("read your unread messages, opening end-to-end encrypted ones on this machine (does not ack)")
     .option("--limit <n>", "how many", "20")
     .action(async (opts: { limit: string }) => {
@@ -1047,7 +1078,31 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       }
     });
 
-  const keys = cli.command("keys").description("keys for end-to-end encrypted threads");
+  cli
+    .command("upgrade")
+    .helpGroup("Everyday:")
+    .description("update this command and the Claude Code plugin from your team's hub")
+    .action(async () => {
+      const { url } = await credentials(deps.keyring);
+      if (!url) throw new Error("no hub URL: run codetgh setup (or codetgh login)");
+      const tgz = `${hubAddress(url)}/cli/codetgh.tgz`;
+      // exec goes through cross-spawn, so npm.cmd on Windows works like claude.cmd does.
+      const npm = await exec("npm", ["install", "-g", tgz], { timeout: 5 * 60_000 }).catch(() => {
+        throw new Error(`npm could not install the CLI: run npm install -g ${tgz}`);
+      });
+      io.out(`codetgh: ${npm.stdout.trim() || "installed"}`);
+      const plugin = await exec("claude", ["plugin", "marketplace", "update", "codetgh"], { timeout: 60_000 })
+        .then(() => exec("claude", ["plugin", "update", "codetgh@codetgh"], { timeout: 5 * 60_000 }))
+        .catch(() => {
+          throw new Error(
+            "the plugin was not updated: run claude plugin marketplace update codetgh && claude plugin update codetgh@codetgh",
+          );
+        });
+      io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
+      io.out("restart Claude Code to load the new plugin");
+    });
+
+  const keys = cli.command("keys").helpGroup("Advanced:").description("keys for end-to-end encrypted threads");
   keys
     .command("init")
     .description("create your key pair: the private key stays in the OS keychain, the public key goes to the hub")
@@ -1077,6 +1132,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("outbox")
+    .helpGroup("Advanced:")
     .description("messages queued while the hub was unreachable")
     .command("flush")
     .description("send the queued messages now")
@@ -1093,6 +1149,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("daemon")
+    .helpGroup("Advanced:")
     .description("keep a stream to the hub open, flush the outbox when it comes back, print incoming message ids")
     .action(async () => {
       const { url, token } = await credentials(deps.keyring);
@@ -1145,13 +1202,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
   cli
     .command("backup")
+    .helpGroup("Admin:")
     .description("dump the hub's database into deploy/backups/, then check that the dump restores (admins, on the hub's machine)")
     .option("--dir <path>", "hub checkout", ".")
     .action(async (opts: { dir: string }) => backup(checkout(opts.dir)));
 
   cli
     .command("update")
-    .description("pull the latest hub, back up, rebuild and restart it, then wait until it is ready (admins, on the hub's machine)")
+    .helpGroup("Admin:")
+    .description("(admins, on the hub's machine) update the hub: pull, back up, rebuild, restart, then wait until it is ready")
     .option("--dir <path>", "hub checkout", ".")
     .option("--hub <url>", "where the hub answers on this machine", "http://127.0.0.1:8787")
     .option("--wait <seconds>", "how long to wait for the new hub", "60")
@@ -1173,10 +1232,11 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     });
 
   cli
-    .command("hook <event>")
+    .command("hook <event>", { hidden: true })
     .description("run a Claude Code hook (used by the plugin)")
     .action((event: string) => runHook(event));
 
+  cli.commandsGroup("Advanced:").helpCommand(true);
   return cli;
 }
 
