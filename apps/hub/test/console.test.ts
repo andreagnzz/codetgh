@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message } from "../src/db/schema.js";
+import { membership, message } from "../src/db/schema.js";
+import { createExternalAgent } from "../src/domain/a2a.js";
+import { changeRole } from "../src/domain/admin.js";
 import { verifyChain } from "../src/domain/audit.js";
 import { contextPacket } from "../src/domain/overview.js";
 import { createInvitation } from "../src/domain/teams.js";
@@ -87,6 +89,24 @@ describe("console", () => {
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<img src=x");
     await sam.close();
+  });
+});
+
+describe("roles", () => {
+  it("leaves the hub's own members (a2a-, bridge-) out of role changes", async () => {
+    const p = await principalForToken(hub.db, team.lea.token);
+    if (!p) throw new Error("setup");
+    const { handle } = await createExternalAgent(hub.db, p, "Partner bot");
+    const [m] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.handle, handle.slice(1)));
+    await expect(changeRole(hub.db, p, m?.id ?? "", "admin")).rejects.toThrow("system member");
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, m?.id ?? ""));
+    expect(after?.role).toBe("guest");
   });
 });
 

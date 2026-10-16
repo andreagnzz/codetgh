@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { requireAdmin } from "./admin.js";
+import { RESERVED_HANDLE, requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -126,8 +126,6 @@ export async function revokeInvitations(db: Db, p: Principal, by: { id: string }
   });
 }
 
-// Handles are addresses (@handle): lowercase letters, digits and dashes; bridge- and a2a- belong to the hub's own members.
-const RESERVED_HANDLE = /^(bridge|a2a)-/;
 export async function setMemberHandle(db: Db, p: Principal, membershipId: string, handle: string) {
   requireAdmin(p);
   if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(handle))
