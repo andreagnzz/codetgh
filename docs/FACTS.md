@@ -284,3 +284,17 @@ Measured:
 - **Result.** The answer, written in the same turn after the Read tool, quoted PELICAN-42.
 
 So a message delivered by the `inbox` hook is read between two tool calls, without waiting for the turn to end.
+
+### One-command plugin install (docs read 2026-10-16, not run against a real Claude Code)
+
+From [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-reference) § plugin install, [Install and manage plugins](https://code.claude.com/docs/en/plugins/install) § Add and install from your shell, [Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference) § Where values are stored, and the [changelog](https://code.claude.com/docs/en/changelog) (2.1.285, 2.1.292):
+- `claude plugin install <plugin> --marketplace <source>` adds the marketplace if it is not there yet, then installs. From the shell it needs Claude Code 2.1.292 (2.1.275 for `/plugin install` in a session). The plugin is given **by its bare name**, without `@marketplace`. A source already added is reused; a new one is declared in user settings, without a confirmation, under the same policy checks as `marketplace add`. A hosted `https://…/marketplace.json` is an accepted source.
+- `-s, --scope user|project|local`, default `user`.
+- `--config <key=value>` sets a `userConfig` option; repeat it for each option. 2.1.285 added the `<server>.<key>` form for bundled `.mcpb` servers; the plain form predates it (first version not documented).
+- `-y, --yes` (2.1.229) accepts a marketplace-declared install command without the prompt. Without a TTY and without `-y`, such an install is refused. The hub's plugin is an archive source, so no command is shown; `-y` only keeps a non-TTY setup from stalling.
+- `--json` (2.1.268) prints one result object on the last line of stdout. CodeTgh does not use it: the exit code (0 or 1) is enough.
+- Option storage: non-sensitive values go under `pluginConfigs` in the user `settings.json`, `sensitive` ones (`codetgh_token`) to the platform's secure credential store. The docs state this for `userConfig` in general, not for `--config` specifically.
+
+- `claude plugin install` documents no stdin or file channel for option values. `claude plugin configure <name@marketplace> --values-stdin` (2.1.285) reads a JSON object of single-line strings from stdin; options left out keep their saved values.
+
+`codetgh setup` therefore runs, on 2.1.292 or later, `claude plugin install codetgh --marketplace <hub>/plugin/marketplace.json --scope user -y --config codetgh_url=<hub> --config push_mode=<mode>`, then `claude plugin disable codetgh@codetgh --scope user`, then `claude plugin configure codetgh@codetgh --values-stdin` with `{"codetgh_token": …}`. The token never goes through `--config`: process arguments are readable by every user of a shared machine (`ps`, `/proc`). On older versions setup keeps marketplace add, install, and the same configure step with all three options. Tested with a fake `claude` (`packages/cli/test/setup.test.ts`).
