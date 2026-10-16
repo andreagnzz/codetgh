@@ -709,7 +709,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .helpGroup("Admin:")
     .description("team projects")
     .command("new <name>")
-    .description("create the team project of this repository, declare the plugin in .claude/settings.json, and print the invitation")
+    .description(
+      "optional: name this repository's team project (a member's first session creates it otherwise), declare the plugin in .claude/settings.json, and print the invitation",
+    )
     .action(async (name: string) => {
       const { url, token } = await credentials(deps.keyring);
       if (!url || !token) throw new Error("no hub URL or token: run codetgh setup (or codetgh login)");

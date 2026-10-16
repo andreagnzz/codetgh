@@ -28,8 +28,8 @@ const FR: Record<string, string> = {
   "Open claude.ai/code": "Ouvrir claude.ai/code",
   "Not in a project": "Hors projet",
   "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
-  "No project yet. A project appears when someone runs codetgh project new in a team repository.":
-    "Aucun projet pour l'instant. Un projet apparaît quand quelqu'un lance codetgh project new dans un dépôt de l'équipe.",
+  "No project yet. A project appears when a member opens Claude Code in a repository, or runs codetgh project new there.":
+    "Aucun projet pour l'instant. Un projet apparaît quand un membre ouvre Claude Code dans un dépôt, ou y lance codetgh project new.",
   Claims: "Réservations",
   Tasks: "Tâches",
   Memory: "Mémoire",
