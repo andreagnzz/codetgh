@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
-import { fakeCommand } from "../../../e2e/helpers.js";
+import { consolePost, fakeCommand } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -110,6 +110,7 @@ it("says when the plugin itself has no hub URL or token, even with a token in th
 });
 
 it("says when the push mode is rewake but the team does not allow it, and when Claude Code is older than tested", async () => {
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "", push_hooks: "on" });
   fakeClaude("2.1.250", [installedPlugin()], { configured: true, connected: true, pushMode: "rewake" });
   const { out, code } = await doctor(hub.url, team.lea.token);
   expect(out).toContain("FAIL push mode rewake, but this team does not allow it");

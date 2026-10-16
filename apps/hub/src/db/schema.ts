@@ -9,7 +9,6 @@ export type TeamSettings = {
   retention_days?: number;
   secret_patterns?: string[];
   allowed_fingerprints?: string[];
-  strict?: boolean;
   claims_enforcement?: "off" | "warn" | "ask" | "block";
   memory_accept_by?: "member" | "admin" | "owner";
   memory_accept_via_mcp?: boolean;

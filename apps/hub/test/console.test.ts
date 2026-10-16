@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { membership, message } from "../src/db/schema.js";
+import { membership, message, team as teamTable } from "../src/db/schema.js";
 import { createExternalAgent } from "../src/domain/a2a.js";
 import { changeRole } from "../src/domain/admin.js";
 import { verifyChain } from "../src/domain/audit.js";
@@ -67,6 +67,14 @@ describe("console", () => {
       secret_patterns: "(a+)+$",
     });
     expect(res.status).toBe(400);
+  });
+
+  it("offers and stores no strict mode, a setting that did nothing", async () => {
+    const html = await (await fetch(`${hub.url}/console/settings`, { headers: { cookie: team.lea.cookie } })).text();
+    expect(html).not.toContain('name="strict"');
+    await post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), { retention_days: "90", strict: "on" });
+    const [row] = await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
+    expect(row?.settings).not.toHaveProperty("strict");
   });
 
   it("keeps admin pages from members", async () => {

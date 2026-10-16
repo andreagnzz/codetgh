@@ -1089,9 +1089,6 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {(p.settings.secret_patterns ?? []).join("\n")}
               </textarea>
             </label>
-            <label>
-              <input type="checkbox" name="strict" value="on" checked={Boolean(p.settings.strict)} /> {_("Strict mode")}
-            </label>
           </section>
           <section aria-labelledby="bridges-h">
             <h2 id="bridges-h">{_("Bridges")}</h2>
@@ -1151,7 +1148,6 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .split(/\r?\n/)
         .map((s) => s.trim())
         .filter(Boolean),
-      strict: f.strict === "on",
       // Prompt-time reading (hooks) is always on; rewake push is the team's opt-in.
       pushAllowedModes: f.push_rewake === "on" ? ["hooks", "rewake"] : ["hooks"],
       slackChannel: /^[A-Z0-9]{1,40}$/.test(f.slack_channel ?? "") ? f.slack_channel : undefined,
