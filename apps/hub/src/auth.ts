@@ -69,8 +69,8 @@ export function createAuth(
         resource: `${config.publicUrl}/mcp`,
         // MCP_SCOPE is the one resource scope, so it alone lands in the /mcp challenge and protected resource metadata.
         scopes: [MCP_SCOPE, "openid", "profile", "email", "offline_access"],
-        allowDynamicClientRegistration: true,
-        allowUnauthenticatedClientRegistration: true,
+        // DCR is deprecated in MCP 2026-07-28: clients identify with a metadata document (CIMD, below).
+        allowDynamicClientRegistration: false,
       }),
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
       // SSO: the provider proves the email; the invitation-only rule above still decides who gets in.

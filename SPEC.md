@@ -630,7 +630,7 @@ Le cas des comptes individuels est le plus fréquent pour des équipes dont les 
 | Nom | CodeTgh |
 | URL | https://<hub>/mcp |
 | Authentification | « Sign in now » : tous les outils exigent une identité |
-| Client OAuth | Identité publiée de Claude (CIMD) ; enregistrement automatique (DCR) en repli |
+| Client OAuth | Identité publiée de Claude (CIMD) uniquement ; pas d'enregistrement automatique (DCR, déprécié en MCP 2026-07-28) |
 | En-têtes de requête | Vides |
 
 Chaque personne s'authentifie elle-même : le hub voit donc un utilisateur par personne. Les en-têtes statiques (bêta) partageraient un seul identifiant pour toute l'organisation, et CodeTgh ne les utilise pas.
@@ -645,7 +645,7 @@ Le client OAuth de Claude est plus strict que la spécification MCP. Les lignes 
 | Défi d'accès | Répondre 401 avec WWW-Authenticate: Bearer resource_metadata="…" à toute requête sans jeton ; Claude ignore cet en-tête sur une réponse 200 |
 | Ressource protégée | Publier un champ resource égal à l'URL saisie, chemin compris, et placer l'émetteur principal en tête de authorization_servers : Claude ne lit que la première entrée |
 | Serveur d'autorisation | Publier ses métadonnées (RFC 8414 ou OpenID Connect Discovery) avec code_challenge_methods_supported égal à ["S256"] : Claude ajoute PKCE S256 à chaque demande |
-| Identité du client | Annoncer client_id_metadata_document_supported: true et "none" dans token_endpoint_auth_methods_supported pour CIMD, et exposer registration_endpoint pour DCR ; sans les deux valeurs CIMD, Claude se replie sur DCR |
+| Identité du client | Annoncer client_id_metadata_document_supported: true et "none" dans token_endpoint_auth_methods_supported pour CIMD ; pas de registration_endpoint (Claude Code et claude.ai s'identifient par CIMD, vérifié en vrai le 2026-10-16) |
 | Redirections | Accepter https://claude.ai/api/mcp/auth_callback ; pour Claude Code, accepter http://localhost et http://127.0.0.1 sans comparer le port |
 | Jetons | Lier le jeton à l'audience du hub ; accepter application/x-www-form-urlencoded sur /token ; faire tourner les refresh tokens ; renvoyer invalid_grant quand l'un d'eux est périmé |
 | Portée | Exiger la portée codetgh sur les jetons OAuth de /mcp, l'annoncer dans le défi 401 et dans scopes_supported de la ressource protégée ; un jeton sans elle reçoit 403 insufficient_scope |

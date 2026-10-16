@@ -137,6 +137,7 @@ export function createApp({
     throw e;
   };
 
+  const localHost = !config.host || config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
   const serveOAuth = requireMcpAuth(
     auth,
     async (request, claims) => {
@@ -156,7 +157,8 @@ export function createApp({
         return forbidden(e);
       }
     },
-    { resource, requiredScopes: [MCP_SCOPE] },
+    // Its own keys from its own socket: behind Tailscale Funnel the hub cannot reach its public URL.
+    { resource, requiredScopes: [MCP_SCOPE], jwksUrl: `http://${localHost}:${config.port}/api/auth/jwks` },
   );
 
   // Reject oversized bodies before parsing; message limits (8 KB) apply later with stable error codes.

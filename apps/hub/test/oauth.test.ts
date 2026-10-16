@@ -5,7 +5,7 @@ import * as oauth from "oauth4webapi";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type Hub, startHub } from "./harness.js";
 
-// Replays the browser flow Claude Code runs on /mcp: discovery, CIMD or DCR, PKCE S256, login, consent, code, refresh.
+// Replays the browser flow Claude Code runs on /mcp: discovery, CIMD, PKCE S256, login, consent, code, refresh.
 const REDIRECT = "http://127.0.0.1:33418/callback";
 const insecure = { [oauth.allowInsecureRequests]: true };
 
@@ -38,6 +38,14 @@ beforeAll(async () => {
   await hub.seed();
   BASE = hub.url;
   RESOURCE = `${BASE}/mcp`;
+  // In production the hub cannot reach its own public URL (Tailscale Funnel does not loop back into the
+  // container): every key lookup it makes through that URL fails here, as it does there.
+  const realFetch = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+    String(input instanceof Request ? input.url : input).startsWith(`${BASE}/api/auth/jwks`)
+      ? Promise.reject(new TypeError("the hub's public URL is unreachable from the hub"))
+      : realFetch(input, init),
+  );
   const issuer = new URL(`${BASE}/api/auth`);
   as = await oauth.processDiscoveryResponse(issuer, await oauth.discoveryRequest(issuer, { algorithm: "oauth2", ...insecure }));
 });
@@ -195,8 +203,10 @@ describe("MCP authorization 2026-07-28", () => {
     expect(challenge).toContain("resource_metadata=");
   });
 
-  it("still registers a DCR client, then rotates its refresh token", async () => {
-    const registration = await postJson(new URL(as.registration_endpoint ?? "").pathname, {
+  // MCP 2026-07-28 deprecates DCR; clients identify with a metadata document (CIMD), as Claude Code does.
+  it("offers no dynamic client registration", async () => {
+    expect(as.registration_endpoint).toBeUndefined();
+    const registration = await postJson("/api/auth/oauth2/register", {
       client_name: "phase0-test",
       redirect_uris: [REDIRECT],
       token_endpoint_auth_method: "none",
@@ -204,8 +214,11 @@ describe("MCP authorization 2026-07-28", () => {
       response_types: ["code"],
       application_type: "native",
     });
-    expect(registration.res.status, JSON.stringify(registration.data)).toBe(201);
-    const client: oauth.Client = { client_id: registration.data.client_id ?? "", token_endpoint_auth_method: "none" };
+    expect(registration.res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("rotates a CIMD client's refresh token", async () => {
+    const client = cimdClient;
     const tokens = await login(client, "codetgh offline_access");
     expect(tokens.refresh_token).toBeTypeOf("string");
     expect(await whoami(tokens.access_token)).toMatchObject({ user: { name: "Léa" }, auth: "oauth" });

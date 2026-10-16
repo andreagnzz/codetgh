@@ -188,7 +188,7 @@ Result:
 
 Not tried: the plugin's own `channel` server through `--dangerously-load-development-channels plugin:codetgh@<marketplace>` (it needs the interactive `userConfig` values), and a Team or Enterprise org where `channelsEnabled` must be on.
 
-### claude.ai connector checklist (Annex C point 8, claude.ai side), automated 2026-10-14; real run pending (P5)
+### claude.ai connector checklist (Annex C point 8, claude.ai side), automated 2026-10-14; real run 2026-10-16 (P5 below)
 
 `apps/hub/test/claude-ai.test.ts` checks each row of SPEC « claude.ai et autres clients » that a test can reach:
 - 401 with `WWW-Authenticate: Bearer resource_metadata=…`;
@@ -363,3 +363,11 @@ From [Settings reference](https://code.claude.com/docs/en/settings-reference) §
 - `claude plugin marketplace update [name]` refreshes the listing only and prints `Successfully updated marketplace: <name>`. `claude plugin update <plugin>@<marketplace>` updates the plugin to the latest version its marketplace offers, at the most specific scope it is installed at (2.1.281; before, `user` unless `--scope`); the new version loads in the next session or after `/reload-plugins`. When nothing is newer it prints `<name> is already at the latest version (<v>).` and exits 0. `-y` is only for command-source plugins, which the hub's is not.
 
 `codetgh project new` therefore writes `"autoUpdate": true` in the project's entry, and `codetgh setup` adds it to the user-settings entry Claude Code declared (a value already there is kept; without the entry it prints the `/plugin` toggle instead). `codetgh upgrade` runs `claude plugin marketplace update codetgh`, then `claude plugin update codetgh@codetgh`. Tested with a fake `claude` (`packages/cli/test/setup.test.ts`, `packages/cli/test/upgrade.test.ts`, `e2e/project-new.test.ts`).
+
+### P5: claude.ai custom connector on the production hub (2026-10-16)
+
+Hub public through Tailscale Funnel; claude.ai → Settings → Connectors → custom connector `<hub>/mcp`.
+- claude.ai registered by **CIMD**: client `https://claude.ai/oauth/mcp-oauth-client-metadata`, `token_endpoint_auth_method: none`; no DCR call. Authorize carried `scope=codetgh offline_access`, `resource=<hub>/mcp`, `redirect_uri=https://claude.ai/api/mcp/auth_callback`; MCP requests used protocol `2026-07-28` (first call `server/discover`), user agent `Claude-User`.
+- First attempt: tokens were right (`aud=<hub>/mcp`, `iss=<hub>/api/auth`, scope `codetgh`) but /mcp answered 401 "no token payload": the hub fetched its JWKS through its public URL, which the container cannot reach behind Funnel. Fixed in #64 (`jwksUrl` on the hub's own socket).
+- After the fix: one 401 (the unauthenticated first call), then /mcp 200 for claude.ai's tool calls.
+
