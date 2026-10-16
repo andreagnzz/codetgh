@@ -40,9 +40,7 @@ What it cannot do: stop a command the model decides to run, or a prompt injectio
    npm install -g https://<hub>/cli/codetgh.tgz
    codetgh setup                     # member; the hub URL; the token from Console → Tokens
    ```
-   `setup` does the rest:
-   - it installs the plugin **off at user scope**;
-   - it gives the plugin the hub URL, your token and the push mode: **rewake** when the team allows it, otherwise `hooks`.
+   `setup` does the rest. On Claude Code 2.1.292 or later one `claude plugin install … --marketplace …` adds the hub's marketplace, installs the plugin and gives it the hub URL and the push mode (**rewake** when the team allows it, otherwise `hooks`); setup then turns the plugin **off at user scope** and hands it your token through stdin, never on a command line. Older versions get the same result in several steps: `claude update` first if you can.
 
    If you installed the plugin before, turn it off everywhere else: `claude plugin disable codetgh@codetgh --scope user`.
 2. In the hackathon repository, the first person runs `codetgh project new "<name>"` and commits `.claude/settings.json` and `CLAUDE.md`. The other pulls them.

@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 // A fake claude: records its arguments, and lists the plugin as installed once "plugin install" ran.
-function fakeClaude() {
+function fakeClaude(version = "2.1.296") {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   const plugin = join(dir, "plugin");
   mkdirSync(join(plugin, "dist"), { recursive: true });
@@ -38,11 +38,19 @@ const calls = ${JSON.stringify(join(dir, "calls"))};
 const options = ${JSON.stringify(join(dir, "options.json"))};
 const args = process.argv.slice(2).join(" ");
 appendFileSync(calls, args + "\\n");
-if (args === "plugin configure codetgh@codetgh --values-stdin") writeFileSync(options, readFileSync(0, "utf8"));
+const saved = () => (existsSync(options) ? JSON.parse(readFileSync(options, "utf8")) : {});
+// Like Claude Code: each call saves the options it is given and keeps the others.
+if (args === "plugin configure codetgh@codetgh --values-stdin")
+  writeFileSync(options, JSON.stringify({ ...saved(), ...JSON.parse(readFileSync(0, "utf8")) }));
+if (args.startsWith("plugin install") && args.includes("--config")) {
+  const argv = process.argv.slice(2);
+  const set = argv.flatMap((a, i) => (argv[i - 1] === "--config" ? [a.split(/=(.*)/s).slice(0, 2)] : []));
+  writeFileSync(options, JSON.stringify({ ...saved(), ...Object.fromEntries(set) }));
+}
 if (args === "plugin configure codetgh@codetgh --json")
   console.log(JSON.stringify(existsSync(options) ? { configured: ["codetgh_url", "codetgh_token"], unconfigured: [] } : { configured: [], unconfigured: ["codetgh_url"] }));
 if (args === "mcp list") console.log(existsSync(options) ? "plugin:codetgh:hub: /mcp (HTTP) - ✔ Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
-if (args === "--version") console.log("2.1.296 (Claude Code)");
+if (args === "--version") console.log(${JSON.stringify(version)} + " (Claude Code)");
 else if (args.startsWith("plugin list"))
   console.log(readFileSync(calls, "utf8").includes("plugin install") ? ${JSON.stringify(listed)} : "[]");
 `,
@@ -87,7 +95,8 @@ describe("codetgh setup from an answers file", () => {
   });
 
   it("member: connects to the hub, keeps the token in the keychain, installs the plugin, then runs doctor", async () => {
-    const calls = fakeClaude();
+    // Before 2.1.292: marketplace add, install, then configure through stdin.
+    const calls = fakeClaude("2.1.280");
     const { out, code, store } = await setup(
       { role: "member", hub_url: hub.url, invite_link: "", display_name: "Sam", install_plugin: true },
       { stdin: team.sam.token },
@@ -107,6 +116,30 @@ describe("codetgh setup from an answers file", () => {
     expect(calls()).not.toContain(team.sam.token);
     expect(out).toContain("ok   plugin options: hub URL and token set");
     expect(out).toContain("restart Claude Code");
+    expect(out).toContain("older than 2.1.292");
+    expect(out).not.toContain(team.sam.token);
+  });
+
+  it("member: on Claude Code 2.1.292 or later, installs the plugin in one claude command, the token through stdin", async () => {
+    const calls = fakeClaude("2.1.301");
+    const { out, code } = await setup(
+      { role: "member", hub_url: hub.url, invite_link: "", display_name: "Sam", install_plugin: true },
+      { stdin: team.sam.token },
+    );
+    expect(code).toBe(0);
+    const installs = calls()
+      .split("\n")
+      .filter((l) => l.startsWith("plugin install"));
+    expect(installs).toEqual([
+      `plugin install codetgh --marketplace ${hub.url}/plugin/marketplace.json --scope user -y --config codetgh_url=${hub.url} --config push_mode=hooks`,
+    ]);
+    expect(calls()).not.toContain("plugin marketplace add");
+    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user");
+    // The token reaches the plugin through configure's stdin, never through any argument: argv shows in ps.
+    expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
+    expect(calls()).not.toContain(team.sam.token);
+    expect(calls.options()).toEqual({ codetgh_url: hub.url, push_mode: "hooks", codetgh_token: team.sam.token });
+    expect(out).toContain("ok   plugin options: hub URL and token set");
     expect(out).not.toContain(team.sam.token);
   });
 

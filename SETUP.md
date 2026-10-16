@@ -53,12 +53,15 @@ En cas d'échec : « token refused by the hub » veut dire que le jeton a été 
 
 ### Étape : le plugin Claude Code
 
+Avec Claude Code 2.1.292 ou plus récent (`claude --version`), une seule commande ajoute le marketplace du hub et installe le plugin :
+
 ```
-claude plugin marketplace add <adresse du hub>/plugin/marketplace.json
-claude plugin install codetgh@codetgh
+claude plugin install codetgh --marketplace <adresse du hub>/plugin/marketplace.json
 ```
 
-Le plugin demande l'adresse du hub et le jeton dans **son propre dialogue**. La personne les y saisit elle-même, jamais dans la conversation.
+Avant 2.1.292 : `claude plugin marketplace add <adresse du hub>/plugin/marketplace.json`, puis `claude plugin install codetgh@codetgh`.
+
+Le plugin demande l'adresse du hub et le jeton dans **son propre dialogue**. La personne les y saisit elle-même, jamais dans la conversation. (`codetgh setup`, lancé par la personne dans son terminal, fait tout cela d'un coup, jeton compris.)
 En cas d'échec : Claude Code est trop ancien (`claude update`, il faut 2.1.224 ou plus récent), ou le hub n'est pas en HTTPS public. Dans ce cas, c'est à l'administrateur d'agir.
 
 ### Vérification finale
