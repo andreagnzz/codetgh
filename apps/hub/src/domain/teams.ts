@@ -26,7 +26,13 @@ const slugify = (s: string) =>
 export async function createTeam(db: Db, name: string) {
   const id = newId("team");
   await db.transaction(async (tx) => {
-    await tx.insert(team).values({ id, name, slug: `${slugify(name)}-${id.slice(-6).toLowerCase()}` });
+    // Rewake on by default for new teams; existing teams keep what they chose.
+    await tx.insert(team).values({
+      id,
+      name,
+      slug: `${slugify(name)}-${id.slice(-6).toLowerCase()}`,
+      settings: { push_allowed_modes: ["hooks", "rewake"] },
+    });
     await appendAudit(tx, { teamId: id, actorType: "hub", via: "system", action: "team.created", subjectId: id });
   });
   return id;

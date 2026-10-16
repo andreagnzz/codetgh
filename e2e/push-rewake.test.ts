@@ -25,7 +25,8 @@ const allowRewake = (modes: string[]) =>
   });
 
 describe("push: rewake mode (opt-in)", () => {
-  it("is refused by the hub until an admin allows it", async () => {
+  it("is refused by the hub when an admin turns it off", async () => {
+    await allowRewake(["hooks"]);
     await startSession(hub.url, team.sam.token, "sam-rw0");
     const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=sam-rw0&wait_s=1`, {
       headers: { Authorization: `Bearer ${team.sam.token}` },
