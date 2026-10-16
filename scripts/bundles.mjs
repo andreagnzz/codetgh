@@ -12,16 +12,14 @@ const plugin = join(root, "packages/plugin");
 mkdirSync(out, { recursive: true });
 
 const files = {};
-const walk = (dir) => {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) walk(path);
-    else files[`codetgh/${relative(plugin, path).split(sep).join("/")}`] = readFileSync(path);
-  }
+const add = (path) => {
+  if (statSync(path).isDirectory()) for (const name of readdirSync(path)) add(join(path, name));
+  else files[`codetgh/${relative(plugin, path).split(sep).join("/")}`] = readFileSync(path);
 };
 if (!statSync(join(plugin, "dist/hook.js"), { throwIfNoEntry: false }))
   throw new Error("packages/plugin/dist/hook.js is missing: run pnpm -r build first");
-walk(plugin);
+// What the plugin is made of, nothing else: a stray file left in packages/plugin (notes, .env, a dump) never ships.
+for (const name of [".claude-plugin", ".mcp.json", "agents", "assets", "dist", "hooks", "skills"]) add(join(plugin, name));
 files["codetgh/LICENSE"] = readFileSync(join(root, "LICENSE"));
 files["codetgh/NOTICE"] = readFileSync(join(root, "NOTICE"));
 // Fixed timestamps: the same sources give the same zip, so the marketplace digest only changes with the plugin.
