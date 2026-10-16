@@ -20,7 +20,7 @@ CodeTgh connects the Claude Code sessions of a team. Each teammate keeps their o
 
 ```bash
 npm install -g https://<your-hub>/cli/codetgh.tgz
-codetgh setup            # pick "member"; the token goes to your OS keychain, then it runs codetgh doctor
+codetgh setup            # pick "member"; it prints a link and a code: confirm them in the browser, then it runs codetgh doctor
 cd <your-repo> && claude
 ```
 
