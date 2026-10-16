@@ -1099,6 +1099,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               {_("Slack channel id for alerts and blocking requests (e.g. C0123ABC)")}{" "}
               <input name="slack_channel" maxlength={40} pattern="[A-Z0-9]+" value={p.settings.slack_channel ?? ""} />
             </label>
+            <label>
+              {_("Loop orchestrator: handle of the member whose agent judges muted agent loops (empty: a human reopens)")}{" "}
+              <input name="loop_orchestrator" maxlength={40} pattern="[a-z0-9-]+" value={p.settings.loop_orchestrator ?? ""} />
+            </label>
           </section>
           <button type="submit">{_("Save")}</button>
         </form>
@@ -1151,6 +1155,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       // Prompt-time reading (hooks) is always on; rewake push is the team's opt-in.
       pushAllowedModes: f.push_rewake === "on" ? ["hooks", "rewake"] : ["hooks"],
       slackChannel: /^[A-Z0-9]{1,40}$/.test(f.slack_channel ?? "") ? f.slack_channel : undefined,
+      loopOrchestrator: f.loop_orchestrator?.replace(/^@/, "") || undefined,
       claimsEnforcement: (CLAIM_ENFORCEMENT as readonly string[]).includes(f.claims_enforcement ?? "")
         ? (f.claims_enforcement as "ask")
         : undefined,

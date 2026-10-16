@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { createClient } from "@codetgh/sdk";
+// Stay on SDK 1.x (legacy initialize only): Claude Code does not register a channel that negotiates 2026-07-28,
+// https://code.claude.com/docs/en/mcp#push-messages-with-channels
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 

@@ -7,7 +7,12 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { fakeCommand, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 // A hub that answers every request, but only after a delay: each call alone fits its timeout, the sum does not.
-const DELAYS: Record<string, number> = { "/v1/agents/session": 2300, "/v1/claims/pre-edit": 4000, "/v1/claims/check": 4000 };
+const DELAYS: Record<string, number> = {
+  "/v1/agents/session": 2300,
+  "/v1/claims/pre-edit": 4000,
+  "/v1/claims/check": 4000,
+  "/v1/agents/session/end": 3000,
+};
 let slow: Server;
 let url = "";
 beforeAll(async () => {
@@ -65,3 +70,11 @@ it.skipIf(process.platform === "win32")(
     expect(stop.ms, `stop took ${stop.ms} ms`).toBeLessThan(2800);
   },
 );
+
+// SessionEnd hooks share a 1.5 s budget, and a plugin hook's own timeout does not raise it.
+it("session-end gives up on a slow hub within its 1.5 s budget, and fails open", async () => {
+  const r = await runHook("session-end", { session_id: "slow-end", reason: "prompt_input_exit" }, hookEnv(url, "ctgh_any"));
+  expect(r.code).toBe(0);
+  expect(r.out).toBeNull();
+  expect(r.ms, `session-end took ${r.ms} ms`).toBeLessThan(1300);
+});

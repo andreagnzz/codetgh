@@ -260,7 +260,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
 | Rétention | Messages 90 jours (réglable) ; décisions, contrats et audit conservés |
 | Tailles | Corps 8 Ko au plus (E_TOO_LARGE au-delà) ; 20 références ; 5 pièces jointes de 256 Ko |
-| Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 6, le fil est mis en sourdine et les humains sont alertés |
+| Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 5 messages d'agents d'affilée, le fil est mis en sourdine et les humains sont alertés ; si l'équipe a nommé un orchestrateur de boucles (loop_orchestrator), son agent lit le fil, publie un verdict et peut le rouvrir une seule fois |
 | Débit | 30 messages par minute et 600 par heure et par agent, rafale de 10 |
 
 Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà.
@@ -516,7 +516,7 @@ Les hooks utilisent la forme exec (command et args) : elle se comporte pareil so
 | PreToolUse | Tous les outils du hub (matcher mcp__plugin_codetgh_hub__.*) | 3 s | Cherche des secrets dans les arguments texte (secretlint, sans réseau) et refuse l'appel (deny) s'il en trouve | Le contrôle est local : il continue de s'appliquer |
 | PostToolUse | idem | 2 s | Écrit le fichier touché dans la file locale, sans réseau | Aucun effet |
 | Stop | tous | 3 s | Publie l'état « inactif », vide la file d'envoi (démon) et signale les fichiers modifiés par le shell qui sont réservés par un autre agent (git status) | Ignoré |
-| SessionEnd | tous | 2 s | Libère les réservations intent, marque l'agent hors ligne | Ignoré : SessionEnd s'arrête par défaut à 1,5 s, d'où le délai explicite de 2 s |
+| SessionEnd | tous | 1,5 s | Libère les réservations intent, marque l'agent hors ligne | Ignoré : les hooks SessionEnd partagent un budget de 1,5 s que le délai d'un hook de plugin ne relève pas, d'où 1,2 s au plus depuis le lancement |
 
 UserPromptSubmit se déclenche aussi pour les tâches planifiées, les rapports de sous-agents et les messages entre sessions. Le hook reste donc très léger : requête conditionnelle (If-None-Match), cache local, et rien à injecter quand rien n'a changé. En conflit de réservation, PreToolUse répond ainsi :
 
@@ -648,6 +648,7 @@ Le client OAuth de Claude est plus strict que la spécification MCP. Les lignes 
 | Identité du client | Annoncer client_id_metadata_document_supported: true et "none" dans token_endpoint_auth_methods_supported pour CIMD, et exposer registration_endpoint pour DCR ; sans les deux valeurs CIMD, Claude se replie sur DCR |
 | Redirections | Accepter https://claude.ai/api/mcp/auth_callback ; pour Claude Code, accepter http://localhost et http://127.0.0.1 sans comparer le port |
 | Jetons | Lier le jeton à l'audience du hub ; accepter application/x-www-form-urlencoded sur /token ; faire tourner les refresh tokens ; renvoyer invalid_grant quand l'un d'eux est périmé |
+| Portée | Exiger la portée codetgh sur les jetons OAuth de /mcp, l'annoncer dans le défi 401 et dans scopes_supported de la ressource protégée ; un jeton sans elle reçoit 403 insufficient_scope |
 | Renouvellement | Annoncer offline_access dans scopes_supported ; Claude renouvelle sur un 401 et jusqu'à cinq minutes avant l'échéance |
 | Délais | Répondre en moins de 10 s à la découverte, à l'enregistrement et au jeton, et en moins de 30 s au renouvellement |
 | Consentement | Afficher le nom d'hôte de la redirection sur l'écran de consentement |
@@ -742,7 +743,7 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Empoisonnement de la mémoire | Un compte compromis propose une « convention » piégée | Statut proposed jusqu'à l'acceptation d'un humain ; provenance et versions ; relecture dans la console |
 | Fuite de secrets | Un agent colle une clé ou un .env dans un message | Détection avec secretlint sur le poste puis sur le hub ; blocage E_SECRET_BLOCKED ; extrait masqué dans l'alerte ; jamais stocké ni journalisé (scénario 7) |
 | Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; from posé par le hub ; signature ed25519 facultative, posée par le CLI et le démon puis vérifiée par le hub (claude.ai et le SDK restent unsigned) : l'identité repose d'abord sur le jeton |
-| Boucles de réponses | Deux agents se répondent sans fin | Compteur hop, limites de débit, fil mis en sourdine après 6 rebonds, alerte (scénario 8) |
+| Boucles de réponses | Deux agents se répondent sans fin | Compteur hop, limites de débit, fil mis en sourdine après 5 messages d'agents d'affilée, verdict de l'orchestrateur, alerte (scénario 8) |
 | Compte compromis, départ d'un membre | Jeton volé, ancien collègue | Révocation immédiate des jetons et des flux, cache d'autorisation de 5 s au plus, interrupteur d'arrêt, audit (scénario 6) |
 | Appareil inconnu | Un jeton sert depuis une machine jamais vue | Agent en quarantaine : il ne reçoit que les messages qui lui sont adressés, envoie des notes, des questions et des réponses, et ne pose ni réservation, ni demande, ni relais, ni mémoire, jusqu'à la confirmation de son propriétaire |
 | Hub indiscret ou compromis | Accès à la base | Chiffrement au repos ; journal chaîné avec points de contrôle signés ; hébergement dans l'UE en option ; chiffrement de bout en bout facultatif des corps de messages en phase 3 |
@@ -1115,7 +1116,7 @@ Les scénarios reprennent Sam et Léa du fil rouge, dans une équipe de test nom
 | 5 | Hub injoignable | Le hub est arrêté pendant qu'une session démarre, que des éditions se font et qu'un envoi est tenté | Un seul avertissement ; Claude Code travaille normalement ; l'appel d'envoi échoue sans bloquer la session et Claude le signale une fois ; aucun hook ne dépasse son délai ; en phase 2, le démon met en file les envois du CLI et les rejoue sans doublon au retour du hub | 1 |
 | 6 | Membre révoqué | Un administrateur révoque Malik pendant que son agent est connecté et qu'un flux SSE est ouvert | Jetons et flux coupés en moins de 5 s ; ses appels reçoivent une réponse 401 ; sa session console se ferme ; ses réservations éventuelles sont libérées (à partir de la phase 2) ; l'audit consigne la révocation | 1 |
 | 7 | Fuite de secret | Un agent envoie un message qui contient une fausse clé d'API | Le hook d'envoi du plugin ou le CLI bloque l'envoi ; si le client est contourné, le hub répond E_SECRET_BLOCKED ; le texte n'est ni stocké ni journalisé ; l'alerte montre un extrait masqué | 1 |
-| 8 | Boucle entre agents | Deux agents se répondent sans fin | Après 6 rebonds, le fil est mis en sourdine ; la dernière réponse est E_LOOP_GUARD ; les humains reçoivent une alerte ; la limite de 30 messages par minute n'est pas dépassée | 1 |
+| 8 | Boucle entre agents | Deux agents se répondent sans fin | Après 5 messages d'agents d'affilée, le fil est mis en sourdine ; la dernière réponse est E_LOOP_GUARD ; les humains reçoivent une alerte ; la limite de 30 messages par minute n'est pas dépassée | 1 |
 
 ### Critères de la phase 3
 

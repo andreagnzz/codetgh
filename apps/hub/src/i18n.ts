@@ -47,6 +47,7 @@ const FR: Record<string, string> = {
   instruction_like: "ressemble à une consigne",
   secret_blocked: "secret bloqué",
   loop_guard: "boucle d'agents",
+  loop_needs_human: "boucle : décision humaine",
   audit_tamper: "journal d'audit altéré",
   online: "en ligne",
   idle: "inactif",
@@ -177,6 +178,8 @@ const FR: Record<string, string> = {
     "Autoriser le réveil : une session Claude Code inactive se réveille à l'arrivée d'un message (chaque membre l'active aussi dans le plugin)",
   "Slack channel id for alerts and blocking requests (e.g. C0123ABC)":
     "Identifiant du canal Slack pour les alertes et demandes bloquantes (ex. C0123ABC)",
+  "Loop orchestrator: handle of the member whose agent judges muted agent loops (empty: a human reopens)":
+    "Orchestrateur de boucles : handle du membre dont l'agent juge les boucles d'agents mises en sourdine (vide : un humain rouvre)",
   "Strict mode": "Mode strict",
   Save: "Enregistrer",
   "Agent rules": "Règles des agents",

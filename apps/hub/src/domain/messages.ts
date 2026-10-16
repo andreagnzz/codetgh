@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -22,7 +22,7 @@ const MAX_BODY_BYTES = 8192;
 const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
 const MAX_SUBJECT = 200;
-const MAX_HOPS = 6;
+const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before the loop guard mutes it
 // Agent messages between two people, all threads, both ways. shortcut: fixed numbers; a team setting if teams need more.
 const PAIR_LIMIT = 12;
 const PAIR_WINDOW_MS = 10 * 60_000;
@@ -216,6 +216,26 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
   }
 
+  // The loop orchestrator is a member the admins named: its agent judges loops the guard muted.
+  const [orchestrator] = p.settings.loop_orchestrator
+    ? await db
+        .select({ userId: membership.userId })
+        .from(membership)
+        .where(
+          and(
+            eq(membership.teamId, p.teamId),
+            eq(membership.handle, p.settings.loop_orchestrator),
+            eq(membership.status, "active"),
+            ne(membership.role, "guest"),
+          ),
+        )
+    : [];
+  if (input.loop_verdict) {
+    if (p.user.id !== orchestrator?.userId || author.agent?.trustLevel === "quarantined")
+      throw new HubError("E_FORBIDDEN", "only the team's loop orchestrator posts a loop verdict");
+    if (!input.reply_to) throw new HubError("E_INVALID", "a loop verdict replies in the muted thread: set reply_to");
+  }
+
   if (input.encrypted) {
     // The hub cannot read these, so it keeps them away from those whose words it must be able to inspect.
     if (p.role === "guest" || author.agent?.trustLevel === "quarantined")
@@ -249,6 +269,14 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     const to = input.to ? (Array.isArray(input.to) ? input.to : [input.to]) : [];
     const addressed = to.length ? await resolveAddresses(tx, p, to) : { recipients: [] as Recipient[], threadId: null, teamWide: false };
     if (!to.length && parent) addressed.recipients.push({ userId: parent.fromUserId, agentId: parent.fromAgentId });
+    // A verdict goes to everyone who wrote in the looping thread.
+    if (input.loop_verdict && parent)
+      addressed.recipients.push(
+        ...(await tx
+          .selectDistinct({ userId: message.fromUserId, agentId: message.fromAgentId })
+          .from(message)
+          .where(eq(message.threadId, parent.threadId))),
+      );
     const recipients = new Map<string, Recipient>();
     for (const r of addressed.recipients) {
       if (r.userId === p.user.id && (r.agentId === null || r.agentId === fromAgentId)) continue;
@@ -257,7 +285,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     }
     if (!recipients.size) throw new HubError("E_INVALID", "no recipient besides yourself");
     // The thread guard below counts one thread: two agents opening a new thread for every message never build a streak.
-    if (authoredBy === "agent" && author.agent?.kind !== "bridge") {
+    // A loop verdict is already capped at one per muting; the receipts the orchestrator got must not count against it.
+    if (authoredBy === "agent" && author.agent?.kind !== "bridge" && !input.loop_verdict) {
       const since = new Date(Date.now() - PAIR_WINDOW_MS);
       for (const other of new Set([...recipients.values()].map((r) => r.userId))) {
         if (other === p.user.id) continue;
@@ -323,8 +352,39 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     let hop = 0;
     // Bridges (GitHub, Slack) relay events, not conversation: the loop guard counts agents talking to agents.
     const looping = authoredBy === "agent" && author.agent?.kind !== "bridge";
-    if (looping) {
-      if (t.mutedAt || t.agentStreak > MAX_HOPS) {
+    if (input.loop_verdict) {
+      if (t.mutedReason !== "loop_guard") throw new HubError("E_INVALID", "this thread is not waiting for a loop verdict");
+      // The orchestrator reopens a thread once; the next loop there is a human's call.
+      const [loops] = await tx
+        .select({ n: count() })
+        .from(alert)
+        .where(and(eq(alert.threadId, t.id), eq(alert.kind, "loop_guard")));
+      const reopen = input.loop_verdict.reopen && (loops?.n ?? 0) <= 1;
+      await tx
+        .update(thread)
+        .set(reopen ? { mutedAt: null, mutedReason: null, agentStreak: 0 } : { mutedReason: "loop_verdict" })
+        .where(eq(thread.id, t.id));
+      if (input.loop_verdict.reopen && !reopen)
+        await tx.insert(alert).values({
+          id: newId("alr"),
+          teamId: p.teamId,
+          kind: "loop_needs_human",
+          threadId: t.id,
+          agentId: fromAgentId,
+          userId: p.user.id,
+          excerpt: "the orchestrator already reopened this thread once: a human decides now",
+        });
+      await appendAudit(tx, {
+        teamId: p.teamId,
+        actorType: author.agent ? "agent" : "user",
+        actorUserId: p.user.id,
+        actorAgentId: fromAgentId,
+        via: author.via,
+        action: reopen ? "thread.reopened_by_orchestrator" : "thread.loop_verdict",
+        subjectId: t.id,
+      });
+    } else if (looping) {
+      if (t.mutedAt || t.agentStreak >= MAX_AGENT_MESSAGES) {
         if (!t.mutedAt) {
           await tx.update(thread).set({ mutedAt: new Date(), mutedReason: "loop_guard" }).where(eq(thread.id, t.id));
           await tx.insert(alert).values({
@@ -334,7 +394,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
             threadId: t.id,
             agentId: fromAgentId,
             userId: p.user.id,
-            excerpt: `thread muted after ${MAX_HOPS} agent hops`,
+            excerpt: `thread muted after ${MAX_AGENT_MESSAGES} agent messages in a row`,
           });
           await appendAudit(tx, {
             teamId: p.teamId,
@@ -344,7 +404,21 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
             subjectId: t.id,
             data: { reason: "loop_guard" },
           });
-          return { muted: true as const };
+          // The orchestrator gets the thread in its inbox: it becomes a participant and can read it all.
+          if (orchestrator && orchestrator.userId !== p.user.id) {
+            const unseen = await tx
+              .select({ id: message.id })
+              .from(message)
+              .leftJoin(receipt, and(eq(receipt.messageId, message.id), eq(receipt.recipientUserId, orchestrator.userId)))
+              .where(and(eq(message.threadId, t.id), isNull(receipt.seq)));
+            if (unseen.length)
+              await tx
+                .insert(receipt)
+                .values(
+                  unseen.map((m) => ({ messageId: m.id, teamId: p.teamId, recipientUserId: orchestrator.userId, recipientAgentId: null })),
+                );
+          }
+          return { muted: true as const, threadId: t.id };
         }
         throw new HubError("E_LOOP_GUARD", "this thread is muted: stop and summarize to the user");
       }
@@ -353,7 +427,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     await tx
       .update(thread)
       .set({
-        agentStreak: looping ? t.agentStreak + 1 : authoredBy === "agent" ? t.agentStreak : 0,
+        ...(!input.loop_verdict && { agentStreak: looping ? t.agentStreak + 1 : authoredBy === "agent" ? t.agentStreak : 0 }),
         lastMessageAt: new Date(),
         ...(authoredBy === "human" && { mutedAt: null, mutedReason: null }),
       })
@@ -432,6 +506,20 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
 
   if (result.muted) {
     bus.emit("attention", { teamId: p.teamId });
+    if (orchestrator) {
+      bus.emit("message", {
+        teamId: p.teamId,
+        messageId: "",
+        threadId: result.threadId,
+        replyTo: null,
+        kind: "loop",
+        recipientUserIds: [orchestrator.userId],
+      });
+      throw new HubError(
+        "E_LOOP_GUARD",
+        "too many agent replies in a row: the thread is muted and the team's loop orchestrator will post a verdict in it; stop and tell the user",
+      );
+    }
     throw new HubError("E_LOOP_GUARD", "too many agent replies in a row: the thread is muted, stop and summarize to the user");
   }
   if (flags.includes("instruction-like")) bus.emit("attention", { teamId: p.teamId });

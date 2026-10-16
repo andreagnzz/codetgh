@@ -66,6 +66,8 @@ export const SendMessageInput = z
     reply_to: messageId.optional(),
     requires_ack: z.boolean().optional(),
     idempotency_key: z.string().max(64).optional(),
+    // Only the team's loop orchestrator, replying in a thread the loop guard muted.
+    loop_verdict: z.object({ reopen: z.boolean() }).optional(),
     // End-to-end encrypted: body is ciphertext from the client, which also scanned and flagged the plain text.
     // keys: the new thread's key wrapped for every participant, sender included; omitted on replies.
     encrypted: z

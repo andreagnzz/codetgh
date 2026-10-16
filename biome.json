@@ -1,7 +1,16 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "files": {
-    "includes": ["**", "!**/drizzle", "!**/dist", "!**/data", "!**/src/db/auth-schema.ts", "!test-results", "!playwright-report"]
+    "includes": [
+      "**",
+      "!**/drizzle",
+      "!**/dist",
+      "!**/data",
+      "!**/src/db/auth-schema.ts",
+      "!test-results",
+      "!playwright-report",
+      "!**/.claude-plugin/types"
+    ]
   },
   "formatter": { "indentStyle": "space", "lineWidth": 140 },
   "linter": { "enabled": true }
