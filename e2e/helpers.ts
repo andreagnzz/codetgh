@@ -90,6 +90,15 @@ export async function consolePost(url: string, cookie: string, path: string, for
   });
 }
 
+// Plays the person in the browser: waits for the code the CLI prints, then approves it in the console.
+export async function approveDevice(url: string, cookie: string, out: string[]) {
+  for (;;) {
+    const code = out.join("\n").match(/\b[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}\b/)?.[0];
+    if (code) return consolePost(url, cookie, "/console/device/approve", { user_code: code });
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 // Fake keys are assembled at runtime so no literal credential lands in the repository.
 export const fakeGithubToken = () => `ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`;
 

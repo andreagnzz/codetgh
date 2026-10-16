@@ -61,15 +61,7 @@ it("asks before Sam edits a file Léa claimed, per the team's enforcement level 
 
   const levels = [
     ["warn", (o: Out) => expect(o?.hookSpecificOutput).toMatchObject({ additionalContext: expect.stringMatching(/Léa.*exclusive/s) })],
-    [
-      "block",
-      (o: Out) =>
-        expect(o?.hookSpecificOutput).toMatchObject({
-          permissionDecision: "deny",
-          permissionDecisionReason: expect.stringContaining("Léa"),
-        }),
-    ],
-    ["off", (o: Out) => expect(o).toBeNull()],
+    ["ask", (o: Out) => expect(o?.hookSpecificOutput).toMatchObject({ permissionDecision: "ask" })],
   ] as const;
   for (const [level, check] of levels) {
     expect(

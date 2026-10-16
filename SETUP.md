@@ -44,12 +44,14 @@ En cas d'échec : Node manque ou est trop ancien (22 ou plus récent : `node --v
 ### Étape : le jeton (dans son terminal, pas ici)
 
 Demande-lui :
-1. dans la console du hub, page **Tokens**, de créer un jeton ;
-2. dans **son propre terminal**, de lancer `codetgh login --url <adresse du hub>`, puis de coller le jeton quand il est demandé (la saisie est masquée) ;
+1. dans **son propre terminal**, de lancer `codetgh login --url <adresse du hub>` : la commande affiche un lien et un code ;
+2. d'ouvrir le lien dans son navigateur, de se connecter, de taper le code, de vérifier le nom de sa machine, puis d'approuver ; le jeton arrive seul dans le trousseau du système, sans copier-coller ;
 3. de te dire seulement « c'est fait ».
 
+Sans navigateur sur cette machine : un jeton créé dans la console (page **Tokens**), passé par `codetgh login --url <adresse du hub> --token-stdin` (saisie masquée).
+
 Vérifie ensuite avec `codetgh doctor` : la ligne `ok   token: …` doit apparaître.
-En cas d'échec : « token refused by the hub » veut dire que le jeton a été mal copié ou révoqué. Il faut en créer un nouveau.
+En cas d'échec : « token refused by the hub » veut dire que le jeton a été révoqué ou a expiré : relance `codetgh login`. « sign-in denied » ou « expired » : relance la commande et approuve dans les 10 minutes.
 
 ### Étape : le plugin Claude Code
 

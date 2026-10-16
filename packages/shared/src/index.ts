@@ -145,7 +145,7 @@ export const AgentSessionInput = z.object({
 
 export const CLAIM_MODES = ["exclusive", "intent", "shared"] as const;
 export type ClaimMode = (typeof CLAIM_MODES)[number];
-export const CLAIM_ENFORCEMENT = ["off", "warn", "ask", "block"] as const;
+export const CLAIM_ENFORCEMENT = ["warn", "ask"] as const;
 
 // Repository-relative, forward slashes, no way out of the repository.
 export const repoPath = z

@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
-import { consolePost, fakeCommand } from "../../../e2e/helpers.js";
+import { approveDevice, consolePost, fakeCommand } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
 let hub: Hub;
@@ -68,17 +68,27 @@ else if (args.startsWith("plugin list"))
   });
 }
 
-async function setup(answers: Record<string, unknown>, opts: { stdin?: string; keyring?: Map<string, string> } = {}) {
+async function setup(
+  answers: Record<string, unknown>,
+  opts: { stdin?: string; keyring?: Map<string, string>; browser?: true; out?: string[] } = {},
+) {
   const store = opts.keyring ?? new Map<string, string>();
   const keyring: Keyring = { get: (k) => store.get(k) ?? null, set: (k, v) => void store.set(k, v), delete: (k) => void store.delete(k) };
   const file = join(mkdtempSync(join(tmpdir(), "codetgh-answers-")), "answers.json");
   writeFileSync(file, JSON.stringify(answers));
-  const out: string[] = [];
+  const out = opts.out ?? [];
   const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([opts.stdin ?? ""]) };
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-setup-"));
   process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-claude-config-"));
   process.exitCode = 0;
-  await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "setup", "--answers", file, "--token-stdin"]);
+  await program({ keyring: async () => keyring, io }).parseAsync([
+    "node",
+    "codetgh",
+    "setup",
+    "--answers",
+    file,
+    ...(opts.browser ? [] : ["--token-stdin"]),
+  ]);
   const code = process.exitCode;
   process.exitCode = 0;
   return { out: out.join("\n"), code, store };
@@ -100,6 +110,22 @@ describe("codetgh setup from an answers file", () => {
     expect(calls.options().push_mode).toBe("rewake");
     expect(out).toContain("push mode rewake");
     await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "", push_hooks: "on" });
+  });
+
+  it("member: signs in through the browser (a link and a code to confirm), then installs the plugin", async () => {
+    const calls = fakeClaude();
+    const out: string[] = [];
+    const [{ out: text, code, store }] = await Promise.all([
+      setup({ role: "member", hub_url: hub.url, invite_link: "", display_name: "Sam", install_plugin: true }, { browser: true, out }),
+      approveDevice(hub.url, team.sam.cookie, out),
+    ]);
+    expect(code).toBe(0);
+    expect(text).toContain(`${hub.url}/console/device`);
+    expect(text).toContain("ok   logged in as Sam (@sam) in Acme web");
+    const token = store.get(hub.url) ?? "";
+    expect(token).toMatch(/^ctgh_/);
+    expect(calls.options().codetgh_token).toBe(token);
+    expect(text).not.toContain(token);
   });
 
   it("member: connects to the hub, keeps the token in the keychain, installs the plugin, then runs doctor", async () => {

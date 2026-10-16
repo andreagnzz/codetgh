@@ -80,11 +80,12 @@ describe("claims", () => {
     expect(await active(sessions.sam ?? "")).toHaveLength(0);
   });
 
-  it("maps every enforcement level and never says allow", async () => {
+  it("maps every enforcement level, stored off as warn and block as ask, and never says allow", async () => {
     for (const [level, expected] of [
       ["warn", "warn"],
-      ["block", "deny"],
-      ["off", null],
+      ["ask", "ask"],
+      ["off", "warn"],
+      ["block", "ask"],
     ] as const) {
       await hub.db
         .update(teamTable)

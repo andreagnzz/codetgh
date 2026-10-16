@@ -2,7 +2,7 @@
 import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,6 +13,7 @@ import { SendMessageInput } from "@codetgh/shared";
 import { type AuditRecord, type Checkpoint, verifyAudit } from "@codetgh/shared/audit";
 import { newKeyPair, newThreadKey, openBody, publicKeyOf, sealBody, unwrapKey, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
+import { DeviceStartOutput, DeviceTokenOutput } from "@codetgh/shared/rest";
 import { Command } from "commander";
 import spawn from "cross-spawn";
 import { runHook } from "./hook.js";
@@ -41,8 +42,9 @@ const readConfig = (): { url?: string } => {
   }
 };
 
-async function readToken(io: Io, fromStdin: boolean) {
-  if (fromStdin || !io.stdin.isTTY) {
+// --token-stdin: piped, or typed at a hidden prompt in a terminal.
+async function readToken(io: Io) {
+  if (!io.stdin.isTTY) {
     const chunks: Buffer[] = [];
     for await (const c of io.stdin) chunks.push(Buffer.from(c as Buffer));
     return Buffer.concat(chunks).toString("utf8").trim();
@@ -55,6 +57,36 @@ async function readToken(io: Io, fromStdin: boolean) {
   rl.close();
   process.stdout.write("\n");
   return token.trim();
+}
+
+// Browser sign-in: the person confirms a code in the console, and the token comes straight back here, never on screen.
+async function browserToken(io: Io, url: string) {
+  const post = (path: string, body: unknown) =>
+    fetch(`${url}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    });
+  const res = await post("/v1/device/start", { label: hostname().slice(0, 60) || "terminal" });
+  if (!res.ok) throw new Error(`the hub refused to start a browser sign-in (HTTP ${res.status}): retry, or use --token-stdin`);
+  const s = DeviceStartOutput.parse(await res.json());
+  io.out(`open ${s.verification_url} in your browser, sign in, and enter this code: ${s.user_code}`);
+  io.out("waiting for you to approve it there...");
+  const deadline = Date.now() + s.expires_in * 1000;
+  while (Date.now() < deadline) {
+    await sleep(s.interval * 1000);
+    const r = await post("/v1/device/token", { device_code: s.device_code });
+    if (r.status === 429) {
+      await sleep((Number(r.headers.get("retry-after")) || s.interval) * 1000);
+      continue;
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`${(data as { message?: string }).message ?? `HTTP ${r.status}`}`);
+    const out = DeviceTokenOutput.parse(data);
+    if (out.status === "approved") return out.token;
+  }
+  throw new Error("the code expired before it was approved: run the command again");
 }
 
 async function whoami(url: string, token: string) {
@@ -446,8 +478,10 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       io.out(where === "vps" ? "On the VPS, in a copy of this repository with this deploy/.env:" : "Run:");
       for (const c of commands) io.out(`  ${c}`);
     }
-    io.out(`then: open the invitation link, sign in, create a token in Tokens (${publicUrl}/console/tokens),`);
-    io.out(`      and in the team's repository: codetgh login --url ${publicUrl}; codetgh project new ${projectName}`);
+    io.out(`then: open the invitation link and sign in,`);
+    io.out(
+      `      and in the team's repository: codetgh login --url ${publicUrl} (confirm in the browser); codetgh project new ${projectName}`,
+    );
     return;
   }
 
@@ -465,14 +499,16 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       );
     if (!invite.startsWith(`${url}/invite/`))
       throw new Error(`this invitation is not for ${url}: ask your admin for a new one (codetgh invite)`);
-    io.out(`open this link, create your account, then create a token in Tokens:`);
+    io.out(`open this link and create your account first:`);
     io.out(`  ${invite}${name ? `?name=${encodeURIComponent(name)}` : ""}`);
-  } else io.out(`sign in at ${url}/login, then create a token in Tokens (${url}/console/tokens)`);
-  if (!given && !opts.tokenStdin) io.out("paste the token below: it goes to your OS keychain, not to any file or chat");
-  const token = await readToken(io, Boolean(opts.tokenStdin));
-  if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…): copy it again from Tokens");
+  }
+  let token: string;
+  if (opts.tokenStdin) {
+    token = await readToken(io);
+    if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…): copy it again from Tokens");
+  } else token = await browserToken(io, url);
   const who = await saveLogin(deps.keyring, url, token).catch((e: Error) => {
-    throw new Error(`${e.message}: create a new token in Tokens and run codetgh setup again`);
+    throw new Error(`${e.message}: run codetgh setup again`);
   });
   io.out(`ok   logged in as ${who.user.name} (@${who.handle}) in ${who.team.name}`);
 
@@ -556,7 +592,11 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   check(major >= 22, `Node ${process.versions.node}`, "install Node 22 or newer (https://nodejs.org)");
   const { url, token } = await credentials(deps.keyring);
   check(Boolean(url), url ? `hub URL ${url}` : "no hub URL", "run codetgh setup, or codetgh login --url <hub address>");
-  check(Boolean(token), token ? "token found" : "no token", "run codetgh login: it stores your console token in the OS keychain");
+  check(
+    Boolean(token),
+    token ? "token found" : "no token",
+    "run codetgh login --url <hub address>: confirm in the browser, the token goes to the OS keychain",
+  );
   if (url) {
     const started = Date.now();
     const health = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
@@ -571,7 +611,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       check(
         who !== null,
         who ? `token: ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}` : "token refused by the hub",
-        "create a token in the console (Tokens), then run codetgh login",
+        "run codetgh login --url <hub address> again and confirm in the browser",
       );
     }
   }
@@ -658,7 +698,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         unset.length ? `plugin options unset: ${unset.join(", ")}` : "plugin options: hub URL and token set",
         "run codetgh setup again, or in Claude Code: /plugin configure codetgh@codetgh",
       );
-      const mode = options.inputs?.push_mode ?? "hooks";
+      const mode = options.inputs?.push_mode === "rewake" ? "rewake" : "hooks";
       check(
         mode !== "rewake" || allowedModes === null || allowedModes.includes("rewake"),
         mode === "rewake" && allowedModes && !allowedModes.includes("rewake")
@@ -692,7 +732,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .helpGroup("Everyday:")
     .description("guided install: admin (create the hub) or member (join a team), then codetgh doctor")
     .option("--answers <file>", "JSON answers instead of questions (no terminal needed)")
-    .option("--token-stdin", "read the personal token from stdin")
+    .option("--token-stdin", "read a personal token from the console on stdin instead of signing in through the browser")
     .action((opts: { answers?: string; tokenStdin?: boolean }) => setup(deps, opts));
 
   cli
@@ -875,16 +915,16 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   cli
     .command("login")
     .helpGroup("Advanced:")
-    .description("store a personal token from the console in the OS keychain")
+    .description("sign in through the browser and store a personal token in the OS keychain")
     .requiredOption("--url <url>", "hub URL, e.g. https://codetgh.example.com")
-    .option("--token-stdin", "read the token from stdin")
+    .option("--token-stdin", "read a personal token from the console on stdin instead")
     .action(async (opts: { url: string; tokenStdin?: boolean }) => {
       const url = hubAddress(opts.url);
-      const token = await readToken(io, Boolean(opts.tokenStdin));
+      const token = opts.tokenStdin ? await readToken(io) : await browserToken(io, url);
       if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…)");
       const who = await saveLogin(deps.keyring, url, token);
       io.out(`Logged in as ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}.`);
-      io.out(`Next: install the Claude Code plugin and give it the hub URL (${url}) and the same token.`);
+      io.out("Next: codetgh setup installs the Claude Code plugin; codetgh doctor checks everything.");
     });
 
   cli

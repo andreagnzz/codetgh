@@ -7,6 +7,8 @@ import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreE
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
 import {
   CreateProjectInput,
+  DeviceStartInput,
+  DeviceTokenInput,
   InviteInput,
   KeysQuery,
   LauncherReport,
@@ -42,9 +44,10 @@ import {
   setAgentsPaused,
   setPermissionMode,
 } from "./domain/agents.js";
-import { writeCheckpoint } from "./domain/audit.js";
+import { appendAudit, writeCheckpoint } from "./domain/audit.js";
 import { Bus } from "./domain/bus.js";
 import { checkPaths, preEdit } from "./domain/claims.js";
+import { clientIp, DEVICE_INTERVAL_S, DEVICE_TTL_S, DeviceAuth } from "./domain/device.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
 import { githubSecret, handleGithubEvent, teamForGithubHook, validGithubSignature } from "./domain/github.js";
 import { launcherTargets, reportLaunch } from "./domain/launcher.js";
@@ -72,9 +75,18 @@ import { createMcpServer, whoami } from "./mcp.js";
 import { openApiDocument } from "./openapi.js";
 import { ConsentPage, LoginPage } from "./pages.js";
 import { type Principal, principalForToken, principalForUser } from "./principal.js";
-import { bearerToken } from "./tokens.js";
+import { bearerToken, createPersonalToken } from "./tokens.js";
 
-type Deps = { config: Config; db: Db; auth: Auth; bus?: Bus; limiter?: RateLimiter; logger?: Logger; mailer?: Mailer };
+type Deps = {
+  config: Config;
+  db: Db;
+  auth: Auth;
+  bus?: Bus;
+  limiter?: RateLimiter;
+  logger?: Logger;
+  mailer?: Mailer;
+  device?: DeviceAuth;
+};
 type Env = { Variables: { principal: Principal } };
 
 const PROMPT_BATCH = 5;
@@ -97,6 +109,7 @@ export function createApp({
   limiter = new RateLimiter(),
   logger = defaultLogger(),
   mailer = createMailer(),
+  device = new DeviceAuth(),
 }: Deps) {
   const app = new Hono<Env>();
   // A driver error carries the query's parameters, message text included: log its name only.
@@ -237,6 +250,53 @@ export function createApp({
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
     return parsed.data;
   };
+
+  // Browser sign-in for the CLI: no token yet, so these two sit before /v1's token check, limited per address.
+  const takeIp = (c: Context) => {
+    const wait = limiter.take(`device:${clientIp(c, config.trustedProxy)}`);
+    if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many sign-in requests: wait and retry", wait);
+  };
+  app.post("/v1/device/start", async (c) => {
+    try {
+      takeIp(c);
+      const { label } = await parse(c, DeviceStartInput);
+      const { deviceCode, userCode } = device.start(label);
+      c.header("Cache-Control", "no-store");
+      return c.json({
+        device_code: deviceCode,
+        user_code: userCode,
+        verification_url: `${config.publicUrl}/console/device`,
+        expires_in: DEVICE_TTL_S,
+        interval: DEVICE_INTERVAL_S,
+      });
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+  app.post("/v1/device/token", async (c) => {
+    try {
+      takeIp(c);
+      const approved = device.poll((await parse(c, DeviceTokenInput)).device_code);
+      if (!approved) return c.json({ status: "pending" });
+      // The token exists only from here: created once, for the person who approved, like the console's.
+      const { id, token } = await createPersonalToken(db, approved);
+      await db.transaction((tx) =>
+        appendAudit(tx, {
+          teamId: approved.teamId,
+          actorType: "user",
+          actorUserId: approved.userId,
+          via: "console",
+          action: "token.created",
+          subjectId: id,
+          data: { browser_sign_in: true },
+        }),
+      );
+      c.header("Cache-Control", "no-store");
+      return c.json({ status: "approved", token });
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
 
   // PreToolUse on Edit/Write: 204 means no decision, so Claude Code's permission flow runs unchanged.
   v1.post("/claims/pre-edit", async (c) => {
@@ -634,7 +694,7 @@ export function createApp({
     return c.redirect(local, 302);
   });
   app.get("/assets/oauth.js", (c) => c.body(OAUTH_JS, 200, { "content-type": "text/javascript" }));
-  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey, hold }));
+  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey, hold, device }));
   app.get("/healthz", (c) => c.text("ok"));
 
   // The plugin and the CLI come from the hub itself, so members always get the version their hub speaks.
@@ -707,13 +767,15 @@ export function createApp({
 
 // Served as a file so the pages need no inline script (CSP default-src 'self').
 const OAUTH_JS = `
-const q = location.search.slice(1);
+// Back to the device page after signing in (codetgh setup); any other value of next is ignored.
+const next = new URLSearchParams(location.search).get("next") === "/console/device" ? "/console/device" : "";
+const q = next ? "" : location.search.slice(1);
 async function post(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ ...body, oauth_query: q }) });
   const data = await res.json().catch(() => ({}));
   const next = data.url || data.redirect_uri || data.redirectURI;
   if (next) location.href = next;
-  else if (res.ok) location.href = "/console";
+  else if (res.ok) location.href = next || "/console";
   else document.getElementById("error").textContent = data.message || "Error " + res.status;
 }
 for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
@@ -721,7 +783,7 @@ for (const button of document.querySelectorAll("[data-provider]")) button.addEve
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ provider: button.dataset.provider, callbackURL: q ? "/login?" + q : "/console" }),
+    body: JSON.stringify({ provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") }),
   });
   const data = await res.json().catch(() => ({}));
   if (data.url) location.href = data.url;
@@ -733,7 +795,7 @@ document.getElementById("magic-link")?.addEventListener("submit", async (e) => {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ email: new FormData(e.target).get("email"), callbackURL: q ? "/login?" + q : "/console" }),
+    body: JSON.stringify({ email: new FormData(e.target).get("email"), callbackURL: next || (q ? "/login?" + q : "/console") }),
   });
   const out = document.getElementById("error");
   out.textContent = res.ok ? "Check your email for a sign-in link." : "Could not send the link: check the address, then try again.";
