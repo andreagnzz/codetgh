@@ -88,6 +88,20 @@ describe("Slack bridge (phase 3)", () => {
     expect(texts.join("\n")).not.toContain("rm -rf");
   });
 
+  it("keeps a reply addressed to one person out of the channel, even in a team thread", async () => {
+    const sam = await mcpClient(hub.url, team.sam.token);
+    await call(sam, "send_message", { to: "@team", kind: "question", body: "Who owns the billing cron?" });
+    const [q] = await hub.db.select().from(message).where(eq(message.body, "Who owns the billing cron?"));
+    const before = posts.length;
+    await call(sam, "send_message", { reply_to: q?.id, to: "@lea", kind: "request", priority: "blocking", body: "private: lea only" });
+    await sam.close();
+    await until(() => posts.length > before);
+    const text = String(posts.at(-1)?.body.text);
+    expect(text).toContain("Blocking request");
+    expect(text).toContain("direct message");
+    expect(text).not.toContain("lea only");
+  });
+
   it("links a Slack account with a one-time code and relays the member's reply as human", async () => {
     const page = await (await consolePost(hub.url, team.lea.cookie, "/console/me/slack")).text();
     const code = page.match(/\/codetgh-link ([A-Z0-9]{8})/)?.[1] ?? "";
