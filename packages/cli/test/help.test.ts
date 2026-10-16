@@ -7,8 +7,7 @@ it("groups the commands: what members use every day first, then admin, then adva
   const keyring = { get: () => null, set: () => {}, delete: () => {} };
   const help = program({ keyring: async () => keyring, io }).helpInformation();
   const group = (heading: string) =>
-    (help.split(`${heading}\n`)[1] ?? "")
-      .split("\n\n")[0]
+    (help.split(`${heading}\n`)[1]?.split("\n\n")[0] ?? "")
       .split("\n")
       .filter((l) => /^ {2}\S/.test(l))
       .map((l) => l.trim().split(/\s/)[0]);
