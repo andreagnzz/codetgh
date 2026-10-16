@@ -85,6 +85,8 @@ function warnOnce(input: Input, message: string) {
 const left = (budgetMs: number) => Math.max(1, Math.round(budgetMs - performance.now()));
 const START_BUDGET_MS = 4500;
 const BUDGET_MS = 2500;
+// SessionEnd hooks share a 1.5 s budget that a plugin hook's own timeout does not raise; keep a margin for the spawn.
+const END_BUDGET_MS = 1200;
 
 type Reply = { status: number; ok: boolean; etag: string | undefined; json: () => Promise<unknown> };
 
@@ -448,7 +450,7 @@ async function sessionEnd(input: Input) {
   try {
     await hub("/v1/agents/session/end", {
       method: "POST",
-      timeoutMs: 1200,
+      timeoutMs: left(END_BUDGET_MS),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: input.session_id }),
     });

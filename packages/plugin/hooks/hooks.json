@@ -56,7 +56,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hook.js", "session-end"],
-            "timeout": 2
+            "timeout": 1.5
           }
         ]
       }
