@@ -1048,8 +1048,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               {_("When an agent edits a file someone else claimed")}{" "}
               <select name="claims_enforcement">
                 {CLAIM_ENFORCEMENT.map((level) => (
-                  <option value={level} selected={(p.settings.claims_enforcement ?? "ask") === level}>
-                    {_({ off: "do nothing", warn: "warn the agent", ask: "ask the human (default)", block: "block the edit" }[level])}
+                  <option
+                    value={level}
+                    selected={(["warn", "off"].includes(p.settings.claims_enforcement ?? "") ? "warn" : "ask") === level}
+                  >
+                    {_({ warn: "warn the agent, never block", ask: "ask the human (default)" }[level])}
                   </option>
                 ))}
               </select>

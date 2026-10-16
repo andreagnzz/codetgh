@@ -166,10 +166,8 @@ const FR: Record<string, string> = {
   "Message retention (days)": "Conservation des messages (jours)",
   "Extra secret patterns (regular expressions, one per line)": "Motifs de secrets en plus (expressions régulières, une par ligne)",
   "When an agent edits a file someone else claimed": "Quand un agent modifie un fichier réservé par quelqu'un d'autre",
-  "do nothing": "ne rien faire",
-  "warn the agent": "prévenir l'agent",
+  "warn the agent, never block": "prévenir l'agent, sans jamais bloquer",
   "ask the human (default)": "demander à l'humain (par défaut)",
-  "block the edit": "bloquer la modification",
   "Who accepts team memory": "Qui accepte la mémoire d'équipe",
   "and above": "et plus",
   "Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)":
