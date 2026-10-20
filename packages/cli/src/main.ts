@@ -272,7 +272,7 @@ const NOT_LISTED = "not in this machine's launcher list";
 // One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
 // command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
-// finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile).
+// finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
 function exec(cmd: string, args: string[], opts: { timeout: number; input?: string }) {
   return new Promise<{ stdout: string }>((resolve, reject) => {
     const child = spawn(cmd, args, { timeout: opts.timeout, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
@@ -282,7 +282,9 @@ function exec(cmd: string, args: string[], opts: { timeout: number; input?: stri
       stdout += d;
     });
     child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve({ stdout }) : reject(new Error(`${cmd} exited with ${code}`))));
+    child.on("close", (code) =>
+      code === 0 ? resolve({ stdout }) : reject(Object.assign(new Error(`${cmd} exited with ${code}`), { stdout })),
+    );
   });
 }
 
@@ -361,6 +363,21 @@ const atLeast = (version: string, min: string) => {
   const n = (v: string) => v.split(".").reduce((a, x) => a * 1000 + Number(x), 0);
   return Boolean(version) && n(version) >= n(min);
 };
+
+// Off at user scope, so unrelated sessions do not load it: codetgh start turns it on for its own session (docs/FACTS.md).
+// Already off counts as done; only --json (2.1.268) tells that case apart.
+async function pluginOffAtUserScope() {
+  const version = await exec("claude", ["--version"], { timeout: 5000 }).then(
+    (r) => r.stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? "",
+    () => "",
+  );
+  const json = atLeast(version, "2.1.268") ? ["--json"] : [];
+  return exec("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user", ...json], { timeout: 30_000 }).then(
+    () => true,
+    (e: { stdout?: string }) => /"failureCode":\s*"already_in_goal_state"/.test(e.stdout ?? ""),
+  );
+}
+const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
 
 type Choice = { value: string; name: string };
 // The same questions as SETUP.md, one at a time with a default; --answers <file> gives them without a terminal.
@@ -525,7 +542,6 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
     // install --marketplace (2.1.292) adds the marketplace and takes the plugin's options in the same command.
     const oneCommand = atLeast(version, ONE_COMMAND_INSTALL);
     const options = { codetgh_url: url, codetgh_token: token, push_mode: pushMode };
-    // On everywhere: in a repository no project has, the hook sends only its fingerprint, and a member's session links it.
     const ok = oneCommand
       ? await run("claude", [
           ...["plugin", "install", "codetgh", "--marketplace", marketplace, "--scope", "user", "-y"],
@@ -562,9 +578,10 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       ));
     if (configured)
       io.out(
-        `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): restart Claude Code to apply them`,
+        `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): launch Claude with codetgh start to use it`,
       );
     else if (ok) io.out("set the plugin's hub address and token in Claude Code: /plugin configure codetgh@codetgh");
+    if (ok && !(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
   } else io.out(`later: ${manual.join(" && ")}`);
@@ -656,33 +673,29 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     );
   if (version) {
     const list = await run("claude", ["plugin", "list", "--json"], 15000);
-    const plugin = (JSON.parse(list ?? "[]") as Array<{ id: string; version?: string; enabled?: boolean; installPath?: string }>).find(
-      (p) => p.id.startsWith("codetgh@"),
-    );
+    const plugins = JSON.parse(list ?? "[]") as Array<{
+      id: string;
+      version?: string;
+      scope?: string;
+      enabled?: boolean;
+      projectEnabled?: boolean;
+      installPath?: string;
+    }>;
+    const plugin = plugins.find((p) => p.id.startsWith("codetgh@"));
     const marketplace = url ? `${url}/plugin/marketplace.json` : "<hub>/plugin/marketplace.json";
-    const wanted = (() => {
-      try {
-        return JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true;
-      } catch {
-        return false;
-      }
-    })();
     check(
-      plugin?.enabled === true,
-      !plugin
-        ? "plugin codetgh@codetgh not installed"
-        : plugin.enabled
-          ? `plugin ${plugin.id} ${plugin.version ?? ""} enabled here`.replace("  ", " ")
-          : wanted
-            ? `plugin ${plugin.id} turned on in .claude/settings.json but not active`
-            : `plugin ${plugin.id} installed but off`,
-      !plugin
-        ? `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`
-        : wanted
-          ? "open Claude Code in this folder and trust it, or run: claude plugin enable codetgh@codetgh --scope project"
-          : // An earlier codetgh setup turned it off at user scope.
-            "claude plugin enable codetgh@codetgh --scope user",
+      Boolean(plugin),
+      plugin
+        ? `plugin ${plugin.id} ${plugin.version ?? ""} ${plugin.enabled ? "enabled here" : "installed, enabled per session by codetgh start"}`.replace(
+            "  ",
+            " ",
+          )
+        : "plugin codetgh@codetgh not installed",
+      `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`,
     );
+    // enabled is the state in this folder: on with projectEnabled false means the user settings turn it on.
+    if (plugins.some((p) => p.id.startsWith("codetgh@") && p.scope === "user" && p.enabled && !p.projectEnabled))
+      io.out(`warn plugin codetgh@codetgh is on in every Claude session: claude plugin disable codetgh@codetgh --scope user`);
     if (plugin?.installPath) {
       const files = ["dist/hook.js", "hooks/hooks.json"].every((f) => existsSync(join(plugin.installPath ?? "", f)));
       const node = await run("node", ["--version"], 5000);
@@ -1176,7 +1189,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           );
         });
       io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
-      io.out("restart Claude Code to load the new plugin");
+      if (!(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
+      io.out("launch Claude with codetgh start to load the new plugin");
     });
 
   const keys = cli.command("keys").helpGroup("Advanced:").description("keys for end-to-end encrypted threads");
