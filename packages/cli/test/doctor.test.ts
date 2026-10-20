@@ -1,4 +1,6 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { createServer, request } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
@@ -22,7 +24,15 @@ afterEach(() => {
 });
 
 // A stand-in for the claude binary: its version, the plugin list, the plugin's options and the MCP connection.
-function fakeClaude(version: string, plugins: unknown[], opts = { configured: true, connected: true, pushMode: "hooks" }) {
+function fakeClaude(
+  version: string,
+  plugins: unknown[],
+  opts: { configured: boolean; connected: boolean; pushMode: string; mark?: string } = {
+    configured: true,
+    connected: true,
+    pushMode: "hooks",
+  },
+) {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   writeFileSync(join(dir, "plugins.json"), JSON.stringify(plugins));
   fakeCommand(
@@ -35,7 +45,7 @@ else if (args.startsWith("plugin list")) process.stdout.write(readFileSync(${JSO
 else if (args === "plugin configure codetgh@codetgh --json")
   console.log(JSON.stringify(${JSON.stringify(opts.configured)} ? { configured: ["codetgh_url", "codetgh_token", "push_mode"], unconfigured: [], inputs: { push_mode: ${JSON.stringify(opts.pushMode)} } } : { configured: ["push_mode"], unconfigured: ["codetgh_url", "codetgh_token"] }));
 else if (args === "mcp list")
-  console.log(${JSON.stringify(opts.connected)} ? "plugin:codetgh:hub: https://hub/mcp (HTTP) - ✔ Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
+  console.log(${JSON.stringify(opts.connected)} ? "plugin:codetgh:hub: https://hub/mcp (HTTP) - " + ${JSON.stringify(opts.mark ?? "✔")} + " Connected" : "plugin:codetgh:hub: /mcp (HTTP) - ✘ Failed to connect");
 else process.exitCode = 1;
 `,
   );
@@ -80,10 +90,15 @@ it("checks the hub, the token, Claude Code, the plugin and its hooks on one scre
 
 it("with the hub stopped, says so quickly and what to do", async () => {
   fakeClaude("2.1.296", [installedPlugin()]);
+  // A port that was just freed: nothing listens there, as with a stopped hub.
+  const gone = createServer();
+  await new Promise<void>((r) => gone.listen(0, "127.0.0.1", r));
+  const stopped = `http://127.0.0.1:${(gone.address() as AddressInfo).port}`;
+  await new Promise((r) => gone.close(r));
   const started = Date.now();
-  const { out, code } = await doctor("http://127.0.0.1:9", team.lea.token);
+  const { out, code } = await doctor(stopped, team.lea.token);
   expect(Date.now() - started).toBeLessThan(5000);
-  expect(out).toContain("FAIL hub unreachable at http://127.0.0.1:9");
+  expect(out).toContain(`FAIL hub unreachable at ${stopped} (ECONNREFUSED)`);
   expect(out).toMatch(/→ .*(start the hub|address)/);
   expect(out).not.toContain(team.lea.token);
   expect(code).toBe(1);
@@ -133,4 +148,30 @@ it("says when the plugin is installed but off, as an earlier codetgh setup left 
   expect(out).toContain("FAIL plugin codetgh@codetgh installed but off");
   expect(out).toContain("→ claude plugin enable codetgh@codetgh --scope user");
   expect(code).toBe(1);
+});
+
+// Claude Code on Windows prints a different check mark in `claude mcp list`.
+it("reads Windows' check mark as connected", async () => {
+  fakeClaude("2.1.304", [installedPlugin()], { configured: true, connected: true, pushMode: "hooks", mark: "√" });
+  const { out } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("ok   hub tools connected in Claude Code");
+});
+
+// Seen from a teammate's PC through Tailscale Funnel: every new connection took 2-3 s, more than the hooks' budget.
+it("warns when the hub answers too slowly for the hooks, and says how to fix it", async () => {
+  fakeClaude("2.1.304", [installedPlugin()]);
+  const slow = createServer((req, res) => {
+    setTimeout(() => {
+      const upstream = request(new URL(req.url ?? "/", hub.url), { method: req.method, headers: req.headers }, (r) => {
+        res.writeHead(r.statusCode ?? 502, r.headers);
+        r.pipe(res);
+      });
+      req.pipe(upstream);
+    }, 1800);
+  });
+  await new Promise<void>((r) => slow.listen(0, "127.0.0.1", r));
+  const { out } = await doctor(`http://127.0.0.1:${(slow.address() as AddressInfo).port}`, team.lea.token);
+  slow.close();
+  expect(out).toMatch(/warn hub answers in \d+ ms: too slow for the hooks/);
+  expect(out).toMatch(/tailnet/);
 });

@@ -599,12 +599,25 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   );
   if (url) {
     const started = Date.now();
-    const health = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+    let cause = "";
+    const health = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(8000) }).catch(
+      // Node tries each address of the host: the code then sits on the first of the grouped errors.
+      (e: Error & { cause?: { code?: string; errors?: Array<{ code?: string }> } }) => {
+        cause = e.cause?.code ?? e.cause?.errors?.[0]?.code ?? (e.cause as Error | undefined)?.message ?? e.name;
+        return null;
+      },
+    );
+    const ms = Date.now() - started;
     check(
       health?.ok === true,
-      health?.ok ? `hub reachable in ${Date.now() - started} ms` : `hub unreachable at ${url}`,
+      health?.ok ? `hub reachable in ${ms} ms` : `hub unreachable at ${url}${cause ? ` (${cause})` : ""}`,
       "check the address, your network or VPN, or ask your admin to start the hub",
     );
+    // Each hook opens a new connection within a 2-5 s budget: a slow first answer means hooks give up.
+    if (health?.ok && ms > 1500)
+      io.out(
+        `warn hub answers in ${ms} ms: too slow for the hooks, which may skip messages. Through a public relay (Tailscale Funnel) each connection is slow: join the hub's tailnet (the admin shares the hub machine with you, port 443 only).`,
+      );
     if (health?.ok && token) {
       const who = await whoami(url, token).catch(() => null);
       allowedModes = who?.push_allowed_modes ?? null;
@@ -709,9 +722,11 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     }
     if (plugin?.enabled) {
       const line = ((await run("claude", ["mcp", "list"], 30000)) ?? "").split("\n").find((l) => l.startsWith("plugin:codetgh:hub:")) ?? "";
+      // ✔ on macOS and Linux, √ in a Windows console.
+      const connected = /[✔✓√]\s*Connected/.test(line);
       check(
-        line.includes("✔"),
-        line.includes("✔")
+        connected,
+        connected
           ? "hub tools connected in Claude Code"
           : `hub tools not connected in Claude Code: ${line.split(" - ").pop() || "not listed"}`,
         "check the plugin options above, then restart Claude Code",
