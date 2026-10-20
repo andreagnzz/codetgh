@@ -178,7 +178,10 @@ async function sessionStart(input: Input) {
     // A member may link it: only then do the repository's name and branch leave the machine, in one more call.
     const linking = body.linked === false && body.can_link === true && Boolean(repoName);
     if (linking) {
-      res = await register(true, repoName);
+      // The hub may finish creating the project after this hook's budget: say so rather than "unreachable".
+      const linked = await register(true, repoName).catch(() => null);
+      if (!linked) return warnOnce(input, `CodeTgh: linking ${repoName} as a team project; it is on from your next session.`);
+      res = linked;
       if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
       body = (await res.json()) as typeof body;
     }
