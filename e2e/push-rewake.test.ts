@@ -1,4 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -76,6 +78,45 @@ describe("push: rewake mode (opt-in)", () => {
     const r = await runHook("rewake", { session_id: "sam-rw2" }, env);
     expect(r).toMatchObject({ code: 0, err: "" });
   });
+});
+
+describe("push: rewake survives a failed poll", () => {
+  it("backs off and polls again after a 502 from a proxy, then wakes the session", async () => {
+    await allowRewake(["rewake"]);
+    await startSession(hub.url, team.sam.token, "sam-rw-502");
+    // A proxy in front of the hub that fails the first long poll, as one does while the hub restarts.
+    let polls = 0;
+    const proxy = createServer(async (req, res) => {
+      if (++polls === 1) {
+        res.writeHead(502).end();
+        return;
+      }
+      const { authorization = "", "if-none-match": etag } = req.headers;
+      const upstream = await fetch(`${hub.url}${req.url}`, {
+        headers: etag ? { authorization, "if-none-match": etag } : { authorization },
+      });
+      res.writeHead(upstream.status, { etag: upstream.headers.get("etag") ?? "" }).end(await upstream.text());
+    });
+    await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
+    const env = {
+      ...hookEnv(`http://127.0.0.1:${(proxy.address() as AddressInfo).port}`, team.sam.token),
+      CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake",
+    };
+    try {
+      const waiting = runHook("rewake", { session_id: "sam-rw-502" }, env);
+      for (let i = 0; i < 400 && polls < 2; i++) await new Promise((r) => setTimeout(r, 50));
+      expect(polls).toBe(2);
+      const malik = await mcpClient(hub.url, team.malik.token);
+      await call(malik, "send_message", { to: "@sam", kind: "note", body: "after the restart" });
+      const woke = await waiting;
+      // Sam's unread messages from the tests above may fill the envelope list: the wake itself is what counts.
+      expect(woke.code).toBe(2);
+      expect(woke.err).toContain('trust="untrusted-peer"');
+    } finally {
+      proxy.closeAllConnections();
+      proxy.close();
+    }
+  }, 30_000);
 });
 
 describe("push: rewake under a burst", () => {

@@ -456,7 +456,8 @@ async function rewake(input: Input) {
         timeoutMs: (waitS + 5) * 1000,
         headers: etag ? { "If-None-Match": etag } : {},
       }).catch(() => null);
-      if (!res) {
+      // A network error, a timeout, a 5xx from a restarting hub or proxy, or a full `hold`: back off and poll again.
+      if (!res || res.status >= 500 || res.status === 429) {
         await sleep(5000);
         continue;
       }
