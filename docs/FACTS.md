@@ -300,6 +300,14 @@ Measured:
 
 `codetgh setup` and `codetgh upgrade` therefore run `claude plugin disable codetgh@codetgh --scope user` (with `--json` from 2.1.268), and take `already_in_goal_state` as done. `codetgh start [claude args…]` runs `claude --settings '{"enabledPlugins":{"codetgh@codetgh":true}}' -n "codetgh · <folder>" …`, without `-n` when the user gives `-n` or `--name`. `codetgh project new` no longer writes `enabledPlugins`. `codetgh doctor` takes "installed, off" as normal, and warns when the `scope: "user"` entry is `enabled` without `projectEnabled`. This replaces the 2026-10-16 choice in the section above. Tested with a fake `claude` (`packages/cli/test/start.test.ts`, `setup.test.ts`, `upgrade.test.ts`, `doctor.test.ts`, `e2e/project-new.test.ts`).
 
+### Push mode for sessions started by `codetgh start` (docs read 2026-10-20, not run against a real Claude Code)
+
+From [Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference) § Where values are stored, § Reference a saved value, § Where each variable resolves:
+- Non-sensitive `userConfig` values are saved under `pluginConfigs` in the user `settings.json`; sensitive ones in the secure credential store.
+- `CLAUDE_PLUGIN_OPTION_<KEY>` is "exported to hook processes for every option" from the saved value. The page does not say that a variable of the same name in the shell that launches `claude` reaches the hooks or overrides the saved option.
+
+So `codetgh start` sets no environment variable for the push mode. `codetgh setup` saves `push_mode=rewake` when the team allows rewake (as before), and `codetgh upgrade` now does the same through `claude plugin configure codetgh@codetgh --values-stdin` with `{"push_mode":"rewake"}`. When the team does not allow it, both keep `hooks` and print that an admin can allow rewake in the console Settings. Tested with a fake `claude` (`packages/cli/test/upgrade.test.ts`, `setup.test.ts`).
+
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
 
 From [Hooks](https://code.claude.com/docs/en/hooks):

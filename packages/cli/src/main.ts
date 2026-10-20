@@ -378,6 +378,7 @@ async function pluginOffAtUserScope() {
   );
 }
 const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
+const REWAKE_OFF = "push mode hooks: an admin can allow rewake in the console Settings, so an idle session wakes up for a message";
 
 type Choice = { value: string; name: string };
 // The same questions as SETUP.md, one at a time with a default; --answers <file> gives them without a terminal.
@@ -581,6 +582,7 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
         `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): launch Claude with codetgh start to use it`,
       );
     else if (ok) io.out("set the plugin's hub address and token in Claude Code: /plugin configure codetgh@codetgh");
+    if (configured && pushMode === "hooks") io.out(REWAKE_OFF);
     if (ok && !(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
@@ -1172,7 +1174,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .helpGroup("Everyday:")
     .description("update this command and the Claude Code plugin from your team's hub")
     .action(async () => {
-      const { url } = await credentials(deps.keyring);
+      const { url, token } = await credentials(deps.keyring);
       if (!url) throw new Error("no hub URL: run codetgh setup (or codetgh login)");
       const tgz = `${hubAddress(url)}/cli/codetgh.tgz`;
       // exec goes through cross-spawn, so npm.cmd on Windows works like claude.cmd does.
@@ -1189,6 +1191,18 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         });
       io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
       if (!(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
+      // Rewake as soon as the team allows it; an unreachable hub leaves the push mode as it is.
+      const who = token ? await whoami(url, token).catch(() => null) : null;
+      if (who?.push_allowed_modes?.includes("rewake")) {
+        const set = await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
+          timeout: 30_000,
+          input: JSON.stringify({ push_mode: "rewake" }),
+        }).then(
+          () => true,
+          () => false,
+        );
+        io.out(set ? "push mode rewake: an idle session wakes up for a message" : "set push mode rewake in Claude Code: /config");
+      } else if (who) io.out(REWAKE_OFF);
       io.out("launch Claude with codetgh start to load the new plugin");
     });
 

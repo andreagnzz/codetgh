@@ -151,6 +151,7 @@ describe("codetgh setup from an answers file", () => {
     // The plugin gets the hub URL and the token through stdin, never through its arguments.
     expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
     expect(calls.options()).toEqual({ codetgh_url: hub.url, codetgh_token: team.sam.token, push_mode: "hooks" });
+    expect(out).toContain("an admin can allow rewake in the console Settings");
     expect(calls()).not.toContain(team.sam.token);
     expect(out).toContain("ok   plugin options: hub URL and token set");
     expect(out).toContain("codetgh start");
