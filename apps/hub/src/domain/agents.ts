@@ -159,6 +159,24 @@ export async function setPermissionMode(db: Db, agentId: string, mode: string) {
   await db.update(agent).set({ permissionMode: mode }).where(eq(agent.id, agentId));
 }
 
+// The presence mod's poll: keeps the caller's own open session online while it idles at the prompt. Never creates one.
+export async function touchSession(db: Db, p: Principal, sessionId: string) {
+  const rows = await db
+    .update(agent)
+    .set({ lastSeenAt: new Date() })
+    .where(
+      and(
+        eq(agent.teamId, p.teamId),
+        eq(agent.userId, p.user.id),
+        eq(agent.sessionId, sessionId),
+        isNull(agent.endedAt),
+        isNull(agent.removedAt),
+      ),
+    )
+    .returning({ id: agent.id });
+  return rows.length > 0;
+}
+
 export async function agentBySession(db: Db, p: Principal, sessionId: string) {
   const [row] = await db
     .select()
