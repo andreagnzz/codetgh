@@ -66,3 +66,16 @@ it("injects at most 10 times in 10 minutes under a burst, and the rest waits for
   }
   expect(injected).toBe(10);
 }, 90_000);
+
+// A subagent's tool calls run the same hook: what it injects lands in the subagent's context, which ends with its task.
+// The main conversation must be the one that reads teammates' messages.
+it("leaves messages for the main conversation when the tool call comes from a subagent", async () => {
+  await startSession(hub.url, team.sam.token, "sam-sub", { repo: ACME_REPO });
+  const env = { ...hookEnv(hub.url, team.sam.token), CODETGH_POLL_MS: "0" };
+  const malik = await mcpClient(hub.url, team.malik.token);
+  await call(malik, "send_message", { to: "@sam", kind: "note", body: "seen by the main thread" });
+  const sub = await runHook("inbox", { session_id: "sam-sub", tool_name: "Bash", agent_id: "agent-1", agent_type: "Explore" }, env);
+  expect(sub.out).toBeNull();
+  const main = await runHook("inbox", { session_id: "sam-sub", tool_name: "Agent" }, env);
+  expect(JSON.stringify(main.out)).toContain("seen by the main thread");
+});
