@@ -3,7 +3,7 @@ import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -757,6 +757,31 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .action(() => {
       banner(io, "doctor");
       return doctor(deps);
+    });
+
+  cli
+    .command("start")
+    .helpGroup("Everyday:")
+    .description("launch Claude Code here with the CodeTgh plugin on for this session only; other arguments go to claude")
+    .argument("[claude args...]")
+    .allowUnknownOption()
+    .action((args: string[]) => {
+      // Flag settings sit above user settings, where setup leaves the plugin off.
+      const argv = ["--settings", JSON.stringify({ enabledPlugins: { "codetgh@codetgh": true } })];
+      if (!args.some((a) => a === "-n" || a === "--name" || a.startsWith("--name=")))
+        argv.push("-n", `codetgh · ${basename(process.cwd())}`);
+      // Ctrl+C reaches claude too, which handles it: this process waits for it instead of leaving it on the terminal.
+      const ignore = () => {};
+      process.on("SIGINT", ignore);
+      return new Promise<void>((resolve, reject) => {
+        const child = spawn("claude", [...argv, ...args], { stdio: "inherit" });
+        child.on("error", () => reject(new Error("Claude Code not found: install it from https://code.claude.com/docs/en/setup")));
+        child.on("exit", (code) => {
+          process.off("SIGINT", ignore);
+          process.exitCode = code ?? 1;
+          resolve();
+        });
+      });
     });
 
   cli
