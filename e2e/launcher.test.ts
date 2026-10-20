@@ -28,7 +28,7 @@ afterAll(async () => {
 const targets = (token: string) => fetch(`${hub.url}/v1/launcher/targets`, { headers: { Authorization: `Bearer ${token}` } });
 const projectsPage = async () => (await fetch(`${hub.url}/console/projects`, { headers: { cookie: team.lea.cookie } })).text();
 
-// A fake claude: writes its arguments and directory, then stays alive like the real server.
+// A fake claude: writes its arguments and directory, then stays alive like the real server. A plugin command only logs itself.
 function fakeClaude() {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-claude-"));
   fakeCommand(
@@ -37,6 +37,10 @@ function fakeClaude() {
     `import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
+if (process.argv[2] === "plugin") {
+  writeFileSync(join(dir, "plugin"), process.argv.slice(2).join(" ") + " in " + process.cwd());
+  process.exit(0);
+}
 writeFileSync(join(dir, "args"), process.argv.slice(2).join(" "));
 writeFileSync(join(dir, "cwd"), process.cwd());
 writeFileSync(join(dir, "pid"), String(process.pid));
@@ -85,6 +89,8 @@ describe("Remote Control launcher", () => {
     for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
     expect(readFileSync(join(fake, "args"), "utf8")).toMatch(/^remote-control --name CodeTgh · /);
     expect(readFileSync(join(fake, "cwd"), "utf8").trim()).toBe(repoDir);
+    // remote-control has no --settings: the plugin goes on at local scope, for this user in this repository only.
+    expect(readFileSync(join(fake, "plugin"), "utf8")).toBe(`plugin enable codetgh@codetgh --scope local --json in ${repoDir}`);
     expect(await projectsPage()).toContain("Remote Control running");
 
     // Switched off in the console: the next pass stops the server.

@@ -273,9 +273,13 @@ const NOT_LISTED = "not in this machine's launcher list";
 // command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
 // finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
-function exec(cmd: string, args: string[], opts: { timeout: number; input?: string }) {
+function exec(cmd: string, args: string[], opts: { timeout: number; input?: string; cwd?: string }) {
   return new Promise<{ stdout: string }>((resolve, reject) => {
-    const child = spawn(cmd, args, { timeout: opts.timeout, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      timeout: opts.timeout,
+      stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    });
     child.stdin?.end(opts.input);
     let stdout = "";
     child.stdout?.on("data", (d: Buffer) => {
@@ -287,6 +291,9 @@ function exec(cmd: string, args: string[], opts: { timeout: number; input?: stri
     );
   });
 }
+
+// claude plugin enable/disable --json (2.1.268) on a plugin already in that state: exit 1, and this failureCode on stdout.
+const inGoalState = (e: { stdout?: string }) => /"failureCode":\s*"already_in_goal_state"/.test(e.stdout ?? "");
 
 // Through cmd.exe, killing the child would leave claude running: on Windows, end the whole process tree.
 function stopServer(child: ChildProcess) {
@@ -324,6 +331,13 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       await client.launcherReport({ project_id: t.project_id, running: false, error: run.lastError || "Remote Control exited" });
     }
     const name = `CodeTgh · ${t.project_name.replace(/\p{Cc}/gu, "").slice(0, 60)}`;
+    // remote-control takes no --settings: the plugin goes on at local scope, for this user in this repository only.
+    const on = await exec("claude", ["plugin", "enable", "codetgh@codetgh", "--scope", "local", "--json"], {
+      timeout: 30_000,
+      cwd: dir,
+    }).then(() => true, inGoalState);
+    if (!on)
+      io.out(`${t.project_name}: the CodeTgh plugin is not on there: cd ${dir} && claude plugin enable codetgh@codetgh --scope local`);
     const child = spawn("claude", ["remote-control", "--name", name], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
     const entry = { child, lastError: "" };
     child.stderr?.on("data", (d: Buffer) => {
@@ -374,7 +388,7 @@ async function pluginOffAtUserScope() {
   const json = atLeast(version, "2.1.268") ? ["--json"] : [];
   return exec("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user", ...json], { timeout: 30_000 }).then(
     () => true,
-    (e: { stdout?: string }) => /"failureCode":\s*"already_in_goal_state"/.test(e.stdout ?? ""),
+    inGoalState,
   );
 }
 const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
@@ -695,8 +709,17 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         : "plugin codetgh@codetgh not installed",
       `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`,
     );
-    // enabled is the state in this folder: on with projectEnabled false means the user settings turn it on.
-    if (plugins.some((p) => p.id.startsWith("codetgh@") && p.scope === "user" && p.enabled && !p.projectEnabled))
+    // enabled is the state in this folder, and the list has no local-scope entry: the launcher's local enable reads as user.
+    const local = (() => {
+      try {
+        return (
+          JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.local.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true
+        );
+      } catch {
+        return false;
+      }
+    })();
+    if (!local && plugins.some((p) => p.id.startsWith("codetgh@") && p.scope === "user" && p.enabled && !p.projectEnabled))
       io.out(`warn plugin codetgh@codetgh is on in every Claude session: claude plugin disable codetgh@codetgh --scope user`);
     if (plugin?.installPath) {
       const files = ["dist/hook.js", "hooks/hooks.json"].every((f) => existsSync(join(plugin.installPath ?? "", f)));

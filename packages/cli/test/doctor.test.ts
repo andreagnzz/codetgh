@@ -12,6 +12,7 @@ import { type Keyring, program } from "../src/main.js";
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 const PATH = process.env.PATH;
+const CWD = process.cwd();
 beforeAll(async () => {
   hub = await startHub();
   team = await hub.seed();
@@ -20,6 +21,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 afterEach(() => {
   process.env.PATH = PATH;
+  process.chdir(CWD);
   delete process.env.CODETGH_URL;
 });
 
@@ -148,6 +150,18 @@ it("takes a plugin installed but off as the normal state: codetgh start turns it
   expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 installed, enabled per session by codetgh start");
   expect(out).not.toContain("warn plugin");
   expect(code).toBe(0);
+});
+
+// claude plugin list has no local-scope entry: the user entry reads enabled, as for user scope.
+it("does not warn about a plugin the launcher turned on at local scope in this repository", async () => {
+  fakeClaude("2.1.296", [{ ...installedPlugin(), scope: "user", enabled: true, projectEnabled: false }]);
+  const repo = mkdtempSync(join(tmpdir(), "codetgh-doctor-repo-"));
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, ".claude/settings.local.json"), JSON.stringify({ enabledPlugins: { "codetgh@codetgh": true } }));
+  process.chdir(repo);
+  const { out } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled here");
+  expect(out).not.toContain("warn plugin");
 });
 
 it("warns when the plugin is on at user scope, so in every Claude session on this machine", async () => {
