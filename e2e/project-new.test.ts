@@ -90,7 +90,6 @@ describe("codetgh project new", () => {
     expect(settings).toEqual({
       permissions: { allow: ["Bash(pnpm test)"] },
       extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` }, autoUpdate: true } },
-      enabledPlugins: { "codetgh@codetgh": true },
     });
     expect(JSON.parse(readFileSync(join(validated, "validated.json"), "utf8")).name).toBe("codetgh");
     const md = readFileSync(join(dir, "CLAUDE.md"), "utf8");

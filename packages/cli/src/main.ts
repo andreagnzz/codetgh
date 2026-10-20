@@ -850,10 +850,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           ...settings.extraKnownMarketplaces,
           codetgh: { source: { source: "url", url: marketplace }, autoUpdate: true },
         };
-        settings.enabledPlugins = { ...settings.enabledPlugins, "codetgh@codetgh": true };
         mkdirSync(join(root, ".claude"), { recursive: true });
         writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-        io.out("wrote .claude/settings.json: Claude Code offers the CodeTgh plugin to whoever trusts this folder");
+        io.out("wrote .claude/settings.json: it declares the hub's plugin marketplace");
       } else {
         io.out(
           mkt?.ok
@@ -884,7 +883,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       io.out(`Join our CodeTgh project "${created.name}":`);
       io.out(`1. Install the command: npm install -g ${url}/cli/codetgh.tgz`);
       io.out(`2. Run: codetgh setup   (pick "member", hub ${url}, and the invitation link from your email)`);
-      io.out(`3. Open ${created.name} in Claude Code and trust the folder${valid ? ": it offers the CodeTgh plugin" : ""}.`);
+      io.out(`3. In ${created.name}, launch Claude with: codetgh start`);
       if (!valid) for (const line of manual) io.out(line);
       io.out("No invitation yet? Ask an admin: codetgh invite <email>");
     });
