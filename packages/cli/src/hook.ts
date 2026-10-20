@@ -428,8 +428,9 @@ async function inbox(input: Input) {
   }
 }
 
-// Claude Code enforces the asyncRewake hook's timeout (600 s in hooks.json): the waiter gives up a little before.
-const REWAKE_BUDGET_MS = 570_000;
+// Claude Code enforces the asyncRewake hook's timeout (3600 s in hooks.json): the waiter gives up a minute before.
+// Each request is a ≤ 55 s long poll, so no proxy or idle timeout has to hold one connection for the hour.
+const REWAKE_BUDGET_MS = 3_540_000;
 // A burst of messages must not keep an autonomous session busy waking: past this, delivery waits for the next prompt.
 const MAX_WAKES = 6;
 const WAKE_WINDOW_MS = 10 * 60_000;

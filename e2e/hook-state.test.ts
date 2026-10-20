@@ -44,11 +44,21 @@ it("ignores a rewake waiter left behind by a killed hook", async () => {
   });
   await startSession(hub.url, team.sam.token, "sam-stale", { repo: ACME_REPO });
   const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
-  // A live pid (this test runner) recorded 11 minutes ago: the waiter was killed at its 600 s timeout.
-  writeFileSync(stateFile(env.CODETGH_STATE_DIR, "sam-stale"), JSON.stringify({ waiter: process.pid, waiterAt: Date.now() - 11 * 60_000 }));
+  // A live pid (this test runner) recorded 61 minutes ago: the waiter was killed at its 3600 s timeout.
+  writeFileSync(stateFile(env.CODETGH_STATE_DIR, "sam-stale"), JSON.stringify({ waiter: process.pid, waiterAt: Date.now() - 61 * 60_000 }));
   const malik = await mcpClient(hub.url, team.malik.token);
   await call(malik, "send_message", { to: "@sam", kind: "note", body: "are you there?" });
   expect((await runHook("rewake", { session_id: "sam-stale" }, env)).code).toBe(2);
+});
+
+// The waiter listens for up to an hour after the last turn: one started 30 minutes ago still owns the session.
+it("leaves the session to a rewake waiter started half an hour ago", async () => {
+  await startSession(hub.url, team.sam.token, "sam-live", { repo: ACME_REPO });
+  const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
+  writeFileSync(stateFile(env.CODETGH_STATE_DIR, "sam-live"), JSON.stringify({ waiter: process.pid, waiterAt: Date.now() - 30 * 60_000 }));
+  const malik = await mcpClient(hub.url, team.malik.token);
+  await call(malik, "send_message", { to: "@sam", kind: "note", body: "still there?" });
+  expect(await runHook("rewake", { session_id: "sam-live" }, env)).toMatchObject({ code: 0, err: "" });
 });
 
 // Hooks run in parallel: a reader must never see a half-written state file, or it starts over from {} (caps, ETag lost).

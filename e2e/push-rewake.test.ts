@@ -38,7 +38,7 @@ describe("push: rewake mode (opt-in)", () => {
     await allowRewake(["rewake"]);
     const r = await runHook("rewake", { session_id: "sam-rw0" }, hookEnv(hub.url, team.sam.token));
     expect(r).toMatchObject({ code: 0, raw: "", err: "" });
-    // It returns at once instead of waiting (up to 570 s); the bound is loose so a loaded machine does not fail it.
+    // It returns at once instead of waiting (up to an hour); the bound is loose so a loaded machine does not fail it.
     expect(r.ms).toBeLessThan(10_000);
   });
 
