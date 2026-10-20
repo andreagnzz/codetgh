@@ -346,6 +346,17 @@ Real run (tmux, throwaway hub from `apps/hub/test/harness.ts`, Léa and Malik on
 
 Limits: `/v1/status` counts the unread of the token's member (messages to the person, or to the token's REST agent), not of one Claude session's agent; the REST agent `cli-<token>` it registers, like any teammate's, counts as online.
 
+### Mods: the current session id (docs read 2026-10-20, Claude Code 2.1.304)
+
+| Fact | Status | Source |
+| --- | --- | --- |
+| `$.session` has an `id` method: a mod can read the id of the session it runs in | doc | [Reference § Mods API methods](https://code.claude.com/docs/en/plugins/mods/reference#mods-api-methods) |
+| `id: () => Promise<string>`, "Returns the session's id (the transcript file's name)": the `session_id` the settings hooks receive | doc (types) | [claude-code.d.ts](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts), linked from the Reference as the complete reference |
+| The id changes after `/clear` or a resume (`session.end` carries `sessionId`, "`$.session.id()` until now"), and `session.start` does not fire again then: read it on each poll, never cache it | doc (types) | same file, `SessionEndInput.sessionId`; [Reference § Session](https://code.claude.com/docs/en/plugins/mods/reference#session) |
+| `claude plugin test` stubs it with `on("session.id", () => ({ value }))`; `claude plugin validate` lists `$.session.id (via refresh)` | **tested** | `packages/plugin/tests/presence.test.ts` |
+
+So the presence mod sends `GET /v1/status?session_id=<id>` every 30 s and the hub refreshes `last_seen_at` of that agent only when it is the caller's own (same team and user), creating none. Sessions in hooks mode without the mod stay activity-based (90 s online, 15 min idle).
+
 ### Production run after the 2026-10-16 deploy (Claude Code 2.1.301, Linux, plugin 0.3.0)
 
 Real sessions on the team's hub, in a linked repository, plugin installed from the hub's marketplace (user and project scope):
