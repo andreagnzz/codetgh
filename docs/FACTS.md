@@ -286,6 +286,20 @@ Measured with a throwaway `CLAUDE_CONFIG_DIR`:
 
 So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relied on this until 2026-10-16: it installed the plugin off, and `codetgh project new` turned it on in each team repository. It now leaves the plugin on at user scope (in a repository no project has, the hook sends only the fingerprint), so `codetgh doctor` reports a plugin left off by an earlier setup, with `claude plugin enable codetgh@codetgh --scope user`.
 
+### The plugin on only in sessions started by `codetgh start` (2026-10-20, Claude Code 2.1.304, Linux)
+
+From [Plugin loading reference](https://code.claude.com/docs/en/plugins/loading) and [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-reference):
+- `enabledPlugins` merges key by key across sources. From lowest to highest precedence: add-dir < user < project < local < flag (`--settings` at launch) < managed.
+- So `claude --settings '{"enabledPlugins":{"codetgh@codetgh":true}}'` enables the plugin for that session only, even when user scope has it set to `false`.
+- `claude plugin disable <id> --scope user --json` (`--json` needs 2.1.268) reports `failureCode: "already_in_goal_state"` when the plugin is already off.
+
+Measured:
+- `claude plugin disable codetgh@codetgh --scope user --json` on a plugin already off at user scope prints `{"command":"disable","outcome":"failed",…,"failureCode":"already_in_goal_state","alreadyInGoalState":true}` on stdout and exits 1.
+- `claude plugin list --json` lists one entry per install scope, with `scope`, `enabled` and `projectEnabled`. `enabled` is the state in the current folder: in a folder whose `.claude/settings.json` turns the plugin on, the `scope: "user"` entry reads `enabled: true, projectEnabled: true`.
+- `claude --help` lists `-n, --name <name>` ("Set a display name for this session") and `--settings <file-or-json>`. `claude remote-control --help` has `--name` but no `--settings`.
+
+`codetgh setup` and `codetgh upgrade` therefore run `claude plugin disable codetgh@codetgh --scope user` (with `--json` from 2.1.268), and take `already_in_goal_state` as done. `codetgh start [claude args…]` runs `claude --settings '{"enabledPlugins":{"codetgh@codetgh":true}}' -n "codetgh · <folder>" …`, without `-n` when the user gives `-n` or `--name`. `codetgh project new` no longer writes `enabledPlugins`. `codetgh doctor` takes "installed, off" as normal, and warns when the `scope: "user"` entry is `enabled` without `projectEnabled`. This replaces the 2026-10-16 choice in the section above. Tested with a fake `claude` (`packages/cli/test/start.test.ts`, `setup.test.ts`, `upgrade.test.ts`, `doctor.test.ts`, `e2e/project-new.test.ts`).
+
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
 
 From [Hooks](https://code.claude.com/docs/en/hooks):
@@ -305,7 +319,7 @@ From [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-ref
 - `-s, --scope user|project|local`, default `user`.
 - `--config <key=value>` sets a `userConfig` option; repeat it for each option. 2.1.285 added the `<server>.<key>` form for bundled `.mcpb` servers; the plain form predates it (first version not documented).
 - `-y, --yes` (2.1.229) accepts a marketplace-declared install command without the prompt. Without a TTY and without `-y`, such an install is refused. The hub's plugin is an archive source, so no command is shown; `-y` only keeps a non-TTY setup from stalling.
-- `--json` (2.1.268) prints one result object on the last line of stdout. CodeTgh does not use it: the exit code (0 or 1) is enough.
+- `--json` (2.1.268) prints one result object on the last line of stdout. CodeTgh does not use it for install: the exit code (0 or 1) is enough. It does for `plugin disable` (below).
 - Option storage: non-sensitive values go under `pluginConfigs` in the user `settings.json`, `sensitive` ones (`codetgh_token`) to the platform's secure credential store. The docs state this for `userConfig` in general, not for `--config` specifically.
 
 - `claude plugin install` documents no stdin or file channel for option values. `claude plugin configure <name@marketplace> --values-stdin` (2.1.285) reads a JSON object of single-line strings from stdin; options left out keep their saved values.
