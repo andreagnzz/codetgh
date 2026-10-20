@@ -89,6 +89,9 @@ const START_BUDGET_MS = 4500;
 const BUDGET_MS = 2500;
 // SessionEnd hooks share a 1.5 s budget that a plugin hook's own timeout does not raise; keep a margin for the spawn.
 const END_BUDGET_MS = 1200;
+// UserPromptSubmit has a 3 s timeout; Node starts slowly on Windows, and a hub behind a public relay takes about 1 s.
+const PROMPT_BUDGET_MS = 2850;
+const SLOW = "CodeTgh: the hub is slow to answer; your teammates' messages will come with your next prompt.";
 
 type Reply = { status: number; ok: boolean; etag: string | undefined; json: () => Promise<unknown> };
 
@@ -227,15 +230,15 @@ async function userPromptSubmit(input: Input) {
   try {
     const res = await hub(
       `/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}${mode ? `&permission_mode=${encodeURIComponent(mode)}` : ""}`,
-      { timeoutMs: 2000, headers: state.etag ? { "If-None-Match": state.etag } : {} },
+      { timeoutMs: left(PROMPT_BUDGET_MS), headers: state.etag ? { "If-None-Match": state.etag } : {} },
     );
     if (mode && res.status < 500) saveState(input.session_id, { ...loadState(input.session_id), mode });
     if (res.status !== 200) return null;
     saveState(input.session_id, { ...loadState(input.session_id), etag: res.etag });
     const { context } = (await res.json()) as { context: string };
     return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } };
-  } catch {
-    return warnOnce(input, "CodeTgh: hub unreachable; working without CodeTgh.");
+  } catch (e) {
+    return warnOnce(input, (e as Error).message === "timeout" ? SLOW : "CodeTgh: hub unreachable; working without CodeTgh.");
   }
 }
 

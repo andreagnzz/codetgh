@@ -20,6 +20,9 @@ const add = (path) => {
 };
 if (!statSync(join(plugin, "dist/hook.js"), { throwIfNoEntry: false }))
   throw new Error("packages/plugin/dist/hook.js is missing: run pnpm -r build first");
+// The bundles are ES modules: without this, Node looks for the nearest package.json above the installed plugin (often
+// the user's home) and prints MODULE_TYPELESS_PACKAGE_JSON on every hook run.
+writeFileSync(join(plugin, "dist/package.json"), '{ "type": "module" }\n');
 // What the plugin is made of, nothing else: a stray file left in packages/plugin (notes, .env, a dump) never ships.
 for (const name of [".claude-plugin", ".mcp.json", "agents", "assets", "dist", "hooks", "skills"]) add(join(plugin, name));
 files["codetgh/LICENSE"] = readFileSync(join(root, "LICENSE"));
