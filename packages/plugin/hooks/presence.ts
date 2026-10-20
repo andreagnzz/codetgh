@@ -13,7 +13,9 @@ function counts(s: Status) {
 
 async function refresh($: EngineInterface, url: string, token: string) {
   try {
-    const res = await $.http.fetch(`${url}/v1/status`, { headers: { Authorization: `Bearer ${token}` } });
+    // Read on each poll: /clear and resume give the process a new session id.
+    const session = encodeURIComponent(await $.session.id());
+    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const c = counts(JSON.parse(res.text) as Status);
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
