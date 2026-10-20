@@ -18,7 +18,7 @@ import {
 } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie } from "hono/cookie";
@@ -32,7 +32,7 @@ import { type Auth, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
-import { team } from "./db/schema.js";
+import { project, team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
 import {
   agentBySession,
@@ -225,8 +225,10 @@ export function createApp({
     if (!p.paused && !agent)
       return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
     bus.emit("presence", { teamId: p.teamId });
+    const [prj] = agent?.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, agent.projectId)) : [];
     return c.json({
       agent_id: agent?.id ?? null,
+      project: prj?.name ?? null,
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
