@@ -69,10 +69,12 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
     };
+    // Outside a repository, a resume keeps the project the session was attached to in the console.
+    const { projectId: _, ...kept } = values;
     const [row] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
-      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: values })
+      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: input.repo_fingerprint ? values : kept })
       .returning();
     if (!row) throw new HubError("E_INVALID", "agent registration failed");
     await appendAudit(tx, {

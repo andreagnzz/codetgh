@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
-import { UserCodeForm } from "@codetgh/shared/rest";
+import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
@@ -31,12 +31,14 @@ import { createExternalAgent } from "../domain/a2a.js";
 import {
   changeRole,
   isAdmin,
+  isSessionAgent,
   removeAgent,
   requireAdmin,
   requireMember,
   resolveAlert,
   resumeKillSwitch,
   revokeToken,
+  setAgentProject,
   setAgentTrust,
   setKillSwitch,
   updateSettings,
@@ -618,7 +620,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const _ = tr(c);
     const projects = await db.select().from(project).where(eq(project.teamId, p.teamId)).orderBy(asc(project.name));
     const sessions = await listAgents(db, p.teamId, { limit: 200 });
-    const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id);
+    const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id && (id || isSessionAgent(r.agent)));
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
     const launch = (projectId: string) => {
@@ -649,8 +651,22 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     };
     const groups = [
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
-      { id: "none", name: _("Not in a project"), rows: byProject(null) },
+      { id: "none", name: _("Sessions outside a project"), rows: byProject(null) },
     ].filter((g) => g.rows.length > 0 || g.id !== "none");
+    // A member attaches their own sessions, an admin anyone's; a guest none.
+    const attach = (r: (typeof sessions)[number]) =>
+      projects.length > 0 &&
+      p.role !== "guest" &&
+      (r.agent.userId === p.user.id || isAdmin(p)) && (
+        <form class="attach" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
+          <select name="project_id" aria-label={_("Project")}>
+            {projects.map((pr) => (
+              <option value={pr.id}>{pr.name}</option>
+            ))}
+          </select>{" "}
+          <button type="submit">{_("Attach to…")}</button>
+        </form>
+      );
     return page(
       c,
       "Projects",
@@ -670,7 +686,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {launch(g.id)}
               </>
             )}
-            <People rows={g.rows} lang={_.lang} empty={_("No session on this project right now.")} />
+            {g.id === "none" && <p class="meta">{_("Start claude inside the project's repository folder to link the session.")}</p>}
+            <People
+              rows={g.rows}
+              lang={_.lang}
+              empty={_("No session on this project right now.")}
+              action={g.id === "none" ? attach : undefined}
+            />
           </section>
         ))
       ),
@@ -692,6 +714,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <p>It appears to the team as {created.handle}.</p>
       </Result>,
     );
+  });
+
+  consoleApp.post("/agents/:id/project", async (c) => {
+    const parsed = AgentProjectForm.safeParse(await form(c));
+    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project."));
+    await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id);
+    return refresh(c);
   });
 
   consoleApp.post("/agents/:id/remove", async (c) => {
