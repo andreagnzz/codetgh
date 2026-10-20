@@ -100,3 +100,31 @@ it("still works in a linked repository", async () => {
   const r = await runHook("session-start", { session_id: "sam-linked", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
   expect(String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext)).toContain("codetgh_context");
 });
+
+// Seen on the first session in a new repository: the hub created the project but answered after the hook's budget.
+it("says the repository is being linked, not that the hub is unreachable, when linking runs out of time", async () => {
+  let calls = 0;
+  const slow = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      calls += 1;
+      if (calls === 1)
+        return res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ agent_id: null, paused: false, context: "", linked: false, can_link: true }));
+      setTimeout(() => res.writeHead(200).end("{}"), 8000).unref();
+    });
+  });
+  await new Promise<void>((r) => slow.listen(0, "127.0.0.1", r));
+  const env = hookEnv(`http://127.0.0.1:${(slow.address() as AddressInfo).port}`, team.sam.token);
+  const r = await runHook(
+    "session-start",
+    { session_id: "sam-slow-link", source: "startup", cwd: gitRepo("git@github.com:acme/bet-predict.git") },
+    env,
+  );
+  slow.close();
+  expect(calls).toBe(2);
+  expect(line(r)).not.toMatch(/unreachable/);
+  expect(line(r)).toMatch(/bet-predict/);
+  expect(line(r)).toMatch(/next session|restart/i);
+});
