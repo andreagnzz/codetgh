@@ -63,13 +63,15 @@ claude plugin install codetgh --marketplace <adresse du hub>/plugin/marketplace.
 
 Avant 2.1.292 : `claude plugin marketplace add <adresse du hub>/plugin/marketplace.json`, puis `claude plugin install codetgh@codetgh`.
 
+Puis `claude plugin disable codetgh@codetgh --scope user` : le plugin ne se charge que dans les sessions lancées avec `codetgh start`.
+
 Le plugin demande l'adresse du hub et le jeton dans **son propre dialogue**. La personne les y saisit elle-même, jamais dans la conversation. (`codetgh setup`, lancé par la personne dans son terminal, fait tout cela d'un coup, jeton compris.)
 En cas d'échec : Claude Code est trop ancien (`claude update`, il faut 2.1.224 ou plus récent), ou le hub n'est pas en HTTPS public. Dans ce cas, c'est à l'administrateur d'agir.
 
 ### Vérification finale
 
 `codetgh doctor` : toutes les lignes doivent être `ok`. Pour chaque `FAIL`, la ligne `→` qui suit dit quoi faire : applique-la, puis relance `codetgh doctor`.
-Termine en lançant `codetgh status` : la personne voit qui est en ligne.
+Termine en lançant `codetgh status` : la personne voit qui est en ligne. Pour travailler, elle lance Claude dans son dépôt avec `codetgh start`.
 
 ---
 

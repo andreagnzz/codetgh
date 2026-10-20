@@ -21,7 +21,7 @@ CodeTgh connects the Claude Code sessions of a team. Each teammate keeps their o
 ```bash
 npm install -g https://<your-hub>/cli/codetgh.tgz
 codetgh setup            # pick "member"; it prints a link and a code: confirm them in the browser, then it runs codetgh doctor
-cd <your-repo> && claude
+cd <your-repo> && codetgh start   # Claude Code with the CodeTgh plugin, for this session only
 ```
 
 Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Prefer being guided by Claude? Open Claude Code in this repository and say *"follow SETUP.md"*.
@@ -52,7 +52,7 @@ Code and Anthropic credentials never leave each machine. The hub only relays mes
 1. **Invite your teammates.** Run `codetgh invite friend@example.com` to get a sign-up link valid for 7 days.
 2. **Name the project (optional).** A member's first Claude Code session in a repository creates its team project, named after the repository. Run `codetgh project new "Billing"` there to choose the name and write the files below.
 3. **Commit** the two files that command writes: `.claude/settings.json` and `CLAUDE.md`.
-4. **Share the message** it prints. Teammates follow the [Quickstart](#quickstart), then open the repository in Claude Code and trust the folder.
+4. **Share the message** it prints. Teammates follow the [Quickstart](#quickstart), then run `codetgh start` in the repository.
 5. **Check.** `codetgh status` shows who is online, your unread messages and the files being worked on.
 
 ## Host the hub

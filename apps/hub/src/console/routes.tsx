@@ -237,7 +237,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               empty={_(
                 isAdmin(p)
                   ? "No agent connected. Copy the invitation command to add one: codetgh invite <email>."
-                  : "No agent connected yet. Install CodeTgh with codetgh setup, then open Claude Code in the team's repository.",
+                  : "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.",
               )}
             />
           </section>
@@ -564,7 +564,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             _("Trust"),
             _("Actions"),
           ]}
-          empty={_("No agent yet. Agents appear here once someone runs codetgh setup and opens Claude Code in a team repository.")}
+          empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
           rows={rows.map((r) => [
             r.name,
             // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
@@ -656,7 +656,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Projects",
       projects.length === 0 && sessions.length === 0 ? (
         <p class="empty">
-          {_("No project yet. A project appears when a member opens Claude Code in a repository, or runs codetgh project new there.")}
+          {_("No project yet. A project appears when a member runs codetgh start in a repository, or runs codetgh project new there.")}
         </p>
       ) : (
         groups.map((g) => (
