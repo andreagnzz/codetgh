@@ -3,7 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
-import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreEditInput, SendMessageInput } from "@codetgh/shared";
+import {
+  AckInput,
+  AgentSessionInput,
+  ClaimsCheckRestInput,
+  InboxReadInput,
+  PreEditInput,
+  SendMessageInput,
+  StatusSetInput,
+} from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
 import {
   CreateProjectInput,
@@ -44,6 +52,7 @@ import {
   resolveAgent,
   setAgentsPaused,
   setPermissionMode,
+  setStatus,
   touchSession,
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
@@ -474,6 +483,16 @@ export function createApp({
     const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
     if (sessionId && (await touchSession(db, p, sessionId))) bus.emit("presence", { teamId: p.teamId });
     return c.json(await teamOverview(db, p, await restAgent(p, undefined), { scope: "team", limit: 50 }));
+  });
+
+  v1.post("/status", async (c) => {
+    const p = c.get("principal");
+    const { agent: agentArg, ...input } = await parse(c, StatusSetInput);
+    const a = await restAgent(p, agentArg);
+    takeWrite(limiter, p.user.id);
+    await assertNoSecrets(deps, { p, agent: a, via: "rest" }, [input.text, ...input.paths].join("\n"));
+    await setStatus(db, p, a, input, "rest");
+    return c.body(null, 204);
   });
 
   v1.post("/invitations/revoke", async (c) =>
