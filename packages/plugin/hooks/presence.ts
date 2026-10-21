@@ -53,10 +53,19 @@ async function tell($: EngineInterface, url: string, token: string, text: string
   });
 }
 
-async function limits($: EngineInterface, url: string, token: string, handle: string, now: number) {
+// The plan windows for the hub's capacity view: whole percents and reset times, nothing else of the session.
+function usageQuery(live: SessionRateLimit[]) {
+  return live
+    .filter((w) => w.kind === "five_hour" || w.kind === "seven_day")
+    .map(
+      (w) =>
+        `&${w.kind}=${Math.min(100, Math.max(0, Math.round(w.percentUsed)))}${w.resetsAt ? `&${w.kind}_reset=${Math.round(Date.parse(w.resetsAt) / 1000)}` : ""}`,
+    )
+    .join("");
+}
+
+async function limits($: EngineInterface, url: string, token: string, handle: string, now: number, live: SessionRateLimit[]) {
   try {
-    // A window past its reset is a stale reading: no API response came since it reopened.
-    const live = (await $.session.usage()).rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now);
     const top = live.reduce<SessionRateLimit | undefined>((a, w) => (a && a.percentUsed >= w.percentUsed ? a : w), undefined);
     const used = top?.percentUsed ?? 0;
     const key = `${top?.kind}@${top?.resetsAt}`;
@@ -77,21 +86,29 @@ async function limits($: EngineInterface, url: string, token: string, handle: st
       await tell($, url, token, "Back from the Claude usage limit", 600, `@${handle} is back.`);
     }
   } catch {
-    // No usage reading, or the hub refused: nothing to tell, the session goes on.
+    // The hub refused: nothing to tell, the session goes on.
   }
 }
 
 async function refresh($: EngineInterface, url: string, token: string) {
   let s: Status;
   let now: number;
+  let live: SessionRateLimit[];
   try {
+    now = await $.clock.now();
+    // A window past its reset is a stale reading: no API response came since it reopened. No reading, no report.
+    live = await $.session.usage().then(
+      (u) => u.rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now),
+      () => [],
+    );
     // Read on each poll: /clear and resume give the process a new session id.
     const session = encodeURIComponent(await $.session.id());
-    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}${usageQuery(live)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) throw new Error(`status ${res.status}`);
     s = JSON.parse(res.text) as Status;
     const c = counts(s);
-    now = await $.clock.now();
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
     const before = unread ?? (waiter ? c.unread : 0);
     if (c.unread > before && idleSince !== undefined && (!waiter || now - idleSince >= REWAKE_MS))
@@ -104,7 +121,7 @@ async function refresh($: EngineInterface, url: string, token: string) {
     $.ui.status(undefined);
     return;
   }
-  await limits($, url, token, s.you.handle, now);
+  await limits($, url, token, s.you.handle, now, live);
 }
 
 export const register: Register = (on, options) => {

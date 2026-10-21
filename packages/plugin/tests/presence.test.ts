@@ -276,3 +276,28 @@ test(
     for (const r of s.requests) expect(r.headers?.Authorization).toBe("Bearer ctg_secret_token");
   },
 );
+
+test(
+  "reports the live plan windows on its status poll as whole percents and epoch seconds, and nothing else",
+  { options: OPTIONS },
+  async ($, on) => {
+    let limits: SessionRateLimit[] = [
+      { kind: "five_hour", percentUsed: 41.6, resetsAt: "1970-01-01T05:00:00.000Z" },
+      { kind: "seven_day", percentUsed: 7 },
+      { kind: "spend_limit", percentUsed: 120 },
+    ];
+    const s = stubs(
+      on,
+      () => ok(body({})),
+      () => limits,
+    );
+    await start($);
+    await s.clock.advance(1);
+    expect(s.requests[0]?.url).toBe("https://hub.example.com/v1/status?session_id=sess-1&five_hour=42&five_hour_reset=18000&seven_day=7");
+    // A window past its reset is a stale reading: not reported.
+    limits = [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:10.000Z" }];
+    await s.clock.advance(30_000);
+    const polls = s.requests.filter((r) => r.url.includes("/v1/status?"));
+    expect(polls.at(-1)?.url).toBe("https://hub.example.com/v1/status?session_id=sess-1");
+  },
+);

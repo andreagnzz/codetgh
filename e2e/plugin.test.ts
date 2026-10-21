@@ -22,7 +22,7 @@ afterAll(() => hub.stop());
 
 it("keeps skill descriptions short and user commands out of the model's reach", () => {
   const skills = readdirSync(`${root}skills`);
-  expect(skills).toEqual(expect.arrayContaining(["handoff", "claims"]));
+  expect(skills).toEqual(expect.arrayContaining(["handoff", "claims", "split"]));
   for (const name of skills) {
     const fm = frontmatter(`${root}skills/${name}/SKILL.md`);
     expect(fm.name).toBe(name);
@@ -30,6 +30,20 @@ it("keeps skill descriptions short and user commands out of the model's reach", 
     // The orchestrator's model loads its role on its own; the hub refuses a verdict from anyone else.
     if (name !== "codetgh" && name !== "orchestrate") expect(fm["disable-model-invocation"]).toBe("true");
   }
+});
+
+// /codetgh:split creates tasks for teammates: only the user's own flags skip the review, and it names real hub tools.
+it("documents split's approval flags and calls only tools the hub has", async () => {
+  const text = readFileSync(`${root}skills/split/SKILL.md`, "utf8");
+  expect(text).toContain("--yes");
+  expect(text).toContain("--dispatch");
+  expect(text).toMatch(/never turns a mode on/);
+  expect(text).toMatch(/create nothing until the user approves/);
+  const client = await mcpClient(hub.url, team.sam.token);
+  const tools = new Set((await client.listTools()).tools.map((t) => t.name));
+  await client.close();
+  for (const name of ["team_overview", "task_list", "memory_search", "task_create", "send_message", "ask_peer"])
+    expect(tools.has(name), name).toBe(true);
 });
 
 // The liaison reads untrusted peer text: it gets the hub's read tools and nothing else, not the user's other connectors.
@@ -58,7 +72,7 @@ it.skipIf(!claude)("ships a presence mod that Claude Code validates and whose ow
   expect(validate.status, validate.stdout + validate.stderr).toBe(0);
   expect(validate.stdout).toContain("./presence.ts hooks: session.start, turn.start, turn.complete");
   expect(validate.stdout).toContain("./presence.ts calls: $.clock.after, $.clock.every, $.clock.now, $.http.fetch");
-  expect(validate.stdout).toContain("$.prompt.submit (via submit), $.session.id (via refresh, tell), $.session.usage (via limits)");
+  expect(validate.stdout).toContain("$.prompt.submit (via submit), $.session.id (via refresh, tell), $.session.usage (via refresh)");
   const tests = spawnSync("claude", ["plugin", "test", root], { encoding: "utf8" });
   expect(tests.status, tests.stdout + tests.stderr).toBe(0);
 });
