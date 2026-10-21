@@ -44,6 +44,8 @@ type State = {
   projectless?: boolean;
   // The last repository fingerprint the cwd hook asked the hub about.
   tried?: string;
+  // The hub's agent for this session: MCP calls carry no session, so the pre-tool-use hook names it.
+  agent?: string;
 };
 
 const config = () => ({
@@ -142,6 +144,7 @@ async function git(cwd: string | undefined, args: string[]) {
 }
 
 type SessionReply = {
+  agent_id?: string | null;
   context: string;
   paused: boolean;
   linked?: boolean;
@@ -245,6 +248,7 @@ async function sessionStart(input: Input) {
       saveState(input.session_id, {
         ...loadState(input.session_id),
         ...(input.permission_mode && { mode: input.permission_mode }),
+        ...(body.agent_id && { agent: body.agent_id }),
         projectless: !repo.fingerprint,
       });
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
@@ -283,7 +287,7 @@ async function cwdChanged(input: Input) {
     const { body } = registered;
     if (body.paused) return null;
     if (body.linked === false) return { systemMessage: NOT_LINKED };
-    saveState(input.session_id, { ...loadState(input.session_id), projectless: false });
+    saveState(input.session_id, { ...loadState(input.session_id), projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
     return { systemMessage: `CodeTgh: this session is now on ${(body.project ?? repo.name ?? "").replace(/\p{Cc}/gu, "")}` };
   } catch {
     return null;
@@ -324,7 +328,14 @@ async function preToolUse(input: Input) {
   // Loaded on demand so the edit hooks do not pay for the secret rules.
   const { scanSecrets } = await import("@codetgh/guard");
   const findings = (await Promise.all(strings(input.tool_input).map((s) => scanSecrets(s)))).flat();
-  if (!findings.length) return null;
+  if (!findings.length) {
+    // Names the session's agent so the hub never guesses it. No decision: the input changes, the permission flow
+    // does not (FACTS.md).
+    const toolInput = input.tool_input as Record<string, unknown> | undefined;
+    const agent = input.session_id && loadState(input.session_id).agent;
+    if (!agent || !toolInput || typeof toolInput !== "object" || "agent" in toolInput) return null;
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput: { ...toolInput, agent } } };
+  }
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
