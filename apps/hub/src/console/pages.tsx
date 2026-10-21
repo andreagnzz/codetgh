@@ -5,21 +5,22 @@ import { type listAgents, presence } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
 import type { Principal } from "../principal.js";
 
-const NAV: Array<[string, string, boolean?]> = [
+// The third field is the least role that may open the page: no link to a page that would answer 403.
+const NAV: Array<[string, string, ("member" | "admin")?]> = [
   ["/console", "Dashboard"],
   ["/console/threads", "Threads"],
-  ["/console/projects", "Projects"],
+  ["/console/projects", "Projects", "member"],
   ["/console/agents", "Agents"],
-  ["/console/delegations", "Delegations"],
-  ["/console/claims", "Claims"],
-  ["/console/tasks", "Tasks"],
-  ["/console/memory", "Memory"],
-  ["/console/tokens", "Tokens"],
+  ["/console/delegations", "Delegations", "member"],
+  ["/console/claims", "Claims", "member"],
+  ["/console/tasks", "Tasks", "member"],
+  ["/console/memory", "Memory", "member"],
+  ["/console/tokens", "Tokens", "member"],
   ["/console/me", "My data"],
-  ["/console/alerts", "Alerts", true],
-  ["/console/members", "Members", true],
-  ["/console/audit", "Audit", true],
-  ["/console/settings", "Settings", true],
+  ["/console/alerts", "Alerts", "admin"],
+  ["/console/members", "Members", "admin"],
+  ["/console/audit", "Audit", "admin"],
+  ["/console/settings", "Settings", "admin"],
 ];
 
 // The project filter: ?project=<id>, or none for what is outside a project; no value shows every project.
@@ -58,7 +59,7 @@ export const Layout: FC<{
           <aside class="sidebar">
             <Logo kind="horizontal" />
             <nav aria-label={_("Console")}>
-              {NAV.filter(([, , adminOnly]) => admin || !adminOnly).map(([href, label]) => (
+              {NAV.filter(([, , least]) => (least === "admin" ? admin : least !== "member" || p.role !== "guest")).map(([href, label]) => (
                 <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
                   {_(label)}
                 </a>

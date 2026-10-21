@@ -67,6 +67,21 @@ it("keeps the same pages and thread actions from a guest in the console", async 
   expect((await consolePost(hub.url, team.malik.cookie, `/console/threads/${teamThread}/mute`)).status).toBe(403);
 });
 
+const FORBIDDEN = ["projects", "tasks", "memory", "claims", "delegations", "tokens"];
+it("shows a guest no link to a page that refuses them, and a member every one", async () => {
+  const nav = async (cookie: string) => {
+    const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
+    return html.slice(html.indexOf("<aside"), html.indexOf("</aside>"));
+  };
+  const guest = await nav(team.malik.cookie);
+  for (const page of FORBIDDEN) expect(guest, page).not.toContain(`href="/console/${page}"`);
+  expect(guest).toContain('href="/console/threads"');
+  expect(guest).toContain('href="/console/agents"');
+  const member = await nav(team.sam.cookie);
+  for (const page of FORBIDDEN) expect(member, page).toContain(`href="/console/${page}"`);
+  for (const page of ["delegations", "tokens"])
+    expect((await fetch(`${hub.url}/console/${page}`, { headers: { cookie: team.sam.cookie } })).status, page).toBe(200);
+});
 
 // A guest's agent still needs a personal token: it comes from the browser sign-in, not the Tokens page.
 it("lets a guest sign in a terminal through the browser, and sends a new guest to the dashboard", async () => {
