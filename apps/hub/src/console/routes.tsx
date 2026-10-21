@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, not, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
@@ -14,6 +14,7 @@ import type { Auth } from "../auth.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
 import {
+  agent,
   alert,
   auditEvent,
   claim,
@@ -209,13 +210,24 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     else if (q !== undefined) deleteCookie(c, "project", { path: "/console", secure });
     return { projects, selected };
   };
-  const onProject = (col: typeof thread.projectId | typeof task.projectId, f: ProjectFilter) =>
+  const onProject = (col: typeof thread.projectId | typeof task.projectId | typeof agent.projectId, f: ProjectFilter) =>
     f.selected === "none" ? isNull(col) : f.selected ? eq(col, f.selected) : undefined;
   // With every project shown, items go under their project's heading, those outside a project last.
   const byProject = <T,>(f: ProjectFilter, rows: T[], of: (r: T) => string | null, outside: string) =>
     [...f.projects, { id: "none", name: outside }]
       .map((pr) => ({ ...pr, rows: rows.filter((r) => (of(r) ?? "none") === pr.id) }))
       .filter((g) => g.rows.length > 0);
+  // A list cut by its row limit says so, with the real count.
+  const capped = (c: Context<Env>, shown: number, total: number | undefined) =>
+    total !== undefined &&
+    shown < total && (
+      <p class="meta">{tr(c)("Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
+    );
+  // ?before= of the Older link: rows created before that time.
+  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt) => {
+    const before = c.req.query("before");
+    return before && !Number.isNaN(Date.parse(before)) ? lt(col, new Date(before)) : undefined;
+  };
   const refresh = (c: Context<Env>) => c.body(null, 204, { "HX-Refresh": "true" });
   const form = async (c: Context<Env>) => Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
   const requireFresh = (c: Context<Env>) => {
@@ -243,7 +255,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const _ = tr(c);
     const invites = isAdmin(p) ? await pendingInvitations(p) : [];
     // A guest sees only their own agents, as on /console/agents.
-    const agents = (await listAgents(db, p.teamId, { limit: 50 })).filter((r) => p.role !== "guest" || r.agent.userId === p.user.id);
+    const agents = await listAgents(db, p.teamId, { limit: 50, userId: p.role === "guest" ? p.user.id : undefined });
     const toValidate = canDecide(p)
       ? await db
           .select({ id: memoryItem.id })
@@ -595,36 +607,42 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .select({ alert, name: user.name })
       .from(alert)
       .leftJoin(user, eq(user.id, alert.userId))
-      .where(eq(alert.teamId, p.teamId))
+      .where(and(eq(alert.teamId, p.teamId), olderThan(c, alert.createdAt)))
       .orderBy(desc(alert.createdAt))
       .limit(PAGE);
+    const last = rows.at(-1);
     return page(
       c,
       "Alerts",
-      <Table
-        head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
-        empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
-        rows={rows.map(({ alert: a, name }) => [
-          <>
-            <Pill tone="danger">{_(a.kind)}</Pill>
-            <br />
-            <When at={a.createdAt} lang={_.lang} />
-          </>,
-          name ?? "",
-          <pre>{a.excerpt}</pre>,
-          <Pill tone={toneOf(a.status)}>{_(a.status)}</Pill>,
-          a.status === "open" && (
+      <>
+        <Table
+          head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
+          empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
+          rows={rows.map(({ alert: a, name }) => [
             <>
-              <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
-              <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />
-              {a.kind === "secret_blocked" && (
-                <Action post={`/console/alerts/${a.id}/fingerprint_allowed`} label={_("Allow this fingerprint")} />
-              )}
-              {a.agentId && <Action post={`/console/agents/${a.agentId}/quarantined`} label={_("Quarantine sender")} />}
-            </>
-          ),
-        ])}
-      />,
+              <Pill tone="danger">{_(a.kind)}</Pill>
+              <br />
+              <When at={a.createdAt} lang={_.lang} />
+            </>,
+            name ?? "",
+            <pre>{a.excerpt}</pre>,
+            <Pill tone={toneOf(a.status)}>{_(a.status)}</Pill>,
+            a.status === "open" && (
+              <>
+                <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
+                <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />
+                {a.kind === "secret_blocked" && (
+                  <Action post={`/console/alerts/${a.id}/fingerprint_allowed`} label={_("Allow this fingerprint")} />
+                )}
+                {a.agentId && <Action post={`/console/agents/${a.agentId}/quarantined`} label={_("Quarantine sender")} />}
+              </>
+            ),
+          ])}
+        />
+        {rows.length === PAGE && last && (
+          <a href={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`}>{_("Older")}</a>
+        )}
+      </>,
     );
   });
 
@@ -637,9 +655,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const _ = tr(c);
     const f = await projectFilter(c);
-    const rows = (await listAgents(db, p.teamId, { limit: 100 })).filter(
-      (r) => (isAdmin(p) || r.agent.userId === p.user.id) && (!f.selected || (r.agent.projectId ?? "none") === f.selected),
-    );
+    const rows = await listAgents(db, p.teamId, {
+      limit: 100,
+      userId: isAdmin(p) ? undefined : p.user.id,
+      where: onProject(agent.projectId, f),
+    });
     const table = (of: typeof rows) => (
       <Table
         head={[
@@ -697,6 +717,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {table(g.rows)}
               </section>
             ))}
+        {capped(c, rows.length, rows[0]?.total)}
         {isAdmin(p) && (
           <>
             <h2>{_("External agent (A2A)")}</h2>
@@ -723,7 +744,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const _ = tr(c);
     const f = await projectFilter(c);
     const { projects } = f;
-    const sessions = await listAgents(db, p.teamId, { limit: 200 });
+    const sessions = await listAgents(db, p.teamId, { limit: 200, where: onProject(agent.projectId, f) });
     const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id && (id || isSessionAgent(r.agent)));
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
@@ -1423,9 +1444,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .select({ item: memoryItem, name: user.name })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
-      .where(and(eq(memoryItem.teamId, p.teamId), status === "all" ? undefined : eq(memoryItem.status, status as "proposed")))
+      .where(
+        and(
+          eq(memoryItem.teamId, p.teamId),
+          status === "all" ? undefined : eq(memoryItem.status, status as "proposed"),
+          olderThan(c, memoryItem.createdAt),
+        ),
+      )
       .orderBy(desc(memoryItem.createdAt))
       .limit(PAGE);
+    const last = rows.at(-1);
     return page(
       c,
       "Team memory",
@@ -1448,6 +1476,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
+        {rows.length === PAGE && last && (
+          <a href={`/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`}>{tr(c)("Older")}</a>
+        )}
       </>,
     );
   });
@@ -1522,7 +1553,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/claims", async (c) => {
     const p = c.get("principal");
     const rows = await db
-      .select({ claim, name: user.name })
+      .select({ claim, name: user.name, total: sql<number>`count(*) over ()`.mapWith(Number) })
       .from(claim)
       .innerJoin(user, eq(user.id, claim.holderUserId))
       .where(and(eq(claim.teamId, p.teamId), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())))
@@ -1531,18 +1562,21 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       "Claims",
-      <Table
-        head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
-        rows={rows.map((r) => [
-          r.claim.scope,
-          r.name,
-          r.claim.mode,
-          r.claim.reason ?? "",
-          `${Math.max(1, Math.round((r.claim.expiresAt.getTime() - Date.now()) / 60_000))} min`,
-          isAdmin(p) ? <Action post={`/console/claims/${r.claim.id}/release`} label="Release" /> : "",
-        ])}
-        empty={tr(c)("Nothing yet.")}
-      />,
+      <>
+        <Table
+          head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
+          rows={rows.map((r) => [
+            r.claim.scope,
+            r.name,
+            r.claim.mode,
+            r.claim.reason ?? "",
+            `${Math.max(1, Math.round((r.claim.expiresAt.getTime() - Date.now()) / 60_000))} min`,
+            isAdmin(p) ? <Action post={`/console/claims/${r.claim.id}/release`} label="Release" /> : "",
+          ])}
+          empty={tr(c)("Nothing yet.")}
+        />
+        {capped(c, rows.length, rows[0]?.total)}
+      </>,
     );
   });
 
@@ -1557,23 +1591,32 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
+    const where = and(eq(task.teamId, p.teamId), onProject(task.projectId, f), archived ? archivedTask() : not(archivedTask()));
     const rows = await db
       .select({ task, handle: membership.handle })
       .from(task)
       .leftJoin(membership, and(eq(membership.userId, task.assigneeUserId), eq(membership.teamId, task.teamId)))
-      .where(and(eq(task.teamId, p.teamId), onProject(task.projectId, f), archived ? archivedTask() : not(archivedTask())))
+      .where(where)
       .orderBy(desc(task.updatedAt))
       .limit(PAGE * 4);
+    // The headings count every task, also those past the row limit.
+    const counts = await db
+      .select({ projectId: task.projectId, status: task.status, n: count() })
+      .from(task)
+      .where(where)
+      .groupBy(task.projectId, task.status);
+    const countOf = (s: string, projectId?: string) =>
+      counts.filter((x) => x.status === s && (!projectId || (x.projectId ?? "none") === projectId)).reduce((n, x) => n + x.n, 0);
     // Under a project heading, the status headings step down one level.
-    const board = (all: typeof rows, nested = false) =>
+    const board = (all: typeof rows, projectId?: string) =>
       TASK_STATUSES.map((s) => {
         const of = all.filter((r) => r.task.status === s);
-        const Heading = nested ? "h3" : "h2";
+        const Heading = projectId ? "h3" : "h2";
         return (
           of.length > 0 && (
             <>
               <Heading>
-                {s} ({of.length})
+                {s} ({countOf(s, projectId)})
               </Heading>
               <Table
                 head={["Title", "Assignee", "Version", "Updated"]}
@@ -1600,9 +1643,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           : byProject(f, rows, (r) => r.task.projectId, tr(c)("Outside a project")).map((g) => (
               <section aria-labelledby={`p-${g.id}`}>
                 <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {board(g.rows, true)}
+                {board(g.rows, g.id)}
               </section>
             ))}
+        {capped(
+          c,
+          rows.length,
+          counts.reduce((n, x) => n + x.n, 0),
+        )}
         <h2>New task</h2>
         <form hx-post="/console/tasks" hx-swap="none">
           <label>

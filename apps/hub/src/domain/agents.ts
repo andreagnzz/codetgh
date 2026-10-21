@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, project, user } from "../db/schema.js";
@@ -313,10 +313,21 @@ export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: s
   });
 }
 
-export async function listAgents(db: Db, teamId: string, opts: { projectId?: string | null; limit?: number } = {}) {
+// userId and where filter before the limit; total counts the rows the limit cut.
+export async function listAgents(
+  db: Db,
+  teamId: string,
+  opts: { projectId?: string | null; userId?: string; where?: SQL; limit?: number } = {},
+) {
   const recent = gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000));
   return db
-    .select({ agent, name: user.name, handle: membership.handle, project: project.name })
+    .select({
+      agent,
+      name: user.name,
+      handle: membership.handle,
+      project: project.name,
+      total: sql<number>`count(*) over ()`.mapWith(Number),
+    })
     .from(agent)
     .innerJoin(user, eq(user.id, agent.userId))
     .leftJoin(project, eq(project.id, agent.projectId))
@@ -327,6 +338,8 @@ export async function listAgents(db: Db, teamId: string, opts: { projectId?: str
         isNull(agent.removedAt),
         or(recent, isNull(agent.endedAt)),
         opts.projectId ? eq(agent.projectId, opts.projectId) : sql`true`,
+        opts.userId ? eq(agent.userId, opts.userId) : undefined,
+        opts.where,
       ),
     )
     .orderBy(desc(agent.lastSeenAt))
