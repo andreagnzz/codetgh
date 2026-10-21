@@ -15,7 +15,15 @@ const MAX_FAILS = { user: 5, ip: 20 };
 const FAIL_WINDOW_MS = 10 * 60_000;
 
 type Approver = { userId: string; teamId: string };
-type Pending = { id: string; userCodeHash: string; label: string; expiresAt: number; approvedBy?: Approver; denied?: boolean };
+type Pending = {
+  id: string;
+  userCodeHash: string;
+  label: string;
+  startedAt: number;
+  expiresAt: number;
+  approvedBy?: Approver;
+  denied?: boolean;
+};
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -40,7 +48,13 @@ export class DeviceAuth {
     let userCode = "";
     do userCode = Array.from({ length: 8 }, () => USER_CODE_ALPHABET[randomInt(USER_CODE_ALPHABET.length)]).join("");
     while (this.byUserCode.has(sha256(userCode)));
-    const entry = { id: newId("dev"), userCodeHash: sha256(userCode), label, expiresAt: Date.now() + DEVICE_TTL_S * 1000 };
+    const entry = {
+      id: newId("dev"),
+      userCodeHash: sha256(userCode),
+      label,
+      startedAt: Date.now(),
+      expiresAt: Date.now() + DEVICE_TTL_S * 1000,
+    };
     this.byDevice.set(sha256(deviceCode), entry);
     this.byUserCode.set(entry.userCodeHash, sha256(deviceCode));
     return { deviceCode, userCode: `${userCode.slice(0, 4)}-${userCode.slice(4)}` };

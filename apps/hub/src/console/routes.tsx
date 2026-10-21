@@ -1020,7 +1020,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(
       <Result>
         <p>
-          {_("Machine")}: <strong>{entry.label}</strong>
+          {_("Machine")}: <strong>{entry.label}</strong> ({_("typed by whoever started this request, so it proves nothing")})
+        </p>
+        <p>
+          {_("Started")} <When at={new Date(entry.startedAt)} lang={_.lang} />
         </p>
         <p>{_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}</p>
         <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
@@ -1033,6 +1036,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
   consoleApp.post("/device/approve", async (c) => {
+    // It mints a personal token: a stolen or left-open browser session must sign in again first.
+    requireFresh(c);
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
     const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });

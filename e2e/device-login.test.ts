@@ -1,7 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { auditEvent, personalToken } from "../apps/hub/src/db/schema.js";
+import { session } from "../apps/hub/src/db/auth-schema.js";
+import { auditEvent, membership, personalToken } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
+import { revokeMember } from "../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -46,6 +48,9 @@ describe("browser sign-in (device authorization)", () => {
     const html = await shown.text();
     expect(html).toContain("sam-laptop &lt;b&gt;");
     expect(html).not.toContain("<b>");
+    // When the request started, and that the label is the requester's word, not a checked machine name.
+    expect(html).toMatch(/Started <time datetime="[^"]+"/);
+    expect(html).toContain("typed by whoever started this request");
 
     const approved = await consolePost(hub.url, team.sam.cookie, "/console/device/approve", { user_code: s.user_code });
     expect(approved.status).toBe(200);
@@ -91,7 +96,13 @@ describe("browser sign-in (device authorization)", () => {
     const s = await start();
     const later = Date.now() + (s.expires_in + 1) * 1000;
     vi.spyOn(Date, "now").mockReturnValue(later);
+    // Signed in just now, so only the code's age refuses the approval.
+    await hub.db
+      .update(session)
+      .set({ createdAt: new Date(later) })
+      .where(eq(session.userId, team.sam.userId));
     expect((await consolePost(hub.url, team.sam.cookie, "/console/device/approve", { user_code: s.user_code })).status).toBe(404);
+    await hub.db.update(session).set({ createdAt: new Date() }).where(eq(session.userId, team.sam.userId));
     const res = await poll(s.device_code);
     expect(res.status).toBe(404);
     expect(((await res.json()) as { message: string }).message).toMatch(/expired/);
@@ -128,6 +139,26 @@ describe("browser sign-in (device authorization)", () => {
     for (let i = 0; i < 11; i++) statuses.push((await post("/v1/device/start", { label: "flood" })).status);
     expect(statuses.slice(0, 10).every((s) => s === 200)).toBe(true);
     expect(statuses[10]).toBe(429);
+  });
+
+  it("an approval needs a fresh sign-in: an older session approves nothing", async () => {
+    const s = await start("phished-laptop");
+    const ago = new Date(Date.now() - 11 * 60_000);
+    await hub.db.update(session).set({ createdAt: ago }).where(eq(session.userId, team.sam.userId));
+    const res = await consolePost(hub.url, team.sam.cookie, "/console/device/approve", { user_code: s.user_code });
+    await hub.db.update(session).set({ createdAt: new Date() }).where(eq(session.userId, team.sam.userId));
+    expect(res.status).toBe(403);
+    expect(await res.text()).toMatch(/Sign in again/);
+    expect(await (await poll(s.device_code)).json()).toEqual({ status: "pending" });
+  });
+
+  it("mints no token when the approver's membership is revoked before the CLI polls", async () => {
+    const s = await start("revoked-laptop");
+    expect((await consolePost(hub.url, team.malik.cookie, "/console/device/approve", { user_code: s.user_code })).status).toBe(200);
+    const [m] = await hub.db.select().from(membership).where(eq(membership.userId, team.malik.userId));
+    await revokeMember(hub.db, { teamId: team.teamId, membershipId: m?.id ?? "", actorUserId: team.lea.userId, actorRole: "owner" });
+    expect((await poll(s.device_code)).status).toBe(403);
+    expect(await hub.db.select().from(personalToken).where(eq(personalToken.label, "revoked-laptop"))).toHaveLength(0);
   });
 
   it("an approval needs the console's CSRF token", async () => {
