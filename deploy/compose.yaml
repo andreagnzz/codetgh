@@ -28,6 +28,8 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     user: "1000:1000" # node, from the image
+    # Node as PID 1 ignores SIGTERM: Docker then waits 10 s before killing it, longer than MCP clients retry for.
+    init: true
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
