@@ -232,7 +232,7 @@ Le réglage claims.enforcement choisit la réaction à un conflit : warn (l'agen
 
 ### Tâches et relais
 
-Une tâche passe par todo, claimed, in_progress, blocked, review, done ou cancelled. task_claim est atomique : la mise à jour échoue si version a changé. Un relais (handoff) envoie une capsule de contexte :
+Une tâche passe par todo, claimed, in_progress, blocked, review, done ou cancelled. task_claim est atomique : la mise à jour échoue si version a changé. Archives : une tâche done ou cancelled depuis plus de 24 h, et un fil sans message depuis 24 h où personne n'a de non-lu, sortent des vues par défaut (console, task_list sauf include_archived) ; c'est un filtre de lecture, rien n'est supprimé, et un nouveau message ramène le fil. Un relais (handoff) envoie une capsule de contexte :
 
 | Champ de la capsule | Contenu |
 | --- | --- |
@@ -298,7 +298,7 @@ Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'e
 | claim | Réserve des chemins, un glob ou une tâche | scope[], mode, ttl_s, reason | Écriture | 2 |
 | claim_check | Dit qui détient quoi avant une édition | paths[] | Lecture | 2 |
 | claim_release | Libère des réservations | claim_ids[] ou all_mine | Écriture | 2 |
-| task_list | Liste les tâches, filtrées | status, assignee, limit | Lecture | 2 |
+| task_list | Liste les tâches, filtrées | status, assignee, include_archived, limit | Lecture | 2 |
 | task_create | Crée une tâche | title, body, paths[], depends_on[], assignee | Écriture | 2 |
 | task_claim | Réclame une tâche libre de façon atomique | task_id, expected_version | Écriture | 2 |
 | task_update | Change le statut ou l'assigné, ajoute une note | task_id, patch, expected_version | Écriture | 2 |
