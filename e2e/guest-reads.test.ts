@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { membership } from "../apps/hub/src/db/schema.js";
+import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -54,9 +55,34 @@ it("keeps the same pages and thread actions from a guest in the console", async 
     "/console/memory",
     `/console/memory/${memoryId}`,
     "/console/claims",
+    "/console/projects",
+    "/console/delegations",
+    "/console/tokens",
     `/console/threads/${teamThread}`,
   ])
     expect((await get(path)).status, path).toBe(403);
+  for (const path of ["/console/delegations/agt_x/stop", "/console/tokens", "/console/tokens/tok_x/revoke"])
+    expect((await consolePost(hub.url, team.malik.cookie, path, { label: "x" })).status, path).toBe(403);
   expect(await (await get("/console")).text()).not.toContain("team only plan");
   expect((await consolePost(hub.url, team.malik.cookie, `/console/threads/${teamThread}/mute`)).status).toBe(403);
+});
+
+
+// A guest's agent still needs a personal token: it comes from the browser sign-in, not the Tokens page.
+it("lets a guest sign in a terminal through the browser, and sends a new guest to the dashboard", async () => {
+  const post = (path: string, body: unknown) =>
+    fetch(`${hub.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s = (await (await post("/v1/device/start", { label: "malik-laptop" })).json()) as { device_code: string; user_code: string };
+  expect((await consolePost(hub.url, team.malik.cookie, "/console/device/approve", { user_code: s.user_code })).status).toBe(200);
+  const { token } = (await (await post("/v1/device/token", { device_code: s.device_code })).json()) as { token: string };
+  expect((await fetch(`${hub.url}/v1/whoami`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+
+  const invite = async (role: "guest" | "member") =>
+    (
+      await fetch(
+        `${hub.url}/invite/${(await createInvitation(hub.db, { teamId: team.teamId, email: `${role}@acme.test`, role, invitedBy: null, via: "system" })).token}`,
+      )
+    ).text();
+  expect(await invite("guest")).toContain('data-next="/console"');
+  expect(await invite("member")).toContain('data-next="/console/tokens"');
 });

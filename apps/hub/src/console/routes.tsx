@@ -159,7 +159,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!(e instanceof HubError)) throw e;
     return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
   });
-  for (const section of ["/tasks", "/memory", "/claims", "/projects"])
+  for (const section of ["/tasks", "/memory", "/claims", "/projects", "/delegations", "/tokens"])
     consoleApp.use(`${section}/*`, async (c, next) => {
       requireMember(c.get("principal"));
       await next();

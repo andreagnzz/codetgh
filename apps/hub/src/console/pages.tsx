@@ -342,7 +342,8 @@ export const InvitePage: FC<{ team: string; role: string; email: string; name: s
               <p>
                 {_("Invited as")} <strong>{_(role)}</strong> {_("with")} {email}.
               </p>
-              <form id="invite-signup">
+              {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
+              <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
                 <input type="hidden" name="email" value={email} />
                 <label>
                   {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
