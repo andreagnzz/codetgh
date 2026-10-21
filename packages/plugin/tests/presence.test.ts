@@ -118,16 +118,41 @@ test(
     reply = body({ note: 1 });
     await s.clock.advance(30 * MIN);
     expect(s.submitted).toEqual([]);
-    await s.clock.advance(31 * MIN);
+    // No turn ran since: the waiter did not wake the session (wake cap, error), so the mod does once the waiter is gone.
+    await s.clock.advance(30 * MIN);
+    expect(s.submitted).toEqual([WAKE(1)]);
+    reply = body({ note: 2 });
+    await s.clock.advance(30_000);
+    expect(s.submitted).toEqual([WAKE(1), WAKE(2)]);
+    // No rise, no wake.
+    await s.clock.advance(5 * MIN);
+    expect(s.submitted.length).toBe(2);
+    // Our fixed text with the count only: no handle, status or word from a peer.
+    for (const text of s.submitted) expect(text.replace(/\d+/g, "N")).toBe(WAKE(0).replace("0", "N"));
+  },
+);
+
+test(
+  "rewake mode: a message the waiter woke the session for does not wake it again, one in the last minute of the hour does",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({});
+    const s = stubs(on, () => ok(reply));
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    reply = body({ note: 1 });
+    await s.clock.advance(10 * MIN);
+    // The waiter woke the session for it: that turn saw it.
+    await turn($, "t2");
+    await s.clock.advance(60 * MIN);
     expect(s.submitted).toEqual([]);
+    // Between the waiter's budget (59 min) and the hour: nothing else listens.
+    await turn($, "t3");
+    await s.clock.advance(59 * MIN);
     reply = body({ note: 2 });
     await s.clock.advance(30_000);
     expect(s.submitted).toEqual([WAKE(2)]);
-    // No rise, no wake.
-    await s.clock.advance(5 * MIN);
-    expect(s.submitted.length).toBe(1);
-    // Our fixed text with the count only: no handle, status or word from a peer.
-    for (const text of s.submitted) expect(text.replace(/\d+/g, "N")).toBe(WAKE(0).replace("0", "N"));
   },
 );
 
