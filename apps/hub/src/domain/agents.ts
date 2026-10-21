@@ -237,15 +237,33 @@ export async function agentBySession(db: Db, p: Principal, sessionId: string) {
   return row ?? null;
 }
 
-// SPEC « Identité »: the agent argument if it is the caller's, else the token's latest agent, else the user's latest.
+// SPEC « Identité »: the agent argument if it is the caller's, else the token's latest agent, else the user's latest,
+// else the token's auto agent.
 export async function resolveAgent(db: Db, p: Principal, agentArg: string | undefined, via: Via): Promise<Agent> {
   const mine = and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id));
   const pick = async (where: ReturnType<typeof and>) =>
     (await db.select().from(agent).where(where).orderBy(desc(agent.lastSeenAt)).limit(1))[0];
   let row = agentArg ? await pick(and(mine, eq(agent.id, agentArg))) : undefined;
   if (agentArg && !row) throw new HubError("E_FORBIDDEN", "this agent does not belong to you");
-  row ??= p.tokenId ? await pick(and(mine, eq(agent.tokenId, p.tokenId), isNull(agent.endedAt))) : undefined;
-  row ??= await pick(and(mine, isNull(agent.endedAt)));
+  const live = and(mine, isNull(agent.endedAt));
+  const ofToken = p.tokenId ? and(live, eq(agent.tokenId, p.tokenId)) : undefined;
+  // Several live Claude Code sessions: the latest is a guess that files one session's calls under another (and its
+  // project). The caller's auto agent takes them instead: no project, and only the console routes to it. OAuth calls
+  // (the claude.ai connector) have no token of their own, so they count the person's sessions.
+  const several = async (where: ReturnType<typeof and>) =>
+    (
+      await db
+        .select({ id: agent.id })
+        .from(agent)
+        .where(and(where, eq(agent.kind, "claude-code")))
+        .limit(2)
+    ).length > 1;
+  let guess = !row;
+  if (guess && ofToken) {
+    if (await several(ofToken)) guess = false;
+    else row = await pick(ofToken);
+  }
+  if (!row && guess && !(await several(live))) row = await pick(live);
   if (!row) {
     if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
     const kind = p.auth === "oauth" ? "claude-ai" : "other";

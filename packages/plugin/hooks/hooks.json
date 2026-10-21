@@ -28,7 +28,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_codetgh_hub__.*",
+        "matcher": "mcp__plugin_codetgh_hub__.*|mcp__claude_ai_CodeTgh__.*",
         "hooks": [
           {
             "type": "command",

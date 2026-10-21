@@ -44,7 +44,7 @@ it("keeps tasks, memory, claims and the team view from a guest's agent", async (
   const started = await startSession(hub.url, team.malik.token, "malik-g2", { repo: ACME_REPO });
   expect(started.context).not.toMatch(/src\/billing|Billing moves/);
   // Their own messages still arrive.
-  expect((await call(malik, "inbox_read", {})).text).toContain("hello guest");
+  expect((await call(malik, "inbox_read", { agent: started.agent_id })).text).toContain("hello guest");
 });
 
 it("keeps the same pages and thread actions from a guest in the console", async () => {

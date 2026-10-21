@@ -124,7 +124,7 @@ describe("push: rewake survives a failed poll", () => {
 describe("push: rewake under a burst", () => {
   it("wakes a session at most 6 times in 10 minutes, and the rest waits for the next prompt", async () => {
     await allowRewake(["rewake"]);
-    await startSession(hub.url, team.sam.token, "sam-rw-burst", { repo: ACME_REPO });
+    const agent = (await startSession(hub.url, team.sam.token, "sam-rw-burst", { repo: ACME_REPO })).agent_id;
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     const codes: Array<number | null> = [];
     // From Malik: Léa's rate-limit budget is spent by the tests above.
@@ -134,7 +134,7 @@ describe("push: rewake under a burst", () => {
       const sent = JSON.parse((await call(malik, "send_message", { to: "@sam", kind: "note", body: `burst ${i}` })).text);
       codes.push((await runHook("rewake", { session_id: "sam-rw-burst" }, env)).code);
       // Sam's agent handles what it was woken for, as a real one would.
-      if (i < 6) await call(samAgent, "ack", { up_to: sent.id });
+      if (i < 6) await call(samAgent, "ack", { agent, up_to: sent.id });
     }
     expect(codes).toEqual([2, 2, 2, 2, 2, 2, 0]);
     const prompt = await runHook("user-prompt-submit", { session_id: "sam-rw-burst", prompt: "go on" }, env);

@@ -277,7 +277,7 @@ Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'e
 | Convention | Règle |
 | --- | --- |
 | Noms | snake_case, stables. Dans Claude Code : mcp__plugin_codetgh_hub__<outil> via le plugin, mcp__codetgh__<outil> si le serveur est ajouté à la main |
-| Identité | L'argument agent (identifiant donné par le paquet de contexte) est facultatif. Le hub vérifie qu'il appartient à l'utilisateur du jeton, sinon il prend l'agent associé au jeton, ou l'agent le plus récemment actif de l'utilisateur |
+| Identité | L'argument agent (identifiant donné par le paquet de contexte) est facultatif. Le hub vérifie qu'il appartient à l'utilisateur du jeton, sinon il prend l'agent associé au jeton, ou l'agent le plus récemment actif de l'utilisateur. Si le jeton (ou, en OAuth, la personne) a plusieurs sessions Claude Code ouvertes, le hub ne devine pas : l'appel va à l'agent auto du jeton, sans projet ni session. Le hook PreToolUse du plugin ajoute l'agent de la session à chaque appel d'un outil CodeTgh (plugin ou connecteur claude.ai) qui n'en donne pas, sans décider de la permission |
 | Adresses | L'objet to du modèle de données, ou une forme courte : @lea, @team, @role:reviewer, agent:agt_…, thread:thr_… |
 | Idempotence | Les écritures acceptent idempotency_key (ULID) ; le hub dédoublonne pendant 24 h |
 | Taille des réponses | 2 000 tokens au plus par défaut ; 20 000 caractères pour inbox_read et memory_search (anthropic/maxResultSizeChars) ; pagination par page_token opaque |
