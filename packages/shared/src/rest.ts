@@ -53,7 +53,15 @@ export const ClaimsCheckOutput = z.object({
   ),
 });
 export const PromptOutput = z.object({ context: z.string() });
-export const SentMessage = z.object({ id: z.string(), thread: z.string(), hop: z.number(), sent_at: z.string() });
+export const CONSOLE_ONLY_WARNING = "console only: no project on this thread; name a project or agent:<id> to reach a session";
+export const SentMessage = z.object({
+  id: z.string(),
+  thread: z.string(),
+  hop: z.number(),
+  sent_at: z.string(),
+  // Set when the new thread reaches no Claude session, only the console: CONSOLE_ONLY_WARNING.
+  warning: z.string().optional(),
+});
 export const InboxOutput = z.object({
   messages: z.array(
     z.object({

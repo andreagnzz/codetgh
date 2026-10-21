@@ -351,6 +351,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
 
     // One thread per conversation: a reply joins its parent's thread, anything else opens a new one.
     let threadId = parent?.threadId ?? addressed.threadId;
+    const opened = !threadId;
     if (!threadId) {
       threadId = newId("thr");
       await tx.insert(thread).values({
@@ -533,6 +534,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       muted: false as const,
       row: row as typeof message.$inferSelect,
       recipientUserIds: [...new Set([...recipients.values()].map((r) => r.userId))],
+      // A new project-less thread to a person or the team reaches their console, never a session (SPEC).
+      consoleOnly: opened && !t.projectId && [...recipients.values()].some((r) => r.agentId === null),
     };
   });
 
@@ -563,7 +566,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     kind: result.row.kind,
     recipientUserIds: result.recipientUserIds,
   });
-  return result.row;
+  return { ...result.row, consoleOnly: result.consoleOnly };
 }
 
 // Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.

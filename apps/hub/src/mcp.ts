@@ -20,6 +20,7 @@ import {
   type Whoami,
   WhoamiInput,
 } from "@codetgh/shared";
+import { CONSOLE_ONLY_WARNING } from "@codetgh/shared/rest";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { type Agent, delegateFor, resolveAgent, setStatus } from "./domain/agents.js";
@@ -167,7 +168,13 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
             "encrypted messages are sent with codetgh send --encrypt, which scans the text before sealing it",
           );
         const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, { ...input, agent });
-        return { id: m.id, thread: m.threadId, hop: m.hop, sent_at: m.createdAt.toISOString() };
+        return {
+          id: m.id,
+          thread: m.threadId,
+          hop: m.hop,
+          sent_at: m.createdAt.toISOString(),
+          ...("consoleOnly" in m && m.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
+        };
       }),
   );
 
@@ -254,6 +261,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           hint: delegate
             ? "Keep working on your part; the delegate's reply (answer, done or blocked) arrives between your tool calls or wakes you."
             : "Keep working; the answer will arrive with inbox_read or at your next prompt.",
+          ...("consoleOnly" in q && q.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
         };
       }),
   );

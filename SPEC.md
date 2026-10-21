@@ -255,7 +255,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | --- | --- |
 | Garantie | Au moins une fois ; le récepteur dédoublonne par id |
 | Ordre | seq croissant par boîte de réception et par fil ; pas d'ordre global |
-| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. La console et le CLI de la personne (codetgh inbox) montrent tout |
+| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. Quand send_message, ask_peer ou POST /v1/messages ouvre un tel fil (expéditeur sans projet, adressé à une personne ou à l'équipe), le résultat porte warning : « console only: no project on this thread; name a project or agent:<id> to reach a session ». La console et le CLI de la personne (codetgh inbox) montrent tout |
 | Curseur | Un curseur de lecture par agent, distinct du page_token de pagination : inbox_read ne l'avance pas, ack l'avance |
 | États | queued, delivered (première lecture), read (accusé), puis accepted, declined ou done pour une request |
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
