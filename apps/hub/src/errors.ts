@@ -22,4 +22,6 @@ export const HTTP_STATUS: Record<ErrorCode, number> = {
   E_KILL_SWITCH: 503,
   E_CLAIM_CONFLICT: 409,
   E_VERSION_CONFLICT: 409,
+  E_NO_DELEGATE: 403,
+  E_DELEGATE_BUSY: 409,
 };

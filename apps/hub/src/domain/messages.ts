@@ -27,6 +27,9 @@ const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before th
 const PAIR_LIMIT = 12;
 const PAIR_WINDOW_MS = 10 * 60_000;
 const EXPIRY_MS: Record<string, number> = { status: 24 * 3600_000, alert: 7 * 24 * 3600_000 };
+// A delegate session does one request at a time; one it has not done in 30 min expires.
+const MAX_OPEN_DELEGATED = 1;
+const DELEGATED_EXPIRY_MS = 30 * 60_000;
 const QUARANTINE_KINDS = new Set(["note", "question", "answer"]);
 const GUEST_KINDS = new Set(["note", "question"]);
 
@@ -149,7 +152,8 @@ export async function assertNoSecrets(deps: Pick<MessagingDeps, "db" | "bus" | "
 }
 
 // Every outgoing message: kill switch, role, sizes, rate limit, secrets, loop guard, then one transaction.
-type Outgoing = Omit<SendMessage, "kind"> & { kind: MessageKind; capsule?: Record<string, unknown>; task_id?: string };
+// delegate: the agent id delegateFor resolved; the message goes to that agent only, as an authorized request.
+type Outgoing = Omit<SendMessage, "kind"> & { kind: MessageKind; capsule?: Record<string, unknown>; task_id?: string; delegate?: string };
 
 // A new encrypted thread needs its key wrapped for exactly its participants: the sender and every recipient.
 async function storeThreadKeys(
@@ -284,6 +288,26 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       if (!recipients.has(key)) recipients.set(key, r);
     }
     if (!recipients.size) throw new HubError("E_INVALID", "no recipient besides yourself");
+    if (input.delegate) {
+      // Locked, so two requests at once cannot both pass the cap, nor one slip past « Couper ».
+      const [d] = await tx.select().from(agent).where(eq(agent.id, input.delegate)).for("update");
+      if (!d?.acceptRequestsFrom?.includes(p.user.id))
+        throw new HubError("E_NO_DELEGATE", "this session no longer accepts your requests: ask a question instead");
+      const [open] = await tx
+        .select({ n: count() })
+        .from(receipt)
+        .innerJoin(message, eq(message.id, receipt.messageId))
+        .where(
+          and(
+            eq(receipt.recipientAgentId, d.id),
+            eq(message.delegated, true),
+            notExpired(),
+            or(isNull(receipt.readAt), eq(receipt.ackStatus, "accepted")),
+          ),
+        );
+      if ((open?.n ?? 0) >= MAX_OPEN_DELEGATED)
+        throw new HubError("E_DELEGATE_BUSY", "this delegate session is already on a request of yours or a teammate's: wait for its reply");
+    }
     // The thread guard below counts one thread: two agents opening a new thread for every message never build a streak.
     // A loop verdict is already capped at one per muting; the receipts the orchestrator got must not count against it.
     if (authoredBy === "agent" && author.agent?.kind !== "bridge" && !input.loop_verdict) {
@@ -434,7 +458,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       .where(eq(thread.id, t.id));
 
     const id = newId("msg");
-    const expiry = EXPIRY_MS[input.kind];
+    const expiry = input.delegate ? DELEGATED_EXPIRY_MS : EXPIRY_MS[input.kind];
     const [row] = await tx
       .insert(message)
       .values({
@@ -458,6 +482,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
         capsule: input.capsule ?? null,
         encrypted: Boolean(input.encrypted),
         taskId: input.task_id ?? null,
+        delegated: Boolean(input.delegate),
         expiresAt: expiry ? new Date(Date.now() + expiry) : null,
       })
       .returning();
@@ -495,7 +520,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       via: author.via,
       action: "message.sent",
       subjectId: id,
-      data: { kind: input.kind, thread: threadId, recipients: recipients.size },
+      data: { kind: input.kind, thread: threadId, recipients: recipients.size, ...(input.delegate && { delegated: true }) },
     });
     return {
       muted: false as const,
@@ -632,6 +657,7 @@ export const envelope = (i: InboxItem) =>
       authoredBy: i.message.authoredBy,
       sentAt: i.message.createdAt,
       flags: i.message.flags,
+      authorized: i.message.delegated,
     },
     i.message.subject,
     i.message.encrypted ? ENCRYPTED_PLACEHOLDER : i.message.body,

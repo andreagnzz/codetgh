@@ -12,6 +12,8 @@ export const ERROR_CODES = [
   "E_KILL_SWITCH",
   "E_CLAIM_CONFLICT",
   "E_VERSION_CONFLICT",
+  "E_NO_DELEGATE",
+  "E_DELEGATE_BUSY",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -114,7 +116,10 @@ export const AskPeerInput = z.object({
   to: address,
   question: body,
   refs: z.array(ref).max(100).default([]),
-  wait_s: z.number().int().min(0).max(60).default(45),
+  // request: a task for the teammate's delegate session (codetgh start --accept-requests-from), sent without waiting.
+  kind: z.enum(["question", "request"]).default("question"),
+  // 45 s for a question, 0 for a request.
+  wait_s: z.number().int().min(0).max(60).optional(),
   // blocking: you cannot go on without the answer; the teammate's agent is told to answer at its next stopping point.
   priority: z.enum(["normal", "blocking"]).default("normal"),
 });
@@ -141,6 +146,11 @@ export const AgentSessionInput = z.object({
     .regex(/^[0-9a-f]{64}$/)
     .optional(),
   repo_name: z.string().max(100).optional(),
+  // codetgh start --accept-requests-from: the teammates whose requests this session does.
+  accept_requests_from: z
+    .array(z.string().regex(/^@[a-z0-9-]{1,40}$/))
+    .max(20)
+    .optional(),
 });
 
 export const CLAIM_MODES = ["exclusive", "intent", "shared"] as const;

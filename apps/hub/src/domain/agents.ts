@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, project, user } from "../db/schema.js";
@@ -54,6 +54,24 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
+    // A delegate accepts requests from active members only, never guests or itself; unknown handles are dropped.
+    const accept = input.accept_requests_from?.length
+      ? await tx
+          .select({ userId: membership.userId })
+          .from(membership)
+          .where(
+            and(
+              eq(membership.teamId, p.teamId),
+              eq(membership.status, "active"),
+              ne(membership.role, "guest"),
+              ne(membership.userId, p.user.id),
+              inArray(
+                membership.handle,
+                input.accept_requests_from.map((h) => h.slice(1)),
+              ),
+            ),
+          )
+      : [];
     const values = {
       kind: input.kind,
       label,
@@ -68,6 +86,9 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
+      // Set when claude starts or resumes; /clear and compaction keep it, so the console's "turn off" holds for the session.
+      ...(input.source !== "clear" &&
+        input.source !== "compact" && { acceptRequestsFrom: accept.length ? accept.map((m) => m.userId) : null }),
     };
     const [row] = await tx
       .insert(agent)
@@ -83,7 +104,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       via: "hook",
       action: "agent.session_started",
       subjectId: row.id,
-      data: { source: input.source ?? null },
+      data: { source: input.source ?? null, ...(row.acceptRequestsFrom && { delegate_senders: row.acceptRequestsFrom.length }) },
     });
     return row;
   });
@@ -240,4 +261,62 @@ export async function listAgents(db: Db, teamId: string, opts: { projectId?: str
     )
     .orderBy(desc(agent.lastSeenAt))
     .limit(opts.limit ?? 50);
+}
+
+// The live delegate session of `handle` on the sender's project that accepts this sender's requests.
+export async function delegateFor(db: Db, p: Principal, from: Agent, handle: string) {
+  const [row] = from.projectId
+    ? await db
+        .select({ id: agent.id })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(
+          and(
+            eq(agent.teamId, p.teamId),
+            eq(membership.handle, handle.replace(/^@/, "")),
+            eq(membership.status, "active"),
+            eq(agent.projectId, from.projectId),
+            arrayContains(agent.acceptRequestsFrom, [p.user.id]),
+            isNull(agent.endedAt),
+            isNull(agent.removedAt),
+            gt(agent.lastSeenAt, new Date(Date.now() - 900_000)),
+          ),
+        )
+        .orderBy(desc(agent.lastSeenAt))
+        .limit(1)
+    : [];
+  if (!row)
+    throw new HubError(
+      "E_NO_DELEGATE",
+      `${handle} has no live session on this project that accepts your requests (codetgh start --accept-requests-from @${p.handle}): ask a question instead`,
+    );
+  return row.id;
+}
+
+// Console « Délégations »: the delegate sessions a person may turn off (their own; an admin, the team's).
+export async function listDelegates(db: Db, p: Principal, admin: boolean) {
+  const rows = await db
+    .select({ agent, name: user.name, project: project.name })
+    .from(agent)
+    .innerJoin(user, eq(user.id, agent.userId))
+    .leftJoin(project, eq(project.id, agent.projectId))
+    .where(
+      and(
+        eq(agent.teamId, p.teamId),
+        isNotNull(agent.acceptRequestsFrom),
+        isNull(agent.endedAt),
+        isNull(agent.removedAt),
+        admin ? undefined : eq(agent.userId, p.user.id),
+      ),
+    )
+    .orderBy(desc(agent.lastSeenAt));
+  const ids = [...new Set(rows.flatMap((r) => r.agent.acceptRequestsFrom ?? []))];
+  const senders = !ids.length
+    ? []
+    : await db
+        .select({ userId: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), inArray(membership.userId, ids)));
+  const handleOf = new Map(senders.map((s) => [s.userId, `@${s.handle}`]));
+  return rows.map((r) => ({ ...r, senders: (r.agent.acceptRequestsFrom ?? []).map((id) => handleOf.get(id) ?? "?") }));
 }

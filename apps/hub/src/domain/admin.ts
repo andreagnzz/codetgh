@@ -1,7 +1,7 @@
 import type { Role } from "@codetgh/shared";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, personalToken, type TeamSettings, team } from "../db/schema.js";
+import { agent, alert, membership, message, personalToken, receipt, type TeamSettings, team } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { appendAudit } from "./audit.js";
@@ -167,6 +167,36 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
       .where(eq(agent.id, a.id));
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
     await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });
+  });
+}
+
+// Console « Couper »: the session stops accepting requests, and the ones it has not done yet expire now.
+export async function stopDelegate(db: Db, p: Principal, agentId: string) {
+  await db.transaction(async (tx) => {
+    const [a] = await tx
+      .select()
+      .from(agent)
+      .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId), isNotNull(agent.acceptRequestsFrom)));
+    if (!a) throw new HubError("E_NOT_FOUND", "no delegate session");
+    if (a.userId !== p.user.id) requireAdmin(p);
+    await tx.update(agent).set({ acceptRequestsFrom: null }).where(eq(agent.id, a.id));
+    await tx
+      .update(message)
+      .set({ expiresAt: new Date() })
+      .where(
+        and(
+          eq(message.delegated, true),
+          gt(message.expiresAt, new Date()),
+          inArray(
+            message.id,
+            tx
+              .select({ id: receipt.messageId })
+              .from(receipt)
+              .where(and(eq(receipt.recipientAgentId, a.id), isNull(receipt.readAt))),
+          ),
+        ),
+      );
+    await appendAudit(tx, { ...byUser(p), action: "agent.delegate_stopped", subjectId: a.id });
   });
 }
 
