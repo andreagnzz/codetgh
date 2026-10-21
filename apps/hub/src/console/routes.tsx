@@ -611,54 +611,67 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/agents", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
-    const rows = (await listAgents(db, p.teamId, { limit: 100 })).filter((r) => isAdmin(p) || r.agent.userId === p.user.id);
+    const f = await projectFilter(c);
+    const rows = (await listAgents(db, p.teamId, { limit: 100 })).filter(
+      (r) => (isAdmin(p) || r.agent.userId === p.user.id) && (!f.selected || (r.agent.projectId ?? "none") === f.selected),
+    );
+    const table = (of: typeof rows) => (
+      <Table
+        head={[
+          _("Who"),
+          _("Label"),
+          _("Project"),
+          _("Kind"),
+          _("Branch"),
+          _("Push"),
+          _("Permissions"),
+          _("Claude Code"),
+          _("Last seen"),
+          _("Trust"),
+          _("Actions"),
+        ]}
+        empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
+        rows={of.map((r) => [
+          r.name,
+          // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
+          <>
+            {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
+          </>,
+          r.project ?? "",
+          r.agent.kind,
+          r.agent.branch ?? "",
+          r.agent.pushMode ?? "",
+          r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
+          r.agent.clientVersion ?? "",
+          <>
+            <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
+          </>,
+          <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
+          <>
+            {r.agent.trustLevel === "trusted" ? (
+              <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
+            ) : r.agent.kind === "a2a" ? (
+              _("external: always quarantined")
+            ) : (
+              <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
+            )}{" "}
+            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
+          </>,
+        ])}
+      />
+    );
     return page(
       c,
       "Agents",
       <>
-        <Table
-          head={[
-            _("Who"),
-            _("Label"),
-            _("Project"),
-            _("Kind"),
-            _("Branch"),
-            _("Push"),
-            _("Permissions"),
-            _("Claude Code"),
-            _("Last seen"),
-            _("Trust"),
-            _("Actions"),
-          ]}
-          empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
-          rows={rows.map((r) => [
-            r.name,
-            // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
-            <>
-              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-            </>,
-            r.project ?? "",
-            r.agent.kind,
-            r.agent.branch ?? "",
-            r.agent.pushMode ?? "",
-            r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
-            r.agent.clientVersion ?? "",
-            <>
-              <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-            </>,
-            <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
-            <>
-              {r.agent.trustLevel === "trusted" ? (
-                <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
-              ) : r.agent.kind === "a2a" ? (
-                _("external: always quarantined")
-              ) : (
-                <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
-              )}{" "}
-              <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
-            </>,
-          ])}
-        />
+        {f.selected || rows.length === 0
+          ? table(rows)
+          : byProject(f, rows, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
+              <section aria-labelledby={`p-${g.id}`}>
+                <h2 id={`p-${g.id}`}>{g.name}</h2>
+                {table(g.rows)}
+              </section>
+            ))}
         {isAdmin(p) && (
           <>
             <h2>{_("External agent (A2A)")}</h2>
@@ -675,6 +688,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </>
         )}
       </>,
+      f,
     );
   });
 

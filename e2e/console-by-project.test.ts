@@ -145,6 +145,19 @@ describe("console: one project at a time", () => {
 describe("console: the filter is remembered and follows the pages", () => {
   const res = (path: string, cookie = team.lea.cookie) => fetch(`${hub.url}${path}`, { headers: { cookie }, redirect: "manual" });
 
+  it("filters the Agents page, and groups it by project with outside a project last", async () => {
+    let html = await get(`/console/agents?project=${webapp}`);
+    expect(html).toContain("sam@feat/web");
+    expect(html).not.toContain("malik@feat/acme");
+    expect(html).not.toContain("malik@spike");
+    html = await get("/console/agents");
+    expect(section(html, acme)).toContain("malik@feat/acme");
+    expect(section(html, acme)).not.toContain("sam@feat/web");
+    expect(section(html, webapp)).toContain("sam@feat/web");
+    expect(section(html, "none")).toContain("malik@spike");
+    expect(html.indexOf('id="p-none"')).toBeGreaterThan(html.indexOf(`id="p-${webapp}"`));
+  });
+
   it("keeps the Projects page from a guest, and the project list from the filter a guest sees", async () => {
     await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
     for (const path of ["/console/projects", `/console/projects?project=${acme}`, "/console/projects?project=none"])
