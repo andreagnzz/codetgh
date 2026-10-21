@@ -11,6 +11,8 @@ import {
   PreEditInput,
   SendMessageInput,
   StatusSetInput,
+  TASK_STATUSES,
+  taskId,
   WhoamiSchema,
 } from "./index.js";
 
@@ -143,6 +145,59 @@ export const LauncherTargets = z.object({
   targets: z.array(z.object({ project_id: z.string(), project_name: z.string(), desired: z.boolean() })),
 });
 export const LauncherReport = z.object({ project_id: z.string().max(64), running: z.boolean(), error: z.string().max(300).optional() });
+// Runner (owner only). `owner` names one runner process, so two machines of the same owner never share a lease.
+// Branch names go back to git on other machines: no leading dash, no spaces, no `..`.
+const leaseOwner = z.string().regex(/^[A-Za-z0-9._:@-]{1,100}$/);
+const branchName = z
+  .string()
+  .regex(/^(?!-)[A-Za-z0-9._/-]{1,200}$/, "a branch name: letters, digits, . _ / - and no leading dash")
+  .refine((b) => !b.includes(".."), "a branch name cannot contain ..");
+export const RunnerReport = z.object({
+  project_id: z.string().max(64),
+  running: z.number().int().min(0).max(100),
+  error: z.string().max(300).optional(),
+});
+export const RunnerReadyQuery = z.object({ project: z.string().min(1).max(64) });
+export const RunnerTask = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.enum(TASK_STATUSES),
+  version: z.number(),
+  assignee: z.string().nullable(),
+  depends_on: z.array(z.string()),
+  paths: z.array(z.string()),
+  runner: z.boolean(),
+  branch: z.string().nullable(),
+  base_branch: z.string().nullable(),
+  pr_number: z.number().nullable(),
+  review_round: z.number(),
+  attempts: z.number(),
+  lease_until: z.string().nullable(),
+  updated_at: z.string(),
+});
+export const RunnerReady = z.object({ tasks: z.array(RunnerTask) });
+export const RunnerLeaseInput = z.object({ task_id: taskId, owner: leaseOwner });
+// text: the header, then the creator's title and body in the <peer_message> envelope, as the task resource gives it.
+export const RunnerLease = z.object({
+  task: RunnerTask,
+  parents: z.array(z.object({ task_id: z.string(), branch: z.string().nullable(), pr_number: z.number().nullable() })),
+  text: z.string(),
+});
+export const RunnerRenew = z.object({ lease_until: z.string() });
+export const RunnerUpdateInput = z.object({
+  task_id: taskId,
+  owner: leaseOwner,
+  patch: z
+    .object({
+      status: z.enum(TASK_STATUSES).optional(),
+      branch: branchName.optional(),
+      base_branch: branchName.optional(),
+      pr_number: z.number().int().min(1).max(10_000_000).optional(),
+      review_round: z.number().int().min(0).max(10).optional(),
+      note: z.string().min(1).max(500).optional(),
+    })
+    .refine((p) => Object.values(p).some((v) => v !== undefined), { message: "patch needs at least one field" }),
+});
 // Browser sign-in (RFC 8628 style): the CLI shows a short code that the person confirms in the console.
 export const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 export const DeviceStartInput = z.object({ label: z.string().trim().min(1).max(60) });
@@ -266,6 +321,48 @@ export const REST_ROUTES = {
     summary: "What the owner's launcher actually runs for a project (owner only)",
     body: LauncherReport,
     empty: [204],
+  },
+  runnerTargets: {
+    method: "GET",
+    path: "/v1/runner/targets",
+    summary: "Projects whose runner the owner wants on or off (owner only; no path, no command)",
+    output: LauncherTargets,
+  },
+  runnerReport: {
+    method: "POST",
+    path: "/v1/runner/report",
+    summary: "How many agents the owner's runner runs for a project, and its last error (owner only)",
+    body: RunnerReport,
+    empty: [204],
+  },
+  runnerReady: {
+    method: "GET",
+    path: "/v1/runner/ready",
+    summary: "Runner tasks of a switched-on project whose dependencies are done or in review with a PR, oldest first (owner only)",
+    query: RunnerReadyQuery,
+    output: RunnerReady,
+  },
+  runnerLease: {
+    method: "POST",
+    path: "/v1/runner/lease",
+    summary:
+      "Take a ready task for 10 minutes; returns it, its parents' PR branches and its text in an envelope (owner only; 409 if taken)",
+    body: RunnerLeaseInput,
+    output: RunnerLease,
+  },
+  runnerRenew: {
+    method: "POST",
+    path: "/v1/runner/renew",
+    summary: "Extend a lease by 10 minutes (owner only; 409 if this runner no longer holds it)",
+    body: RunnerLeaseInput,
+    output: RunnerRenew,
+  },
+  runnerUpdate: {
+    method: "POST",
+    path: "/v1/runner/update",
+    summary: "Set the branch, PR and round of a leased task and move its status; review, blocked or done drops the lease (owner only)",
+    body: RunnerUpdateInput,
+    output: RunnerTask,
   },
   revokeInvitations: {
     method: "POST",
