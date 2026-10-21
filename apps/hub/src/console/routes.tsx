@@ -7,6 +7,7 @@ import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, not, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import type { Auth } from "../auth.js";
@@ -170,6 +171,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return Object.assign((s: string) => t(lang, s), { lang });
   };
   // Links keep the project filter only once it names a project of the viewer's team (the pages that filter check it).
+  const kept = (c: Context<Env>) => {
+    const q = c.req.query("project") ?? "";
+    return /^[\w-]{1,64}$/.test(q) ? q : undefined;
+  };
+  const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
   // A guest never sees the list of the team's projects.
   const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
     c.html(
@@ -180,12 +186,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         path={c.req.path}
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
-        keep={filter ? filter.selected : /^[\w-]{1,64}$/.test(c.req.query("project") ?? "") ? c.req.query("project") : undefined}
+        keep={filter ? filter.selected : kept(c)}
       >
         {body as never}
       </Layout>,
     );
   // ?project=: one of the team's projects, or none; anything else, another team's project included, shows them all.
+  // Without ?project=, the browser's last choice (project cookie) applies, checked the same way.
   const projectFilter = async (c: Context<Env>): Promise<ProjectFilter> => {
     const projects = await db
       .select({ id: project.id, name: project.name })
@@ -193,7 +200,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(eq(project.teamId, c.get("principal").teamId))
       .orderBy(asc(project.name));
     const q = c.req.query("project");
-    return { projects, selected: q === "none" || projects.some((pr) => pr.id === q) ? q : undefined };
+    const id = q ?? getCookie(c, "project");
+    const selected = id === "none" || projects.some((pr) => pr.id === id) ? id : undefined;
+    // An explicit choice is remembered; any other value, All projects (?project=) included, forgets it.
+    const secure = config.publicUrl.startsWith("https:");
+    if (q !== undefined && selected)
+      setCookie(c, "project", selected, { path: "/console", maxAge: 365 * 86400, httpOnly: true, sameSite: "Lax", secure });
+    else if (q !== undefined) deleteCookie(c, "project", { path: "/console", secure });
+    return { projects, selected };
   };
   const onProject = (col: typeof thread.projectId | typeof task.projectId, f: ProjectFilter) =>
     f.selected === "none" ? isNull(col) : f.selected ? eq(col, f.selected) : undefined;
@@ -417,7 +431,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <Table
         head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
         rows={of.map((t) => [
-          <a href={`/console/threads/${t.id}`}>{t.id}</a>,
+          <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
           _(t.kind),
           t.subject ?? "",
           t.agentStreak,
@@ -484,6 +498,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/threads/:id", async (c) => {
     const { t, adminRead } = await loadThread(c);
     const p = c.get("principal");
+    const project = kept(c);
     const rows = await db
       .select({ message, name: user.name })
       .from(message)
@@ -493,7 +508,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       t.subject ?? `Thread ${t.id}`,
-      <div hx-get={`/console/threads/${t.id}`} hx-select="main" hx-target="main" hx-swap="outerHTML" hx-trigger="sse:activity">
+      <div
+        hx-get={withProject(`/console/threads/${t.id}`, project)}
+        hx-select="main"
+        hx-target="main"
+        hx-swap="outerHTML"
+        hx-trigger="sse:activity"
+      >
+        <p>
+          <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
+        </p>
         <p>
           {t.kind} thread · {t.mutedAt ? "muted (loop guard)" : "open"} · agent streak {t.agentStreak}
         </p>
@@ -1545,7 +1569,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               <Table
                 head={["Title", "Assignee", "Version", "Updated"]}
                 rows={of.map((r) => [
-                  <a href={`/console/tasks/${r.task.id}`}>{r.task.title}</a>,
+                  <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
                   r.handle ? `@${r.handle}` : "",
                   r.task.version,
                   <When at={r.task.updatedAt} />,
@@ -1617,6 +1641,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       t.title,
       <>
+        <p>
+          <a href={withProject("/console/tasks", kept(c))}>{tr(c)("Back to tasks")}</a>
+        </p>
         <p>
           {t.status} · version {t.version}
         </p>

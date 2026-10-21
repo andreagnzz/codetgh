@@ -144,6 +144,57 @@ describe("console: one project at a time", () => {
 
 describe("console: the filter is remembered and follows the pages", () => {
   const res = (path: string, cookie = team.lea.cookie) => fetch(`${hub.url}${path}`, { headers: { cookie }, redirect: "manual" });
+  const projectCookie = (r: Response) => r.headers.getSetCookie().find((c) => c.startsWith("project=")) ?? "";
+
+  it("remembers the last chosen project in an HttpOnly cookie, until All projects clears it", async () => {
+    const set = projectCookie(await res(`/console/tasks?project=${webapp}`));
+    expect(set).toContain(`project=${webapp};`);
+    expect(set).toContain("HttpOnly");
+    expect(set).toContain("SameSite=Lax");
+    const remembered = `${team.lea.cookie}; project=${webapp}`;
+    let html = await get("/console/threads", remembered);
+    expect(html).toContain(ids.webThread);
+    expect(html).not.toContain(ids.looseThread);
+    expect(html).toContain('href="/console/threads?project="');
+    const all = await res("/console/threads?project=", remembered);
+    expect(projectCookie(all)).toContain("Max-Age=0");
+    html = await all.text();
+    expect(html).toContain(ids.webThread);
+    expect(html).toContain(ids.looseThread);
+  });
+
+  it("lets an explicit ?project= win over the cookie, and updates it", async () => {
+    const r = await res("/console/threads?project=none", `${team.lea.cookie}; project=${webapp}`);
+    expect(projectCookie(r)).toContain("project=none;");
+    const html = await r.text();
+    expect(html).toContain(ids.looseThread);
+    expect(html).not.toContain(ids.webThread);
+  });
+
+  it("ignores an unknown or another team's project id in the cookie", async () => {
+    await hub.db.insert(teamTable).values({ id: "team_other", name: "Other", slug: "other" }).onConflictDoNothing();
+    await hub.db
+      .insert(project)
+      .values({ id: "prj_other", teamId: "team_other", name: "other/secret", repoFingerprint: repoFingerprint("git@x:o/s.git") })
+      .onConflictDoNothing();
+    for (const id of ["prj_nope", "prj_other"]) {
+      const html = await get("/console/threads", `${team.lea.cookie}; project=${id}`);
+      expect(html).toContain(ids.webThread);
+      expect(html).toContain(ids.looseThread);
+      expect(html).not.toContain("other/secret");
+    }
+  });
+
+  it("keeps the filter from the lists to the detail pages and back", async () => {
+    expect(await get(`/console/threads?project=${webapp}`)).toContain(`href="/console/threads/${ids.webThread}?project=${webapp}"`);
+    expect(await get(`/console/threads/${ids.webThread}?project=${webapp}`)).toContain(
+      `href="/console/threads?project=${webapp}">Back to threads</a>`,
+    );
+    expect(await get(`/console/tasks?project=${webapp}`)).toContain(`href="/console/tasks/${ids.webTask}?project=${webapp}"`);
+    expect(await get(`/console/tasks/${ids.webTask}?project=${webapp}`)).toContain(
+      `href="/console/tasks?project=${webapp}">Back to tasks</a>`,
+    );
+  });
 
   it("filters the Agents page, and groups it by project with outside a project last", async () => {
     let html = await get(`/console/agents?project=${webapp}`);
