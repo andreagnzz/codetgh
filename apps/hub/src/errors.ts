@@ -24,4 +24,5 @@ export const HTTP_STATUS: Record<ErrorCode, number> = {
   E_VERSION_CONFLICT: 409,
   E_NO_DELEGATE: 403,
   E_DELEGATE_BUSY: 409,
+  E_DELEGATE_CHAIN: 403,
 };

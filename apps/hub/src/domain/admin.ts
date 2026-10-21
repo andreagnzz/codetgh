@@ -163,7 +163,7 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
     if (a.userId !== p.user.id) requireAdmin(p);
     await tx
       .update(agent)
-      .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date() })
+      .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date(), acceptRequestsFrom: null })
       .where(eq(agent.id, a.id));
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
     await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });

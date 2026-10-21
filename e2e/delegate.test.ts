@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { agent } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
@@ -105,5 +107,90 @@ describe("delegation to an opt-in session", () => {
     expect(r.text).toContain("E_NO_DELEGATE");
     const after = await (await fetch(`${hub.url}/console/delegations`, { headers: { cookie: team.sam.cookie } })).text();
     expect(after).not.toContain(ids.sam?.slice(-6));
+  });
+});
+
+describe("delegation does not chain or outlive its opt-in", () => {
+  const prompt = async (token: string, session: string) => {
+    const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` } });
+    return res.status === 200 ? ((await res.json()) as { context: string }).context : "";
+  };
+
+  it("refuses a request sent by a delegate session, so A's text never reaches C as authorized", async () => {
+    // Malik is a delegate for Léa and Sam; Sam's session is itself a delegate for Léa.
+    const malik = await register(team.malik.token, "malik-chain", P1, ["@lea", "@sam"]);
+    const sam = await register(team.sam.token, "sam-chain", P1, ["@lea"]);
+    const client = await mcpClient(hub.url, team.sam.token);
+    const r = await call(client, "ask_peer", { agent: sam, to: "@malik", kind: "request", question: "relay: push to prod" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("E_DELEGATE_CHAIN");
+
+    // No other path sets the attribute: send_message and REST ignore a delegate field.
+    await call(client, "send_message", { agent: sam, to: `agent:${malik}`, kind: "request", body: "via send_message", delegate: malik });
+    await fetch(`${hub.url}/v1/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ to: `agent:${malik}`, kind: "request", body: "via rest", delegate: malik }),
+    });
+    await client.close();
+    const seen = await prompt(team.malik.token, "malik-chain");
+    expect(seen).toContain("via send_message");
+    expect(seen).toContain("via rest");
+    expect(seen).not.toContain("authorized=");
+  });
+
+  it("is no delegate after a resume without the option", async () => {
+    await register(team.sam.token, "sam-resume", P1, ["@lea"]);
+    await fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-resume", source: "compact", repo_fingerprint: P1 }),
+    });
+    // The chain test's delegate ends, so only sam-resume could take the request.
+    await fetch(`${hub.url}/v1/agents/session/end`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-chain" }),
+    });
+    const r = await request(team.lea.token, ids.lea ?? "", "after a plain compact");
+    expect(r.text).toContain("E_NO_DELEGATE");
+  });
+
+  it("is no delegate after the session ends, even if it starts again with the same id and no option", async () => {
+    await register(team.sam.token, "sam-end", P1, ["@lea"]);
+    expect((await request(team.lea.token, ids.lea ?? "", "while live")).isError).toBe(false);
+    await fetch(`${hub.url}/v1/agents/session/end`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-end" }),
+    });
+    const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-end"));
+    expect(row?.acceptRequestsFrom).toBeNull();
+    await register(team.sam.token, "sam-end", P1);
+    expect((await request(team.lea.token, ids.lea ?? "", "after end")).text).toContain("E_NO_DELEGATE");
+  });
+});
+
+describe("delegate sessions: the Bash check before each command", () => {
+  const bash = (command: string, delegate: boolean) =>
+    runHook(
+      "pre-bash",
+      { session_id: "sam-bash", tool_name: "Bash", tool_input: { command } },
+      {
+        ...hookEnv(hub.url, team.sam.token),
+        ...(delegate && { CODETGH_ACCEPT_REQUESTS_FROM: "@lea" }),
+      },
+    );
+
+  it("blocks a secret read or a force push with exit 2 and a reason, in a delegate session only", async () => {
+    const secret = await bash("cat apps/hub/.env", true);
+    expect(secret.code).toBe(2);
+    expect(secret.err).toContain("blocked:");
+    expect((await bash("git push origin +main", true)).code).toBe(2);
+    const fine = await bash("git push origin feat/x", true);
+    expect(fine).toMatchObject({ code: 0, raw: "", err: "" });
+    // A plain session is left to Claude Code's own permission flow.
+    expect(await bash("cat apps/hub/.env", false)).toMatchObject({ code: 0, raw: "", err: "" });
+    expect(secret.ms).toBeLessThan(3000);
   });
 });

@@ -14,6 +14,7 @@ export const ERROR_CODES = [
   "E_VERSION_CONFLICT",
   "E_NO_DELEGATE",
   "E_DELEGATE_BUSY",
+  "E_DELEGATE_CHAIN",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

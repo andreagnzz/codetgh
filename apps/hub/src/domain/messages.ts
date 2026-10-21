@@ -291,7 +291,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     if (input.delegate) {
       // Locked, so two requests at once cannot both pass the cap, nor one slip past « Couper ».
       const [d] = await tx.select().from(agent).where(eq(agent.id, input.delegate)).for("update");
-      if (!d?.acceptRequestsFrom?.includes(p.user.id))
+      if (author.agent?.acceptRequestsFrom) throw new HubError("E_DELEGATE_CHAIN", "a delegate session cannot send requests");
+      if (!d?.acceptRequestsFrom?.includes(p.user.id) || d.endedAt || d.removedAt)
         throw new HubError("E_NO_DELEGATE", "this session no longer accepts your requests: ask a question instead");
       const [open] = await tx
         .select({ n: count() })

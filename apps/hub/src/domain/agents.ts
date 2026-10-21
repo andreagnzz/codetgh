@@ -86,9 +86,11 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
-      // Set when claude starts or resumes; /clear and compaction keep it, so the console's "turn off" holds for the session.
-      ...(input.source !== "clear" &&
-        input.source !== "compact" && { acceptRequestsFrom: accept.length ? accept.map((m) => m.userId) : null }),
+      // Fails closed: a registration without the opt-in (or with no valid sender) clears it. With the opt-in, /clear and
+      // compaction keep the current value, so a « Couper » holds until claude starts again with the option.
+      ...(!accept.length
+        ? { acceptRequestsFrom: null }
+        : input.source !== "clear" && input.source !== "compact" && { acceptRequestsFrom: accept.map((m) => m.userId) }),
     };
     const [row] = await tx
       .insert(agent)
@@ -155,7 +157,7 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
   await db.transaction(async (tx) => {
     const [row] = await tx
       .update(agent)
-      .set({ endedAt: new Date() })
+      .set({ endedAt: new Date(), acceptRequestsFrom: null })
       .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId), isNull(agent.endedAt)))
       .returning({ id: agent.id });
     // Intent claims end with the session; exclusive and shared claims run until their TTL.
@@ -265,6 +267,9 @@ export async function listAgents(db: Db, teamId: string, opts: { projectId?: str
 
 // The live delegate session of `handle` on the sender's project that accepts this sender's requests.
 export async function delegateFor(db: Db, p: Principal, from: Agent, handle: string) {
+  // A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy).
+  if (from.acceptRequestsFrom)
+    throw new HubError("E_DELEGATE_CHAIN", "a delegate session cannot send requests: reply to your requester, or ask a question instead");
   const [row] = from.projectId
     ? await db
         .select({ id: agent.id })
