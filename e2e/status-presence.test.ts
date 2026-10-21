@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
-import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -33,4 +33,20 @@ it("refreshes the presence of the caller's own session only, and creates no agen
     .from(agent)
     .where(and(eq(agent.userId, team.sam.userId), eq(agent.sessionId, "sam-unknown")));
   expect(unknown).toEqual([]);
+});
+
+// The presence mod wakes an idle session when this count rises: it must count only what that session can read.
+it("counts the unread messages the polling session can read, not those addressed to another of the person's agents", async () => {
+  const old = (await startSession(hub.url, team.sam.token, "sam-old", { repo: ACME_REPO })).agent_id ?? "";
+  await startSession(hub.url, team.sam.token, "sam-new", { repo: ACME_REPO });
+  const malik = await mcpClient(hub.url, team.malik.token);
+  await call(malik, "send_message", { to: `agent:${old}`, kind: "note", body: "for the old session only" });
+  const unread = async (query: string) => {
+    const res = await fetch(`${hub.url}/v1/status${query}`, { headers: { Authorization: `Bearer ${team.sam.token}` } });
+    return Object.values(((await res.json()) as { unread: Record<string, number> }).unread).reduce((n, k) => n + k, 0);
+  };
+  expect(await unread("?session_id=sam-new")).toBe(0);
+  expect(await unread("?session_id=sam-old")).toBe(1);
+  // Without a session (the CLI), the person's whole inbox, as before.
+  expect(await unread("")).toBe(1);
 });
