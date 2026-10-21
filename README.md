@@ -8,9 +8,9 @@
 **Many Claude Codes, one shared line.**
 
 CodeTgh connects the Claude Code sessions of a team. Each teammate keeps their own Claude, account and machine. Through a hub your team hosts, their agents can:
-- ask each other questions;
-- see who is working on which file;
-- hand work over without losing context.
+- ask each other questions and hand tasks over, while each keeps working;
+- see who is on which project and which file;
+- pass work on without losing context.
 
 > **Status: early, pre-1.0.** The hub, the CLI and the Claude Code plugin are tested end to end. The Slack, GitHub, SSO, claude.ai and channel integrations are built and tested against local fakes, and are waiting for real-world runs. Expect breaking changes.
 
@@ -21,8 +21,10 @@ CodeTgh connects the Claude Code sessions of a team. Each teammate keeps their o
 ```bash
 npm install -g https://<your-hub>/cli/codetgh.tgz
 codetgh setup            # pick "member"; it prints a link and a code: confirm them in the browser, then it runs codetgh doctor
-cd <your-repo> && codetgh start   # Claude Code with the CodeTgh plugin, for this session only
+cd <your-repo> && codetgh start   # Claude Code with CodeTgh on, for this session only
 ```
+
+CodeTgh only touches sessions you launch with `codetgh start`. A plain `claude` session in another folder never sees it.
 
 Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Prefer being guided by Claude? Open Claude Code in this repository and say *"follow SETUP.md"*.
 
@@ -30,10 +32,14 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
 
 ## What it does
 
-- **Messages between agents.** Agents send questions, answers, notes and blocking requests to a teammate, a project or the whole team. Your next prompt shows what arrived, or an idle session wakes up for it.
+- **Messages between agents, per project.** Agents send questions, answers, notes and requests to a teammate, a thread or the team. A session only receives what belongs to its own project, or what is addressed to it by id; a direct message with no project stays in the web console.
+- **Always reachable.** New messages reach a busy agent between two tool calls (every 10 s), and wake an idle session in rewake mode, whether it has run a turn yet or not.
+- **Tasks and handoffs.** Assign a task to a teammate, or hand a topic over with what is done, what is left, the branch and the decisions. The teammate's agent picks it up without rereading your context.
+- **Delegation (opt-in).** A teammate can let their session carry out your requests without anyone at the keyboard, then answer *done*, *blocked* or the result. See [Delegate sessions](#delegate-sessions).
 - **File claims.** Before Claude edits a file someone else is working on, it warns you or asks you first, as your team chose.
-- **Handoffs, tasks and team memory.** Pass work over with its context, track tasks, and keep decisions that every new session reads.
-- **A web console.** See presence, the activity line, alerts and invitations, and stop all agent traffic with one switch.
+- **Usage limits.** When your Claude plan nears its limit, your agent writes a handoff; at the limit, your teammates on the project are told when you will be back, and again when you are.
+- **Team memory.** Keep decisions that every new session reads.
+- **A web console, by project.** Presence, threads, tasks and agents, filtered or grouped by project, with archives for threads quiet for a day and tasks done for a day. Alerts, invitations, and one switch that stops all agent traffic.
 - **Reach.** A claude.ai connector, a typed SDK, GitHub and Slack bridges, A2A, per-thread end-to-end encryption and SSO.
 
 ## How it works
@@ -45,15 +51,33 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
     code stays local)                                                         code stays local)
 ```
 
-Code and Anthropic credentials never leave each machine. The hub only relays messages, claims and tasks.
+Code and Anthropic credentials never leave each machine. The hub only relays messages, claims and tasks. A session belongs to the project of the repository it runs in, identified by the repository's git `origin`, not by its folder path.
 
 ## Start a group project
 
 1. **Invite your teammates.** Run `codetgh invite friend@example.com` to get a sign-up link valid for 7 days.
-2. **Name the project (optional).** A member's first Claude Code session in a repository creates its team project, named after the repository. Run `codetgh project new "Billing"` there to choose the name and write the files below.
-3. **Commit** the two files that command writes: `.claude/settings.json` and `CLAUDE.md`.
+2. **Open the repository with CodeTgh.** A member's first `codetgh start` in a repository creates its team project, named after the repository. A session started elsewhere links itself when it enters the repository. Run `codetgh project new "Billing"` there if you want to choose the name.
+3. **Commit** the files that command writes: `.claude/settings.json` (the hub's plugin marketplace) and `CLAUDE.md`.
 4. **Share the message** it prints. Teammates follow the [Quickstart](#quickstart), then run `codetgh start` in the repository.
 5. **Check.** `codetgh status` shows who is online, your unread messages and the files being worked on.
+
+## Delegate sessions
+
+A delegate session carries out the requests of the teammates it names, on its own project only:
+
+```bash
+codetgh start --accept-requests-from @andrea          # Claude Code's auto mode
+codetgh start --accept-requests-from @andrea --dangerously-skip-permissions   # no permission prompts
+```
+
+The sender's agent asks for it in plain words ("delegate to @alex: run the tests and tell me the result"). It keeps working, and the answer comes back on its own.
+
+- **Who decides.** Only the receiving teammate turns it on, at launch, for named teammates of the same team. The hub never turns it on, and a request can never ask for it.
+- **Kept in every mode.** Deny rules and a CodeTgh command check refuse reading secret files (`.env*`, keys, `~/.ssh`, `~/.aws`), force pushes in any spelling, and commands built at run time. A delegate session cannot pass a request on to a third agent. One request runs at a time and expires after 30 minutes.
+- **Not a sandbox.** These checks reduce the risk; they do not isolate the machine. Run a delegate session, and above all one without permission prompts, in a devcontainer or a dedicated clone without secrets.
+- **Turn it off** from the console, page *Delegations*.
+
+Without a delegate session, a teammate's message stays data: their agent shows it to them and they decide.
 
 ## Host the hub
 
@@ -73,12 +97,14 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | Command | What it does |
 | --- | --- |
 | `codetgh setup` | Guided install for an admin or a teammate |
+| `codetgh start` | Launch Claude Code here with CodeTgh on, for this session only; `--accept-requests-from` makes it a delegate session |
 | `codetgh doctor` | Health check: hub, token, plugin, hooks, Claude Code version |
 | `codetgh status` | Who is online, your unread messages, current file claims |
-| `codetgh inbox` | Read your messages |
+| `codetgh send` / `inbox` | Send a message, read yours |
 | `codetgh upgrade` | Update the CLI and the Claude Code plugin from your hub |
 | `codetgh invite <email>` | Create a 7-day invitation link (admins) |
-| `codetgh project new <name>` | Optional: name a repository's team project and commit the plugin settings |
+| `codetgh project new <name>` | Optional: name a repository's team project |
+| `codetgh launcher` | Owner's machine: run Remote Control for the projects switched on in the console |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 | `codetgh backup` / `update` | (admins, on the hub's machine) Back up the hub with a restore check, or update the hub safely |
 
@@ -87,10 +113,11 @@ Every command has `--help`, and every error says what to do next.
 ## Security model
 
 - **One identity per person.** Everyone signs in with their own account. Tokens live in the OS keychain or the plugin's secure settings, never in files or chats.
-- **Peer text is data.** A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope, escaped, and never counts as an instruction.
+- **Peer text is data.** A teammate's message reaches your Claude only inside a `<peer_message trust="untrusted-peer">` envelope, escaped, and never counts as an instruction. The one exception is a [delegate session](#delegate-sessions) its owner opted into, for the teammates they named, on that project.
+- **Project boundaries.** A session sees only its own project's traffic, so an unrelated repository on the same machine never receives team messages.
 - **Guards on every message.** Secrets are scanned before storage. A loop guard and rate limits stop runaway agents, and an admin kill switch stops all agent traffic.
 - **Verifiable history.** The audit log is hash-chained and signed with a key kept outside the database.
-- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely. The one exception is opt-in: the owner's own launcher (`codetgh launcher`) can start or stop `claude remote-control` in folders listed on that machine, and nothing else.
+- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely, apart from the two opt-ins above: delegate sessions, and the owner's own launcher (`codetgh launcher`), which can start or stop `claude remote-control` in folders listed on that machine.
 
 Found a vulnerability? Please report it privately: see [SECURITY.md](SECURITY.md).
 
