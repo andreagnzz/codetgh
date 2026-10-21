@@ -10,11 +10,12 @@ import {
   PRIORITIES,
   PreEditInput,
   SendMessageInput,
+  StatusSetInput,
   WhoamiSchema,
 } from "./index.js";
 
 // The /v1 REST API in one table: the hub validates with these schemas, /v1/openapi.json and @codetgh/sdk are built from it.
-const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
+export const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
 // permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes.
 export const PromptQuery = z.object({
   session_id: z.string().max(200),
@@ -32,6 +33,8 @@ export const SessionStarted = z.object({
   // Unlinked: true when this caller may link the repository by sending its repo_name.
   can_link: z.boolean().optional(),
   status_line: z.string().optional(),
+  // The session's project name, null outside a project.
+  project: z.string().nullable().optional(),
 });
 export const SessionEndInput = z.object({ session_id: z.string().min(1).max(200) });
 export const PreEditDecision = z.object({ decision: z.enum(["warn", "ask"]), reason: z.string() });
@@ -144,6 +147,8 @@ export const DeviceTokenOutput = z.discriminatedUnion("status", [
   z.object({ status: z.literal("approved"), token: z.string() }),
 ]);
 // Typed by a person: case, spaces and the dash do not matter.
+// Console: attach a session started outside a repository to one of the team's projects.
+export const AgentProjectForm = z.object({ project_id: z.string().min(1).max(64) });
 export const UserCodeForm = z.object({
   user_code: z
     .string()
@@ -271,7 +276,20 @@ export const REST_ROUTES = {
     body: DeviceTokenInput,
     output: DeviceTokenOutput,
   },
-  status: { method: "GET", path: "/v1/status", summary: "Who is online, your unread counts and the live claims", output: StatusOutput },
+  status: {
+    method: "GET",
+    path: "/v1/status",
+    summary: "Who is online, your unread counts and the live claims; session_id keeps that session of yours online",
+    query: SessionQuery,
+    output: StatusOutput,
+  },
+  statusSet: {
+    method: "POST",
+    path: "/v1/status",
+    summary: "Publish what your agent is on, as status_set does (agent: one of your sessions' agents, from whoami)",
+    body: StatusSetInput,
+    empty: [204],
+  },
   pause: {
     method: "POST",
     path: "/v1/me/pause",

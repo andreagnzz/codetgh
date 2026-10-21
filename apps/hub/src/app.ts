@@ -3,7 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
-import { AckInput, AgentSessionInput, ClaimsCheckRestInput, InboxReadInput, PreEditInput, SendMessageInput } from "@codetgh/shared";
+import {
+  AckInput,
+  AgentSessionInput,
+  ClaimsCheckRestInput,
+  InboxReadInput,
+  PreEditInput,
+  SendMessageInput,
+  StatusSetInput,
+} from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
 import {
   CreateProjectInput,
@@ -15,10 +23,11 @@ import {
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
+  SessionQuery,
 } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie } from "hono/cookie";
@@ -32,7 +41,7 @@ import { type Auth, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
-import { team } from "./db/schema.js";
+import { project, team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
 import {
   type Agent,
@@ -44,6 +53,8 @@ import {
   resolveAgent,
   setAgentsPaused,
   setPermissionMode,
+  setStatus,
+  touchSession,
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
 import { Bus } from "./domain/bus.js";
@@ -226,8 +237,10 @@ export function createApp({
     if (!p.paused && !agent)
       return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
     bus.emit("presence", { teamId: p.teamId });
+    const [prj] = agent?.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, agent.projectId)) : [];
     return c.json({
       agent_id: agent?.id ?? null,
+      project: prj?.name ?? null,
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
@@ -476,7 +489,19 @@ export function createApp({
 
   v1.get("/status", async (c) => {
     const p = c.get("principal");
+    const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
+    if (sessionId && (await touchSession(db, p, sessionId))) bus.emit("presence", { teamId: p.teamId });
     return c.json(await teamOverview(db, p, await restAgent(p, undefined), { scope: "team", limit: 50 }));
+  });
+
+  v1.post("/status", async (c) => {
+    const p = c.get("principal");
+    const { agent: agentArg, ...input } = await parse(c, StatusSetInput);
+    const a = await restAgent(p, agentArg);
+    takeWrite(limiter, p.user.id);
+    await assertNoSecrets(deps, { p, agent: a, via: "rest" }, [input.text, ...input.paths].join("\n"));
+    await setStatus(db, p, a, input, "rest");
+    return c.body(null, 204);
   });
 
   v1.post("/invitations/revoke", async (c) =>

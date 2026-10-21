@@ -39,7 +39,7 @@ Environment for phase 0: Claude Code **2.1.296** (`claude --version`), Node 24.2
 | Default hook timeout 600 s (30 s on UserPromptSubmit); SessionEnd hooks share a 1.5 s budget, raised to the largest per-hook `timeout` in settings files (≤ 60 s) or by `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Timeouts on plugin-provided hooks do not raise it, so the plugin's session-end runs in 1.5 s whatever its `timeout` | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § SessionEnd |
 | `claude plugin validate` (2.1.301) accepts a fractional hook `timeout` such as 1.5 and flags a non-number or a value ≤ 0 as an ignored entry | Local run of `claude plugin validate packages/plugin` |
 | `onFailure` defaults to `continue`; `block` needs 2.1.295+. CodeTgh never sets it | [Hooks](https://code.claude.com/docs/en/hooks) |
-| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed) | [Hooks](https://code.claude.com/docs/en/hooks) § Run hooks in the background, § Limitations |
+| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed). The page states no maximum `timeout` (checked 2026-10-20, 2.1.304; only the SessionEnd budget is capped, at 60 s), so the rewake hook uses 3600 s and the waiter listens 3540 s; the upper bound is non vérifié. Real run: P3b below | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § Run hooks in the background, § Limitations |
 | A string `userConfig` option can take `options` (a picker in `/config`), needs 2.1.271+; option values reach hooks as `CLAUDE_PLUGIN_OPTION_<KEY>` (key uppercased) | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) § Limit a field to fixed options |
 | `claude plugin validate` checks `.mcp.json` entries and `${user_config.KEY}` references from 2.1.281 | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) |
 
@@ -131,6 +131,22 @@ Result:
 - `CLAUDE_PLUGIN_OPTION_PUSH_MODE` set in the environment reached the hook with `--plugin-dir` (no `/config` value saved).
 
 Notes: Claude Code labels the wake "Stop hook blocking error"; the envelope survives intact. In `claude -p` the session must stay open (stream-json input) for the waiter to live. The run also revealed a timestamp bug unrelated to push (sessions not in UTC), fixed separately.
+
+### P3b: rewake wakes a session idle for 13 minutes (2026-10-20, Claude Code 2.1.304, Linux)
+
+Hook `timeout` 3600, waiter budget 3540 s. Local test hub (`apps/hub/test/harness.ts`, rewake allowed for the team), throwaway tokens for Sam and Malik, installed `codetgh` plugin disabled for the run.
+
+```bash
+CLAUDE_PLUGIN_OPTION_CODETGH_URL=… CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN=<Sam> CLAUDE_PLUGIN_OPTION_PUSH_MODE=rewake \
+  claude --plugin-dir packages/plugin --model haiku --settings '{"enabledPlugins":{"codetgh@codetgh":false}}'   # interactive, in tmux
+# prompt: "Reply with the single word READY"; then no input
+# 13 min after the turn ended: POST /v1/messages as Malik → @sam, kind question, "what is 2+3?"
+```
+
+Result:
+- Turn 1 answered `READY` and ended at 21:07:46Z; the Stop hook recorded the waiter in the session state file.
+- Malik's message was stored at 21:20:52Z, 13 min 6 s into the idle wait, past the old 570 s budget. The waiter exited 2 at 21:21:40Z and the idle session started a turn by itself (`Stop hook feedback`), answering "2+3 is 5" and offering to reply and ack. The 48 s delay came from the machine running the full test suite at the same time (the POST alone took 12 s, and the woken turn's UserPromptSubmit hook hit its 3 s timeout).
+- After `tmux kill-session`, the waiter started by the second turn's Stop exited on its own within seconds.
 
 ### Point 6: a plugin subagent and the session's MCP tools (2026-10-13, Claude Code 2.1.296, Linux)
 
@@ -391,6 +407,38 @@ Real run (tmux, throwaway hub from `apps/hub/test/harness.ts`, Léa and Malik on
 
 Limits: `/v1/status` counts the unread of the token's member (messages to the person, or to the token's REST agent), not of one Claude session's agent; the REST agent `cli-<token>` it registers, like any teammate's, counts as online.
 
+### Mods: the current session id (docs read 2026-10-20, Claude Code 2.1.304)
+
+| Fact | Status | Source |
+| --- | --- | --- |
+| `$.session` has an `id` method: a mod can read the id of the session it runs in | doc | [Reference § Mods API methods](https://code.claude.com/docs/en/plugins/mods/reference#mods-api-methods) |
+| `id: () => Promise<string>`, "Returns the session's id (the transcript file's name)": the `session_id` the settings hooks receive | doc (types) | [claude-code.d.ts](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts), linked from the Reference as the complete reference |
+| The id changes after `/clear` or a resume (`session.end` carries `sessionId`, "`$.session.id()` until now"), and `session.start` does not fire again then: read it on each poll, never cache it | doc (types) | same file, `SessionEndInput.sessionId`; [Reference § Session](https://code.claude.com/docs/en/plugins/mods/reference#session) |
+| `claude plugin test` stubs it with `on("session.id", () => ({ value }))`; `claude plugin validate` lists `$.session.id (via refresh)` | **tested** | `packages/plugin/tests/presence.test.ts` |
+
+So the presence mod sends `GET /v1/status?session_id=<id>` every 30 s and the hub refreshes `last_seen_at` of that agent only when it is the caller's own (same team and user), creating none. Sessions in hooks mode without the mod stay activity-based (90 s online, 15 min idle).
+
+### Mods: start a turn, plan limits, turn events (docs read 2026-10-21, Claude Code 2.1.305)
+
+Sources: [API](https://code.claude.com/docs/en/plugins/mods/api) § Start a turn from a background job, § Calls and background work after the user interrupts a turn; [Reference](https://code.claude.com/docs/en/plugins/mods/reference) § Mods API methods, § Turns, § Session, § Limits; [Events](https://code.claude.com/docs/en/plugins/mods/events) § Follow a turn; [Test](https://code.claude.com/docs/en/plugins/mods/test) § Look up what a stub returns; [claude-code.d.ts](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts) (the GitHub copy says "Written by Claude Code 2.1.277").
+
+| Fact | Status | Source |
+| --- | --- | --- |
+| `$.prompt.submit({ text })` waits until the session is idle, then starts a new turn; it resolves when that turn starts, so a handler running while Claude works must not `await` it | doc | API § Start a turn from a background job |
+| Claude reads the text after a sentence naming the mod as sender (`e.origin` `{ kind: 'plugin', name }`); `asUser: true` drops that sentence | doc · doc (types) | API § Start a turn; Reference § Mods API methods (`$.prompt`); types `prompt.submit` |
+| After the user interrupts a turn (Esc), `$.prompt.submit` resolves `{ drop: 'the session was stopped and nobody has sent input since' }` until the next input, and a queued one resolves `{ drop: '…removed from the queue before it ran' }`; nothing retries it | doc | API § What refused calls return |
+| Minimum Claude Code version for `$.prompt.submit`: no version is given; the method is in the types written by 2.1.277 and in the Reference (CLI as of v2.1.290). The interruption handling above needs no version for `$.prompt.submit` (others: v2.1.304) | doc · **non vérifié** (exact minimum) | API § Calls and background work after the user interrupts; types header |
+| `$.session.usage()` returns `{ startedAt, context, rateLimits, cost }`; `rateLimits` is a list of `{ kind, percentUsed, resetsAt? }` | doc | Reference § Mods API methods (`$.session`) |
+| `kind` is `five_hour`, `seven_day`, or a gateway's `spend_limit`; `percentUsed` is 0 to 100 with at most one decimal (past 100 only on an exceeded spend limit); `resetsAt` is an ISO 8601 timestamp, optional | doc (types) | types `SessionRateLimit` |
+| `rateLimits` holds the windows the last API response reported, and is empty off a subscription or before the first reading: after a limit the reading stays at 100 until a new response | doc (types) · **non vérifié** (value once the limit blocks the model) | types `SessionUsage.rateLimits` |
+| `session.measure` fires after each turn and when a plan limit's percent moves a whole point | doc | Reference § Session |
+| `turn.start` fires when a turn begins (`{ text, turnId }`); a subagent's run raises none | doc · doc (types) | Reference § Turns; types `TurnStartInput`, `TurnCompleteFields.turnId` |
+| `turn.complete` fires when a turn ends, including an interrupted one (`isAborted`, `reason` `answer` · `aborted` · `refusal` · `error`); a subagent's turn fires it with `agentId` set | doc · doc (types) | Events § Follow a turn; types `TurnCompleteInput` |
+| No method says "the session is idle": idle = no main-loop `turn.start` without its `turn.complete` | design | from the two rows above |
+| `claude plugin test` stubs: `prompt.submit` `($, e) => ({ text: e.text })`, `turn.start` `($, e) => ({ turnId: e.turnId })`, `turn.complete` `() => ({ text: '' })`; a mods API call with no stub rejects (`no implementation for …`) | doc · **tested** | Test § Look up what a stub returns; `packages/plugin/tests/presence.test.ts` |
+
+So the presence mod tracks the last main-loop turn end and, only with `push_mode` `rewake` (the opt-in the team must allow), wakes an idle session with a fixed `$.prompt.submit` text (the unread count at most, never peer text, not awaited, at most 6 per 10 min) when the unread count rises after the rewake waiter's hour, and asks for a handoff at 90 % of a plan limit. In hooks mode it never starts a turn. In both modes it sets the hub status and sends team notes at 100 % and when the window resets. Every call fails open.
+
 ### Production run after the 2026-10-16 deploy (Claude Code 2.1.301, Linux, plugin 0.3.0)
 
 Real sessions on the team's hub, in a linked repository, plugin installed from the hub's marketplace (user and project scope):
@@ -416,3 +464,12 @@ Hub public through Tailscale Funnel; claude.ai → Settings → Connectors → c
 - First attempt: tokens were right (`aud=<hub>/mcp`, `iss=<hub>/api/auth`, scope `codetgh`) but /mcp answered 401 "no token payload": the hub fetched its JWKS through its public URL, which the container cannot reach behind Funnel. Fixed in #64 (`jwksUrl` on the hub's own socket).
 - After the fix: one 401 (the unauthenticated first call), then /mcp 200 for claude.ai's tool calls.
 
+### CwdChanged and DirectoryAdded (docs read 2026-10-20, not run against a real Claude Code)
+
+From [Hooks reference](https://code.claude.com/docs/en/hooks) § CwdChanged, § DirectoryAdded, and § hook types per event; [Run Claude Code programmatically](https://code.claude.com/docs/en/headless):
+- **CwdChanged** runs when a shell command in the main conversation changes the working directory (`cd`). No matcher: it fires on every occurrence. Input adds `old_cwd` and `new_cwd` to the common fields (`cwd` is the new directory). No decision control. Claude Code reads `watchPaths` and `systemMessage`, discards `continue`; in an interactive session the `systemMessage` is a brief terminal notification and does not reach the SDK message stream. The hook gets `CLAUDE_ENV_FILE`.
+- **DirectoryAdded** runs after `/add-dir` or the SDK `register_repo_root` control request; not for `--add-dir` at startup (SessionStart covers those), the `/permissions` Workspace tab, or a directory already inside a working directory. Matcher on how it was added: `slash_command` or `register_repo_root`. Input adds `directory` (absolute path) and `source`. Claude Code does not wait for it: the hook runs in the background (default timeout 600 s). With `slash_command` its `systemMessage` reaches Claude as context on the next turn, not the person; with `register_repo_root` it goes to the debug log only.
+- Both events take `command`, `http` and `mcp_tool` hooks, not `prompt` or `agent`.
+- Neither page says whether these events fire under `-p`.
+
+The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository, and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.

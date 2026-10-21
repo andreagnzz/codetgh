@@ -19,6 +19,10 @@ type Input = {
   tool_name?: string;
   tool_input?: unknown;
   permission_mode?: string;
+  agent_id?: string;
+  // CwdChanged and DirectoryAdded.
+  new_cwd?: string;
+  directory?: string;
 };
 // Per-session state: prompt ETag, one warning, repository root, files touched by editor tools, shell edits already reported.
 type State = {
@@ -36,6 +40,10 @@ type State = {
   injections?: number[];
   // The permission mode the hub last heard about.
   mode?: string;
+  // Registered outside a repository: the next repository the session enters links it.
+  projectless?: boolean;
+  // The last repository fingerprint the cwd hook asked the hub about.
+  tried?: string;
 };
 
 const config = () => ({
@@ -133,40 +141,53 @@ async function git(cwd: string | undefined, args: string[]) {
   }
 }
 
-async function sessionStart(input: Input) {
-  const { url, token } = config();
-  if (!url || !token) return warnOnce(input, "CodeTgh: hub URL or token not configured; working without CodeTgh.");
-  const [branch, origin, version] = await Promise.all([
-    git(input.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    git(input.cwd, ["remote", "get-url", "origin"]),
-    // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
-    // through a shell; the arguments are fixed, so nothing can be injected.
-    run("claude", ["--version"], { timeout: Math.min(1000, left(START_BUDGET_MS)), shell: process.platform === "win32" }).then(
-      (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
-      () => undefined,
-    ),
-  ]);
+type SessionReply = {
+  context: string;
+  paused: boolean;
+  linked?: boolean;
+  can_link?: boolean;
+  status_line?: string;
+  project?: string | null;
+};
+type Repo = { branch: string; fingerprint?: string; name?: string };
+const NOT_LINKED =
+  "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).";
+
+async function repoAt(cwd: string | undefined): Promise<Repo> {
+  const [branch, origin] = await Promise.all([git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]), git(cwd, ["remote", "get-url", "origin"])]);
+  return {
+    branch,
+    fingerprint: origin ? repoFingerprint(origin) : undefined,
+    // The origin's last path segment: git@host:acme/web-app.git → web-app.
+    name: origin
+      .replace(/\/+$/, "")
+      .replace(/\.git$/, "")
+      .split(/[/:]/)
+      .pop()
+      ?.replace(/[^\w.-]/g, "")
+      .slice(0, 100),
+  };
+}
+
+// Registers the session with the hub; a status or a link the hub finishes after the budget when it gets no answer.
+async function register(
+  input: Input,
+  repo: Repo,
+  budgetMs: number,
+  version?: string,
+): Promise<{ status: number } | { lateLink: string } | { body: SessionReply }> {
   // An install that kept a mode the plugin no longer offers (channel) runs as hooks.
   const pushMode = process.env.CLAUDE_PLUGIN_OPTION_PUSH_MODE === "rewake" ? "rewake" : "hooks";
-  const fingerprint = origin ? repoFingerprint(origin) : undefined;
-  // The origin's last path segment: git@host:acme/web-app.git → web-app.
-  const repoName = origin
-    .replace(/\/+$/, "")
-    .replace(/\.git$/, "")
-    .split(/[/:]/)
-    .pop()
-    ?.replace(/[^\w.-]/g, "")
-    .slice(0, 100);
-  const register = (withBranch: boolean, name?: string) =>
+  const send = (withBranch: boolean, name?: string) =>
     hub("/v1/agents/session", {
       method: "POST",
-      timeoutMs: Math.min(2400, left(START_BUDGET_MS)),
+      timeoutMs: Math.min(2400, left(budgetMs)),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         session_id: input.session_id ?? "unknown",
         source: input.source,
-        repo_fingerprint: fingerprint,
-        branch: withBranch && branch ? branch : undefined,
+        repo_fingerprint: repo.fingerprint,
+        branch: withBranch && repo.branch ? repo.branch : undefined,
         repo_name: name,
         push_mode: pushMode,
         permission_mode: input.permission_mode,
@@ -175,38 +196,56 @@ async function sessionStart(input: Input) {
         accept_requests_from: process.env.CODETGH_ACCEPT_REQUESTS_FROM?.split(",").filter(Boolean),
       }),
     });
+  // In a repository, ask with the fingerprint alone first: one nobody linked never sends its branch or file paths.
+  let res = await send(!repo.fingerprint);
+  if (!res.ok) return { status: res.status };
+  let body = (await res.json()) as SessionReply;
+  // A member may link it: only then do the repository's name and branch leave the machine, in one more call.
+  const linking = body.linked === false && body.can_link === true && Boolean(repo.name);
+  if (linking) {
+    const linked = await send(true, repo.name).catch(() => null);
+    if (!linked) return { lateLink: repo.name ?? "" };
+    if (!linked.ok) return { status: linked.status };
+    body = (await linked.json()) as SessionReply;
+  }
+  if (body.linked !== false && repo.fingerprint && repo.branch && !body.paused && !linking) {
+    // Out of time for the second answer: the first one still holds.
+    res = await send(true).catch(() => res);
+    if (res.ok) body = (await res.json()) as SessionReply;
+  }
+  return { body };
+}
+
+async function sessionStart(input: Input) {
+  const { url, token } = config();
+  if (!url || !token) return warnOnce(input, "CodeTgh: hub URL or token not configured; working without CodeTgh.");
+  const [repo, version] = await Promise.all([
+    repoAt(input.cwd),
+    // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
+    // through a shell; the arguments are fixed, so nothing can be injected.
+    run("claude", ["--version"], { timeout: Math.min(1000, left(START_BUDGET_MS)), shell: process.platform === "win32" }).then(
+      (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
+      () => undefined,
+    ),
+  ]);
   try {
-    // In a repository, ask with the fingerprint alone first: one nobody linked never sends its branch or file paths.
-    let res = await register(!fingerprint);
-    if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
-    let body = (await res.json()) as { context: string; paused: boolean; linked?: boolean; can_link?: boolean; status_line?: string };
-    // A member may link it: only then do the repository's name and branch leave the machine, in one more call.
-    const linking = body.linked === false && body.can_link === true && Boolean(repoName);
-    if (linking) {
-      // The hub may finish creating the project after this hook's budget: say so rather than "unreachable".
-      const linked = await register(true, repoName).catch(() => null);
-      if (!linked) return warnOnce(input, `CodeTgh: linking ${repoName} as a team project; it is on from your next session.`);
-      res = linked;
-      if (!res.ok) return warnOnce(input, `CodeTgh: hub answered ${res.status}; working without CodeTgh.`);
-      body = (await res.json()) as typeof body;
-    }
+    const registered = await register(input, repo, START_BUDGET_MS, version);
+    if ("status" in registered) return warnOnce(input, `CodeTgh: hub answered ${registered.status}; working without CodeTgh.`);
+    // The hub may finish creating the project after this hook's budget: say so rather than "unreachable".
+    if ("lateLink" in registered)
+      return warnOnce(input, `CodeTgh: linking ${registered.lateLink} as a team project; it is on from your next session.`);
+    const { body } = registered;
     if (body.linked === false) {
       if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
       // Said once at start so the person knows CodeTgh is off on purpose, not broken.
-      return input.source === "startup" || input.source === "resume"
-        ? {
-            systemMessage:
-              "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).",
-          }
-        : null;
+      return input.source === "startup" || input.source === "resume" ? { systemMessage: NOT_LINKED } : null;
     }
-    if (input.session_id && input.permission_mode)
-      saveState(input.session_id, { ...loadState(input.session_id), mode: input.permission_mode });
-    if (fingerprint && branch && !body.paused && !linking) {
-      // Out of time for the second answer: the first one still holds.
-      res = await register(true).catch(() => res);
-      if (res.ok) body = (await res.json()) as typeof body;
-    }
+    if (input.session_id)
+      saveState(input.session_id, {
+        ...loadState(input.session_id),
+        ...(input.permission_mode && { mode: input.permission_mode }),
+        projectless: !repo.fingerprint,
+      });
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
     const shown =
       body.status_line && (input.source === "startup" || input.source === "resume")
@@ -219,6 +258,34 @@ async function sessionStart(input: Input) {
     };
   } catch {
     return warnOnce(input, "CodeTgh: hub unreachable; working without CodeTgh.");
+  }
+}
+
+// CwdChanged and DirectoryAdded: a session registered outside a repository joins the first one it enters, and stays.
+async function cwdChanged(input: Input) {
+  const { url, token } = config();
+  if (!url || !token || !input.session_id) return null;
+  const state = loadState(input.session_id);
+  if (!state.projectless) return null;
+  const repo = await repoAt(input.new_cwd ?? input.directory);
+  // Each cd inside one repository fires again: ask the hub once per repository.
+  if (!repo.fingerprint || repo.fingerprint === state.tried) return null;
+  saveState(input.session_id, { ...loadState(input.session_id), tried: repo.fingerprint });
+  try {
+    const registered = await register({ ...input, source: "cwd-changed" }, repo, BUDGET_MS);
+    if ("status" in registered) return null;
+    // The hub links the agent in the same transaction that creates the project: count it as linked.
+    if ("lateLink" in registered) {
+      saveState(input.session_id, { ...loadState(input.session_id), projectless: false });
+      return null;
+    }
+    const { body } = registered;
+    if (body.paused) return null;
+    if (body.linked === false) return { systemMessage: NOT_LINKED };
+    saveState(input.session_id, { ...loadState(input.session_id), projectless: false });
+    return { systemMessage: `CodeTgh: this session is now on ${(body.project ?? repo.name ?? "").replace(/\p{Cc}/gu, "")}` };
+  } catch {
+    return null;
   }
 }
 
@@ -422,7 +489,8 @@ const INJECTION_WINDOW_MS = 10 * 60_000;
 
 async function inbox(input: Input) {
   const { url, token } = config();
-  if (!url || !token || !input.session_id) return null;
+  // Inside a subagent the context would go to the subagent, whose transcript ends with its task: leave it to the main thread.
+  if (!url || !token || !input.session_id || input.agent_id) return null;
   const state = loadState(input.session_id);
   if (state.unlinked || Date.now() - (state.polledAt ?? 0) < POLL_MS) return null;
   saveState(input.session_id, { ...state, polledAt: Date.now() });
@@ -444,8 +512,9 @@ async function inbox(input: Input) {
   }
 }
 
-// Claude Code enforces the asyncRewake hook's timeout (600 s in hooks.json): the waiter gives up a little before.
-const REWAKE_BUDGET_MS = 570_000;
+// Claude Code enforces the asyncRewake hook's timeout (3600 s in hooks.json): the waiter gives up a minute before.
+// Each request is a ≤ 55 s long poll, so no proxy or idle timeout has to hold one connection for the hour.
+const REWAKE_BUDGET_MS = 3_540_000;
 // A burst of messages must not keep an autonomous session busy waking: past this, delivery waits for the next prompt.
 const MAX_WAKES = 6;
 const WAKE_WINDOW_MS = 10 * 60_000;
@@ -471,7 +540,8 @@ async function rewake(input: Input) {
         timeoutMs: (waitS + 5) * 1000,
         headers: etag ? { "If-None-Match": etag } : {},
       }).catch(() => null);
-      if (!res) {
+      // A network error, a timeout, a 5xx from a restarting hub or proxy, or a full `hold`: back off and poll again.
+      if (!res || res.status >= 500 || res.status === 429) {
         await sleep(5000);
         continue;
       }
@@ -524,6 +594,7 @@ async function readStdin(): Promise<Input> {
 
 const handlers: Record<string, (input: Input) => Promise<unknown>> = {
   "session-start": sessionStart,
+  "cwd-changed": cwdChanged,
   "user-prompt-submit": userPromptSubmit,
   "pre-tool-use": preToolUse,
   "pre-edit": preEdit,

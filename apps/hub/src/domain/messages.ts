@@ -36,6 +36,12 @@ const GUEST_KINDS = new Set(["note", "question"]);
 // A function, so "now" is the time of each read, not the time this module loaded.
 const notExpired = () => or(isNull(message.expiresAt), gt(message.expiresAt, new Date()));
 
+// SPEC « Tâches et relais », archives: a quiet thread with nothing unread, or a finished task, leaves the default views after this. Nothing is deleted.
+export const ARCHIVE_AFTER_MS = 24 * 3600_000;
+// A new message moves lastMessageAt, so the thread comes back by itself.
+export const archivedThread = () =>
+  sql`(${lt(thread.lastMessageAt, new Date(Date.now() - ARCHIVE_AFTER_MS))} and not exists (select 1 from ${receipt} inner join ${message} on ${message.id} = ${receipt.messageId} where ${message.threadId} = ${thread.id} and ${receipt.readAt} is null))`;
+
 async function threadParticipants(tx: Db, threadId: string) {
   const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, threadId));
   const readers = await tx

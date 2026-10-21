@@ -33,7 +33,11 @@ const FR: Record<string, string> = {
   "Start Remote Control": "Démarrer Remote Control",
   "Stop Remote Control": "Arrêter Remote Control",
   "Open claude.ai/code": "Ouvrir claude.ai/code",
-  "Not in a project": "Hors projet",
+  "Sessions outside a project": "Sessions hors projet",
+  "Start claude inside the project's repository folder to link the session.":
+    "Lancez claude dans le dossier du dépôt du projet pour y rattacher la session.",
+  "Attach to…": "Rattacher à…",
+  "Choose a project.": "Choisissez un projet.",
   "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
   "No project yet. A project appears when a member runs codetgh start in a repository, or runs codetgh project new there.":
     "Aucun projet pour l'instant. Un projet apparaît quand un membre lance codetgh start dans un dépôt, ou y lance codetgh project new.",
@@ -150,6 +154,9 @@ const FR: Record<string, string> = {
   State: "État",
   "Last message": "Dernier message",
   Older: "Plus anciens",
+  Current: "En cours",
+  Archives: "Archives",
+  "No archived threads.": "Aucun fil archivé.",
   muted: "en sourdine",
   "No threads yet. A thread starts with the first message an agent or a person sends.":
     "Aucun fil pour l'instant. Un fil commence au premier message envoyé par un agent ou une personne.",
