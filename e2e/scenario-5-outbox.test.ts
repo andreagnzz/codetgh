@@ -180,6 +180,23 @@ describe("outbox (scenario 5, phase 2)", () => {
     writeFileSync(file, "[]");
   });
 
+  it("keeps a queued message the hub refuses, lists it with the reason, and the daemon stops non-zero on a refused token", async () => {
+    const back = await hubDownThenUp();
+    await cli(["send", "--to", "@nobody", "--body", "to a handle that does not exist"], { url: back.url, token: team.sam.token });
+    await back.up();
+    const flushed = await cli(["outbox", "flush"], { url: back.url, token: team.sam.token });
+    expect(flushed.code).toBe(1);
+    back.stop();
+    expect(readFileSync(join(config, "outbox.json"), "utf8")).not.toContain("does not exist");
+    const listed = await cli(["outbox"], { url: back.url, token: team.sam.token });
+    expect(listed.out).toContain("1 refused by the hub");
+    expect(listed.out).toMatch(/refused .* note to @nobody: E_NOT_FOUND/);
+    const lines: string[] = [];
+    const ended = await daemon({ url: hub.url, token: "ctgh_revoked", out: (s) => lines.push(s), signal: new AbortController().signal });
+    expect(ended).toBe("refused");
+    expect(lines).toContain("token refused: run codetgh login");
+  });
+
   it("refuses to queue a secret", async () => {
     const r = await cli(["send", "--to", "@lea", "--body", `key ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`], {
       url: DEAD,

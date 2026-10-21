@@ -141,11 +141,13 @@ type Queued = {
   account?: string;
 };
 const outboxPath = () => join(configDir(), "outbox.json");
+// Messages the hub refused for good (403, 404...) are kept with the reason, for codetgh outbox to show.
+const rejectedPath = () => join(configDir(), "outbox-rejected.json");
 // A file that does not parse is moved aside, never overwritten: it may hold the only copy of queued messages.
-const readOutbox = (warn: (s: string) => void): Queued[] => {
+const readOutbox = <T = Queued>(warn: (s: string) => void, path = outboxPath()): T[] => {
   let text: string;
   try {
-    text = readFileSync(outboxPath(), "utf8");
+    text = readFileSync(path, "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw e;
@@ -153,18 +155,19 @@ const readOutbox = (warn: (s: string) => void): Queued[] => {
   try {
     return JSON.parse(text);
   } catch {
-    const aside = `${outboxPath()}.corrupt-${Date.now()}`;
-    renameSync(outboxPath(), aside);
+    const aside = `${path}.corrupt-${Date.now()}`;
+    renameSync(path, aside);
     warn(`the outbox did not parse: moved it to ${aside}, check it and send what it holds again`);
     return [];
   }
 };
-const writeOutbox = (items: Queued[]) => {
+const writeOutbox = (items: unknown[], path = outboxPath()) => {
   mkdirSync(configDir(), { recursive: true, mode: 0o700 });
-  const tmp = `${outboxPath()}.${process.pid}.tmp`;
+  const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(items), { mode: 0o600 });
-  renameSync(tmp, outboxPath());
+  renameSync(tmp, path);
 };
+type Rejected = Queued & { reason: string; rejected_at: string };
 
 // Throws when the send may succeed later (network, 5xx, 429, 401); returns `rejected` when the hub refused it for good.
 async function postMessage(url: string, token: string, m: Queued) {
@@ -193,8 +196,11 @@ async function flushOutbox(url: string, token: string, warn: (s: string) => void
     }
     const r = await postMessage(url, token, m).catch(() => null);
     if (!r) return { sent, kept, rejected, offline: true };
-    if ("rejected" in r) rejected.push(`${m.to}: ${r.rejected}`);
-    else sent++;
+    if ("rejected" in r) {
+      rejected.push(`${m.to}: ${r.rejected}`);
+      const reason = { reason: r.rejected, rejected_at: new Date().toISOString() };
+      writeOutbox([...readOutbox<Rejected>(warn, rejectedPath()), { ...m, ...reason }], rejectedPath());
+    } else sent++;
     // Re-read: a send may have queued more meanwhile.
     writeOutbox(readOutbox(warn).filter((x) => x.idempotency_key !== m.idempotency_key));
   }
@@ -228,7 +234,10 @@ export async function daemon(o: { url: string; token: string; out: (s: string) =
         headers: { Authorization: `Bearer ${o.token}`, ...(last && { "Last-Event-ID": last }) },
         signal: o.signal,
       });
-      if (res.status === 401) return o.out("token refused: run codetgh login");
+      if (res.status === 401) {
+        o.out("token refused: run codetgh login");
+        return "refused";
+      }
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       delay = 1000;
       for await (const e of sseEvents(res.body)) {
@@ -1347,7 +1356,14 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   cli
     .command("outbox")
     .helpGroup("Advanced:")
-    .description("messages queued while the hub was unreachable")
+    .description("messages queued while the hub was unreachable, and the ones the hub refused")
+    .action(() => {
+      const queued = readOutbox(io.err);
+      const rejected = readOutbox<Rejected>(io.err, rejectedPath());
+      io.out(`${queued.length} queued, ${rejected.length} refused by the hub`);
+      for (const m of queued) io.out(`queued ${m.queued_at} ${m.kind} to ${m.to ?? m.reply_to}`);
+      for (const m of rejected) io.out(`refused ${m.rejected_at} ${m.kind} to ${m.to ?? m.reply_to}: ${m.reason}`);
+    })
     .command("flush")
     .description("send the queued messages now")
     .action(async () => {
@@ -1370,7 +1386,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       if (!url || !token) throw new Error("no hub URL or token: run codetgh login");
       const ctl = new AbortController();
       for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => ctl.abort());
-      await daemon({ url, token, out: io.out, signal: ctl.signal });
+      if ((await daemon({ url, token, out: io.out, signal: ctl.signal })) === "refused") process.exitCode = 1;
     });
 
   // Admin commands for the machine that runs the hub. They chain the scripts in deploy/, which cron runs too.
