@@ -19,6 +19,7 @@ type Input = {
   tool_name?: string;
   tool_input?: unknown;
   permission_mode?: string;
+  agent_id?: string;
   // CwdChanged and DirectoryAdded.
   new_cwd?: string;
   directory?: string;
@@ -472,7 +473,8 @@ const INJECTION_WINDOW_MS = 10 * 60_000;
 
 async function inbox(input: Input) {
   const { url, token } = config();
-  if (!url || !token || !input.session_id) return null;
+  // Inside a subagent the context would go to the subagent, whose transcript ends with its task: leave it to the main thread.
+  if (!url || !token || !input.session_id || input.agent_id) return null;
   const state = loadState(input.session_id);
   if (state.unlinked || Date.now() - (state.polledAt ?? 0) < POLL_MS) return null;
   saveState(input.session_id, { ...state, polledAt: Date.now() });
