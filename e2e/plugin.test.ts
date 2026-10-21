@@ -56,8 +56,9 @@ const claude = spawnSync("claude", ["--version"]).status === 0;
 it.skipIf(!claude)("ships a presence mod that Claude Code validates and whose own tests pass", () => {
   const validate = spawnSync("claude", ["plugin", "validate", root], { encoding: "utf8" });
   expect(validate.status, validate.stdout + validate.stderr).toBe(0);
-  expect(validate.stdout).toContain("./presence.ts hooks: session.start");
-  expect(validate.stdout).toContain("./presence.ts calls: $.clock.after, $.clock.every, $.http.fetch");
+  expect(validate.stdout).toContain("./presence.ts hooks: session.start, turn.start, turn.complete");
+  expect(validate.stdout).toContain("./presence.ts calls: $.clock.after, $.clock.every, $.clock.now, $.http.fetch");
+  expect(validate.stdout).toContain("$.prompt.submit (via submit), $.session.id (via refresh, tell), $.session.usage (via limits)");
   const tests = spawnSync("claude", ["plugin", "test", root], { encoding: "utf8" });
   expect(tests.status, tests.stdout + tests.stderr).toBe(0);
 });
