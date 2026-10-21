@@ -34,6 +34,8 @@ const FR: Record<string, string> = {
   "Stop Remote Control": "Arrêter Remote Control",
   "Open claude.ai/code": "Ouvrir claude.ai/code",
   "Sessions outside a project": "Sessions hors projet",
+  "All projects": "Tous les projets",
+  "Outside a project": "Hors projet",
   "Start claude inside the project's repository folder to link the session.":
     "Lancez claude dans le dossier du dépôt du projet pour y rattacher la session.",
   "Attach to…": "Rattacher à…",

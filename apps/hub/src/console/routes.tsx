@@ -70,7 +70,21 @@ import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { Action, ArchiveTabs, Bypass, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
+import {
+  Action,
+  ArchiveTabs,
+  Bypass,
+  InvitePage,
+  Layout,
+  Line,
+  People,
+  Pill,
+  type ProjectFilter,
+  Result,
+  Table,
+  toneOf,
+  When,
+} from "./pages.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -155,12 +169,38 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
     return Object.assign((s: string) => t(lang, s), { lang });
   };
-  const page = (c: Context<Env>, title: string, body: unknown) =>
+  // Links keep the project filter only once it names a project of the viewer's team (the pages that filter check it).
+  const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
     c.html(
-      <Layout p={c.get("principal")} csrf={c.get("csrf")} title={t(tr(c).lang, title)} path={c.req.path} lang={tr(c).lang}>
+      <Layout
+        p={c.get("principal")}
+        csrf={c.get("csrf")}
+        title={t(tr(c).lang, title)}
+        path={c.req.path}
+        lang={tr(c).lang}
+        filter={filter}
+        keep={filter ? filter.selected : /^[\w-]{1,64}$/.test(c.req.query("project") ?? "") ? c.req.query("project") : undefined}
+      >
         {body as never}
       </Layout>,
     );
+  // ?project=: one of the team's projects, or none; anything else, another team's project included, shows them all.
+  const projectFilter = async (c: Context<Env>): Promise<ProjectFilter> => {
+    const projects = await db
+      .select({ id: project.id, name: project.name })
+      .from(project)
+      .where(eq(project.teamId, c.get("principal").teamId))
+      .orderBy(asc(project.name));
+    const q = c.req.query("project");
+    return { projects, selected: q === "none" || projects.some((pr) => pr.id === q) ? q : undefined };
+  };
+  const onProject = (col: typeof thread.projectId | typeof task.projectId, f: ProjectFilter) =>
+    f.selected === "none" ? isNull(col) : f.selected ? eq(col, f.selected) : undefined;
+  // With every project shown, items go under their project's heading, those outside a project last.
+  const byProject = <T,>(f: ProjectFilter, rows: T[], of: (r: T) => string | null, outside: string) =>
+    [...f.projects, { id: "none", name: outside }]
+      .map((pr) => ({ ...pr, rows: rows.filter((r) => (of(r) ?? "none") === pr.id) }))
+      .filter((g) => g.rows.length > 0);
   const refresh = (c: Context<Env>) => c.body(null, 204, { "HX-Refresh": "true" });
   const form = async (c: Context<Env>) => Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
   const requireFresh = (c: Context<Env>) => {
@@ -356,6 +396,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const mine = (await participantThreads(p)).map((r) => r.id);
     const before = c.req.query("before");
     const archived = c.req.query("archived") === "1";
+    const f = await projectFilter(c);
     const rows = await db
       .select()
       .from(thread)
@@ -363,6 +404,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         and(
           eq(thread.teamId, p.teamId),
           visibleThreads(p, mine),
+          onProject(thread.projectId, f),
           archived ? archivedThread() : not(archivedThread()),
           before && !Number.isNaN(Date.parse(before)) ? lt(thread.lastMessageAt, new Date(before)) : undefined,
         ),
@@ -370,31 +412,44 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .orderBy(desc(thread.lastMessageAt))
       .limit(PAGE);
     const last = rows.at(-1);
+    const table = (of: typeof rows) => (
+      <Table
+        head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
+        rows={of.map((t) => [
+          <a href={`/console/threads/${t.id}`}>{t.id}</a>,
+          _(t.kind),
+          t.subject ?? "",
+          t.agentStreak,
+          <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
+          <When at={t.lastMessageAt} lang={_.lang} />,
+        ])}
+        empty={
+          archived ? _("No archived threads.") : _("No threads yet. A thread starts with the first message an agent or a person sends.")
+        }
+      />
+    );
     return page(
       c,
       "Threads",
       <>
-        <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} />
-        <Table
-          head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
-          rows={rows.map((t) => [
-            <a href={`/console/threads/${t.id}`}>{t.id}</a>,
-            _(t.kind),
-            t.subject ?? "",
-            t.agentStreak,
-            <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
-            <When at={t.lastMessageAt} lang={_.lang} />,
-          ])}
-          empty={
-            archived ? _("No archived threads.") : _("No threads yet. A thread starts with the first message an agent or a person sends.")
-          }
-        />
+        <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
+        {f.selected || rows.length === 0
+          ? table(rows)
+          : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
+              <section aria-labelledby={`p-${g.id}`}>
+                <h2 id={`p-${g.id}`}>{g.name}</h2>
+                {table(g.rows)}
+              </section>
+            ))}
         {rows.length === PAGE && last && (
-          <a href={`/console/threads?${archived ? "archived=1&" : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}>
+          <a
+            href={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
+          >
             {_("Older")}
           </a>
         )}
       </>,
+      f,
     );
   });
 
@@ -626,7 +681,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/projects", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
-    const projects = await db.select().from(project).where(eq(project.teamId, p.teamId)).orderBy(asc(project.name));
+    const f = await projectFilter(c);
+    const { projects } = f;
     const sessions = await listAgents(db, p.teamId, { limit: 200 });
     const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id && (id || isSessionAgent(r.agent)));
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
@@ -660,7 +716,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const groups = [
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
       { id: "none", name: _("Sessions outside a project"), rows: byProject(null) },
-    ].filter((g) => g.rows.length > 0 || g.id !== "none");
+    ].filter((g) => (f.selected ? g.id === f.selected : g.rows.length > 0 || g.id !== "none"));
     // A member attaches their own sessions, an admin anyone's; a guest none.
     const attach = (r: (typeof sessions)[number]) =>
       projects.length > 0 &&
@@ -704,6 +760,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </section>
         ))
       ),
+      f,
     );
   });
 
@@ -1451,41 +1508,53 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/tasks", async (c) => {
     const p = c.get("principal");
     const archived = c.req.query("archived") === "1";
+    const f = await projectFilter(c);
     const rows = await db
       .select({ task, handle: membership.handle })
       .from(task)
       .leftJoin(membership, and(eq(membership.userId, task.assigneeUserId), eq(membership.teamId, task.teamId)))
-      .where(and(eq(task.teamId, p.teamId), archived ? archivedTask() : not(archivedTask())))
+      .where(and(eq(task.teamId, p.teamId), onProject(task.projectId, f), archived ? archivedTask() : not(archivedTask())))
       .orderBy(desc(task.updatedAt))
       .limit(PAGE * 4);
+    // Under a project heading, the status headings step down one level.
+    const board = (all: typeof rows, nested = false) =>
+      TASK_STATUSES.map((s) => {
+        const of = all.filter((r) => r.task.status === s);
+        const Heading = nested ? "h3" : "h2";
+        return (
+          of.length > 0 && (
+            <>
+              <Heading>
+                {s} ({of.length})
+              </Heading>
+              <Table
+                head={["Title", "Assignee", "Version", "Updated"]}
+                rows={of.map((r) => [
+                  <a href={`/console/tasks/${r.task.id}`}>{r.task.title}</a>,
+                  r.handle ? `@${r.handle}` : "",
+                  r.task.version,
+                  <When at={r.task.updatedAt} />,
+                ])}
+                empty={tr(c)("Nothing yet.")}
+              />
+            </>
+          )
+        );
+      });
     return page(
       c,
       "Tasks",
       <>
-        <ArchiveTabs base="/console/tasks" archived={archived} lang={tr(c).lang} />
+        <ArchiveTabs base="/console/tasks" archived={archived} lang={tr(c).lang} project={f.selected} />
         {archived && rows.length === 0 && <p>{tr(c)("Nothing yet.")}</p>}
-        {TASK_STATUSES.map((s) => {
-          const of = rows.filter((r) => r.task.status === s);
-          return (
-            of.length > 0 && (
-              <>
-                <h2>
-                  {s} ({of.length})
-                </h2>
-                <Table
-                  head={["Title", "Assignee", "Version", "Updated"]}
-                  rows={of.map((r) => [
-                    <a href={`/console/tasks/${r.task.id}`}>{r.task.title}</a>,
-                    r.handle ? `@${r.handle}` : "",
-                    r.task.version,
-                    <When at={r.task.updatedAt} />,
-                  ])}
-                  empty={tr(c)("Nothing yet.")}
-                />
-              </>
-            )
-          );
-        })}
+        {f.selected
+          ? board(rows)
+          : byProject(f, rows, (r) => r.task.projectId, tr(c)("Outside a project")).map((g) => (
+              <section aria-labelledby={`p-${g.id}`}>
+                <h2 id={`p-${g.id}`}>{g.name}</h2>
+                {board(g.rows, true)}
+              </section>
+            ))}
         <h2>New task</h2>
         <form hx-post="/console/tasks" hx-swap="none">
           <label>
@@ -1500,6 +1569,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <button type="submit">Create</button>
         </form>
       </>,
+      f,
     );
   });
 

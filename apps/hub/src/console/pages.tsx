@@ -22,14 +22,19 @@ const NAV: Array<[string, string, boolean?]> = [
   ["/console/settings", "Settings", true],
 ];
 
-export const Layout: FC<{ p: Principal; csrf: string; title: string; path: string; lang: Lang; children?: Child }> = ({
-  p,
-  csrf,
-  title,
-  path,
-  lang,
-  children,
-}) => {
+// The project filter: ?project=<id>, or none for what is outside a project; no value shows every project.
+export type ProjectFilter = { projects: Array<{ id: string; name: string }>; selected: string | undefined };
+
+export const Layout: FC<{
+  p: Principal;
+  csrf: string;
+  title: string;
+  path: string;
+  lang: Lang;
+  filter?: ProjectFilter;
+  keep?: string;
+  children?: Child;
+}> = ({ p, csrf, title, path, lang, filter, keep, children }) => {
   const _ = (s: string) => t(lang, s);
   const admin = p.role === "owner" || p.role === "admin";
   const current = (href: string) =>
@@ -54,7 +59,7 @@ export const Layout: FC<{ p: Principal; csrf: string; title: string; path: strin
             <Logo kind="horizontal" />
             <nav aria-label={_("Console")}>
               {NAV.filter(([, , adminOnly]) => admin || !adminOnly).map(([href, label]) => (
-                <a href={href} aria-current={current(href) ? "page" : undefined}>
+                <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
                   {_(label)}
                 </a>
               ))}
@@ -83,6 +88,22 @@ export const Layout: FC<{ p: Principal; csrf: string; title: string; path: strin
               </p>
             )}
             <h1>{title}</h1>
+            {filter && (
+              <nav aria-label={_("Project")} class="projects-filter">
+                {[{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }].map(
+                  (pr) => (
+                    <>
+                      <a
+                        href={pr.id ? `${path}?project=${encodeURIComponent(pr.id)}` : path}
+                        aria-current={pr.id === filter.selected ? "page" : undefined}
+                      >
+                        {pr.name}
+                      </a>{" "}
+                    </>
+                  ),
+                )}
+              </nav>
+            )}
             {children}
             {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
             <p id="line-announce" class="sr-only" aria-live="polite" />
@@ -131,12 +152,12 @@ export const Pill: FC<{ tone?: Tone; children?: Child }> = ({ tone = "neutral", 
 );
 
 // Current items, or the archives: threads quiet for a day with nothing unread, tasks finished a day ago.
-export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang }> = ({ base, archived, lang }) => (
+export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang; project?: string }> = ({ base, archived, lang, project }) => (
   <nav aria-label={t(lang, "Archives")}>
-    <a href={base} aria-current={archived ? undefined : "page"}>
+    <a href={project ? `${base}?project=${encodeURIComponent(project)}` : base} aria-current={archived ? undefined : "page"}>
       {t(lang, "Current")}
     </a>{" "}
-    <a href={`${base}?archived=1`} aria-current={archived ? "page" : undefined}>
+    <a href={`${base}?archived=1${project ? `&project=${encodeURIComponent(project)}` : ""}`} aria-current={archived ? "page" : undefined}>
       {t(lang, "Archives")}
     </a>
   </nav>
@@ -191,7 +212,12 @@ const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, 
   const state = presence(r.agent);
   return (
     <li>
-      <span class="who-name">{r.name}</span> <span class="meta">{r.agent.label}</span> <Pill tone={toneOf(state)}>{t(lang, state)}</Pill>
+      <span class="who-name">{r.name}</span>{" "}
+      <span class="meta">
+        {r.agent.label}
+        {r.project && ` · ${r.project}`}
+      </span>{" "}
+      <Pill tone={toneOf(state)}>{t(lang, state)}</Pill>
       {(r.agent.pushMode || r.agent.clientVersion) && (
         <span class="meta">
           {" "}
