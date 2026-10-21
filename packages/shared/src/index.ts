@@ -212,7 +212,7 @@ export const ClaimsCheckRestInput = z.object({ session_id: z.string().min(1).max
 
 export const TASK_STATUSES = ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
-const taskId = z.string().regex(/^tsk_[0-9A-Z]{26}$/);
+export const taskId = z.string().regex(/^tsk_[0-9A-Z]{26}$/);
 const handle = z.string().regex(/^@[a-z0-9-]{1,40}$/);
 
 export const TaskListInput = z.object({
@@ -230,6 +230,8 @@ export const TaskCreateInput = z.object({
   paths: z.array(peerPath).max(50).default([]),
   depends_on: z.array(taskId).max(20).default([]),
   assignee: handle.optional(),
+  // For the owner's runner (codetgh runner); a member or the owner sets it, never a guest.
+  runner: z.boolean().default(false),
 });
 
 export const TaskClaimInput = z.object({ agent: agentId.optional(), task_id: taskId, expected_version: z.number().int().min(1) });

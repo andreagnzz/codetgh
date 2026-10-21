@@ -24,6 +24,10 @@ import {
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
+  RunnerLeaseInput,
+  RunnerReadyQuery,
+  RunnerReport,
+  RunnerUpdateInput,
   SessionQuery,
   StatusQuery,
 } from "@codetgh/shared/rest";
@@ -79,6 +83,7 @@ import {
   unread,
 } from "./domain/messages.js";
 import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
+import { expireLeases, leaseTask, readyTasks, renewLease, reportRun, runnerUpdate, runTargets } from "./domain/runner.js";
 import { handleSlackCommand, handleSlackEvent, startSlackRelay, validSlackSignature } from "./domain/slack.js";
 import { backchannelLogout } from "./domain/sso.js";
 import { inviteMember, revokeInvitations } from "./domain/teams.js";
@@ -106,6 +111,7 @@ type Env = { Variables: { principal: Principal } };
 const PROMPT_BATCH = 5;
 const CHECKPOINT_EVERY_MS = 10 * 60_000;
 const PURGE_EVERY_MS = 60 * 60_000;
+const LEASE_SWEEP_MS = 60_000;
 const PROMPT_BUDGET = 9500;
 
 // Request lines carry ids, status and latency only: never headers, tokens or message text.
@@ -156,6 +162,11 @@ export function createApp({
     PURGE_EVERY_MS,
   );
   purgeTimer.unref();
+  const leaseTimer = setInterval(
+    () => expireLeases(db).catch((e: Error) => logger.error({ err: e.name }, "lease expiry failed")),
+    LEASE_SWEEP_MS,
+  );
+  leaseTimer.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
@@ -534,6 +545,30 @@ export function createApp({
     return c.body(null, 204);
   });
 
+  // The owner's runner: queue and leases only; the hub never says which folder or command (domain/runner.ts).
+  v1.get("/runner/targets", async (c) => c.json(await runTargets(db, c.get("principal"))));
+  v1.post("/runner/report", async (c) => {
+    await reportRun(db, c.get("principal"), await parse(c, RunnerReport));
+    return c.body(null, 204);
+  });
+  v1.get("/runner/ready", async (c) => {
+    const parsed = RunnerReadyQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await readyTasks(db, c.get("principal"), parsed.data.project));
+  });
+  v1.post("/runner/lease", async (c) => {
+    const { task_id, owner } = await parse(c, RunnerLeaseInput);
+    return c.json(await leaseTask(db, c.get("principal"), task_id, owner));
+  });
+  v1.post("/runner/renew", async (c) => {
+    const { task_id, owner } = await parse(c, RunnerLeaseInput);
+    return c.json(await renewLease(db, c.get("principal"), task_id, owner));
+  });
+  v1.post("/runner/update", async (c) => {
+    const { task_id, owner, patch } = await parse(c, RunnerUpdateInput);
+    return c.json(await runnerUpdate(deps, c.get("principal"), task_id, owner, patch));
+  });
+
   v1.get("/keys", async (c) => {
     const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });
     return c.json(await publicKeys(db, c.get("principal"), handles.split(",").filter(Boolean).slice(0, 20)));
@@ -815,6 +850,7 @@ export function createApp({
     close: () => {
       clearInterval(checkpointTimer);
       clearInterval(purgeTimer);
+      clearInterval(leaseTimer);
       stopSlack();
       return mcp.close();
     },

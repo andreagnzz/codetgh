@@ -56,6 +56,7 @@ import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
 import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
+import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
 import { archivedTask, createTask, updateTask } from "../domain/tasks.js";
 import {
@@ -766,6 +767,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const sessions = await listAgents(db, p.teamId, { limit: 200, where: onProject(agent.projectId, f) });
     const byProject = (id: string | null) => sessions.filter((r) => r.agent.projectId === id && (id || isSessionAgent(r.agent)));
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
+    const runs = p.role === "owner" ? await runStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
     const launch = (projectId: string) => {
       const l = launches.find((x) => x.projectId === projectId);
@@ -790,6 +792,32 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
           )}{" "}
           {state?.tone === "ok" && <a href="https://claude.ai/code">{_("Open claude.ai/code")}</a>}
+        </p>
+      );
+    };
+    // Same reading for the runner: its last report, with the count of agents it runs.
+    const runner = (projectId: string) => {
+      const r = runs.find((x) => x.projectId === projectId);
+      const fresh = r?.reportedAt && Date.now() - r.reportedAt.getTime() < 60_000;
+      const state = !r
+        ? null
+        : r.reportedError && fresh
+          ? { tone: "danger" as const, text: r.reportedError }
+          : r.desired && fresh
+            ? { tone: "ok" as const, text: `${_("Runner on")} · ${r.running} ${_("agents running")}` }
+            : r.desired
+              ? { tone: "warn" as const, text: _("Waiting for the runner on your machine") }
+              : r.reportedAt
+                ? { tone: "neutral" as const, text: _("Runner stopped") }
+                : null;
+      return (
+        <p class="launcher">
+          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
+          {r?.desired ? (
+            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "0" }} label={_("Stop the runner")} />
+          ) : (
+            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "1" }} label={_("Start the runner")} />
+          )}
         </p>
       );
     };
@@ -828,6 +856,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   {_("Project id")} <code>{g.id}</code>
                 </p>
                 {launch(g.id)}
+                {runner(g.id)}
               </>
             )}
             {g.id === "none" && <p class="meta">{_("Start claude inside the project's repository folder to link the session.")}</p>}
@@ -846,6 +875,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/projects/:id/launch", async (c) => {
     await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    return refresh(c);
+  });
+
+  consoleApp.post("/projects/:id/runner", async (c) => {
+    await setRunDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
     return refresh(c);
   });
 

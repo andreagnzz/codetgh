@@ -823,6 +823,26 @@ Toute autre session, et tout autre message dans une session déléguée, suivent
 
 Limite assumée : un pair autorisé peut faire faire à la session tout ce que le mode auto, les règles deny et le hook laissent passer. Ces garde-fous réduisent le risque mais n'isolent rien : la session tourne avec les droits de la personne sur sa machine. Il faut lancer une session déléguée dans un devcontainer ou un clone dédié, sans secrets. La protection tient à la liste d'expéditeurs, au projet unique, au classifieur, aux règles deny, au hook et à « Couper ».
 
+### Lanceur et runner : les deux autres exceptions
+
+Hors des sessions déléguées, deux programmes du propriétaire lancent quelque chose sur une machine à partir d'un réglage du hub : le lanceur (`codetgh launcher`) et le runner (`codetgh runner`). Ils suivent les mêmes règles :
+- C'est un choix du propriétaire, sur sa propre machine : il lance lui-même le programme, connecté avec son jeton. Seul le rôle propriétaire peut lire et modifier leurs réglages (`/v1/launcher/*`, `/v1/runner/*`) ; tout autre rôle reçoit E_FORBIDDEN.
+- Ils ne travaillent que dans les dossiers listés en local, sur cette machine : `~/.config/codetgh/launcher.json` ou `~/.config/codetgh/runner.json`, sous la forme `{"projects": {"<id du projet>": "/chemin"}}`. Un projet absent de la liste est refusé et signalé, jamais deviné.
+- Ils ne sont actifs que pour les projets que le propriétaire a allumés dans la console (page Projets, bouton par projet). L'éteindre arrête le travail à la passe suivante.
+- Le hub n'exécute jamais rien. Il ne dit que *quoi* : tel projet allumé ou éteint, telle tâche à prendre. Il n'envoie ni chemin ni commande. La commande est fixée dans le CLI, donc un hub compromis peut allumer ou éteindre un projet listé, et rien d'autre.
+
+Le lanceur démarre `claude remote-control` dans le dossier du projet et rapporte ce qui tourne.
+
+Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
+- Il ne prend que les tâches qui portent `runner = true`. Un membre ou le propriétaire pose ce drapeau à la création de la tâche (`task_create`). Un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
+- Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
+- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
+- Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
+- Les agents tournent en mode `auto`, ou en `bypassPermissions` seulement si `runner.json` le dit, avec les règles deny et le hook Bash des sessions déléguées.
+- L'audit garde le bail, les mises à jour et les changements d'état, en métadonnées seulement.
+
+Limite assumée : comme une session déléguée, un agent du runner tourne avec les droits du propriétaire sur sa machine. Un membre qui pose `runner = true` lui fait faire ce que le mode auto, les règles deny et le hook laissent passer. Il faut lancer le runner sur une machine ou dans un conteneur dédiés, sans secrets.
+
 ### Rôles
 
 | Action | Propriétaire | Admin | Membre | Invité |
@@ -1129,7 +1149,7 @@ La CI enchaîne lint, typecheck, tests, scénarios, contrôle des licences, inve
 
 ## Feuille de route et critères d'acceptation
 
-Le produit se construit en quatre phases, et chacune se ferme sur une porte : les scénarios de la phase passent, puis un humain donne son accord. La v1 correspond aux phases 0 à 2 ; la phase 3 étend la portée. Le schéma dessine les trois portes qui séparent les phases ; la phase 3 se ferme sur la même règle, sans phase suivante.
+Le produit se construit en cinq phases, et chacune se ferme sur une porte : les scénarios de la phase passent, puis un humain donne son accord. La v1 correspond aux phases 0 à 2 ; la phase 3 étend la portée, et la phase 4 ajoute le runner. Le schéma dessine les trois portes qui séparent les phases 0 à 3 ; les phases 3 et 4 se ferment sur la même règle.
 
 ![feuille de route · 4 phases, 3 portes](docs/img/roadmap.png)
 
@@ -1143,6 +1163,7 @@ Les bandes ne sont pas à l'échelle : la spec n'engage ni durée ni date, car e
 | 1 · MVP | Équipes, membres, projets, agents ; messages note, question, answer, request, status et alert, accusés de réception (ack) ; boîte de réception ; hooks de lecture ; ask_peer ; présence ; enveloppe non fiable ; limites de débit ; compteur anti-boucle ; détection de secrets (hook d'envoi et hub) ; journal d'audit ; console minimale ; CLI | 1, 4, 5, 6, 7, 8 | Les six scénarios passent ; l'humain donne son accord |
 | 2 · Coordination | Réservations avec le hook PreToolUse ; tâches ; relais ; mémoire d'équipe ; démon local et poussée optionnelle ; vérification de la chaîne d'audit ; export et effacement ; pages Réservations, Tâches, Mémoire et Mes données de la console | 2, 3 | Les deux scénarios passent et la chaîne d'audit est vérifiée ; l'humain donne son accord |
 | 3 · Portée | Connecteur claude.ai ; SDK ; ponts GitHub et Slack ; A2A ; chiffrement de bout en bout ; SSO ; pont de canal | Critères de la phase 3, plus bas | Les critères passent ; l'humain donne son accord |
+| 4 · Runner | File de tâches du hub (`runner`, bail, empilement) et table `run_target` ; CLI `codetgh runner` (worktree par tâche, `claude -p`, une PR par tâche) ; boucle de revue par un agent neuf (3 tours au plus) ; ré-empilement des PR et lien GitHub vers les tâches ; table de routage modèle et effort ; `/codetgh:split --run`, `codetgh run status|stop|retry`, page Runner de la console | Critères de la phase 4, plus bas | Les critères passent ; l'humain donne son accord |
 
 ### Critères transversaux
 
@@ -1186,6 +1207,19 @@ Les scénarios reprennent Sam et Léa du fil rouge, dans une équipe de test nom
 | Chiffrement de bout en bout | Pour les fils concernés, le hub ne stocke que des corps chiffrés ; la détection de secrets s'y fait côté client, et la recherche côté serveur n'y est plus disponible |
 | SSO | Une personne se connecte par le fournisseur d'identité de l'organisation ; la révocation chez ce fournisseur ferme ses sessions |
 | Pont de canal | Un message démarre un tour dans une session inactive lancée avec le canal ; le texte reste dans l'enveloppe |
+
+### Critères de la phase 4
+
+Le runner suit « Lanceur et runner : les deux autres exceptions ». Par défaut : 3 agents au plus, mode `auto`, fusion humaine ; `bypassPermissions` et la fusion automatique s'activent dans `runner.json`. Hors périmètre : automatismes (cron, événements), Linear, accès à distance au runner d'une autre machine.
+
+| Fonction | Critère |
+| --- | --- |
+| File du hub | Une tâche n'est prête que si elle porte `runner = true`, est `todo` dans un projet allumé, et que ses dépendances sont `done` ou en `review` avec une PR ; de deux baux simultanés, un seul gagne ; un bail expiré remet la tâche en `todo` ; seul le détenteur du bail la change ; un membre ou un invité reçoit 403 sur `/v1/runner/*` ; un invité ne peut pas créer de tâche `runner` ; l'audit consigne bail et mises à jour |
+| CLI `codetgh runner` | Avec un faux `claude` et un faux `gh` : trois tâches A ← B, C ; B s'empile sur la branche de A ; une PR par tâche, de base la branche parente ou `main` ; un redémarrage du runner reprend les baux |
+| Revue | Un agent neuf, en lecture seule, répond APPROVE ou REQUEST_CHANGES ; après un tour de corrections puis APPROVE, la tâche attend la fusion ; au-delà de 3 tours, la tâche passe `blocked` et le propriétaire est prévenu |
+| Ré-empilement | À la fusion de A, la tâche A passe `done` et la PR de B passe sur `main` ; un conflit met la tâche en `blocked` avec la raison ; les worktrees sont nettoyés après fusion |
+| Routage | Une table ordonnée (rôle, taille, label) choisit `--model` et `--effort` de chaque agent |
+| Essai réel | Sur un dépôt de test, `/codetgh:split --run` sur une spec de 3 tâches, le runner du VPS, 3 PR, la revue, puis le ré-empilement après fusion |
 
 ### Risques du projet
 

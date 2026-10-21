@@ -14,7 +14,7 @@ import { ARCHIVE_AFTER_MS, assertNoSecrets, type MessagingDeps } from "./message
 type Task = typeof task.$inferSelect;
 
 // SPEC « Tâches et relais ». `claimed` is entered only through task_claim.
-const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
+export const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   todo: ["cancelled"],
   claimed: ["in_progress", "todo", "blocked", "cancelled"],
   in_progress: ["blocked", "review", "done", "todo"],
@@ -23,7 +23,7 @@ const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   done: [],
   cancelled: [],
 };
-const MAX_NOTES = 20;
+export const MAX_NOTES = 20;
 
 export const archivedTask = () =>
   sql`(${inArray(task.status, ["done", "cancelled"])} and ${lt(task.updatedAt, new Date(Date.now() - ARCHIVE_AFTER_MS))})`;
@@ -45,7 +45,7 @@ async function userByHandle(db: Db, p: Principal, handle: string) {
 }
 
 // Peer-written title stays one escaped line; the body is only read through the task resource, in an envelope.
-async function view(db: Db, t: Task) {
+export async function view(db: Db, t: Task) {
   const [assignee] = t.assigneeUserId
     ? await db
         .select({ handle: membership.handle })
@@ -60,6 +60,7 @@ async function view(db: Db, t: Task) {
     assignee: assignee?.handle ?? null,
     depends_on: t.dependsOn,
     paths: t.paths,
+    runner: t.runner,
     updated_at: t.updatedAt.toISOString(),
   };
 }
@@ -80,9 +81,12 @@ export async function createTask(
   deps: MessagingDeps,
   p: Principal,
   a: Agent | null,
-  input: { title: string; body: string; paths: string[]; depends_on: string[]; assignee?: string },
+  input: { title: string; body: string; paths: string[]; depends_on: string[]; assignee?: string; runner?: boolean },
 ) {
   guard(p, a);
+  // The runner picks tasks by project; a task created outside one would never run.
+  if (input.runner && !a?.projectId)
+    throw new HubError("E_INVALID", "a runner task needs a project: create it from a session in the project's repository");
   await assertNoSecrets(deps, { p, agent: a, via: a ? "mcp" : "console" }, `${input.title}\n${input.body}\n${input.paths.join("\n")}`);
   const { db } = deps;
   if (input.depends_on.length) {
@@ -108,6 +112,7 @@ export async function createTask(
         assigneeUserId: assignee?.userId ?? null,
         createdByUser: p.user.id,
         createdByAgent: a?.id ?? null,
+        runner: input.runner ?? false,
       })
       .returning();
     if (!row) throw new HubError("E_INVALID", "task creation failed");
