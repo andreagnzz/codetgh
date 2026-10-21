@@ -10,6 +10,7 @@ const NAV: Array<[string, string, boolean?]> = [
   ["/console/threads", "Threads"],
   ["/console/projects", "Projects"],
   ["/console/agents", "Agents"],
+  ["/console/delegations", "Delegations"],
   ["/console/claims", "Claims"],
   ["/console/tasks", "Tasks"],
   ["/console/memory", "Memory"],
