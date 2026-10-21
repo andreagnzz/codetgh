@@ -109,7 +109,7 @@ export const InviteOutput = z.object({
 // Hub data and escaped one-line labels only; no message text.
 export const StatusOutput = z.object({
   team: z.string(),
-  you: z.object({ handle: z.string(), agent: z.string() }),
+  you: z.object({ handle: z.string(), agent: z.string().nullable() }),
   paused: z.boolean(),
   agents_paused: z.boolean(),
   agents: z.array(

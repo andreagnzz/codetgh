@@ -495,8 +495,9 @@ export function createApp({
     const { session_id: _, ...usage } = StatusQuery.safeParse(c.req.query()).data ?? {};
     const live = sessionId ? await touchSession(db, p, sessionId, usage) : false;
     if (live) bus.emit("presence", { teamId: p.teamId });
-    // The mod wakes its session on this count: a live session counts only what it can read itself.
-    const me = (live && sessionId && (await agentBySession(db, p, sessionId))) || (await restAgent(p, undefined));
+    // The mod wakes its session on this count: a live session counts only what it can read itself, a session that is
+    // not live (ended, unknown, stale) counts nothing. Only a call without session_id (CLI, SDK) sees the whole inbox.
+    const me = sessionId ? (live ? await agentBySession(db, p, sessionId) : null) : await restAgent(p, undefined);
     return c.json(await teamOverview(db, p, me, { scope: "team", limit: 50 }));
   });
 
