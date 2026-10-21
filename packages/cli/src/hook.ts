@@ -467,7 +467,7 @@ const alive = (pid: number) => {
 
 // PostToolUse on every tool: a busy agent sees new messages between tool calls, mid-turn, instead of after a turn
 // that can last half an hour. At most one hub call per POLL_MS, sharing the prompt hook's ETag so nothing shows twice.
-const POLL_MS = Number(process.env.CODETGH_POLL_MS ?? 25_000);
+const POLL_MS = Number(process.env.CODETGH_POLL_MS ?? 10_000);
 const MAX_INJECTIONS = 10;
 const INJECTION_WINDOW_MS = 10 * 60_000;
 

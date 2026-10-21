@@ -22,7 +22,7 @@ describe("console empty states say what to do", () => {
     expect(admin).toContain("Nothing to handle.");
     const member = await get("/console", team.sam.cookie);
     expect(member).toContain(
-      "No agent connected yet. Install CodeTgh with codetgh setup, then open Claude Code in the team&#39;s repository.",
+      "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team&#39;s repository.",
     );
   });
 

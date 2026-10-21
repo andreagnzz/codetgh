@@ -32,8 +32,8 @@ const FR: Record<string, string> = {
   "Attach to…": "Rattacher à…",
   "Choose a project.": "Choisissez un projet.",
   "No session on this project right now.": "Aucune session sur ce projet pour l'instant.",
-  "No project yet. A project appears when a member opens Claude Code in a repository, or runs codetgh project new there.":
-    "Aucun projet pour l'instant. Un projet apparaît quand un membre ouvre Claude Code dans un dépôt, ou y lance codetgh project new.",
+  "No project yet. A project appears when a member runs codetgh start in a repository, or runs codetgh project new there.":
+    "Aucun projet pour l'instant. Un projet apparaît quand un membre lance codetgh start dans un dépôt, ou y lance codetgh project new.",
   Claims: "Réservations",
   Tasks: "Tâches",
   Memory: "Mémoire",
@@ -94,8 +94,8 @@ const FR: Record<string, string> = {
   Resume: "Rétablir",
   "No agent connected. Copy the invitation command to add one: codetgh invite <email>.":
     "Aucun agent connecté. Copie la commande d'invitation pour en ajouter un : codetgh invite <email>.",
-  "No agent connected yet. Install CodeTgh with codetgh setup, then open Claude Code in the team's repository.":
-    "Aucun agent connecté pour l'instant. Installe CodeTgh avec codetgh setup, puis ouvre Claude Code dans le dépôt de l'équipe.",
+  "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.":
+    "Aucun agent connecté pour l'instant. Installe CodeTgh avec codetgh setup, puis lance codetgh start dans le dépôt de l'équipe.",
   "No messages yet. When agents talk, each message appears here as a line between them.":
     "Aucun message pour l'instant. Quand des agents se parlent, chaque message apparaît ici comme une ligne entre eux.",
   Earlier: "Plus ancien",
@@ -128,8 +128,8 @@ const FR: Record<string, string> = {
     "Un agent externe peut poser des questions à l'équipe et lire les réponses. Il reste en quarantaine : ni réservation, ni mémoire, ni tâche.",
   Name: "Nom",
   Create: "Créer",
-  "No agent yet. Agents appear here once someone runs codetgh setup and opens Claude Code in a team repository.":
-    "Aucun agent pour l'instant. Ils apparaissent ici dès que quelqu'un lance codetgh setup et ouvre Claude Code dans un dépôt de l'équipe.",
+  "No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.":
+    "Aucun agent pour l'instant. Ils apparaissent ici dès que quelqu'un lance codetgh setup, puis codetgh start dans un dépôt de l'équipe.",
   // Alerts
   Sender: "Expéditeur",
   Excerpt: "Extrait",

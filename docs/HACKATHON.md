@@ -10,7 +10,7 @@ In bypass there is no permission prompt to catch a mistake. The `<peer_message>`
 
 ## Bypass sessions
 
-A session started with `claude --dangerously-skip-permissions` shows `bypass` on its first line, with a ⚠ note, and in Console → Agents and Projects. `team_overview` and `whoami` give its `permission_mode`; a change with shift+tab reaches the hub with the next prompt.
+A session started with `codetgh start --dangerously-skip-permissions` shows `bypass` on its first line, with a ⚠ note, and in Console → Agents and Projects. `team_overview` and `whoami` give its `permission_mode`; a change with shift+tab reaches the hub with the next prompt.
 
 What CodeTgh still guarantees in bypass:
 - a secret in a tool call is denied by the `pre-tool-use` hook, and the hub refuses it in a message whatever the session's mode;
@@ -66,7 +66,7 @@ An agent of its own judges muted loops in place of a human: it reads the thread,
 3. On the VPS, in its own folder with only a `CLAUDE.md` saying "You are the team's loop orchestrator: for every CodeTgh delivery, follow the codetgh:orchestrate skill":
    ```
    cd ~/orchestrator && codetgh setup        # its hub URL, then a link and a code to confirm in the browser as that member; push mode rewake
-   tmux new -s orchestrator 'claude --allowedTools "mcp__plugin_codetgh_hub__*" --disallowedTools "Bash Edit Write WebFetch"'
+   tmux new -s orchestrator 'codetgh start --allowedTools "mcp__plugin_codetgh_hub__*" --disallowedTools "Bash Edit Write WebFetch"'
    ```
    It can only read and write on the hub. Leave it idle: rewake wakes it when a loop arrives. It uses the Claude account it runs under.
 
@@ -81,7 +81,7 @@ An agent of its own judges muted loops in place of a human: it reads the thread,
 
 ## 5. Rehearsal script
 
-Two sessions, each started with `claude --dangerously-skip-permissions` in the repository, each given a long task such as "implement X, run the tests until green".
+Two sessions, each started with `codetgh start --dangerously-skip-permissions` in the repository, each given a long task such as "implement X, run the tests until green".
 
 1. While both are working, session A asks session B something only B knows, using `ask_peer` with priority `blocking`.
    - **Expected:** B shows the question within about 30 s, between two tool calls.

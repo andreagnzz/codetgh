@@ -144,16 +144,17 @@ describe("codetgh setup from an answers file", () => {
         .autoUpdate,
     ).toBe(true);
     expect(calls()).toContain("plugin install codetgh@codetgh");
-    // On everywhere: a repository no project has only sends its fingerprint, and a member's session links it.
-    expect(calls()).not.toContain("plugin disable");
+    // Off everywhere: codetgh start turns it on for its own session.
+    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user --json");
     expect(out).toContain("ok   token: Sam (@sam, member) in Acme web");
     expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled");
     // The plugin gets the hub URL and the token through stdin, never through its arguments.
     expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
     expect(calls.options()).toEqual({ codetgh_url: hub.url, codetgh_token: team.sam.token, push_mode: "hooks" });
+    expect(out).toContain("an admin can allow rewake in the console Settings");
     expect(calls()).not.toContain(team.sam.token);
     expect(out).toContain("ok   plugin options: hub URL and token set");
-    expect(out).toContain("restart Claude Code");
+    expect(out).toContain("codetgh start");
     expect(out).toContain("older than 2.1.292");
     expect(out).not.toContain(team.sam.token);
   });
@@ -177,7 +178,7 @@ describe("codetgh setup from an answers file", () => {
       theme: "dark",
       extraKnownMarketplaces: { codetgh: { source: { source: "url", url: `${hub.url}/plugin/marketplace.json` }, autoUpdate: true } },
     });
-    expect(calls()).not.toContain("plugin disable");
+    expect(calls()).toContain("plugin disable codetgh@codetgh --scope user --json");
     // The token reaches the plugin through configure's stdin, never through any argument: argv shows in ps.
     expect(calls()).toContain("plugin configure codetgh@codetgh --values-stdin");
     expect(calls()).not.toContain(team.sam.token);
