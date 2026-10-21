@@ -107,7 +107,7 @@ test("does nothing without a token", { options: { codetgh_url: "https://hub.exam
 
 test(
   "rewake mode: wakes an idle session with a fixed text once unread rises after the rewake waiter's hour",
-  { options: { ...OPTIONS, push_mode: "rewake" } },
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
   async ($, on) => {
     let reply = body({});
     const s = stubs(on, () => ok(reply));
@@ -126,41 +126,78 @@ test(
     // No rise, no wake.
     await s.clock.advance(5 * MIN);
     expect(s.submitted.length).toBe(1);
-    for (const text of s.submitted) expect(text).not.toMatch(/Ignore|lea/);
+    // Our fixed text with the count only: no handle, status or word from a peer.
+    for (const text of s.submitted) expect(text.replace(/\d+/g, "N")).toBe(WAKE(0).replace("0", "N"));
   },
 );
 
-test("hooks mode: wakes at once when idle, never during a turn, at most 6 times in 10 min", { options: OPTIONS }, async ($, on) => {
-  let n = 0;
-  const s = stubs(on, () => ok(body({ note: n })));
-  await start($);
-  await s.clock.advance(1);
-  await $.turn.start({ text: "go", turnId: "t1" });
-  n = 1;
-  await s.clock.advance(30_000);
-  expect(s.submitted).toEqual([]);
-  await $.turn.complete({ turnId: "t1", answer: "", durationMs: 1, isAborted: false, reason: "answer" });
-  // A subagent's turn ending does not make the session idle.
-  await $.turn.start({ text: "go", turnId: "t2" });
-  await $.turn.complete({ turnId: "t2", answer: "", durationMs: 1, isAborted: false, reason: "answer", agentId: "sub-1" });
-  n = 2;
-  await s.clock.advance(30_000);
-  expect(s.submitted).toEqual([]);
-  await $.turn.complete({ turnId: "t2", answer: "", durationMs: 1, isAborted: false, reason: "answer" });
-  for (let i = 3; i <= 10; i++) {
-    n = i;
+test(
+  "rewake mode: never wakes during a turn or for a subagent's turn end, and at most 6 times in 10 min",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let n = 0;
+    const s = stubs(on, () => ok(body({ note: n })));
+    await start($);
+    await s.clock.advance(1);
+    await $.turn.start({ text: "go", turnId: "t1" });
+    n = 1;
     await s.clock.advance(30_000);
-  }
-  expect(s.submitted).toEqual([3, 4, 5, 6, 7, 8].map(WAKE));
-  await s.clock.advance(10 * MIN);
-  n = 11;
-  await s.clock.advance(30_000);
-  expect(s.submitted.at(-1)).toBe(WAKE(11));
-});
+    expect(s.submitted).toEqual([]);
+    // A subagent's turn ending does not make the session idle.
+    await $.turn.complete({ turnId: "t1", answer: "", durationMs: 1, isAborted: false, reason: "answer", agentId: "sub-1" });
+    n = 2;
+    await s.clock.advance(30_000);
+    expect(s.submitted).toEqual([]);
+    await $.turn.complete({ turnId: "t1", answer: "", durationMs: 1, isAborted: false, reason: "answer" });
+    await s.clock.advance(61 * MIN);
+    for (let i = 3; i <= 10; i++) {
+      n = i;
+      await s.clock.advance(30_000);
+    }
+    expect(s.submitted).toEqual([3, 4, 5, 6, 7, 8].map(WAKE));
+    await s.clock.advance(10 * MIN);
+    n = 11;
+    await s.clock.advance(30_000);
+    expect(s.submitted.at(-1)).toBe(WAKE(11));
+  },
+);
+
+test(
+  "hooks mode: never starts a turn, for unread or for a usage limit, but still tells the team at 100 %",
+  { options: OPTIONS, timeoutMs: 15_000 },
+  async ($, on) => {
+    let n = 0;
+    let used = 50;
+    const s = stubs(
+      on,
+      (e) => {
+        if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+        if (e.method === "POST") return ok("{}");
+        return ok(body({ note: n }));
+      },
+      () => [{ kind: "five_hour", percentUsed: used, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    for (let i = 1; i <= 3; i++) {
+      n = i;
+      await s.clock.advance(61 * MIN);
+    }
+    used = 95;
+    await s.clock.advance(30_000);
+    expect(s.submitted).toEqual([]);
+    expect(s.toasts).toEqual(["CodeTgh: 1 unread"]);
+    used = 100;
+    await s.clock.advance(30_000);
+    expect(s.submitted).toEqual([]);
+    expect(s.requests.filter((r) => r.method === "POST").length).toBe(2);
+  },
+);
 
 test(
   "usage limit: a handoff prompt at 90 %, then status and a team note at 100 %, and again when the window resets",
-  { options: OPTIONS },
+  { options: { ...OPTIONS, push_mode: "rewake" } },
   async ($, on) => {
     const resetsAt = "1970-01-01T00:10:00.000Z";
     let used = 50;

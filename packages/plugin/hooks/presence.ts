@@ -15,6 +15,8 @@ let idleSince: number | undefined;
 let wakes: number[] = [];
 let handoffFor: string | undefined;
 let limited = false;
+// Only the rewake opt-in (push_mode, allowed by the team) lets the mod start turns; hooks mode never does.
+let rewake = false;
 
 // Counts only: no handle, status or message text a peer wrote reaches the screen.
 function counts(s: Status) {
@@ -23,8 +25,9 @@ function counts(s: Status) {
   return { online, unread: total };
 }
 
-// Fixed texts only, never a peer's words.
+// Fixed texts only: at most the unread count, never a peer's handle, subject or words.
 function submit($: EngineInterface, text: string, now: number) {
+  if (!rewake) return;
   wakes = wakes.filter((t) => now - t < WAKES_WINDOW_MS);
   if (wakes.length >= WAKES) return;
   wakes.push(now);
@@ -76,7 +79,7 @@ async function limits($: EngineInterface, url: string, token: string, handle: st
   }
 }
 
-async function refresh($: EngineInterface, url: string, token: string, wait: number) {
+async function refresh($: EngineInterface, url: string, token: string) {
   let s: Status;
   let now: number;
   try {
@@ -88,7 +91,7 @@ async function refresh($: EngineInterface, url: string, token: string, wait: num
     const c = counts(s);
     now = await $.clock.now();
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
-    if (unread !== undefined && c.unread > unread && idleSince !== undefined && now - idleSince >= wait)
+    if (unread !== undefined && c.unread > unread && idleSince !== undefined && now - idleSince >= REWAKE_MS)
       submit($, `CodeTgh: ${c.unread} new teammate messages. Read them with inbox_read.`, now);
     unread = c.unread;
     $.ui.status(`CodeTgh · ${c.online} online · ${c.unread} unread`);
@@ -104,14 +107,13 @@ async function refresh($: EngineInterface, url: string, token: string, wait: num
 export const register: Register = (on, options) => {
   const url = String(options.codetgh_url ?? "").replace(/\/$/, "");
   const token = String(options.codetgh_token ?? "");
-  // hooks mode has no rewake waiter: an idle session wakes as soon as unread rises.
-  const wait = options.push_mode === "rewake" ? REWAKE_MS : 0;
+  rewake = options.push_mode === "rewake";
   on("session.start", async ($, e, next) => {
     if (url && token) {
       idleSince = await $.clock.now();
       // Not awaited in the hook: session.start holds the first prompt, and a slow hub must not.
-      $.clock.after(1, () => refresh($, url, token, wait));
-      $.clock.every(30_000, () => refresh($, url, token, wait));
+      $.clock.after(1, () => refresh($, url, token));
+      $.clock.every(30_000, () => refresh($, url, token));
     }
     return next(e);
   });

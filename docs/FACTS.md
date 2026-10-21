@@ -376,7 +376,7 @@ Sources: [API](https://code.claude.com/docs/en/plugins/mods/api) § Start a turn
 | No method says "the session is idle": idle = no main-loop `turn.start` without its `turn.complete` | design | from the two rows above |
 | `claude plugin test` stubs: `prompt.submit` `($, e) => ({ text: e.text })`, `turn.start` `($, e) => ({ turnId: e.turnId })`, `turn.complete` `() => ({ text: '' })`; a mods API call with no stub rejects (`no implementation for …`) | doc · **tested** | Test § Look up what a stub returns; `packages/plugin/tests/presence.test.ts` |
 
-So the presence mod tracks the last main-loop turn end, wakes an idle session with a fixed `$.prompt.submit` text (never peer text, not awaited, at most 6 per 10 min) when the unread count rises after the rewake waiter's window (or at once in hooks mode), and reads `rateLimits` on each status poll: a handoff prompt at 90 %, then hub status and team notes at 100 % and when the window resets. Every call fails open.
+So the presence mod tracks the last main-loop turn end and, only with `push_mode` `rewake` (the opt-in the team must allow), wakes an idle session with a fixed `$.prompt.submit` text (the unread count at most, never peer text, not awaited, at most 6 per 10 min) when the unread count rises after the rewake waiter's hour, and asks for a handoff at 90 % of a plan limit. In hooks mode it never starts a turn. In both modes it sets the hub status and sends team notes at 100 % and when the window resets. Every call fails open.
 
 ### Production run after the 2026-10-16 deploy (Claude Code 2.1.301, Linux, plugin 0.3.0)
 
