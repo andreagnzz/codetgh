@@ -12,6 +12,8 @@ const HANDOFF =
 let unread: number | undefined;
 // Undefined while a main-loop turn runs.
 let idleSince: number | undefined;
+// The Stop hook arms its rewake waiter at the end of a turn: before the first one, nothing else listens.
+let waiter = false;
 let wakes: number[] = [];
 let handoffFor: string | undefined;
 let limited = false;
@@ -91,7 +93,8 @@ async function refresh($: EngineInterface, url: string, token: string) {
     const c = counts(s);
     now = await $.clock.now();
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
-    if (unread !== undefined && c.unread > unread && idleSince !== undefined && now - idleSince >= REWAKE_MS)
+    const before = unread ?? (waiter ? c.unread : 0);
+    if (c.unread > before && idleSince !== undefined && (!waiter || now - idleSince >= REWAKE_MS))
       submit($, `CodeTgh: ${c.unread} new teammate messages. Read them with inbox_read.`, now);
     unread = c.unread;
     $.ui.status(`CodeTgh · ${c.online} online · ${c.unread} unread`);
@@ -111,6 +114,7 @@ export const register: Register = (on, options) => {
   on("session.start", async ($, e, next) => {
     if (url && token) {
       idleSince = await $.clock.now();
+      waiter = false;
       // Not awaited in the hook: session.start holds the first prompt, and a slow hub must not.
       $.clock.after(1, () => refresh($, url, token));
       $.clock.every(30_000, () => refresh($, url, token));
@@ -123,7 +127,10 @@ export const register: Register = (on, options) => {
   });
   on("turn.complete", async ($, e, next) => {
     // A subagent's turn ending leaves the main loop as it was.
-    if (!e.agentId) idleSince = await $.clock.now();
+    if (!e.agentId) {
+      idleSince = await $.clock.now();
+      waiter = true;
+    }
     return next(e);
   });
 };

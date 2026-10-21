@@ -132,6 +132,24 @@ test(
 );
 
 test(
+  "rewake mode: wakes a session that has had no turn yet, since no Stop hook waiter listens before the first turn",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({ note: 3 });
+    const s = stubs(on, () => ok(reply));
+    await start($);
+    // Messages that were waiting when the session started.
+    await s.clock.advance(1);
+    expect(s.submitted).toEqual([WAKE(3)]);
+    await turn($, "t1");
+    // After a turn the Stop hook's waiter listens again: the mod leaves it the first hour.
+    reply = body({ note: 4 });
+    await s.clock.advance(30_000);
+    expect(s.submitted.length).toBe(1);
+  },
+);
+
+test(
   "rewake mode: never wakes during a turn or for a subagent's turn end, and at most 6 times in 10 min",
   { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
   async ($, on) => {
