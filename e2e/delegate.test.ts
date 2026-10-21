@@ -4,6 +4,7 @@ import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
@@ -24,7 +25,9 @@ const register = async (token: string, session: string, repo: string, accept?: s
 };
 
 beforeAll(async () => {
-  hub = await startHub();
+  // An hour passes between calls: this file sends many registrations and requests as one person, and tests no budget.
+  let now = Date.now();
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "", push_rewake: "on" });
   // Sam is the delegate on P1 and accepts requests from Léa only; Léa works on P1 and on P2; Malik on P1.
