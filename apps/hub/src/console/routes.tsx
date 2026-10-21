@@ -242,7 +242,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const _ = tr(c);
     const invites = isAdmin(p) ? await pendingInvitations(p) : [];
-    const agents = await listAgents(db, p.teamId, { limit: 50 });
+    // A guest sees only their own agents, as on /console/agents.
+    const agents = (await listAgents(db, p.teamId, { limit: 50 })).filter((r) => p.role !== "guest" || r.agent.userId === p.user.id);
     const toValidate = canDecide(p)
       ? await db
           .select({ id: memoryItem.id })

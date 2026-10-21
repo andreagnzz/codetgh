@@ -67,6 +67,25 @@ it("keeps the same pages and thread actions from a guest in the console", async 
   expect((await consolePost(hub.url, team.malik.cookie, `/console/threads/${teamThread}/mute`)).status).toBe(403);
 });
 
+it("shows a guest only their own agents on the dashboard", async () => {
+  const lea = await mcpClient(hub.url, team.lea.token);
+  expect((await call(lea, "status_set", { text: "rotating billing keys quietly" })).isError).toBe(false);
+  await lea.close();
+  await fetch(`${hub.url}/v1/agents/session`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ session_id: "sam-g", repo_fingerprint: "b".repeat(64), repo_name: "acme/ledger-secret" }),
+  });
+  const html = await (await fetch(`${hub.url}/console`, { headers: { cookie: team.malik.cookie } })).text();
+  const presence = html.slice(html.indexOf('id="presence-h"'), html.indexOf('id="todo-h"'));
+  for (const leak of ["rotating billing keys quietly", "acme/ledger-secret", "lea@", "sam@"]) expect(html, leak).not.toContain(leak);
+  for (const name of ["Léa", "Sam"]) expect(presence, name).not.toContain(name);
+  expect(presence).toContain("Malik");
+  // A member still sees the whole team.
+  const member = await (await fetch(`${hub.url}/console`, { headers: { cookie: team.sam.cookie } })).text();
+  expect(member).toContain("rotating billing keys quietly");
+});
+
 const FORBIDDEN = ["projects", "tasks", "memory", "claims", "delegations", "tokens"];
 it("shows a guest no link to a page that refuses them, and a member every one", async () => {
   const nav = async (cookie: string) => {
