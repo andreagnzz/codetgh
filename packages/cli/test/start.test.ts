@@ -85,6 +85,8 @@ describe("--accept-requests-from: a delegate session", () => {
     const prompt = args[args.indexOf("--append-system-prompt") + 1] ?? "";
     expect(prompt).toContain('<peer_message kind="request" authorized="true">');
     expect(prompt).toContain("blocked: <reason>");
+    // On Windows claude is claude.cmd: a newline in an argument cuts the command line there.
+    expect(prompt).not.toMatch(/[\r\n]/);
     expect(args.join(" ")).not.toMatch(/bypassPermissions|skip-permissions/);
     expect(args.at(-1)).toBe("--foo");
     // The session-start hook reads the list from claude's environment and registers it on the hub.
