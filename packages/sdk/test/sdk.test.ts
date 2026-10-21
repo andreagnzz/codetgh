@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Hub, startHub, startSession } from "../../../apps/hub/test/harness.js";
 import { CodeTghError, createClient } from "../src/index.js";
@@ -54,5 +56,20 @@ describe("@codetgh/sdk", () => {
       .whoami()
       .catch((e) => e);
     expect(nobody).toMatchObject({ code: "E_UNAUTHORIZED", status: 401 });
+  });
+
+  it("gives up on a hub that never answers, and says so", async () => {
+    const silent = createServer(() => {});
+    await new Promise<void>((r) => silent.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(silent.address() as AddressInfo).port}`;
+    const started = Date.now();
+    const err = await createClient({ url, token: team.sam.token, timeoutMs: 300 })
+      .status()
+      .catch((e: Error) => e);
+    silent.closeAllConnections();
+    silent.close();
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("did not answer");
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });

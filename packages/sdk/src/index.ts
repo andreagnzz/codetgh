@@ -24,7 +24,8 @@ export class CodeTghError extends Error {
 }
 
 // Typed client for the hub's /v1 API: the same personal token and limits as an agent. Peer text comes back in envelopes.
-export function createClient(opts: { url: string; token: string; fetch?: typeof fetch }) {
+// timeoutMs bounds each call (not stream): a hub that never answers would otherwise hold the caller for Node's 300 s.
+export function createClient(opts: { url: string; token: string; fetch?: typeof fetch; timeoutMs?: number }) {
   const base = opts.url.replace(/\/$/, "");
   const doFetch = opts.fetch ?? fetch;
 
@@ -35,10 +36,14 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
       : route.path;
     const url = new URL(`${base}${path}`);
     if (route.query && input) for (const [k, v] of Object.entries(input)) if (v !== undefined) url.searchParams.set(k, String(v));
+    const timeoutMs = opts.timeoutMs ?? 15_000;
     const res = await doFetch(url, {
       method: route.method,
       headers: { Authorization: `Bearer ${opts.token}`, ...(route.body ? { "content-type": "application/json" } : {}), ...headers },
       body: route.body ? JSON.stringify(input ?? {}) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    }).catch((e: Error) => {
+      throw e.name === "TimeoutError" ? new Error(`the hub at ${base} did not answer within ${timeoutMs / 1000} s`) : e;
     });
     if (res.status === 204 || res.status === 304) return null;
     const data = await res.json().catch(() => ({}));
