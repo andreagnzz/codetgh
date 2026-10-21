@@ -776,7 +776,8 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   if (failed) process.exitCode = 1;
 }
 
-// Deny rules hold in every permission mode (docs/FACTS.md). Bare patterns match at any depth under the working directory.
+// Deny rules hold in every permission mode (docs/FACTS.md), but they match commands as written: a cheap first layer, not
+// a sandbox. The plugin's pre-bash hook checks the same paths and force pushes in more spellings.
 const DELEGATE_DENY = [
   "Read(.env*)",
   "Read(*.pem)",
@@ -847,7 +848,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         argv.push("--append-system-prompt", DELEGATE_PROMPT);
         if (!args.some((a) => a === "--permission-mode" || a.startsWith("--permission-mode="))) argv.push("--permission-mode", "auto");
         io.err(
-          `CodeTgh: this session does the requests ${accept.join(", ")} send on this project, in ${mode ?? "auto"} mode. Turn it off in the console, Delegations. Run it in a clone that holds no secrets.`,
+          `CodeTgh: this session does the requests ${accept.join(", ")} send on this project, in ${mode ?? "auto"} mode. Auto mode, the deny rules and CodeTgh's command check reduce the risk but do not isolate this machine: run it in a devcontainer or a dedicated clone without secrets. Turn it off in the console, Delegations.`,
         );
       }
       // Ctrl+C reaches claude too, which handles it: this process waits for it instead of leaving it on the terminal.

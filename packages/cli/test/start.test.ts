@@ -26,8 +26,10 @@ afterEach(() => {
   process.exitCode = 0;
 });
 
+let errors: string[] = [];
 async function start(args: string[]) {
-  const io = { out: () => {}, err: () => {}, stdin: Readable.from([""]) };
+  errors = [];
+  const io = { out: () => {}, err: (s: string) => errors.push(s), stdin: Readable.from([""]) };
   const keyring = { get: () => null, set: () => {}, delete: () => {} };
   process.exitCode = 0;
   await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "start", ...args]);
@@ -87,6 +89,8 @@ describe("--accept-requests-from: a delegate session", () => {
     expect(args.at(-1)).toBe("--foo");
     // The session-start hook reads the list from claude's environment and registers it on the hub.
     expect(accept).toBe("@andrea,@x");
+    // Said plainly at launch: the checks reduce the risk, they do not isolate.
+    expect(errors.join("\n")).toMatch(/do not isolate this machine: run it in a devcontainer or a dedicated clone/);
   });
 
   it("keeps the user's own permission mode", async () => {

@@ -266,6 +266,20 @@ async function preToolUse(input: Input) {
   };
 }
 
+// PreToolUse on Bash, delegate sessions only (codetgh start --accept-requests-from): no network, never "allow".
+// Exit 2 blocks the call and hands the reason to Claude, which replies "blocked: …" to the requester.
+async function preBash(input: Input) {
+  if (!process.env.CODETGH_ACCEPT_REQUESTS_FROM) return null;
+  const command = (input.tool_input as { command?: unknown } | undefined)?.command;
+  if (typeof command !== "string") return null;
+  const { delegateBlock } = await import("@codetgh/guard");
+  const reason = delegateBlock(command);
+  if (!reason) return null;
+  process.stderr.write(`CodeTgh delegate session: ${reason}. Do not retry another way; reply to the requester with "blocked: ${reason}".`);
+  process.exitCode = 2;
+  return null;
+}
+
 // Repository-relative path with forward slashes, or null outside the session's repository.
 async function repoPath(input: Input, state: State) {
   const toolInput = (input.tool_input ?? {}) as { file_path?: unknown; notebook_path?: unknown };
@@ -513,6 +527,7 @@ const handlers: Record<string, (input: Input) => Promise<unknown>> = {
   "user-prompt-submit": userPromptSubmit,
   "pre-tool-use": preToolUse,
   "pre-edit": preEdit,
+  "pre-bash": preBash,
   "post-edit": postEdit,
   inbox,
   stop,
