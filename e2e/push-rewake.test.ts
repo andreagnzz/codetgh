@@ -85,7 +85,7 @@ describe("push: rewake mode (opt-in)", () => {
 describe("push: rewake survives a failed poll", () => {
   it("backs off and polls again after a 502 from a proxy, then wakes the session", async () => {
     await allowRewake(["rewake"]);
-    await startSession(hub.url, team.sam.token, "sam-rw-502");
+    await startSession(hub.url, team.sam.token, "sam-rw-502", { repo: ACME_REPO });
     // A proxy in front of the hub that fails the first long poll, as one does while the hub restarts.
     let polls = 0;
     const proxy = createServer(async (req, res) => {
