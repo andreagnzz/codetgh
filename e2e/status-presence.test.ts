@@ -50,3 +50,22 @@ it("counts the unread messages the polling session can read, not those addressed
   // Without a session (the CLI), the person's whole inbox, as before.
   expect(await unread("")).toBe(1);
 });
+
+// An ended, unknown or stale session id must not fall back to the person's whole inbox, nor register the CLI agent.
+it("counts no unread for a session id that is not live, keeps the rest of the overview, and creates no agent", async () => {
+  const sess = (await startSession(hub.url, team.lea.token, "lea-gone", { repo: ACME_REPO })).agent_id ?? "";
+  await hub.db.update(agent).set({ endedAt: new Date() }).where(eq(agent.id, sess));
+  const malik = await mcpClient(hub.url, team.malik.token);
+  await call(malik, "send_message", { to: "@lea", kind: "note", body: "for any of Léa's sessions" });
+  await malik.close();
+  const before = (await hub.db.select().from(agent).where(eq(agent.userId, team.lea.userId))).length;
+  for (const id of ["lea-gone", "lea-never"]) {
+    const res = await status(team.lea.token, id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { unread: Record<string, number>; you: { handle: string }; agents: unknown[] };
+    expect(body.unread).toEqual({});
+    expect(body.you.handle).toBe("lea");
+    expect(Array.isArray(body.agents)).toBe(true);
+  }
+  expect((await hub.db.select().from(agent).where(eq(agent.userId, team.lea.userId))).length).toBe(before);
+});

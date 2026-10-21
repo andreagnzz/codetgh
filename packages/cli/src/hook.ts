@@ -250,6 +250,8 @@ async function sessionStart(input: Input) {
         ...(input.permission_mode && { mode: input.permission_mode }),
         ...(body.agent_id && { agent: body.agent_id }),
         projectless: !repo.fingerprint,
+        // Linked since an earlier start of this session: the other hooks must stop returning early.
+        unlinked: false,
       });
     // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
     const shown =

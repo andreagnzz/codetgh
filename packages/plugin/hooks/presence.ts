@@ -2,14 +2,17 @@ import type { EngineInterface, Register, SessionRateLimit } from "claude-code";
 
 type Status = { you: { handle: string }; agents: { handle: string; presence: string }[]; unread: Record<string, number> };
 
-// The Stop hook's rewake waiter listens this long (hooks.json timeout 3600 s); after it, only the mod can wake the session.
-const REWAKE_MS = 3_600_000;
+// The Stop hook's rewake waiter gives up after this (REWAKE_BUDGET_MS in hook.ts); after it, only the mod can wake the session.
+const REWAKE_MS = 3_540_000;
 const WAKES = 6;
 const WAKES_WINDOW_MS = 600_000;
 const HANDOFF =
   "CodeTgh: this session is close to its Claude usage limit and will stop soon. Write a CodeTgh handoff for the project teammates: where the work stands, what they can do meanwhile, and that this session stops soon.";
 
 let unread: number | undefined;
+// The count the session has been woken or run a turn for: polls alone never move it up, so a message the waiter
+// did not wake the session for (wake cap, error, the gap after its budget) still wakes it once the mod takes over.
+let seen: number | undefined;
 // Undefined while a main-loop turn runs.
 let idleSince: number | undefined;
 // The Stop hook arms its rewake waiter at the end of a turn: before the first one, nothing else listens.
@@ -29,12 +32,13 @@ function counts(s: Status) {
 
 // Fixed texts only: at most the unread count, never a peer's handle, subject or words.
 function submit($: EngineInterface, text: string, now: number) {
-  if (!rewake) return;
+  if (!rewake) return false;
   wakes = wakes.filter((t) => now - t < WAKES_WINDOW_MS);
-  if (wakes.length >= WAKES) return;
+  if (wakes.length >= WAKES) return false;
   wakes.push(now);
   // Not awaited: it resolves only once the turn starts. A refusal or a drop after an interrupt is not retried.
   $.prompt.submit({ text }).catch(() => {});
+  return true;
 }
 
 async function tell($: EngineInterface, url: string, token: string, text: string, ttl: number, note: string) {
@@ -93,26 +97,34 @@ async function limits($: EngineInterface, url: string, token: string, handle: st
 async function refresh($: EngineInterface, url: string, token: string) {
   let s: Status;
   let now: number;
-  let live: SessionRateLimit[];
+  let live: SessionRateLimit[] | undefined;
   try {
     now = await $.clock.now();
     // A window past its reset is a stale reading: no API response came since it reopened. No reading, no report.
+    // undefined: usage failed or gave no window, so the limit state stays as it is (a failure is no sign of being back).
     live = await $.session.usage().then(
-      (u) => u.rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now),
-      () => [],
+      (u) => (u.rateLimits.length ? u.rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now) : undefined),
+      () => undefined,
     );
     // Read on each poll: /clear and resume give the process a new session id.
     const session = encodeURIComponent(await $.session.id());
-    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}${usageQuery(live)}`, {
+    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}${usageQuery(live ?? [])}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     s = JSON.parse(res.text) as Status;
     const c = counts(s);
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
-    const before = unread ?? (waiter ? c.unread : 0);
-    if (c.unread > before && idleSince !== undefined && (!waiter || now - idleSince >= REWAKE_MS))
-      submit($, `CodeTgh: ${c.unread} new teammate messages. Read them with inbox_read.`, now);
+    // Read or expired messages lower the baseline, so a later one still counts as new.
+    const before = Math.min(seen ?? 0, c.unread);
+    seen = seen === undefined ? undefined : before;
+    if (
+      c.unread > before &&
+      idleSince !== undefined &&
+      (!waiter || now - idleSince >= REWAKE_MS) &&
+      submit($, `CodeTgh: ${c.unread} new teammate messages. Read them with inbox_read.`, now)
+    )
+      seen = c.unread;
     unread = c.unread;
     $.ui.status(`CodeTgh · ${c.online} online · ${c.unread} unread`);
   } catch {
@@ -121,7 +133,7 @@ async function refresh($: EngineInterface, url: string, token: string) {
     $.ui.status(undefined);
     return;
   }
-  await limits($, url, token, s.you.handle, now, live);
+  if (live) await limits($, url, token, s.you.handle, now, live);
 }
 
 export const register: Register = (on, options) => {
@@ -147,6 +159,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       idleSince = await $.clock.now();
       waiter = true;
+      seen = unread;
     }
     return next(e);
   });

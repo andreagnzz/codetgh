@@ -87,21 +87,20 @@ async function capacity(db: Db, teamId: string) {
   );
 }
 
-export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scope: "team" | "project"; limit: number }) {
+// me null: a /v1/status poll from a session that is not live, which can read no message.
+export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts: { scope: "team" | "project"; limit: number }) {
   requireMember(p);
-  const agents = ownProjectFirst(
-    await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me.projectId : undefined, limit: opts.limit }),
-    me,
-  );
-  const unread = await unreadSummary(db, p, me);
+  const listed = await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me?.projectId : undefined, limit: opts.limit });
+  const agents = me ? ownProjectFirst(listed, me) : listed;
+  const unread = me ? await unreadSummary(db, p, me) : { byKind: {}, blocking: [] };
   const cap = await capacity(db, p.teamId);
   return {
     team: free(p.teamName),
-    you: { handle: p.handle, agent: me.id, usage: cap.get(p.user.id)?.usage ?? null },
+    you: { handle: p.handle, agent: me?.id ?? null, usage: cap.get(p.user.id)?.usage ?? null },
     paused: p.paused,
     agents_paused: p.agentsPaused,
     agents: agents
-      .filter((r) => r.agent.id !== me.id)
+      .filter((r) => r.agent.id !== me?.id)
       .map((r) => ({
         id: r.agent.id,
         handle: r.handle,

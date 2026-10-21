@@ -118,16 +118,41 @@ test(
     reply = body({ note: 1 });
     await s.clock.advance(30 * MIN);
     expect(s.submitted).toEqual([]);
-    await s.clock.advance(31 * MIN);
+    // No turn ran since: the waiter did not wake the session (wake cap, error), so the mod does once the waiter is gone.
+    await s.clock.advance(30 * MIN);
+    expect(s.submitted).toEqual([WAKE(1)]);
+    reply = body({ note: 2 });
+    await s.clock.advance(30_000);
+    expect(s.submitted).toEqual([WAKE(1), WAKE(2)]);
+    // No rise, no wake.
+    await s.clock.advance(5 * MIN);
+    expect(s.submitted.length).toBe(2);
+    // Our fixed text with the count only: no handle, status or word from a peer.
+    for (const text of s.submitted) expect(text.replace(/\d+/g, "N")).toBe(WAKE(0).replace("0", "N"));
+  },
+);
+
+test(
+  "rewake mode: a message the waiter woke the session for does not wake it again, one in the last minute of the hour does",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({});
+    const s = stubs(on, () => ok(reply));
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    reply = body({ note: 1 });
+    await s.clock.advance(10 * MIN);
+    // The waiter woke the session for it: that turn saw it.
+    await turn($, "t2");
+    await s.clock.advance(60 * MIN);
     expect(s.submitted).toEqual([]);
+    // Between the waiter's budget (59 min) and the hour: nothing else listens.
+    await turn($, "t3");
+    await s.clock.advance(59 * MIN);
     reply = body({ note: 2 });
     await s.clock.advance(30_000);
     expect(s.submitted).toEqual([WAKE(2)]);
-    // No rise, no wake.
-    await s.clock.advance(5 * MIN);
-    expect(s.submitted.length).toBe(1);
-    // Our fixed text with the count only: no handle, status or word from a peer.
-    for (const text of s.submitted) expect(text.replace(/\d+/g, "N")).toBe(WAKE(0).replace("0", "N"));
   },
 );
 
@@ -274,6 +299,37 @@ test(
     expect(posts().length).toBe(4);
     expect(s.submitted.length).toBe(1);
     for (const r of s.requests) expect(r.headers?.Authorization).toBe("Bearer ctg_secret_token");
+  },
+);
+
+test(
+  "usage limit: a failed usage reading leaves the limit as it was, and tells the team nothing",
+  { options: { ...OPTIONS, push_mode: "rewake" } },
+  async ($, on) => {
+    let reading = true;
+    const s = stubs(
+      on,
+      (e) => {
+        if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+        if (e.method === "POST") return ok("{}");
+        return ok(body({}));
+      },
+      () => {
+        if (!reading) throw new Error("no usage");
+        return [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T05:00:00.000Z" }];
+      },
+    );
+    const posts = () => s.requests.filter((r) => r.method === "POST").map((r) => JSON.parse(r.body ?? "{}").text ?? r.url);
+    await start($);
+    await s.clock.advance(1);
+    expect(posts()).toEqual(["Hit the Claude usage limit, back around 05:00 UTC", "https://hub.example.com/v1/messages"]);
+    reading = false;
+    await s.clock.advance(30_000);
+    await s.clock.advance(30_000);
+    expect(posts().length).toBe(2);
+    reading = true;
+    await s.clock.advance(30_000);
+    expect(posts().length).toBe(2);
   },
 );
 

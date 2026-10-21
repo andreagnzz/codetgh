@@ -1255,13 +1255,27 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       });
       io.out(`codetgh: ${npm.stdout.trim() || "installed"}`);
       const plugin = await exec("claude", ["plugin", "marketplace", "update", "codetgh"], { timeout: 60_000 })
-        .then(() => exec("claude", ["plugin", "update", "codetgh@codetgh"], { timeout: 5 * 60_000 }))
+        .then(() => exec("claude", ["plugin", "update", "codetgh@codetgh", "--scope", "user"], { timeout: 5 * 60_000 }))
         .catch(() => {
           throw new Error(
-            "the plugin was not updated: run claude plugin marketplace update codetgh && claude plugin update codetgh@codetgh",
+            "the plugin was not updated: run claude plugin marketplace update codetgh && claude plugin update codetgh@codetgh --scope user",
           );
         });
       io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
+      // Without --scope, Claude Code 2.1.281+ updates only the most specific scope: each project or local install is updated in its folder.
+      const installs = await exec("claude", ["plugin", "list", "--json"], { timeout: 15_000 })
+        .then((r) => JSON.parse(r.stdout) as Array<{ id: string; scope?: string; projectPath?: string }>)
+        .catch(() => []);
+      for (const i of installs) {
+        if (i.id !== "codetgh@codetgh" || i.scope === "user" || !i.scope || !i.projectPath) continue;
+        const args = ["plugin", "update", "codetgh@codetgh", "--scope", i.scope];
+        const r = await exec("claude", args, { timeout: 5 * 60_000, cwd: i.projectPath }).catch(() => null);
+        io.out(
+          r
+            ? `plugin (${i.scope}, ${i.projectPath}): ${r.stdout.trim() || "updated"}`
+            : `not updated: run claude ${args.join(" ")} in ${i.projectPath}`,
+        );
+      }
       if (!(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
       // Rewake as soon as the team allows it; an unreachable hub leaves the push mode as it is.
       const who = token ? await whoami(url, token).catch(() => null) : null;
