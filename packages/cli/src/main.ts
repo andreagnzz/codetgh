@@ -834,12 +834,10 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       if (accept && !accept.every((h) => /^@[a-z0-9-]{1,40}$/.test(h)))
         throw new Error("--accept-requests-from takes @handles separated by commas, such as @andrea,@alex");
       const mode = args.find((a, i) => a.startsWith("--permission-mode=") || args[i - 1] === "--permission-mode");
-      if (
-        accept &&
-        (mode?.endsWith("bypassPermissions") ||
-          args.some((a) => a === "--dangerously-skip-permissions" || a === "--allow-dangerously-skip-permissions"))
-      )
-        throw new Error("a delegate session keeps Claude Code's permission checks: use auto (the default here), acceptEdits or default");
+      // Bypass only when the receiver typed it; the deny rules and CodeTgh's command check still apply there (FACTS.md).
+      const bypass =
+        mode?.endsWith("bypassPermissions") ||
+        args.some((x) => x === "--dangerously-skip-permissions" || x === "--allow-dangerously-skip-permissions");
       // Flag settings sit above user settings, where setup leaves the plugin off.
       const settings = { enabledPlugins: { "codetgh@codetgh": true }, ...(accept && { permissions: { deny: DELEGATE_DENY } }) };
       const argv = ["--settings", JSON.stringify(settings)];
@@ -847,7 +845,11 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         argv.push("-n", `codetgh · ${basename(process.cwd())}`);
       if (accept) {
         argv.push("--append-system-prompt", DELEGATE_PROMPT);
-        if (!args.some((a) => a === "--permission-mode" || a.startsWith("--permission-mode="))) argv.push("--permission-mode", "auto");
+        if (!mode && !bypass) argv.push("--permission-mode", "auto");
+        if (bypass)
+          io.err(
+            "CodeTgh: bypassPermissions: an allowed teammate can make this session run any command here; the deny rules and CodeTgh's command check still apply. Run it in a devcontainer or a dedicated clone.",
+          );
         io.err(
           `CodeTgh: this session does the requests ${accept.join(", ")} send on this project, in ${mode ?? "auto"} mode. Auto mode, the deny rules and CodeTgh's command check reduce the risk but do not isolate this machine: run it in a devcontainer or a dedicated clone without secrets. Turn it off in the console, Delegations.`,
         );

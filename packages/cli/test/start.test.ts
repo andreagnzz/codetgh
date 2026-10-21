@@ -104,8 +104,6 @@ describe("--accept-requests-from: a delegate session", () => {
 
   it("refuses a handle that is not one, and stays a plain session without the option", async () => {
     await expect(start(["--accept-requests-from", "andrea;rm"])).rejects.toThrow(/@handle/);
-    // A delegate session never skips permission checks: a peer's request would then run unreviewed.
-    await expect(start(["--accept-requests-from", "@andrea", "--permission-mode", "bypassPermissions"])).rejects.toThrow(/auto/);
     const { args, accept } = await start([]);
     expect(args).not.toContain("--permission-mode");
     expect(args).not.toContain("--append-system-prompt");
