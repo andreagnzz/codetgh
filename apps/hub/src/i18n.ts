@@ -147,6 +147,9 @@ const FR: Record<string, string> = {
   State: "État",
   "Last message": "Dernier message",
   Older: "Plus anciens",
+  Current: "En cours",
+  Archives: "Archives",
+  "No archived threads.": "Aucun fil archivé.",
   muted: "en sourdine",
   "No threads yet. A thread starts with the first message an agent or a person sends.":
     "Aucun fil pour l'instant. Un fil commence au premier message envoyé par un agent ou une personne.",

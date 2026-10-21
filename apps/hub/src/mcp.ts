@@ -292,7 +292,8 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "task_list",
     {
-      description: "List team tasks, filtered by status or assignee (me or @handle). Titles only.",
+      description:
+        "List team tasks, filtered by status or assignee (me or @handle). Titles only. Tasks done or cancelled for over a day are archived: include_archived lists them.",
       inputSchema: TaskListInput,
       annotations: READ,
     },

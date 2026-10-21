@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, not, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
@@ -51,10 +51,10 @@ import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
-import { ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
+import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { createSlackCode } from "../domain/slack.js";
-import { createTask, updateTask } from "../domain/tasks.js";
+import { archivedTask, createTask, updateTask } from "../domain/tasks.js";
 import {
   findInvitation,
   inviteMember,
@@ -69,7 +69,7 @@ import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { Action, Bypass, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
+import { Action, ArchiveTabs, Bypass, InvitePage, Layout, Line, People, Pill, Result, Table, toneOf, When } from "./pages.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -354,6 +354,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const _ = tr(c);
     const mine = (await participantThreads(p)).map((r) => r.id);
     const before = c.req.query("before");
+    const archived = c.req.query("archived") === "1";
     const rows = await db
       .select()
       .from(thread)
@@ -361,6 +362,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         and(
           eq(thread.teamId, p.teamId),
           visibleThreads(p, mine),
+          archived ? archivedThread() : not(archivedThread()),
           before && !Number.isNaN(Date.parse(before)) ? lt(thread.lastMessageAt, new Date(before)) : undefined,
         ),
       )
@@ -371,6 +373,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Threads",
       <>
+        <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} />
         <Table
           head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
           rows={rows.map((t) => [
@@ -381,10 +384,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
             <When at={t.lastMessageAt} lang={_.lang} />,
           ])}
-          empty={_("No threads yet. A thread starts with the first message an agent or a person sends.")}
+          empty={
+            archived ? _("No archived threads.") : _("No threads yet. A thread starts with the first message an agent or a person sends.")
+          }
         />
         {rows.length === PAGE && last && (
-          <a href={`/console/threads?before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}>{_("Older")}</a>
+          <a href={`/console/threads?${archived ? "archived=1&" : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}>
+            {_("Older")}
+          </a>
         )}
       </>,
     );
@@ -1407,17 +1414,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/tasks", async (c) => {
     const p = c.get("principal");
+    const archived = c.req.query("archived") === "1";
     const rows = await db
       .select({ task, handle: membership.handle })
       .from(task)
       .leftJoin(membership, and(eq(membership.userId, task.assigneeUserId), eq(membership.teamId, task.teamId)))
-      .where(eq(task.teamId, p.teamId))
+      .where(and(eq(task.teamId, p.teamId), archived ? archivedTask() : not(archivedTask())))
       .orderBy(desc(task.updatedAt))
       .limit(PAGE * 4);
     return page(
       c,
       "Tasks",
       <>
+        <ArchiveTabs base="/console/tasks" archived={archived} lang={tr(c).lang} />
+        {archived && rows.length === 0 && <p>{tr(c)("Nothing yet.")}</p>}
         {TASK_STATUSES.map((s) => {
           const of = rows.filter((r) => r.task.status === s);
           return (
