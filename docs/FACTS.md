@@ -357,6 +357,27 @@ Limits: `/v1/status` counts the unread of the token's member (messages to the pe
 
 So the presence mod sends `GET /v1/status?session_id=<id>` every 30 s and the hub refreshes `last_seen_at` of that agent only when it is the caller's own (same team and user), creating none. Sessions in hooks mode without the mod stay activity-based (90 s online, 15 min idle).
 
+### Mods: start a turn, plan limits, turn events (docs read 2026-10-21, Claude Code 2.1.305)
+
+Sources: [API](https://code.claude.com/docs/en/plugins/mods/api) § Start a turn from a background job, § Calls and background work after the user interrupts a turn; [Reference](https://code.claude.com/docs/en/plugins/mods/reference) § Mods API methods, § Turns, § Session, § Limits; [Events](https://code.claude.com/docs/en/plugins/mods/events) § Follow a turn; [Test](https://code.claude.com/docs/en/plugins/mods/test) § Look up what a stub returns; [claude-code.d.ts](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts) (the GitHub copy says "Written by Claude Code 2.1.277").
+
+| Fact | Status | Source |
+| --- | --- | --- |
+| `$.prompt.submit({ text })` waits until the session is idle, then starts a new turn; it resolves when that turn starts, so a handler running while Claude works must not `await` it | doc | API § Start a turn from a background job |
+| Claude reads the text after a sentence naming the mod as sender (`e.origin` `{ kind: 'plugin', name }`); `asUser: true` drops that sentence | doc · doc (types) | API § Start a turn; Reference § Mods API methods (`$.prompt`); types `prompt.submit` |
+| After the user interrupts a turn (Esc), `$.prompt.submit` resolves `{ drop: 'the session was stopped and nobody has sent input since' }` until the next input, and a queued one resolves `{ drop: '…removed from the queue before it ran' }`; nothing retries it | doc | API § What refused calls return |
+| Minimum Claude Code version for `$.prompt.submit`: no version is given; the method is in the types written by 2.1.277 and in the Reference (CLI as of v2.1.290). The interruption handling above needs no version for `$.prompt.submit` (others: v2.1.304) | doc · **non vérifié** (exact minimum) | API § Calls and background work after the user interrupts; types header |
+| `$.session.usage()` returns `{ startedAt, context, rateLimits, cost }`; `rateLimits` is a list of `{ kind, percentUsed, resetsAt? }` | doc | Reference § Mods API methods (`$.session`) |
+| `kind` is `five_hour`, `seven_day`, or a gateway's `spend_limit`; `percentUsed` is 0 to 100 with at most one decimal (past 100 only on an exceeded spend limit); `resetsAt` is an ISO 8601 timestamp, optional | doc (types) | types `SessionRateLimit` |
+| `rateLimits` holds the windows the last API response reported, and is empty off a subscription or before the first reading: after a limit the reading stays at 100 until a new response | doc (types) · **non vérifié** (value once the limit blocks the model) | types `SessionUsage.rateLimits` |
+| `session.measure` fires after each turn and when a plan limit's percent moves a whole point | doc | Reference § Session |
+| `turn.start` fires when a turn begins (`{ text, turnId }`); a subagent's run raises none | doc · doc (types) | Reference § Turns; types `TurnStartInput`, `TurnCompleteFields.turnId` |
+| `turn.complete` fires when a turn ends, including an interrupted one (`isAborted`, `reason` `answer` · `aborted` · `refusal` · `error`); a subagent's turn fires it with `agentId` set | doc · doc (types) | Events § Follow a turn; types `TurnCompleteInput` |
+| No method says "the session is idle": idle = no main-loop `turn.start` without its `turn.complete` | design | from the two rows above |
+| `claude plugin test` stubs: `prompt.submit` `($, e) => ({ text: e.text })`, `turn.start` `($, e) => ({ turnId: e.turnId })`, `turn.complete` `() => ({ text: '' })`; a mods API call with no stub rejects (`no implementation for …`) | doc · **tested** | Test § Look up what a stub returns; `packages/plugin/tests/presence.test.ts` |
+
+So the presence mod tracks the last main-loop turn end, wakes an idle session with a fixed `$.prompt.submit` text (never peer text, not awaited, at most 6 per 10 min) when the unread count rises after the rewake waiter's window (or at once in hooks mode), and reads `rateLimits` on each status poll: a handoff prompt at 90 %, then hub status and team notes at 100 % and when the window resets. Every call fails open.
+
 ### Production run after the 2026-10-16 deploy (Claude Code 2.1.301, Linux, plugin 0.3.0)
 
 Real sessions on the team's hub, in a linked repository, plugin installed from the hub's marketplace (user and project scope):
