@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { RESERVED_HANDLE, requireAdmin } from "./admin.js";
+import { RESERVED_HANDLE, requireAdmin, requireHumanMember } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -138,6 +138,12 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
     throw new HubError("E_INVALID", "a handle uses lowercase letters, digits and dashes (40 at most)");
   if (RESERVED_HANDLE.test(handle)) throw new HubError("E_INVALID", "handles starting with bridge- or a2a- are reserved");
   await db.transaction(async (tx) => {
+    const [m] = await tx
+      .select({ userId: membership.userId })
+      .from(membership)
+      .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)));
+    if (!m) throw new HubError("E_NOT_FOUND", "member not found");
+    await requireHumanMember(tx, p.teamId, m.userId);
     const [taken] = await tx
       .select({ id: membership.id })
       .from(membership)

@@ -263,7 +263,8 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
     if (await several(ofToken)) guess = false;
     else row = await pick(ofToken);
   }
-  if (!row && guess && !(await several(live))) row = await pick(live);
+  // Another token's delegate session would let this caller read and ack its authorized requests: name it or get none.
+  if (!row && guess && !(await several(live))) row = await pick(and(live, isNull(agent.acceptRequestsFrom)));
   if (!row) {
     if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
     const kind = p.auth === "oauth" ? "claude-ai" : "other";

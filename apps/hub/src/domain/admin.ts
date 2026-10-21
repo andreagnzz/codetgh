@@ -12,6 +12,16 @@ const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/;
 // Handles are addresses (@handle): lowercase letters, digits and dashes; bridge- and a2a- belong to the hub's own members.
 export const RESERVED_HANDLE = /^(bridge|a2a)-/;
 
+// The hub's own members are known by their agent's kind (an external A2A agent, a bridge), not by a handle.
+export async function requireHumanMember(db: Db, teamId: string, userId: string) {
+  const [system] = await db
+    .select({ id: agent.id })
+    .from(agent)
+    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), inArray(agent.kind, ["a2a", "bridge"])))
+    .limit(1);
+  if (system) throw new HubError("E_FORBIDDEN", "a system member (a2a-, bridge-) keeps its handle and role");
+}
+
 export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";
 
 export function requireAdmin(p: Principal) {
@@ -248,7 +258,7 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
     if ((m.role === "owner" || role === "owner") && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes owners");
     if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
-    if (RESERVED_HANDLE.test(m.handle)) throw new HubError("E_FORBIDDEN", "a system member (a2a-, bridge-) keeps its role");
+    await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
   });

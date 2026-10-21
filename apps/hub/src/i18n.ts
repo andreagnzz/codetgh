@@ -54,6 +54,8 @@ const FR: Record<string, string> = {
   Continue: "Continuer",
   "Type the 8-letter code your terminal shows.": "Tape le code de 8 lettres affiché dans ton terminal.",
   Machine: "Machine",
+  "typed by whoever started this request, so it proves nothing": "tapé par la personne qui a lancé la demande, donc ça ne prouve rien",
+  Started: "Lancée",
   "Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.":
     "N'approuve que si tu viens de lancer codetgh dans ton propre terminal et qu'il affiche ce code. Il recevra un jeton personnel à ton nom.",
   Approve: "Approuver",

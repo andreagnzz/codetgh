@@ -28,7 +28,7 @@ import {
 } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie } from "hono/cookie";
@@ -42,7 +42,7 @@ import { type Auth, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
-import { project, team } from "./db/schema.js";
+import { membership, project, team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
 import {
   type Agent,
@@ -293,6 +293,12 @@ export function createApp({
       takeIp(c);
       const approved = device.poll((await parse(c, DeviceTokenInput)).device_code);
       if (!approved) return c.json({ status: "pending" });
+      // An approver removed from the team since gets nothing.
+      const [active] = await db
+        .select({ id: membership.id })
+        .from(membership)
+        .where(and(eq(membership.userId, approved.userId), eq(membership.teamId, approved.teamId), eq(membership.status, "active")));
+      if (!active) throw new HubError("E_FORBIDDEN", "the person who approved this sign-in is no longer in the team");
       // The token exists only from here: created once, for the person who approved, like the console's.
       const { id, token } = await createPersonalToken(db, approved);
       await db.transaction((tx) =>
