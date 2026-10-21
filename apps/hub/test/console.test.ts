@@ -4,8 +4,9 @@ import { membership, message, team as teamTable } from "../src/db/schema.js";
 import { createExternalAgent } from "../src/domain/a2a.js";
 import { changeRole } from "../src/domain/admin.js";
 import { verifyChain } from "../src/domain/audit.js";
+import { bridgeAuthor } from "../src/domain/bridges.js";
 import { contextPacket } from "../src/domain/overview.js";
-import { createInvitation } from "../src/domain/teams.js";
+import { createInvitation, setMemberHandle } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -115,6 +116,25 @@ describe("roles", () => {
       .from(membership)
       .where(eq(membership.id, m?.id ?? ""));
     expect(after?.role).toBe("guest");
+  });
+
+  it("refuses to rename an a2a or bridge member, and keeps a renamed one out of role changes", async () => {
+    const p = await principalForToken(hub.db, team.lea.token);
+    if (!p) throw new Error("setup");
+    const { handle } = await createExternalAgent(hub.db, p, "Renamed bot");
+    const bridge = await bridgeAuthor(hub.db, p.teamId, "GitHub");
+    const members = await hub.db.select().from(membership).where(eq(membership.teamId, p.teamId));
+    const a2a = members.find((m) => m.handle === handle.slice(1));
+    const gh = members.find((m) => m.userId === bridge.p.user.id);
+    for (const m of [a2a, gh]) {
+      await expect(setMemberHandle(hub.db, p, m?.id ?? "", `plain-${m?.handle.length}`)).rejects.toThrow("system member");
+      // A handle changed before this check, or by hand: the member's kind still holds, not its handle.
+      await hub.db
+        .update(membership)
+        .set({ handle: `legacy-${m?.handle}` })
+        .where(eq(membership.id, m?.id ?? ""));
+      await expect(changeRole(hub.db, p, m?.id ?? "", "admin")).rejects.toThrow("system member");
+    }
   });
 });
 
