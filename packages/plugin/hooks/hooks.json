@@ -124,7 +124,7 @@
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hook.js", "rewake"],
             "asyncRewake": true,
-            "timeout": 600
+            "timeout": 3600
           }
         ]
       }

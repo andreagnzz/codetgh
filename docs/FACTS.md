@@ -39,7 +39,7 @@ Environment for phase 0: Claude Code **2.1.296** (`claude --version`), Node 24.2
 | Default hook timeout 600 s (30 s on UserPromptSubmit); SessionEnd hooks share a 1.5 s budget, raised to the largest per-hook `timeout` in settings files (≤ 60 s) or by `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Timeouts on plugin-provided hooks do not raise it, so the plugin's session-end runs in 1.5 s whatever its `timeout` | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § SessionEnd |
 | `claude plugin validate` (2.1.301) accepts a fractional hook `timeout` such as 1.5 and flags a non-number or a value ≤ 0 as an ignored entry | Local run of `claude plugin validate packages/plugin` |
 | `onFailure` defaults to `continue`; `block` needs 2.1.295+. CodeTgh never sets it | [Hooks](https://code.claude.com/docs/en/hooks) |
-| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed) | [Hooks](https://code.claude.com/docs/en/hooks) § Run hooks in the background, § Limitations |
+| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed). The page states no maximum `timeout` (checked 2026-10-20, 2.1.304; only the SessionEnd budget is capped, at 60 s), so the rewake hook uses 3600 s and the waiter listens 3540 s; the upper bound is non vérifié. Real run: P3b below | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § Run hooks in the background, § Limitations |
 | A string `userConfig` option can take `options` (a picker in `/config`), needs 2.1.271+; option values reach hooks as `CLAUDE_PLUGIN_OPTION_<KEY>` (key uppercased) | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) § Limit a field to fixed options |
 | `claude plugin validate` checks `.mcp.json` entries and `${user_config.KEY}` references from 2.1.281 | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) |
 
@@ -131,6 +131,22 @@ Result:
 - `CLAUDE_PLUGIN_OPTION_PUSH_MODE` set in the environment reached the hook with `--plugin-dir` (no `/config` value saved).
 
 Notes: Claude Code labels the wake "Stop hook blocking error"; the envelope survives intact. In `claude -p` the session must stay open (stream-json input) for the waiter to live. The run also revealed a timestamp bug unrelated to push (sessions not in UTC), fixed separately.
+
+### P3b: rewake wakes a session idle for 13 minutes (2026-10-20, Claude Code 2.1.304, Linux)
+
+Hook `timeout` 3600, waiter budget 3540 s. Local test hub (`apps/hub/test/harness.ts`, rewake allowed for the team), throwaway tokens for Sam and Malik, installed `codetgh` plugin disabled for the run.
+
+```bash
+CLAUDE_PLUGIN_OPTION_CODETGH_URL=… CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN=<Sam> CLAUDE_PLUGIN_OPTION_PUSH_MODE=rewake \
+  claude --plugin-dir packages/plugin --model haiku --settings '{"enabledPlugins":{"codetgh@codetgh":false}}'   # interactive, in tmux
+# prompt: "Reply with the single word READY"; then no input
+# 13 min after the turn ended: POST /v1/messages as Malik → @sam, kind question, "what is 2+3?"
+```
+
+Result:
+- Turn 1 answered `READY` and ended at 21:07:46Z; the Stop hook recorded the waiter in the session state file.
+- Malik's message was stored at 21:20:52Z, 13 min 6 s into the idle wait, past the old 570 s budget. The waiter exited 2 at 21:21:40Z and the idle session started a turn by itself (`Stop hook feedback`), answering "2+3 is 5" and offering to reply and ack. The 48 s delay came from the machine running the full test suite at the same time (the POST alone took 12 s, and the woken turn's UserPromptSubmit hook hit its 3 s timeout).
+- After `tmux kill-session`, the waiter started by the second turn's Stop exited on its own within seconds.
 
 ### Point 6: a plugin subagent and the session's MCP tools (2026-10-13, Claude Code 2.1.296, Linux)
 
