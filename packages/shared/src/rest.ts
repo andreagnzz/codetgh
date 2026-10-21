@@ -14,7 +14,7 @@ import {
 } from "./index.js";
 
 // The /v1 REST API in one table: the hub validates with these schemas, /v1/openapi.json and @codetgh/sdk are built from it.
-const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
+export const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
 // permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes.
 export const PromptQuery = z.object({
   session_id: z.string().max(200),
@@ -146,6 +146,8 @@ export const DeviceTokenOutput = z.discriminatedUnion("status", [
   z.object({ status: z.literal("approved"), token: z.string() }),
 ]);
 // Typed by a person: case, spaces and the dash do not matter.
+// Console: attach a session started outside a repository to one of the team's projects.
+export const AgentProjectForm = z.object({ project_id: z.string().min(1).max(64) });
 export const UserCodeForm = z.object({
   user_code: z
     .string()
@@ -273,7 +275,13 @@ export const REST_ROUTES = {
     body: DeviceTokenInput,
     output: DeviceTokenOutput,
   },
-  status: { method: "GET", path: "/v1/status", summary: "Who is online, your unread counts and the live claims", output: StatusOutput },
+  status: {
+    method: "GET",
+    path: "/v1/status",
+    summary: "Who is online, your unread counts and the live claims; session_id keeps that session of yours online",
+    query: SessionQuery,
+    output: StatusOutput,
+  },
   pause: {
     method: "POST",
     path: "/v1/me/pause",

@@ -15,6 +15,7 @@ import {
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
+  SessionQuery,
 } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
@@ -44,6 +45,7 @@ import {
   resolveAgent,
   setAgentsPaused,
   setPermissionMode,
+  touchSession,
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
 import { Bus } from "./domain/bus.js";
@@ -472,6 +474,8 @@ export function createApp({
 
   v1.get("/status", async (c) => {
     const p = c.get("principal");
+    const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
+    if (sessionId && (await touchSession(db, p, sessionId))) bus.emit("presence", { teamId: p.teamId });
     return c.json(await teamOverview(db, p, await restAgent(p, undefined), { scope: "team", limit: 50 }));
   });
 

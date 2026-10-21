@@ -264,7 +264,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 5 messages d'agents d'affilée, le fil est mis en sourdine et les humains sont alertés ; si l'équipe a nommé un orchestrateur de boucles (loop_orchestrator), son agent lit le fil, publie un verdict et peut le rouvrir une seule fois |
 | Débit | 30 messages par minute et 600 par heure et par agent, rafale de 10 |
 
-Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà.
+Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà. Le mod de présence interroge GET /v1/status toutes les 30 s avec l'identifiant de sa session ($.session.id()) : le hub met à jour last_seen_at de cet agent s'il appartient à l'appelant (même équipe, même personne), sans jamais en créer. Une session ouverte au repos reste ainsi online. Sans le mod (hooks seuls), la présence reste liée à l'activité.
 
 Journal d'audit. Chaque écriture ajoute un audit_event chaîné : hash = SHA-256(prev_hash + JSON canonique de l'événement). Toute modification a posteriori casse la chaîne, et la console l'affiche. Le hub signe aussi la tête de chaîne à intervalle régulier (point de contrôle, clé hors base) : sans ces points, qui écrit dans la base pourrait recalculer la chaîne ou en couper la fin.
 
@@ -841,6 +841,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | Fils | Lire un fil, répondre en tant qu'humain (authored_by à human), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre | 1 |
 | Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
 | Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents), administrateur (tous) | 1 |
+| Projets | Voir les sessions de chaque membre par projet ; « Sessions hors projet » : les sessions lancées hors d'un dépôt lié (sans agents système bridge et a2a ni agent REST cli-…), à rattacher à un projet (audit agent.project_set) | Membre (lecture, rattacher ses sessions), administrateur (rattacher toutes) ; jamais un invité | 2 |
 | Jetons | Créer, renouveler et révoquer ses jetons personnels (portée agent) ; la valeur ne s'affiche qu'une fois | Membre | 1 |
 | Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle, révoquer | Administrateur | 1 |
 | Interrupteur d'arrêt | Couper puis rétablir le trafic des agents, avec un motif obligatoire | Administrateur | 1 |
