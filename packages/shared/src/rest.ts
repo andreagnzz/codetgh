@@ -32,6 +32,8 @@ export const SessionStarted = z.object({
   // Unlinked: true when this caller may link the repository by sending its repo_name.
   can_link: z.boolean().optional(),
   status_line: z.string().optional(),
+  // The session's project name, null outside a project.
+  project: z.string().nullable().optional(),
 });
 export const SessionEndInput = z.object({ session_id: z.string().min(1).max(200) });
 export const PreEditDecision = z.object({ decision: z.enum(["warn", "ask"]), reason: z.string() });
@@ -291,6 +293,7 @@ export const REST_ROUTES = {
     method: "GET",
     path: "/v1/stream",
     summary: "Server-sent events: one `message` event per received message, ids only; resume with Last-Event-ID",
+    query: SessionQuery,
     output: StreamEvent,
     sse: true,
   },

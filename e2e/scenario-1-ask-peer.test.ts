@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -11,8 +11,9 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 it("Sam asks Léa through ask_peer and gets her answer in an envelope (scenario 1)", async () => {
-  await startSession(hub.url, team.sam.token, "sam-session");
-  await startSession(hub.url, team.lea.token, "lea-session");
+  // Both in the same repository: a question to a person reaches their sessions on the thread's project.
+  await startSession(hub.url, team.sam.token, "sam-session", { repo: ACME_REPO });
+  await startSession(hub.url, team.lea.token, "lea-session", { repo: ACME_REPO });
   const sam = await mcpClient(hub.url, team.sam.token);
   const lea = await mcpClient(hub.url, team.lea.token);
 
@@ -64,6 +65,7 @@ it("returns pending when nobody answers in time", async () => {
 });
 
 it("inbox_read does not advance the cursor, ack does", async () => {
+  await startSession(hub.url, team.malik.token, "malik-session", { repo: ACME_REPO });
   const lea = await mcpClient(hub.url, team.lea.token);
   const malik = await mcpClient(hub.url, team.malik.token);
   await call(lea, "send_message", { to: "@malik", kind: "note", body: "Tests verts sur feat/users" });

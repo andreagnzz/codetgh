@@ -255,6 +255,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | --- | --- |
 | Garantie | Au moins une fois ; le récepteur dédoublonne par id |
 | Ordre | seq croissant par boîte de réception et par fil ; pas d'ordre global |
+| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. La console et le CLI de la personne (codetgh inbox) montrent tout |
 | Curseur | Un curseur de lecture par agent, distinct du page_token de pagination : inbox_read ne l'avance pas, ack l'avance |
 | États | queued, delivered (première lecture), read (accusé), puis accepted, declined ou done pour une request |
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
@@ -513,6 +514,7 @@ Les hooks utilisent la forme exec (command et args) : elle se comporte pareil so
 | Événement | Filtre | Délai | Rôle | Hub injoignable |
 | --- | --- | --- | --- | --- |
 | SessionStart | startup, resume, clear, compact | 5 s | Enregistre ou reprend l'agent, injecte le paquet de contexte, lance le démon si le mode de poussée l'exige. Dans un dépôt sans projet, n'envoie que l'empreinte ; si le hub répond can_link (membre, administrateur ou propriétaire non mis en quarantaine, auto_link_projects actif), un second appel envoie le nom du dépôt et la branche, et le hub crée le projet ; sinon une ligne dit de demander codetgh project new à un administrateur | Un seul avertissement, puis silence |
+| CwdChanged, DirectoryAdded | tous | 3 s | Une session enregistrée hors de tout dépôt rejoint le premier dépôt avec origin où elle entre (cd, /add-dir), par le même enregistrement que SessionStart : l'empreinte d'abord, puis le nom et la branche si le hub répond can_link ; une ligne le dit. Une session liée ne change plus de projet ; un invité dans un dépôt sans projet reçoit la ligne qui dit de demander à un administrateur | Rien ne change |
 | UserPromptSubmit | tous | 3 s | Injecte les messages non lus (5 au plus, blocking d'abord) | Rien n'est injecté |
 | PreToolUse | Edit, Write, MultiEdit, NotebookEdit | 3 s | Interroge les réservations, pose une réservation intent, ajoute du contexte (warn) ou répond ask selon claims.enforcement, et ne répond rien sans conflit | Aucune décision : le flux normal des permissions s'applique |
 | PreToolUse | Tous les outils du hub (matcher mcp__plugin_codetgh_hub__.*) | 3 s | Cherche des secrets dans les arguments texte (secretlint, sans réseau) et refuse l'appel (deny) s'il en trouve | Le contrôle est local : il continue de s'appliquer |
