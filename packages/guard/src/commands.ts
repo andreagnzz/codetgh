@@ -4,12 +4,13 @@
 // itself, an alias, a file written then run). It narrows what a request can do, it does not isolate: run delegate
 // sessions in a devcontainer or a dedicated clone.
 
-const EDGE = String.raw`(?:^|[\s=:<>/(~])`;
+// Glob characters (*?[]) count as part of a name, so cat *.pem and cat .env* are seen; names match in any case.
+const EDGE = String.raw`(?:^|[\s=:<>/(~*?\]])`;
 const END = String.raw`(?=$|[\s;|&)<>/])`;
 const SECRET_PATHS = [
-  new RegExp(`${EDGE}\\.env[\\w.-]*${END}`),
-  new RegExp(String.raw`[\w-]\.(?:pem|key)${END}`),
-  new RegExp(`${EDGE}\\.(?:ssh|aws)${END}`),
+  new RegExp(`${EDGE}\\.env[\\w.*?[\\]-]*${END}`, "i"),
+  new RegExp(String.raw`[\w*?\]-]\.(?:pem|key)${END}`, "i"),
+  new RegExp(`${EDGE}\\.(?:ssh|aws)${END}`, "i"),
 ];
 
 // a -f cluster (-f, -fu), --force, --force-with-lease, --force-if-includes, or a +refspec (+main, +HEAD:main).
@@ -23,9 +24,11 @@ const DYNAMIC = [
   /\b(?:ba|z|da|k)?sh\s+(?:-\w+\s+)*-c\s+\S*[^\n]*[$`]/,
 ];
 
-// What the shell would see once it removed quoting: $'…' and "…" quotes, backslash escapes, ${HOME} and $HOME.
+// What the shell would see once it removed quoting: line continuations, $'…' and "…" quotes, backslash escapes,
+// ${HOME} and $HOME.
 const normalize = (command: string) =>
   command
+    .replace(/\\\r?\n/g, "")
     .replace(/\$'/g, "'")
     .replace(/\\([\s\S])/g, "$1")
     .replace(/['"]/g, "")
