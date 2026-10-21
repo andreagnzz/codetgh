@@ -7,6 +7,7 @@ import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, not, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import type { Auth } from "../auth.js";
@@ -158,7 +159,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!(e instanceof HubError)) throw e;
     return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
   });
-  for (const section of ["/tasks", "/memory", "/claims"])
+  for (const section of ["/tasks", "/memory", "/claims", "/projects"])
     consoleApp.use(`${section}/*`, async (c, next) => {
       requireMember(c.get("principal"));
       await next();
@@ -170,6 +171,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return Object.assign((s: string) => t(lang, s), { lang });
   };
   // Links keep the project filter only once it names a project of the viewer's team (the pages that filter check it).
+  const kept = (c: Context<Env>) => {
+    const q = c.req.query("project") ?? "";
+    return /^[\w-]{1,64}$/.test(q) ? q : undefined;
+  };
+  const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
+  // A guest never sees the list of the team's projects.
   const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
     c.html(
       <Layout
@@ -178,13 +185,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         title={t(tr(c).lang, title)}
         path={c.req.path}
         lang={tr(c).lang}
-        filter={filter}
-        keep={filter ? filter.selected : /^[\w-]{1,64}$/.test(c.req.query("project") ?? "") ? c.req.query("project") : undefined}
+        filter={c.get("principal").role === "guest" ? undefined : filter}
+        keep={filter ? filter.selected : kept(c)}
       >
         {body as never}
       </Layout>,
     );
   // ?project=: one of the team's projects, or none; anything else, another team's project included, shows them all.
+  // Without ?project=, the browser's last choice (project cookie) applies, checked the same way.
   const projectFilter = async (c: Context<Env>): Promise<ProjectFilter> => {
     const projects = await db
       .select({ id: project.id, name: project.name })
@@ -192,7 +200,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(eq(project.teamId, c.get("principal").teamId))
       .orderBy(asc(project.name));
     const q = c.req.query("project");
-    return { projects, selected: q === "none" || projects.some((pr) => pr.id === q) ? q : undefined };
+    const id = q ?? getCookie(c, "project");
+    const selected = id === "none" || projects.some((pr) => pr.id === id) ? id : undefined;
+    // An explicit choice is remembered; any other value, All projects (?project=) included, forgets it.
+    const secure = config.publicUrl.startsWith("https:");
+    if (q !== undefined && selected)
+      setCookie(c, "project", selected, { path: "/console", maxAge: 365 * 86400, httpOnly: true, sameSite: "Lax", secure });
+    else if (q !== undefined) deleteCookie(c, "project", { path: "/console", secure });
+    return { projects, selected };
   };
   const onProject = (col: typeof thread.projectId | typeof task.projectId, f: ProjectFilter) =>
     f.selected === "none" ? isNull(col) : f.selected ? eq(col, f.selected) : undefined;
@@ -416,7 +431,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <Table
         head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
         rows={of.map((t) => [
-          <a href={`/console/threads/${t.id}`}>{t.id}</a>,
+          <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
           _(t.kind),
           t.subject ?? "",
           t.agentStreak,
@@ -483,6 +498,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/threads/:id", async (c) => {
     const { t, adminRead } = await loadThread(c);
     const p = c.get("principal");
+    const project = kept(c);
     const rows = await db
       .select({ message, name: user.name })
       .from(message)
@@ -492,7 +508,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       t.subject ?? `Thread ${t.id}`,
-      <div hx-get={`/console/threads/${t.id}`} hx-select="main" hx-target="main" hx-swap="outerHTML" hx-trigger="sse:activity">
+      <div
+        hx-get={withProject(`/console/threads/${t.id}`, project)}
+        hx-select="main"
+        hx-target="main"
+        hx-swap="outerHTML"
+        hx-trigger="sse:activity"
+      >
+        <p>
+          <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
+        </p>
         <p>
           {t.kind} thread · {t.mutedAt ? "muted (loop guard)" : "open"} · agent streak {t.agentStreak}
         </p>
@@ -610,54 +635,67 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/agents", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
-    const rows = (await listAgents(db, p.teamId, { limit: 100 })).filter((r) => isAdmin(p) || r.agent.userId === p.user.id);
+    const f = await projectFilter(c);
+    const rows = (await listAgents(db, p.teamId, { limit: 100 })).filter(
+      (r) => (isAdmin(p) || r.agent.userId === p.user.id) && (!f.selected || (r.agent.projectId ?? "none") === f.selected),
+    );
+    const table = (of: typeof rows) => (
+      <Table
+        head={[
+          _("Who"),
+          _("Label"),
+          _("Project"),
+          _("Kind"),
+          _("Branch"),
+          _("Push"),
+          _("Permissions"),
+          _("Claude Code"),
+          _("Last seen"),
+          _("Trust"),
+          _("Actions"),
+        ]}
+        empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
+        rows={of.map((r) => [
+          r.name,
+          // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
+          <>
+            {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
+          </>,
+          r.project ?? "",
+          r.agent.kind,
+          r.agent.branch ?? "",
+          r.agent.pushMode ?? "",
+          r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
+          r.agent.clientVersion ?? "",
+          <>
+            <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
+          </>,
+          <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
+          <>
+            {r.agent.trustLevel === "trusted" ? (
+              <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
+            ) : r.agent.kind === "a2a" ? (
+              _("external: always quarantined")
+            ) : (
+              <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
+            )}{" "}
+            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
+          </>,
+        ])}
+      />
+    );
     return page(
       c,
       "Agents",
       <>
-        <Table
-          head={[
-            _("Who"),
-            _("Label"),
-            _("Project"),
-            _("Kind"),
-            _("Branch"),
-            _("Push"),
-            _("Permissions"),
-            _("Claude Code"),
-            _("Last seen"),
-            _("Trust"),
-            _("Actions"),
-          ]}
-          empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
-          rows={rows.map((r) => [
-            r.name,
-            // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
-            <>
-              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-            </>,
-            r.project ?? "",
-            r.agent.kind,
-            r.agent.branch ?? "",
-            r.agent.pushMode ?? "",
-            r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
-            r.agent.clientVersion ?? "",
-            <>
-              <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-            </>,
-            <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
-            <>
-              {r.agent.trustLevel === "trusted" ? (
-                <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
-              ) : r.agent.kind === "a2a" ? (
-                _("external: always quarantined")
-              ) : (
-                <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
-              )}{" "}
-              <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
-            </>,
-          ])}
-        />
+        {f.selected || rows.length === 0
+          ? table(rows)
+          : byProject(f, rows, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
+              <section aria-labelledby={`p-${g.id}`}>
+                <h2 id={`p-${g.id}`}>{g.name}</h2>
+                {table(g.rows)}
+              </section>
+            ))}
         {isAdmin(p) && (
           <>
             <h2>{_("External agent (A2A)")}</h2>
@@ -674,6 +712,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </>
         )}
       </>,
+      f,
     );
   });
 
@@ -1530,7 +1569,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               <Table
                 head={["Title", "Assignee", "Version", "Updated"]}
                 rows={of.map((r) => [
-                  <a href={`/console/tasks/${r.task.id}`}>{r.task.title}</a>,
+                  <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
                   r.handle ? `@${r.handle}` : "",
                   r.task.version,
                   <When at={r.task.updatedAt} />,
@@ -1602,6 +1641,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       t.title,
       <>
+        <p>
+          <a href={withProject("/console/tasks", kept(c))}>{tr(c)("Back to tasks")}</a>
+        </p>
         <p>
           {t.status} · version {t.version}
         </p>

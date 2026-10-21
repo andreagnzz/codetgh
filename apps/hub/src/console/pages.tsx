@@ -94,7 +94,7 @@ export const Layout: FC<{
                   (pr) => (
                     <>
                       <a
-                        href={pr.id ? `${path}?project=${encodeURIComponent(pr.id)}` : path}
+                        href={`${path}?project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
                         aria-current={pr.id === filter.selected ? "page" : undefined}
                       >
                         {pr.name}
