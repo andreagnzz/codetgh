@@ -222,7 +222,7 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
   return row;
 }
 
-export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: string; paths: string[]; ttl_s: number }) {
+export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: string; paths: string[]; ttl_s: number }, via: Via = "mcp") {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (a.trustLevel === "quarantined") throw new HubError("E_FORBIDDEN", "this agent is in quarantine");
   await db.transaction(async (tx) => {
@@ -235,7 +235,7 @@ export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: s
       actorType: "agent",
       actorUserId: p.user.id,
       actorAgentId: a.id,
-      via: "mcp",
+      via,
       action: "agent.status_set",
       subjectId: a.id,
     });

@@ -10,6 +10,7 @@ import {
   PRIORITIES,
   PreEditInput,
   SendMessageInput,
+  StatusSetInput,
   WhoamiSchema,
 } from "./index.js";
 
@@ -281,6 +282,13 @@ export const REST_ROUTES = {
     summary: "Who is online, your unread counts and the live claims; session_id keeps that session of yours online",
     query: SessionQuery,
     output: StatusOutput,
+  },
+  statusSet: {
+    method: "POST",
+    path: "/v1/status",
+    summary: "Publish what your agent is on, as status_set does (agent: one of your sessions' agents, from whoami)",
+    body: StatusSetInput,
+    empty: [204],
   },
   pause: {
     method: "POST",
