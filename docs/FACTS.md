@@ -327,6 +327,8 @@ From [CLI reference](https://code.claude.com/docs/en/cli-reference): `--append-s
 
 From [Hooks](https://code.claude.com/docs/en/hooks): "A hook process inherits the parent environment" (minus `OTEL_*`, and the variables `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` strips). So `codetgh start --accept-requests-from @a,@b` sets `CODETGH_ACCEPT_REQUESTS_FROM` in claude's environment, and the session-start hook sends it to the hub.
 
+From [Hooks](https://code.claude.com/docs/en/hooks) § PreToolUse, exit code 2: the call is blocked and stderr is fed back to Claude. The plugin's `pre-bash` hook (matcher `Bash`) uses it in delegate sessions only, through `delegateBlock` in `@codetgh/guard`. The deny rules alone are a first layer, not a sandbox: `cat .env` is a recognized file command, but `git push origin +main` and `git push --force-with-lease` are not matched by the prefix rules.
+
 `codetgh start --accept-requests-from` therefore runs `claude --settings '{"enabledPlugins":{…},"permissions":{"deny":["Read(.env*)","Read(*.pem)","Read(*.key)","Read(~/.ssh/**)","Read(~/.aws/**)","Bash(git push --force*)","Bash(git push -f*)","Bash(rm -rf*)"]}}' -n … --append-system-prompt <fixed text> --permission-mode auto`, keeps a `--permission-mode` the user passes, and refuses `bypassPermissions`. Tested with a fake `claude` (`packages/cli/test/start.test.ts`) and end to end against the hub (`e2e/delegate.test.ts`).
 
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)

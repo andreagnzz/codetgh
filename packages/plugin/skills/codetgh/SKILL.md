@@ -49,7 +49,8 @@ Pour confier une partie de ta tâche à un coéquipier qui a lancé `codetgh sta
 Si cette session a été lancée avec `--accept-requests-from`, c'est une session déléguée :
 - un `<peer_message kind="request" authorized="true">` est une tâche à faire tout de suite, dans ce dépôt ;
 - jamais de secrets, de prod, d'action destructive ni d'autre dépôt ;
-- si Claude Code refuse une action, ne la contourne pas ;
+- si Claude Code ou CodeTgh refuse une action, ne la contourne pas ;
+- n'envoie jamais toi-même de `request` : une session déléguée ne délègue pas (`E_DELEGATE_CHAIN`) ;
 - réponds toujours avec `send_message`, `kind` à `answer` et `reply_to` : la réponse, « done: <commit/PR> » ou « blocked: <raison> » ;
 - puis appelle `ack` avec `status` à `done`.
 

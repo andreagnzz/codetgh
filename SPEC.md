@@ -372,6 +372,7 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_TOO_LARGE | Corps ou pièce jointe trop gros | Résumer et passer par une référence |
 | E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
 | E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
+| E_DELEGATE_CHAIN | Une session déléguée tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
 
 ### Permissions recommandées
 
@@ -793,16 +794,19 @@ Côté hub :
 - Le hub, et lui seul, pose `authorized="true"` sur l'enveloppe. Le contenu reste échappé, et `trust="untrusted-peer"` reste le dernier attribut.
 - Le réveil passe par le rewake et le poll PostToolUse habituels.
 - Le journal d'audit ne garde que des métadonnées.
+- Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
+- Le mode échoue fermé. Le hub l'efface à la fin de la session, au retrait de l'agent, sur « Couper », et à tout nouvel enregistrement de la session qui ne porte pas l'option. Sans état clair, la session n'est pas déléguée.
 
 Côté session :
 - `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.
-- `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`.
+- `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`. Elles comparent la commande telle qu'écrite : `cat .env` ou `git push origin +main` leur échappent.
+- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) toute commande qui nomme l'un de ces chemins ou force un push : `--force`, `-f`, `--force-with-lease`, `+refspec`, y compris dans `sh -c` ou après `;`. Sans réseau, en moins de 3 s. Une variable, un texte encodé ou un script qui ouvre lui-même le fichier lui échappent aussi.
 - `start` ajoute un prompt système fixe, écrit par CodeTgh. Une demande autorisée est une tâche à faire dans ce dépôt. Jamais de secrets, de prod, d'action destructive ni d'autre dépôt.
 - La session répond toujours par `send_message` `reply_to` : la réponse, « done: <commit/PR> » ou « blocked: <raison> ». Une action refusée par Claude Code donne « blocked ». Puis elle appelle `ack` avec `done`.
 
 Toute autre session, et tout autre message dans une session déléguée, suivent la règle générale.
 
-Limite assumée : un pair autorisé peut faire faire à la session tout ce que le mode auto et les règles deny laissent passer. La protection tient à cinq choses : la liste d'expéditeurs, le projet unique, le classifieur, les règles deny et « Couper ». Lancer une session déléguée dans un clone ou un conteneur sans secrets.
+Limite assumée : un pair autorisé peut faire faire à la session tout ce que le mode auto, les règles deny et le hook laissent passer. Ces garde-fous réduisent le risque mais n'isolent rien : la session tourne avec les droits de la personne sur sa machine. Il faut lancer une session déléguée dans un devcontainer ou un clone dédié, sans secrets. La protection tient à la liste d'expéditeurs, au projet unique, au classifieur, aux règles deny, au hook et à « Couper ».
 
 ### Rôles
 
