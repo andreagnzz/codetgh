@@ -549,12 +549,12 @@ export async function purgeMessages(db: Db) {
 }
 
 // Stream feed: one row per message received after `seq`, ids only. A message's receipts share a transaction, so max(seq) covers them all.
-export async function receivedSince(db: Db, p: Principal, seq: number) {
+export async function receivedSince(db: Db, p: Principal, seq: number, a: Agent | null) {
   return db
     .select({ seq: max(receipt.seq), messageId: message.id, threadId: message.threadId, kind: message.kind, priority: message.priority })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
-    .where(and(eq(receipt.recipientUserId, p.user.id), eq(receipt.teamId, p.teamId), gt(receipt.seq, seq)))
+    .where(and(visibleTo(p, a), gt(receipt.seq, seq)))
     .groupBy(message.id)
     .orderBy(max(receipt.seq))
     .limit(100);
@@ -568,11 +568,23 @@ export async function lastReceiptSeq(db: Db, p: Principal) {
   return row?.seq ?? 0;
 }
 
-const visibleTo = (p: Principal, agentId: string) =>
+// A session sees what is addressed to it, and what is addressed to its person in a thread of its own project.
+// No agent (the daemon stream) or the person's own CLI agent: every receipt of the person, as in the console.
+export const visibleTo = (p: Principal, a: Agent | null) =>
   and(
     eq(receipt.recipientUserId, p.user.id),
     eq(receipt.teamId, p.teamId),
-    or(isNull(receipt.recipientAgentId), eq(receipt.recipientAgentId, agentId)),
+    a && a.sessionId !== `cli-${a.tokenId}`
+      ? or(
+          eq(receipt.recipientAgentId, a.id),
+          a.projectId
+            ? and(
+                isNull(receipt.recipientAgentId),
+                sql`exists (select 1 from ${message} inner join ${thread} on ${thread.id} = ${message.threadId} where ${message.id} = ${receipt.messageId} and ${thread.projectId} = ${a.projectId})`,
+              )
+            : undefined,
+        )
+      : undefined,
   );
 
 // Blocking first, then handoffs (they carry the context to resume work), then by priority.
@@ -583,7 +595,7 @@ export type InboxItem = { seq: number; message: typeof message.$inferSelect; fro
 export async function unread(
   db: Db,
   p: Principal,
-  agentId: string,
+  a: Agent,
   opts: { thread?: string; kinds?: string[]; afterSeq?: number; limit: number; byPriority?: boolean },
 ) {
   const rows = await db
@@ -593,7 +605,7 @@ export async function unread(
     .innerJoin(user, eq(user.id, message.fromUserId))
     .where(
       and(
-        visibleTo(p, agentId),
+        visibleTo(p, a),
         isNull(receipt.readAt),
         notExpired(),
         opts.thread ? eq(message.threadId, opts.thread) : undefined,
@@ -698,13 +710,13 @@ export async function ack(
 ) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
-    let where = and(visibleTo(p, a.id), isNull(receipt.readAt));
+    let where = and(visibleTo(p, a), isNull(receipt.readAt));
     if (input.message_ids) where = and(where, inArray(receipt.messageId, input.message_ids));
     if (input.up_to) {
       const [r] = await tx
         .select({ seq: receipt.seq })
         .from(receipt)
-        .where(and(visibleTo(p, a.id), eq(receipt.messageId, input.up_to)));
+        .where(and(visibleTo(p, a), eq(receipt.messageId, input.up_to)));
       if (!r) throw new HubError("E_NOT_FOUND", `no message ${input.up_to} in your inbox`);
       where = and(where, lte(receipt.seq, r.seq));
     }
@@ -745,7 +757,7 @@ export async function findAnswer(db: Db, p: Principal, a: Agent, questionId: str
     .select({ seq: receipt.seq, message, fromName: user.name })
     .from(message)
     .innerJoin(user, eq(user.id, message.fromUserId))
-    .innerJoin(receipt, and(eq(receipt.messageId, message.id), visibleTo(p, a.id)))
+    .innerJoin(receipt, and(eq(receipt.messageId, message.id), visibleTo(p, a)))
     .where(and(eq(message.replyTo, questionId), eq(message.kind, "answer")))
     .orderBy(asc(message.createdAt))
     .limit(1);

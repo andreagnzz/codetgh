@@ -185,7 +185,8 @@ export const Action: FC<{ post: string; label: string; vals?: Record<string, str
 
 // Presence: who is live first, then a rule, then who is offline (archived, quieter).
 type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];
-const Person: FC<{ r: AgentRow; lang: Lang }> = ({ r, lang }) => {
+type RowAction = (r: AgentRow) => Child;
+const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, action }) => {
   const state = presence(r.agent);
   return (
     <li>
@@ -211,10 +212,11 @@ const Person: FC<{ r: AgentRow; lang: Lang }> = ({ r, lang }) => {
         </>
       )}
       {r.agent.statusText && <span class="status meta">{r.agent.statusText}</span>}
+      {action?.(r)}
     </li>
   );
 };
-export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ rows, lang, empty }) => {
+export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: RowAction }> = ({ rows, lang, empty, action }) => {
   const live = rows.filter((r) => presence(r.agent) !== "offline");
   const offline = rows.filter((r) => presence(r.agent) === "offline");
   return (
@@ -222,7 +224,7 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ row
       {live.length ? (
         <ul class="people">
           {live.map((r) => (
-            <Person r={r} lang={lang} />
+            <Person r={r} lang={lang} action={action} />
           ))}
         </ul>
       ) : (
@@ -233,7 +235,7 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ row
           <h3 class="rule">{t(lang, "Offline")}</h3>
           <ul class="people archived">
             {offline.map((r) => (
-              <Person r={r} lang={lang} />
+              <Person r={r} lang={lang} action={action} />
             ))}
           </ul>
         </>
