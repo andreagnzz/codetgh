@@ -800,12 +800,18 @@ Côté hub :
 - Le réveil passe par le rewake et le poll PostToolUse habituels.
 - Le journal d'audit ne garde que des métadonnées.
 - Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
+- Seul le jeton de la personne active le mode, pour sa propre session : le hub range les sessions par utilisateur du jeton et prend l'expéditeur dans le principal authentifié, jamais dans le corps. Il résout la liste lui-même. Un pseudo inconnu, invité ou le sien est refusé (E_INVALID), pas ignoré. Un invité ou une personne en quarantaine ne peut pas lancer de session déléguée (E_FORBIDDEN). Aucun outil MCP ni écran de la console ne l'active.
 - Le mode échoue fermé. Le hub l'efface dans six cas : à la fin de la session ; au retrait de l'agent ; sur « Couper » ; à tout nouvel enregistrement de la session qui ne porte pas l'option ; quand la session passe dans un autre dépôt (CwdChanged) ; quand elle est rattachée à un autre projet depuis la console. Seul un lancement (startup, resume) l'accorde. `/clear`, la compaction et un changement de dossier sur le même projet gardent l'état courant, donc « Couper » tient. Sans état clair, la session n'est pas déléguée.
 
 Côté session :
 - `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.
 - `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`. Elles comparent la commande telle qu'écrite : `cat .env` ou `git push origin +main` leur échappent.
-- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) toute commande qui nomme l'un de ces chemins ou force un push : `--force`, `-f`, `--force-with-lease`, `+refspec`, y compris dans `sh -c` ou après `;`. Sans réseau, en moins de 3 s. Une variable, un texte encodé ou un script qui ouvre lui-même le fichier lui échappent aussi.
+- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) trois sortes de commandes. Il tourne sans réseau, en moins de 3 s.
+  - Celles qui nomment l'un de ces chemins.
+  - Celles qui forcent un push : `--force`, `-f`, `--force-with-lease`, `+refspec`.
+  - Celles qui construisent leur commande à l'exécution : `eval`, `sh -c` avec une variable, `base64 -d |`, une substitution par `printf`.
+  - Il retire d'abord guillemets, `$'…'` et échappements, et remplace `${HOME}`, `$HOME` par `~`.
+- C'est une liste de blocage au mieux, qui ne peut pas être complète : un script qui ouvre lui-même le fichier, un alias ou un fichier écrit puis lancé lui échappent. D'où la recommandation d'un devcontainer ou d'un clone dédié.
 - `start` ajoute un prompt système fixe, écrit par CodeTgh. Une demande autorisée est une tâche à faire dans ce dépôt. Jamais de secrets, de prod, d'action destructive ni d'autre dépôt.
 - La session répond toujours par `send_message` `reply_to` : la réponse, « done: <commit/PR> » ou « blocked: <raison> ». Une action refusée par Claude Code donne « blocked ». Puis elle appelle `ack` avec `done`.
 
