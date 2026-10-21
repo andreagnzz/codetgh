@@ -69,10 +69,12 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
     };
+    // Outside a repository, a resume keeps the project the session was attached to in the console.
+    const { projectId: _, ...kept } = values;
     const [row] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
-      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: values })
+      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: input.repo_fingerprint ? values : kept })
       .returning();
     if (!row) throw new HubError("E_INVALID", "agent registration failed");
     await appendAudit(tx, {
@@ -155,6 +157,24 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
 // shortcut: not audited, like presence; the prompt hook only sends it when it changed.
 export async function setPermissionMode(db: Db, agentId: string, mode: string) {
   await db.update(agent).set({ permissionMode: mode }).where(eq(agent.id, agentId));
+}
+
+// The presence mod's poll: keeps the caller's own open session online while it idles at the prompt. Never creates one.
+export async function touchSession(db: Db, p: Principal, sessionId: string) {
+  const rows = await db
+    .update(agent)
+    .set({ lastSeenAt: new Date() })
+    .where(
+      and(
+        eq(agent.teamId, p.teamId),
+        eq(agent.userId, p.user.id),
+        eq(agent.sessionId, sessionId),
+        isNull(agent.endedAt),
+        isNull(agent.removedAt),
+      ),
+    )
+    .returning({ id: agent.id });
+  return rows.length > 0;
 }
 
 export async function agentBySession(db: Db, p: Principal, sessionId: string) {

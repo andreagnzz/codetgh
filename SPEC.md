@@ -255,6 +255,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | --- | --- |
 | Garantie | Au moins une fois ; le récepteur dédoublonne par id |
 | Ordre | seq croissant par boîte de réception et par fil ; pas d'ordre global |
+| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. La console et le CLI de la personne (codetgh inbox) montrent tout |
 | Curseur | Un curseur de lecture par agent, distinct du page_token de pagination : inbox_read ne l'avance pas, ack l'avance |
 | États | queued, delivered (première lecture), read (accusé), puis accepted, declined ou done pour une request |
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
@@ -263,7 +264,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 5 messages d'agents d'affilée, le fil est mis en sourdine et les humains sont alertés ; si l'équipe a nommé un orchestrateur de boucles (loop_orchestrator), son agent lit le fil, publie un verdict et peut le rouvrir une seule fois |
 | Débit | 30 messages par minute et 600 par heure et par agent, rafale de 10 |
 
-Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà.
+Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà. Le mod de présence interroge GET /v1/status toutes les 30 s avec l'identifiant de sa session ($.session.id()) : le hub met à jour last_seen_at de cet agent s'il appartient à l'appelant (même équipe, même personne), sans jamais en créer. Une session ouverte au repos reste ainsi online. Sans le mod (hooks seuls), la présence reste liée à l'activité.
 
 Journal d'audit. Chaque écriture ajoute un audit_event chaîné : hash = SHA-256(prev_hash + JSON canonique de l'événement). Toute modification a posteriori casse la chaîne, et la console l'affiche. Le hub signe aussi la tête de chaîne à intervalle régulier (point de contrôle, clé hors base) : sans ces points, qui écrit dans la base pourrait recalculer la chaîne ou en couper la fin.
 
@@ -513,6 +514,7 @@ Les hooks utilisent la forme exec (command et args) : elle se comporte pareil so
 | Événement | Filtre | Délai | Rôle | Hub injoignable |
 | --- | --- | --- | --- | --- |
 | SessionStart | startup, resume, clear, compact | 5 s | Enregistre ou reprend l'agent, injecte le paquet de contexte, lance le démon si le mode de poussée l'exige. Dans un dépôt sans projet, n'envoie que l'empreinte ; si le hub répond can_link (membre, administrateur ou propriétaire non mis en quarantaine, auto_link_projects actif), un second appel envoie le nom du dépôt et la branche, et le hub crée le projet ; sinon une ligne dit de demander codetgh project new à un administrateur | Un seul avertissement, puis silence |
+| CwdChanged, DirectoryAdded | tous | 3 s | Une session enregistrée hors de tout dépôt rejoint le premier dépôt avec origin où elle entre (cd, /add-dir), par le même enregistrement que SessionStart : l'empreinte d'abord, puis le nom et la branche si le hub répond can_link ; une ligne le dit. Une session liée ne change plus de projet ; un invité dans un dépôt sans projet reçoit la ligne qui dit de demander à un administrateur | Rien ne change |
 | UserPromptSubmit | tous | 3 s | Injecte les messages non lus (5 au plus, blocking d'abord) | Rien n'est injecté |
 | PreToolUse | Edit, Write, MultiEdit, NotebookEdit | 3 s | Interroge les réservations, pose une réservation intent, ajoute du contexte (warn) ou répond ask selon claims.enforcement, et ne répond rien sans conflit | Aucune décision : le flux normal des permissions s'applique |
 | PreToolUse | Tous les outils du hub (matcher mcp__plugin_codetgh_hub__.*) | 3 s | Cherche des secrets dans les arguments texte (secretlint, sans réseau) et refuse l'appel (deny) s'il en trouve | Le contrôle est local : il continue de s'appliquer |
@@ -839,6 +841,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | Fils | Lire un fil, répondre en tant qu'humain (authored_by à human), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre | 1 |
 | Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
 | Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents), administrateur (tous) | 1 |
+| Projets | Voir les sessions de chaque membre par projet ; « Sessions hors projet » : les sessions lancées hors d'un dépôt lié (sans agents système bridge et a2a ni agent REST cli-…), à rattacher à un projet (audit agent.project_set) | Membre (lecture, rattacher ses sessions), administrateur (rattacher toutes) ; jamais un invité | 2 |
 | Jetons | Créer, renouveler et révoquer ses jetons personnels (portée agent) ; la valeur ne s'affiche qu'une fois | Membre | 1 |
 | Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle, révoquer | Administrateur | 1 |
 | Interrupteur d'arrêt | Couper puis rétablir le trafic des agents, avec un motif obligatoire | Administrateur | 1 |
