@@ -129,6 +129,18 @@ export const Pill: FC<{ tone?: Tone; children?: Child }> = ({ tone = "neutral", 
   </span>
 );
 
+// Current items, or the archives: threads quiet for a day with nothing unread, tasks finished a day ago.
+export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang }> = ({ base, archived, lang }) => (
+  <nav aria-label={t(lang, "Archives")}>
+    <a href={base} aria-current={archived ? undefined : "page"}>
+      {t(lang, "Current")}
+    </a>{" "}
+    <a href={`${base}?archived=1`} aria-current={archived ? "page" : undefined}>
+      {t(lang, "Archives")}
+    </a>
+  </nav>
+);
+
 export const toneOf = (state: string): Tone =>
   (({ online: "ok", trusted: "ok", open: "warn", quarantined: "danger" }) as Record<string, Tone>)[state] ?? "neutral";
 
@@ -173,7 +185,8 @@ export const Action: FC<{ post: string; label: string; vals?: Record<string, str
 
 // Presence: who is live first, then a rule, then who is offline (archived, quieter).
 type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];
-const Person: FC<{ r: AgentRow; lang: Lang }> = ({ r, lang }) => {
+type RowAction = (r: AgentRow) => Child;
+const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, action }) => {
   const state = presence(r.agent);
   return (
     <li>
@@ -199,10 +212,11 @@ const Person: FC<{ r: AgentRow; lang: Lang }> = ({ r, lang }) => {
         </>
       )}
       {r.agent.statusText && <span class="status meta">{r.agent.statusText}</span>}
+      {action?.(r)}
     </li>
   );
 };
-export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ rows, lang, empty }) => {
+export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: RowAction }> = ({ rows, lang, empty, action }) => {
   const live = rows.filter((r) => presence(r.agent) !== "offline");
   const offline = rows.filter((r) => presence(r.agent) === "offline");
   return (
@@ -210,7 +224,7 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ row
       {live.length ? (
         <ul class="people">
           {live.map((r) => (
-            <Person r={r} lang={lang} />
+            <Person r={r} lang={lang} action={action} />
           ))}
         </ul>
       ) : (
@@ -221,7 +235,7 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child }> = ({ row
           <h3 class="rule">{t(lang, "Offline")}</h3>
           <ul class="people archived">
             {offline.map((r) => (
-              <Person r={r} lang={lang} />
+              <Person r={r} lang={lang} action={action} />
             ))}
           </ul>
         </>

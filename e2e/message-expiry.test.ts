@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { message } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -12,8 +12,8 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 it("stops delivering a message once it expires, even long after the hub started", async () => {
-  await startSession(hub.url, team.lea.token, "lea-exp");
-  await startSession(hub.url, team.sam.token, "sam-exp");
+  await startSession(hub.url, team.lea.token, "lea-exp", { repo: ACME_REPO });
+  await startSession(hub.url, team.sam.token, "sam-exp", { repo: ACME_REPO });
   const lea = await mcpClient(hub.url, team.lea.token);
   const sam = await mcpClient(hub.url, team.sam.token);
   await call(lea, "send_message", { to: "@sam", kind: "status", body: "deploy in progress" });

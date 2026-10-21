@@ -26,6 +26,7 @@ function stubs(on: On, reply: () => { value: HttpResponse } | { deny: string }) 
   const toasts: string[] = [];
   const requests: { url: string; headers?: Record<string, string> }[] = [];
   on("session.start", () => ({ cwd: "/work" }));
+  on("session.id", () => ({ value: "sess-1" }));
   on("http.fetch", (_$, e) => {
     requests.push({ url: e.url, headers: e.init?.headers });
     return reply();
@@ -51,7 +52,8 @@ test(
     const s = stubs(on, () => ok(reply));
     await start($);
     await s.clock.advance(1);
-    expect(s.requests[0]?.url).toBe("https://hub.example.com/v1/status");
+    // The session id lets the hub keep this session online while it idles at the prompt.
+    expect(s.requests[0]?.url).toBe("https://hub.example.com/v1/status?session_id=sess-1");
     expect(s.requests[0]?.headers?.Authorization).toBe("Bearer ctg_secret_token");
     expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 0 unread");
     expect(s.toasts).toEqual([]);
