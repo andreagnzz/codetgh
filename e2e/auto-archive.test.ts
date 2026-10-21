@@ -40,12 +40,12 @@ it("hides tasks done for more than a day from task_list unless include_archived 
 });
 
 it("archives an inactive thread with nothing unread, keeps an unread one, and brings it back on a new message", async () => {
-  await startSession(hub.url, team.lea.token, "lea-arch2", { repo: ACME_REPO });
+  const agent = (await startSession(hub.url, team.lea.token, "lea-arch2", { repo: ACME_REPO })).agent_id;
   await startSession(hub.url, team.sam.token, "sam-arch2", { repo: ACME_REPO });
   const lea = await mcpClient(hub.url, team.lea.token);
   const sam = await mcpClient(hub.url, team.sam.token);
-  await call(lea, "send_message", { to: "@sam", kind: "note", body: "read and forgotten" });
-  await call(lea, "send_message", { to: "@sam", kind: "note", body: "still unread" });
+  await call(lea, "send_message", { agent, to: "@sam", kind: "note", body: "read and forgotten" });
+  await call(lea, "send_message", { agent, to: "@sam", kind: "note", body: "still unread" });
   const [read] = await hub.db.select().from(message).where(eq(message.body, "read and forgotten"));
   const [unread] = await hub.db.select().from(message).where(eq(message.body, "still unread"));
   if (!read || !unread) throw new Error("no messages");

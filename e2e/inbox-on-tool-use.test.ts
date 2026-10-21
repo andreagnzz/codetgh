@@ -54,7 +54,7 @@ it("gets a blocking question to a busy agent and its answer back, with no human 
 }, 90_000);
 
 it("injects at most 10 times in 10 minutes under a burst, and the rest waits for the next prompt", async () => {
-  await startSession(hub.url, team.sam.token, "sam-burst", { repo: ACME_REPO });
+  const agent = (await startSession(hub.url, team.sam.token, "sam-burst", { repo: ACME_REPO })).agent_id;
   await startSession(hub.url, team.malik.token, "malik-burst", { repo: ACME_REPO });
   const samTool = busy(team.sam.token, "sam-burst");
   const sam = await mcpClient(hub.url, team.sam.token);
@@ -63,7 +63,7 @@ it("injects at most 10 times in 10 minutes under a burst, and the rest waits for
   for (let i = 0; i < 11; i++) {
     const sent = JSON.parse((await call(malik, "send_message", { to: "@sam", kind: "note", body: `burst ${i}` })).text);
     if (await until(samTool, (s) => s.includes(`burst ${i}`), 2_000)) injected++;
-    await call(sam, "ack", { up_to: sent.id });
+    await call(sam, "ack", { agent, up_to: sent.id });
   }
   expect(injected).toBe(10);
 }, 90_000);
