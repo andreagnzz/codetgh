@@ -18,6 +18,6 @@ it("groups the commands: what members use every day first, then admin, then adva
   expect(help.indexOf("Admin:")).toBeLessThan(help.indexOf("Advanced:"));
   expect(help).not.toMatch(/^\s+hook\b/m);
   // update is the hub's, not the member's CLI: upgrade is.
-  expect(help).toMatch(/update \[options\]\s+\(admins, on the hub's machine\) update the hub/);
-  expect(help).toMatch(/upgrade\s+update this command and the Claude Code plugin/);
+  expect(help).toMatch(/update \[options\]\s+\(admins, on the hub's machine\) update the\s+hub/);
+  expect(help).toMatch(/upgrade\s+update this command and the Claude Code\s+plugin/);
 });
