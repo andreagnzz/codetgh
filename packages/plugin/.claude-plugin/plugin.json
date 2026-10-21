@@ -1,6 +1,6 @@
 {
   "name": "codetgh",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Links the Claude agents of a team: messages, file claims, handoffs, shared memory.",
   "license": "MIT",
   "icon": "./assets/symbol.svg",
