@@ -1,6 +1,6 @@
 import { escapeAttr, renderPeerData, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { TaskStatus } from "@codetgh/shared";
-import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, not, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { membership, task, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -9,7 +9,7 @@ import type { Principal } from "../principal.js";
 import { requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
-import { assertNoSecrets, type MessagingDeps } from "./messages.js";
+import { ARCHIVE_AFTER_MS, assertNoSecrets, type MessagingDeps } from "./messages.js";
 
 type Task = typeof task.$inferSelect;
 
@@ -24,6 +24,9 @@ const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   cancelled: [],
 };
 const MAX_NOTES = 20;
+
+export const archivedTask = () =>
+  sql`(${inArray(task.status, ["done", "cancelled"])} and ${lt(task.updatedAt, new Date(Date.now() - ARCHIVE_AFTER_MS))})`;
 
 // `a` is null when a human acts from the console; the kill switch stops agents only.
 function guard(p: Principal, a: Agent | null) {
@@ -214,7 +217,11 @@ export async function updateTask(
   });
 }
 
-export async function listTasks(db: Db, p: Principal, input: { status?: TaskStatus; assignee?: string; limit: number }) {
+export async function listTasks(
+  db: Db,
+  p: Principal,
+  input: { status?: TaskStatus; assignee?: string; include_archived?: boolean; limit: number },
+) {
   requireMember(p);
   const assignee = input.assignee === "me" ? p.user.id : input.assignee ? (await userByHandle(db, p, input.assignee)).userId : undefined;
   const rows = await db
@@ -225,6 +232,7 @@ export async function listTasks(db: Db, p: Principal, input: { status?: TaskStat
         eq(task.teamId, p.teamId),
         input.status ? eq(task.status, input.status) : undefined,
         assignee ? eq(task.assigneeUserId, assignee) : undefined,
+        input.include_archived ? undefined : not(archivedTask()),
       ),
     )
     .orderBy(desc(task.updatedAt))
