@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, project } from "../apps/hub/src/db/schema.js";
+import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
@@ -218,5 +218,59 @@ describe("delegation stays on the project it was granted for", () => {
       204,
     );
     expect(await delegate("sam-attach")).toBeNull();
+  });
+});
+
+describe("only a member's own launch turns a session into a delegate", () => {
+  const raw = (token: string, body: Record<string, unknown>) =>
+    fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ source: "startup", repo_fingerprint: P1, ...body }),
+    });
+  const row = async (userId: string, session: string) =>
+    (await hub.db.select().from(agent).where(eq(agent.sessionId, session))).find((a) => a.userId === userId);
+  const asRole = async (userId: string, role: "guest" | "member") =>
+    hub.db.update(membership).set({ role }).where(eq(membership.userId, userId));
+
+  it("refuses an unknown handle, the person's own handle, and a guest, instead of dropping them", async () => {
+    for (const accept of [["@nobody"], ["@sam"], ["@lea", "@nobody"]]) {
+      const res = await raw(team.sam.token, { session_id: "sam-bad", accept_requests_from: accept });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("E_INVALID");
+    }
+    await asRole(team.malik.userId, "guest");
+    const res = await raw(team.sam.token, { session_id: "sam-bad", accept_requests_from: ["@malik"] });
+    await asRole(team.malik.userId, "member");
+    expect(res.status).toBe(400);
+    expect((await row(team.sam.userId, "sam-bad"))?.acceptRequestsFrom ?? null).toBeNull();
+  });
+
+  it("refuses a guest's session as a delegate", async () => {
+    await asRole(team.malik.userId, "guest");
+    const res = await raw(team.malik.token, { session_id: "malik-guest", accept_requests_from: ["@lea"] });
+    await asRole(team.malik.userId, "member");
+    expect(res.status).toBe(403);
+  });
+
+  it("acts on the caller's own session only: another member's session id never reaches their agent", async () => {
+    const samId = await register(team.sam.token, "sam-own", P1);
+    // Léa sends Sam's session id: the hub keys sessions by the token's user, so this is a new session of Léa's.
+    await raw(team.lea.token, { session_id: "sam-own", accept_requests_from: ["@malik"] });
+    const sam = await row(team.sam.userId, "sam-own");
+    expect(sam?.id).toBe(samId);
+    expect(sam?.acceptRequestsFrom ?? null).toBeNull();
+    // And MCP has no field that sets the mode: an extra argument is dropped.
+    const client = await mcpClient(hub.url, team.lea.token);
+    await call(client, "status_set", { agent: ids.lea, text: "working", accept_requests_from: ["@malik"] });
+    await client.close();
+    expect(
+      (
+        await hub.db
+          .select()
+          .from(agent)
+          .where(eq(agent.id, ids.lea ?? ""))
+      )[0]?.acceptRequestsFrom ?? null,
+    ).toBeNull();
   });
 });

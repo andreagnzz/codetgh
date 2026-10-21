@@ -54,8 +54,11 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
-    // A delegate accepts requests from active members only, never guests or itself; unknown handles are dropped.
-    const accept = input.accept_requests_from?.length
+    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
+    const asked = [...new Set(input.accept_requests_from ?? [])];
+    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
+      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
+    const accept = asked.length
       ? await tx
           .select({ userId: membership.userId })
           .from(membership)
@@ -67,11 +70,14 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
               ne(membership.userId, p.user.id),
               inArray(
                 membership.handle,
-                input.accept_requests_from.map((h) => h.slice(1)),
+                asked.map((h) => h.slice(1)),
               ),
             ),
           )
       : [];
+    // Refused, not dropped: a delegate opt-in must say exactly whom it trusts.
+    if (accept.length !== asked.length)
+      throw new HubError("E_INVALID", "--accept-requests-from takes active members of your team other than you, not guests");
     // claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
     const launched = !input.source || input.source === "startup" || input.source === "resume";
     const values = {
