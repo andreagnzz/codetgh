@@ -268,6 +268,60 @@ export async function acceptInvitations(db: Db, user: { id: string; name: string
     });
 }
 
+// A signed-in person clicks Join on an invitation link: the link must be pending and sent to their verified email.
+// A revoked member comes back only through an invitation sent after their removal, with the role it names.
+export async function joinWithInvitation(db: Db, user: { id: string; name: string; email: string; emailVerified: boolean }, token: string) {
+  return db.transaction(async (tx) => {
+    const [inv] = await tx
+      .select()
+      .from(invitation)
+      .where(
+        and(
+          eq(invitation.tokenHash, hashToken(token)),
+          isNull(invitation.acceptedAt),
+          isNull(invitation.revokedAt),
+          gt(invitation.expiresAt, new Date()),
+        ),
+      )
+      .for("update");
+    if (!inv) throw new HubError("E_NOT_FOUND", "This invitation is no longer valid.");
+    if (inv.email.toLowerCase() !== user.email.toLowerCase())
+      throw new HubError("E_FORBIDDEN", "This invitation is for another email address.");
+    if (!user.emailVerified)
+      throw new HubError("E_FORBIDDEN", "Your email address is not verified: sign in with an email link, then open the invitation again.");
+    const rows = await tx.select().from(membership).where(eq(membership.userId, user.id));
+    if (rows.some((m) => m.status === "active")) throw new HubError("E_FORBIDDEN", "You are already in a team.");
+    const revoked = rows.find((m) => m.teamId === inv.teamId);
+    let id: string;
+    if (revoked) {
+      if (!revoked.revokedAt || inv.createdAt <= revoked.revokedAt)
+        throw new HubError("E_FORBIDDEN", "This invitation was sent before your removal: ask for a new one.");
+      id = revoked.id;
+      await tx.update(membership).set({ status: "active", role: inv.role, revokedAt: null, revokedBy: null }).where(eq(membership.id, id));
+    } else {
+      const taken = new Set(
+        (await tx.select({ h: membership.handle }).from(membership).where(eq(membership.teamId, inv.teamId))).map((r) => r.h),
+      );
+      const slug = slugify(user.name);
+      const base = RESERVED_HANDLE.test(slug) ? `member-${slug}` : slug;
+      let handle = base;
+      for (let i = 2; taken.has(handle); i++) handle = `${base}-${i}`;
+      id = newId("mem");
+      await tx.insert(membership).values({ id, teamId: inv.teamId, userId: user.id, role: inv.role, handle });
+    }
+    await tx.update(invitation).set({ acceptedAt: new Date(), acceptedUserId: user.id }).where(eq(invitation.id, inv.id));
+    await appendAudit(tx, {
+      teamId: inv.teamId,
+      actorType: "user",
+      actorUserId: user.id,
+      via: "console",
+      action: "invitation.accepted",
+      subjectId: id,
+      data: { role: inv.role, rejoined: Boolean(revoked) },
+    });
+  });
+}
+
 // Cuts every way in at once: tokens, OAuth grants, console sessions, agents. The principal check runs on every request.
 export async function revokeMember(db: Db, input: { teamId: string; membershipId: string; actorUserId: string; actorRole: Role }) {
   return db.transaction(async (tx) => {

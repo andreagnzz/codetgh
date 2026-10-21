@@ -61,6 +61,7 @@ import { archivedTask, createTask, updateTask } from "../domain/tasks.js";
 import {
   findInvitation,
   inviteMember,
+  joinWithInvitation,
   renameTeam,
   revokeInvitations,
   revokeMember,
@@ -126,6 +127,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   app.get("/invite/:token", csp, async (c) => {
     const inv = await findInvitation(db, c.req.param("token"));
     const valid = Boolean(inv && !inv.acceptedAt && !inv.revokedAt && inv.expiresAt > new Date());
+    // Signed in already: a Join button, never an automatic join.
+    const session = valid ? await auth.api.getSession({ headers: c.req.raw.headers }) : null;
     return c.html(
       <InvitePage
         team={inv?.teamName ?? ""}
@@ -133,9 +136,25 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}
+        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id) } : undefined}
         lang={langOf(c.req.header("accept-language"), c.req.header("cookie"))}
       />,
     );
+  });
+
+  app.post("/invite/:token/join", csp, async (c) => {
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session) return c.redirect("/login");
+    const sent = Buffer.from(String((await c.req.parseBody()).csrf ?? ""));
+    const expected = Buffer.from(csrfFor(session.session.id));
+    if (sent.length !== expected.length || !timingSafeEqual(sent, expected)) return c.text("CSRF token missing or invalid", 403);
+    try {
+      await joinWithInvitation(db, session.user, c.req.param("token"));
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 403);
+    }
+    return c.redirect("/console", 303);
   });
 
   const consoleApp = new Hono<Env>();
