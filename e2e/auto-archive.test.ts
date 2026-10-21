@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { message, task, thread } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -40,8 +40,8 @@ it("hides tasks done for more than a day from task_list unless include_archived 
 });
 
 it("archives an inactive thread with nothing unread, keeps an unread one, and brings it back on a new message", async () => {
-  await startSession(hub.url, team.lea.token, "lea-arch2");
-  await startSession(hub.url, team.sam.token, "sam-arch2");
+  await startSession(hub.url, team.lea.token, "lea-arch2", { repo: ACME_REPO });
+  await startSession(hub.url, team.sam.token, "sam-arch2", { repo: ACME_REPO });
   const lea = await mcpClient(hub.url, team.lea.token);
   const sam = await mcpClient(hub.url, team.sam.token);
   await call(lea, "send_message", { to: "@sam", kind: "note", body: "read and forgotten" });
