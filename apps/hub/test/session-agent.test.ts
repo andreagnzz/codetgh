@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, message, project, task } from "../src/db/schema.js";
 import { resolveAgent } from "../src/domain/agents.js";
 import { principalForUser } from "../src/principal.js";
+import { createPersonalToken } from "../src/tokens.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
@@ -83,4 +84,25 @@ it("gives an OAuth call with no agent the person's auto agent while they run sev
   const lea = await principalForUser(hub.db, team.lea.userId, "oauth");
   if (!lea) throw new Error("no principal");
   await expect(resolveAgent(hub.db, lea, ids.webapp, "mcp")).rejects.toMatchObject({ code: "E_FORBIDDEN" });
+});
+
+it("never guesses a delegate session for another token or OAuth: only a call naming it acts as the delegate", async () => {
+  const res = await fetch(`${hub.url}/v1/agents/session`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ session_id: "lea-delegate", source: "startup", accept_requests_from: ["@sam"] }),
+  });
+  const delegate = ((await res.json()) as { agent_id: string }).agent_id;
+  expect((await agentRow(delegate))?.acceptRequestsFrom).toEqual([team.sam.userId]);
+
+  const { token } = await createPersonalToken(hub.db, { userId: team.lea.userId, teamId: team.teamId, label: "lea desktop" });
+  const other = await mcpClient(hub.url, token);
+  expect(JSON.parse((await call(other, "whoami", {})).text).agent.id).not.toBe(delegate);
+  expect(JSON.parse((await call(other, "whoami", { agent: delegate })).text).agent.id).toBe(delegate);
+  await other.close();
+
+  const oauth = await principalForUser(hub.db, team.lea.userId, "oauth");
+  if (!oauth) throw new Error("no principal");
+  expect((await resolveAgent(hub.db, oauth, undefined, "mcp")).id).not.toBe(delegate);
+  expect((await resolveAgent(hub.db, oauth, delegate, "mcp")).id).toBe(delegate);
 });
