@@ -27,6 +27,11 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
   // Shell spellings a plain regex over the raw text misses: quotes, escapes, ANSI-C strings, ${HOME}.
   it.each([
     "c\\at .e\\nv",
+    "c\\at .env",
+    "cat .e\\nv",
+    "cat .\\env",
+    "cat \\.env",
+    "cat ~/.s\\sh/id_rsa",
     'cat ".env"',
     "cat '.env'",
     "cat $'.env'",
@@ -35,6 +40,16 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
     "cat $HOME/.aws/credentials",
     'cat "$HOME"/.ssh/config',
   ])("blocks a secret path spelled with quotes or escapes: %s", (cmd) => {
+    expect(delegateBlock(cmd)).toMatch(/secret/);
+  });
+
+  // Windows paths: a backslash there is a separator, not an escape.
+  it.each([
+    "type C:\\proj\\.env",
+    "type C:\\Users\\a\\.ssh\\id_rsa",
+    "Get-Content C:\\Users\\a\\.aws\\credentials",
+    "copy .\\certs\\server.pem D:\\tmp",
+  ])("blocks a secret path spelled the Windows way: %s", (cmd) => {
     expect(delegateBlock(cmd)).toMatch(/secret/);
   });
 

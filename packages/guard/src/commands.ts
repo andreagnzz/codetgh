@@ -38,7 +38,9 @@ export function delegateBlock(command: string): string | null {
   if (DYNAMIC.some((r) => r.test(command)))
     return "it builds the command at run time (dynamic: eval, sh -c with variables, decoded or substituted text)";
   const plain = normalize(command);
-  if (SECRET_PATHS.some((r) => r.test(plain))) return "it reads a secret file (.env, *.pem, *.key, ~/.ssh or ~/.aws)";
+  // A backslash before a path character is a POSIX escape (.e\nv) or a Windows separator (C:\proj\.env): check both.
+  const windows = normalize(command.replace(/\\(?=[\w.~-])/g, "/"));
+  if (SECRET_PATHS.some((r) => r.test(plain) || r.test(windows))) return "it reads a secret file (.env, *.pem, *.key, ~/.ssh or ~/.aws)";
   // Shell separators split the command, so a; b and what sh -c runs are seen too.
   for (const part of plain.split(/[;&|\n]+/)) {
     const words = part.split(/[\s()]+/).filter(Boolean);
