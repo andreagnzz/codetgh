@@ -36,6 +36,8 @@ const FR: Record<string, string> = {
   "Sessions outside a project": "Sessions hors projet",
   "All projects": "Tous les projets",
   "Outside a project": "Hors projet",
+  "Back to threads": "Retour aux fils",
+  "Back to tasks": "Retour aux tâches",
   "Start claude inside the project's repository folder to link the session.":
     "Lancez claude dans le dossier du dépôt du projet pour y rattacher la session.",
   "Attach to…": "Rattacher à…",

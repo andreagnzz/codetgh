@@ -854,7 +854,7 @@ document.getElementById("invite-signup")?.addEventListener("submit", async (e) =
     credentials: "include",
     body: JSON.stringify({ name: f.get("name"), email: f.get("email"), password: f.get("password") }),
   });
-  if (res.ok) location.href = "/console/tokens";
+  if (res.ok) location.href = e.target.dataset.next;
   else document.getElementById("error").textContent = (await res.json().catch(() => ({}))).message || "Sign-up refused";
 });
 for (const b of document.querySelectorAll("[data-consent]")) {
