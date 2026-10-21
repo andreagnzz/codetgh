@@ -318,14 +318,15 @@ export const Result: FC<{ children?: Child }> = ({ children }) => (
   </div>
 );
 
-export const InvitePage: FC<{ team: string; role: string; email: string; name: string; valid: boolean; lang: Lang }> = ({
-  team,
-  role,
-  email,
-  name,
-  valid,
-  lang,
-}) => {
+export const InvitePage: FC<{
+  team: string;
+  role: string;
+  email: string;
+  name: string;
+  valid: boolean;
+  join?: { token: string; csrf: string };
+  lang: Lang;
+}> = ({ team, role, email, name, valid, join, lang }) => {
   const _ = (s: string) => t(lang, s);
   return (
     <html lang={lang}>
@@ -343,20 +344,29 @@ export const InvitePage: FC<{ team: string; role: string; email: string; name: s
               <p>
                 {_("Invited as")} <strong>{_(role)}</strong> {_("with")} {email}.
               </p>
-              {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
-              <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
-                <input type="hidden" name="email" value={email} />
-                <label>
-                  {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
-                </label>
-                <label>
-                  {_("Password")} <input name="password" type="password" required minlength={12} autocomplete="new-password" />
-                </label>
-                <button type="submit">{_("Create my account")}</button>
-              </form>
-              <p>
-                {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>.
-              </p>
+              {join ? (
+                <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
+                  <input type="hidden" name="csrf" value={join.csrf} />
+                  <button type="submit">{_("Join {team}").replace("{team}", team)}</button>
+                </form>
+              ) : (
+                <>
+                  {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
+                  <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
+                    <input type="hidden" name="email" value={email} />
+                    <label>
+                      {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
+                    </label>
+                    <label>
+                      {_("Password")} <input name="password" type="password" required minlength={12} autocomplete="new-password" />
+                    </label>
+                    <button type="submit">{_("Create my account")}</button>
+                  </form>
+                  <p>
+                    {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>.
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>

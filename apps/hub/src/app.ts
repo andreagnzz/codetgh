@@ -14,6 +14,7 @@ import {
 } from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
 import {
+  CONSOLE_ONLY_WARNING,
   CreateProjectInput,
   DeviceStartInput,
   DeviceTokenInput,
@@ -446,7 +447,13 @@ export function createApp({
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
     const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
-    return c.json({ id: m.id, thread: m.threadId, hop: m.hop, sent_at: m.createdAt.toISOString() });
+    return c.json({
+      id: m.id,
+      thread: m.threadId,
+      hop: m.hop,
+      sent_at: m.createdAt.toISOString(),
+      ...("consoleOnly" in m && m.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
+    });
   });
 
   v1.post("/inbox", async (c) => {

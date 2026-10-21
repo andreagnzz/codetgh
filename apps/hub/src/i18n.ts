@@ -160,6 +160,8 @@ const FR: Record<string, string> = {
   State: "État",
   "Last message": "Dernier message",
   Older: "Plus anciens",
+  "Join {team}": "Rejoindre {team}",
+  "Showing {shown} of {total}": "{shown} affichés sur {total}",
   Current: "En cours",
   Archives: "Archives",
   "No archived threads.": "Aucun fil archivé.",

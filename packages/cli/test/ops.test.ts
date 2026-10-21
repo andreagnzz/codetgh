@@ -1,10 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { program } from "../src/main.js";
 
 // A hub checkout on a VPS, with git, docker and the deploy scripts replaced by fakes that log their calls.
@@ -101,4 +102,52 @@ it("update touches no container when the pull fails", async () => {
 
 it("update says how to roll back when the new hub does not come up", async () => {
   await expect(cli(["update", "--dir", repo, "--hub", await hub(503), "--wait", "1"])).rejects.toThrow(/not ready.*git checkout abc1234/);
+});
+
+// The real deploy scripts, against a docker fake: a dump of 3 rows per table, rows deleted live since.
+describe.skipIf(process.platform === "win32")("deploy scripts", () => {
+  const root = join(import.meta.dirname, "../../..");
+  beforeEach(() => {
+    for (const s of ["backup.sh", "restore-test.sh"]) copyFileSync(join(root, "deploy", s), join(repo, "deploy", s));
+    writeFileSync(join(repo, "deploy/backups/codetgh-a.dump"), "dump");
+    writeFileSync(
+      join(repo, "bin/docker"),
+      `#!/bin/sh
+while [ "$1" != db ]; do shift; done; shift
+echo "$*" >> "${log}"
+case "$*" in
+  "pg_restore --data-only"*) printf 'COPY public.t (id) FROM stdin;\\n1\\n2\\n3\\n\\\\.\\n' ;;
+  pg_restore*) cat > /dev/null; [ -z "$FAKE_RESTORE_FAILS" ] || exit 1 ;;
+  "psql -U codetgh -d codetgh_restore_check"*) echo "\${FAKE_RESTORED:-3}" ;;
+  psql*) echo 2 ;;
+  pg_dump*) echo dump ;;
+esac
+`,
+    );
+    chmodSync(join(repo, "bin/docker"), 0o755);
+  });
+  const sh = (script: string, ...args: string[]) => spawnSync("sh", [join(repo, "deploy", script), ...args], { encoding: "utf8" });
+
+  it("restore-test passes on a good dump although rows were deleted live since, and fails on a short restore", () => {
+    const ok = sh("restore-test.sh", "deploy/backups/codetgh-a.dump");
+    expect(ok.stdout).toContain("restore OK");
+    expect(ok.status).toBe(0);
+    process.env.FAKE_RESTORED = "2";
+    expect(sh("restore-test.sh", "deploy/backups/codetgh-a.dump").status).toBe(1);
+    delete process.env.FAKE_RESTORED;
+  });
+
+  it("restore-test drops the scratch database when pg_restore fails", () => {
+    process.env.FAKE_RESTORE_FAILS = "1";
+    expect(sh("restore-test.sh", "deploy/backups/codetgh-a.dump").status).not.toBe(0);
+    expect(calls().at(-1)).toMatch(/^dropdb .*codetgh_restore_check/);
+  });
+
+  it("backup prunes the partial dumps a killed run left", () => {
+    const left = join(repo, "deploy/backups/codetgh-old.dump.part");
+    writeFileSync(left, "half");
+    utimesSync(left, new Date(Date.now() - 2 * 86_400_000), new Date(Date.now() - 2 * 86_400_000));
+    expect(sh("backup.sh").status).toBe(0);
+    expect(existsSync(left)).toBe(false);
+  });
 });

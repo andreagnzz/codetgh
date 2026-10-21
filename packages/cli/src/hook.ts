@@ -60,7 +60,7 @@ function statePath(sessionId: string) {
   return join(dir, `codetgh-${createHash("sha256").update(sessionId).digest("hex").slice(0, 16)}.json`);
 }
 
-function loadState(sessionId: string): State {
+export function loadState(sessionId: string): State {
   try {
     return JSON.parse(readFileSync(statePath(sessionId), "utf8"));
   } catch {
@@ -68,13 +68,23 @@ function loadState(sessionId: string): State {
   }
 }
 
-// Hooks run in parallel: write beside the file, then rename over it, so a reader never sees half a file.
-function saveState(sessionId: string, state: State) {
+// Hooks run in parallel: each saves only the keys it changed, merged over the file as it is now, then writes beside it
+// and renames over it, so a reader never sees half a file. On Windows the rename fails while another hook has the file
+// open: retry a few times, well within the hook's budget.
+export function saveState(sessionId: string, changed: State) {
   const file = statePath(sessionId);
   const tmp = `${file}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
-    renameSync(tmp, file);
+    writeFileSync(tmp, JSON.stringify({ ...loadState(sessionId), ...changed }), { mode: 0o600 });
+    for (let i = 0; ; i++) {
+      try {
+        renameSync(tmp, file);
+        break;
+      } catch (e) {
+        if (i >= 4 || !["EPERM", "EBUSY", "EACCES"].includes((e as NodeJS.ErrnoException).code ?? "")) throw e;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
   } catch {
     try {
       rmSync(tmp, { force: true });
@@ -88,7 +98,7 @@ function warnOnce(input: Input, message: string) {
   const sessionId = input.session_id;
   const state = loadState(sessionId);
   if (state.warned) return null;
-  saveState(sessionId, { ...state, warned: true });
+  saveState(sessionId, { warned: true });
   return { systemMessage: message };
 }
 
@@ -240,13 +250,12 @@ async function sessionStart(input: Input) {
       return warnOnce(input, `CodeTgh: linking ${registered.lateLink} as a team project; it is on from your next session.`);
     const { body } = registered;
     if (body.linked === false) {
-      if (input.session_id) saveState(input.session_id, { ...loadState(input.session_id), unlinked: true });
+      if (input.session_id) saveState(input.session_id, { unlinked: true });
       // Said once at start so the person knows CodeTgh is off on purpose, not broken.
       return input.source === "startup" || input.source === "resume" ? { systemMessage: NOT_LINKED } : null;
     }
     if (input.session_id)
       saveState(input.session_id, {
-        ...loadState(input.session_id),
         ...(input.permission_mode && { mode: input.permission_mode }),
         ...(body.agent_id && { agent: body.agent_id }),
         projectless: !repo.fingerprint,
@@ -277,19 +286,19 @@ async function cwdChanged(input: Input) {
   const repo = await repoAt(input.new_cwd ?? input.directory);
   // Each cd inside one repository fires again: ask the hub once per repository.
   if (!repo.fingerprint || repo.fingerprint === state.tried) return null;
-  saveState(input.session_id, { ...loadState(input.session_id), tried: repo.fingerprint });
+  saveState(input.session_id, { tried: repo.fingerprint });
   try {
     const registered = await register({ ...input, source: "cwd-changed" }, repo, BUDGET_MS);
     if ("status" in registered) return null;
     // The hub links the agent in the same transaction that creates the project: count it as linked.
     if ("lateLink" in registered) {
-      saveState(input.session_id, { ...loadState(input.session_id), projectless: false });
+      saveState(input.session_id, { projectless: false });
       return null;
     }
     const { body } = registered;
     if (body.paused) return null;
     if (body.linked === false) return { systemMessage: NOT_LINKED };
-    saveState(input.session_id, { ...loadState(input.session_id), projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
+    saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
     return { systemMessage: `CodeTgh: this session is now on ${(body.project ?? repo.name ?? "").replace(/\p{Cc}/gu, "")}` };
   } catch {
     return null;
@@ -308,9 +317,9 @@ async function userPromptSubmit(input: Input) {
       `/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}${mode ? `&permission_mode=${encodeURIComponent(mode)}` : ""}`,
       { timeoutMs: left(PROMPT_BUDGET_MS), headers: state.etag ? { "If-None-Match": state.etag } : {} },
     );
-    if (mode && res.status < 500) saveState(input.session_id, { ...loadState(input.session_id), mode });
+    if (mode && res.status < 500) saveState(input.session_id, { mode });
     if (res.status !== 200) return null;
-    saveState(input.session_id, { ...loadState(input.session_id), etag: res.etag });
+    saveState(input.session_id, { etag: res.etag });
     const { context } = (await res.json()) as { context: string };
     return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } };
   } catch (e) {
@@ -404,7 +413,7 @@ async function preEdit(input: Input) {
   if (state.unlinked) return null;
   const path = await repoPath(input, state);
   // Other hooks may have saved while git ran: merge the one field this hook owns.
-  if (state.root) saveState(input.session_id, { ...loadState(input.session_id), root: state.root });
+  if (state.root) saveState(input.session_id, { root: state.root });
   if (!path) return null;
   try {
     const res = await hub("/v1/claims/pre-edit", {
@@ -434,7 +443,7 @@ async function postEdit(input: Input) {
   const path = await repoPath(input, state);
   const latest = loadState(input.session_id);
   const touched = path ? [...new Set([...(latest.touched ?? []), path])].slice(-500) : latest.touched;
-  saveState(input.session_id, { ...latest, root: state.root ?? latest.root, touched });
+  saveState(input.session_id, { root: state.root ?? latest.root, touched });
   return null;
 }
 
@@ -475,7 +484,6 @@ async function stop(input: Input) {
     if (!fresh.length) return null;
     const latest = loadState(input.session_id);
     saveState(input.session_id, {
-      ...latest,
       reported: [...(latest.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
     });
     return {
@@ -507,7 +515,7 @@ async function inbox(input: Input) {
   if (!url || !token || !input.session_id || input.agent_id) return null;
   const state = loadState(input.session_id);
   if (state.unlinked || Date.now() - (state.polledAt ?? 0) < POLL_MS) return null;
-  saveState(input.session_id, { ...state, polledAt: Date.now() });
+  saveState(input.session_id, { polledAt: Date.now() });
   try {
     const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}`, {
       timeoutMs: 2000,
@@ -518,7 +526,7 @@ async function inbox(input: Input) {
     const injections = (latest.injections ?? []).filter((t) => Date.now() - t < INJECTION_WINDOW_MS);
     // Past the cap the ETag stays unsaved, so the next prompt still delivers these messages.
     if (latest.etag === res.etag || injections.length >= MAX_INJECTIONS) return null;
-    saveState(input.session_id, { ...latest, etag: res.etag, injections: [...injections, Date.now()] });
+    saveState(input.session_id, { etag: res.etag, injections: [...injections, Date.now()] });
     const { context } = (await res.json()) as { context: string };
     return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: context } };
   } catch {
@@ -544,7 +552,7 @@ async function rewake(input: Input) {
   // A waiter killed at its timeout never clears itself: past the budget its pid no longer counts.
   const waiting = state.waiter && Date.now() - (state.waiterAt ?? 0) < REWAKE_BUDGET_MS + 60_000;
   if (waiting && state.waiter !== process.pid && alive(state.waiter ?? 0)) return null;
-  saveState(sessionId, { ...state, waiter: process.pid, waiterAt: Date.now() });
+  saveState(sessionId, { waiter: process.pid, waiterAt: Date.now() });
   const deadline = Date.now() + REWAKE_BUDGET_MS;
   try {
     for (let waitS = 55; waitS >= 1; waitS = Math.min(55, Math.floor((deadline - Date.now()) / 1000))) {
@@ -566,7 +574,7 @@ async function rewake(input: Input) {
         const wakes = (latest.wakes ?? []).filter((t) => Date.now() - t < WAKE_WINDOW_MS);
         // The ETag stays unsaved, so the next prompt still delivers these messages.
         if (wakes.length >= MAX_WAKES) return null;
-        saveState(sessionId, { ...latest, etag: res.etag, wakes: [...wakes, Date.now()] });
+        saveState(sessionId, { etag: res.etag, wakes: [...wakes, Date.now()] });
         const { context } = (await res.json()) as { context: string };
         process.stderr.write(context);
         process.exitCode = 2;
@@ -577,7 +585,7 @@ async function rewake(input: Input) {
     }
   } finally {
     const latest = loadState(sessionId);
-    if (latest.waiter === process.pid) saveState(sessionId, { ...latest, waiter: undefined });
+    if (latest.waiter === process.pid) saveState(sessionId, { waiter: undefined });
   }
   return null;
 }

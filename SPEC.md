@@ -255,7 +255,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | --- | --- |
 | Garantie | Au moins une fois ; le récepteur dédoublonne par id |
 | Ordre | seq croissant par boîte de réception et par fil ; pas d'ordre global |
-| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. La console et le CLI de la personne (codetgh inbox) montrent tout |
+| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. Quand send_message, ask_peer ou POST /v1/messages ouvre un tel fil (expéditeur sans projet, adressé à une personne ou à l'équipe), le résultat porte warning : « console only: no project on this thread; name a project or agent:<id> to reach a session ». La console et le CLI de la personne (codetgh inbox) montrent tout |
 | Curseur | Un curseur de lecture par agent, distinct du page_token de pagination : inbox_read ne l'avance pas, ack l'avance |
 | États | queued, delivered (première lecture), read (accusé), puis accepted, declined ou done pour une request |
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
@@ -882,7 +882,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 
 | Page | Ce qu'on y fait | Rôle minimal | Phase |
 | --- | --- | --- | --- |
-| Connexion et invitation | Se connecter par GitHub, Google ou lien magique ; accepter une invitation | Public | 1 |
+| Connexion et invitation | Se connecter par GitHub, Google ou lien magique ; accepter une invitation. Une personne qui a déjà un compte rejoint l'équipe seulement en ouvrant le lien et en cliquant « Rejoindre » (POST protégé par CSRF) : l'invitation doit être en attente, adressée à son e-mail vérifié, et sert une seule fois ; se connecter ne fait rejoindre aucune équipe. Un membre révoqué revient seulement par une invitation créée après sa révocation, avec le rôle qu'elle donne | Public | 1 |
 | Tableau de bord | Voir la présence, ce qui demande une décision, l'activité récente et l'état de l'interrupteur | Invité (vue limitée) | 1 |
 | Fils | Lire un fil, répondre en tant qu'humain (authored_by à human), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre ; un invité : les fils où il est invité (voir Rôles) | 1 |
 | Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |

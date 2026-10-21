@@ -60,7 +60,7 @@ export async function updateSettings(
   db: Db,
   p: Principal,
   input: {
-    retentionDays: number;
+    retentionDays?: number;
     secretPatterns: string[];
     claimsEnforcement?: TeamSettings["claims_enforcement"];
     memoryAcceptBy?: TeamSettings["memory_accept_by"];
@@ -90,18 +90,6 @@ export async function updateSettings(
     if (pattern.length > 200 || NESTED_QUANTIFIER.test(pattern))
       throw new HubError("E_INVALID", `pattern too long or with nested quantifiers: ${pattern}`);
   }
-  const settings: TeamSettings = {
-    ...p.settings,
-    retention_days: Math.min(Math.max(input.retentionDays, 1), 3650),
-    secret_patterns: input.secretPatterns.slice(0, 50),
-    claims_enforcement: input.claimsEnforcement ?? p.settings.claims_enforcement,
-    memory_accept_by: input.memoryAcceptBy ?? p.settings.memory_accept_by,
-    memory_accept_via_mcp: input.memoryAcceptViaMcp ?? p.settings.memory_accept_via_mcp,
-    auto_link_projects: input.autoLinkProjects ?? p.settings.auto_link_projects,
-    push_allowed_modes: input.pushAllowedModes ?? p.settings.push_allowed_modes,
-    slack_channel: input.slackChannel,
-    loop_orchestrator: input.loopOrchestrator,
-  };
   await db.transaction(async (tx) => {
     // The Slack bot is shared by the hub: one team's admin must not aim its posts at another team's channel.
     if (input.slackChannel) {
@@ -111,6 +99,21 @@ export async function updateSettings(
         .where(and(ne(team.id, p.teamId), sql`${team.settings}->>'slack_channel' = ${input.slackChannel}`));
       if (taken) throw new HubError("E_INVALID", "this Slack channel is used by another team");
     }
+    // Re-read under a row lock: an alert or GitHub write since this request loaded the principal must survive.
+    const [current] = await tx.select({ settings: team.settings }).from(team).where(eq(team.id, p.teamId)).for("update");
+    const was = current?.settings ?? {};
+    const settings: TeamSettings = {
+      ...was,
+      retention_days: input.retentionDays === undefined ? was.retention_days : Math.min(Math.max(input.retentionDays, 1), 3650),
+      secret_patterns: input.secretPatterns.slice(0, 50),
+      claims_enforcement: input.claimsEnforcement ?? was.claims_enforcement,
+      memory_accept_by: input.memoryAcceptBy ?? was.memory_accept_by,
+      memory_accept_via_mcp: input.memoryAcceptViaMcp ?? was.memory_accept_via_mcp,
+      auto_link_projects: input.autoLinkProjects ?? was.auto_link_projects,
+      push_allowed_modes: input.pushAllowedModes ?? was.push_allowed_modes,
+      slack_channel: input.slackChannel,
+      loop_orchestrator: input.loopOrchestrator,
+    };
     await tx.update(team).set({ settings }).where(eq(team.id, p.teamId));
     await appendAudit(tx, {
       ...byUser(p),
@@ -132,10 +135,11 @@ export async function resolveAlert(db: Db, p: Principal, alertId: string, status
     if (status === "fingerprint_allowed") {
       const fingerprints = (a.detail.fingerprints as string[] | undefined) ?? [];
       if (!fingerprints.length) throw new HubError("E_INVALID", "this alert has no fingerprint");
-      const allowed = [...new Set([...(p.settings.allowed_fingerprints ?? []), ...fingerprints])];
+      const [current] = await tx.select({ settings: team.settings }).from(team).where(eq(team.id, p.teamId)).for("update");
+      const allowed = [...new Set([...(current?.settings.allowed_fingerprints ?? []), ...fingerprints])];
       await tx
         .update(team)
-        .set({ settings: { ...p.settings, allowed_fingerprints: allowed } })
+        .set({ settings: { ...current?.settings, allowed_fingerprints: allowed } })
         .where(eq(team.id, p.teamId));
     }
     await tx.update(alert).set({ status, resolvedBy: p.user.id, resolvedAt: new Date() }).where(eq(alert.id, a.id));

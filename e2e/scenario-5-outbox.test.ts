@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -162,6 +162,39 @@ describe("outbox (scenario 5, phase 2)", () => {
     const [m] = await hub.db.select().from(message).where(eq(message.body, "queued for the old hub"));
     expect(m?.fromUserId).toBe(team.sam.userId);
     old.stop();
+  });
+
+  it("moves an unreadable outbox aside instead of overwriting it, and fails on a read error", async () => {
+    const file = join(config, "outbox.json");
+    writeFileSync(file, '[{"to":"@lea","kind":"note","body":"half writ');
+    const r = await cli(["send", "--to", "@lea", "--body", "after the crash"], { url: DEAD, token: team.sam.token });
+    expect(r.out).toMatch(/outbox\.json\.corrupt-\d+/);
+    const [aside] = readdirSync(config).filter((f) => f.startsWith("outbox.json.corrupt-"));
+    expect(readFileSync(join(config, aside ?? ""), "utf8")).toContain("half writ");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toHaveLength(1);
+    expect(readdirSync(config).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    rmSync(file);
+    mkdirSync(file);
+    await expect(cli(["send", "--to", "@lea", "--body", "unreadable"], { url: DEAD, token: team.sam.token })).rejects.toThrow();
+    rmSync(file, { recursive: true });
+    writeFileSync(file, "[]");
+  });
+
+  it("keeps a queued message the hub refuses, lists it with the reason, and the daemon stops non-zero on a refused token", async () => {
+    const back = await hubDownThenUp();
+    await cli(["send", "--to", "@nobody", "--body", "to a handle that does not exist"], { url: back.url, token: team.sam.token });
+    await back.up();
+    const flushed = await cli(["outbox", "flush"], { url: back.url, token: team.sam.token });
+    expect(flushed.code).toBe(1);
+    back.stop();
+    expect(readFileSync(join(config, "outbox.json"), "utf8")).not.toContain("does not exist");
+    const listed = await cli(["outbox"], { url: back.url, token: team.sam.token });
+    expect(listed.out).toContain("1 refused by the hub");
+    expect(listed.out).toMatch(/refused .* note to @nobody: E_NOT_FOUND/);
+    const lines: string[] = [];
+    const ended = await daemon({ url: hub.url, token: "ctgh_revoked", out: (s) => lines.push(s), signal: new AbortController().signal });
+    expect(ended).toBe("refused");
+    expect(lines).toContain("token refused: run codetgh login");
   });
 
   it("refuses to queue a secret", async () => {
