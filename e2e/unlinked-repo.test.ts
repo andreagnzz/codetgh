@@ -128,3 +128,28 @@ it("says the repository is being linked, not that the hub is unreachable, when l
   expect(line(r)).toMatch(/bet-predict/);
   expect(line(r)).toMatch(/next session|restart/i);
 });
+
+it("delivers again once an admin links the repository and the session resumes", async () => {
+  const origin = "git@github.com:acme/late-link.git";
+  const repo = gitRepo(origin);
+  const env = hookEnv(hub.url, team.sam.token);
+  const start = await runHook("session-start", { session_id: "sam-late", source: "startup", cwd: repo }, env);
+  expect(start.out).toEqual({ systemMessage: ASK_ADMIN });
+
+  const linked = await fetch(`${hub.url}/v1/projects`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ name: "late-link", repo_fingerprint: repoFingerprint(origin) }),
+  });
+  expect(linked.status).toBeLessThan(300);
+  const resumed = await runHook("session-start", { session_id: "sam-late", source: "resume", cwd: repo }, env);
+  expect(line(resumed)).toMatch(/^CodeTgh ✓ late-link · @sam/);
+
+  const lea = await mcpClient(hub.url, team.lea.token);
+  // Delivery follows the project: Léa writes from a session on it.
+  const from = (await startSession(hub.url, team.lea.token, "lea-late", { repo: repoFingerprint(origin) })).agent_id;
+  await call(lea, "send_message", { agent: from, to: "@sam", kind: "note", body: "late-link is wired" });
+  await lea.close();
+  const prompt = await runHook("user-prompt-submit", { session_id: "sam-late", prompt: "go" }, env);
+  expect(JSON.stringify(prompt.out)).toContain("late-link is wired");
+});
