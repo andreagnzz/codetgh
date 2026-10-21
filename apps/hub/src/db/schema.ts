@@ -115,6 +115,23 @@ export const launchTarget = pgTable("launch_target", {
   reportedError: text("reported_error"),
 });
 
+// Runner: the owner switches a project's runner on or off; the runner on the owner's machine reports how many agents run.
+// Same rule as the launcher: the hub stores no path and no command.
+export const runTarget = pgTable("run_target", {
+  projectId: text("project_id")
+    .primaryKey()
+    .references(() => project.id, { onDelete: "cascade" }),
+  teamId: text("team_id")
+    .notNull()
+    .references(() => team.id, { onDelete: "cascade" }),
+  desired: boolean("desired").notNull().default(false),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  running: integer("running").notNull().default(0),
+  reportedAt: timestamp("reported_at"),
+  reportedError: text("reported_error"),
+});
+
 // Personal tokens are stored as SHA-256 hashes; the clear value is shown once. One token = one team.
 export const personalToken = pgTable(
   "personal_token",
@@ -354,6 +371,15 @@ export const task = pgTable(
     notes: jsonb("notes").$type<Array<{ at: string; user_id: string; agent_id: string | null; text: string }>>().notNull().default([]),
     createdByUser: text("created_by_user").notNull(),
     createdByAgent: text("created_by_agent"),
+    // Runner queue: only a member or the owner sets `runner`; the lease is held by one runner at a time.
+    runner: boolean("runner").notNull().default(false),
+    branch: text("branch"),
+    baseBranch: text("base_branch"),
+    prNumber: integer("pr_number"),
+    reviewRound: integer("review_round").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
