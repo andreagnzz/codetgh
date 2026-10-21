@@ -371,3 +371,12 @@ Hub public through Tailscale Funnel; claude.ai → Settings → Connectors → c
 - First attempt: tokens were right (`aud=<hub>/mcp`, `iss=<hub>/api/auth`, scope `codetgh`) but /mcp answered 401 "no token payload": the hub fetched its JWKS through its public URL, which the container cannot reach behind Funnel. Fixed in #64 (`jwksUrl` on the hub's own socket).
 - After the fix: one 401 (the unauthenticated first call), then /mcp 200 for claude.ai's tool calls.
 
+### CwdChanged and DirectoryAdded (docs read 2026-10-20, not run against a real Claude Code)
+
+From [Hooks reference](https://code.claude.com/docs/en/hooks) § CwdChanged, § DirectoryAdded, and § hook types per event; [Run Claude Code programmatically](https://code.claude.com/docs/en/headless):
+- **CwdChanged** runs when a shell command in the main conversation changes the working directory (`cd`). No matcher: it fires on every occurrence. Input adds `old_cwd` and `new_cwd` to the common fields (`cwd` is the new directory). No decision control. Claude Code reads `watchPaths` and `systemMessage`, discards `continue`; in an interactive session the `systemMessage` is a brief terminal notification and does not reach the SDK message stream. The hook gets `CLAUDE_ENV_FILE`.
+- **DirectoryAdded** runs after `/add-dir` or the SDK `register_repo_root` control request; not for `--add-dir` at startup (SessionStart covers those), the `/permissions` Workspace tab, or a directory already inside a working directory. Matcher on how it was added: `slash_command` or `register_repo_root`. Input adds `directory` (absolute path) and `source`. Claude Code does not wait for it: the hook runs in the background (default timeout 600 s). With `slash_command` its `systemMessage` reaches Claude as context on the next turn, not the person; with `register_repo_root` it goes to the debug log only.
+- Both events take `command`, `http` and `mcp_tool` hooks, not `prompt` or `agent`.
+- Neither page says whether these events fire under `-p`.
+
+The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository, and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.
