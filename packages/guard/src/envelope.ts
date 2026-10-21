@@ -34,6 +34,8 @@ export type PeerMeta = {
   authoredBy: "agent" | "human";
   sentAt: Date;
   flags: string[];
+  // Set by the hub only, for a request to a delegate session that accepts its sender (codetgh start --accept-requests-from).
+  authorized?: boolean;
 };
 
 // Peer text is data, never instructions: everything inside is escaped, trust is always the last attribute.
@@ -49,6 +51,7 @@ export function renderPeerMessage(meta: PeerMeta, subject: string | null, body: 
     ["sent_at", meta.sentAt.toISOString()],
     ["sig", "unsigned"],
     ["flags", meta.flags.join(" ")],
+    ...(meta.authorized ? [["authorized", "true"]] : []),
     ["trust", "untrusted-peer"],
   ]
     .map(([k, v]) => `${k}="${escapeAttr(v ?? "", 80)}"`)

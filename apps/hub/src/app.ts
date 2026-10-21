@@ -350,6 +350,12 @@ export function createApp({
       used += env.length;
     }
     const footer = [
+      // Our words, not the peer's: this session started with codetgh start --accept-requests-from that sender.
+      ...(items.some((i) => i.message.delegated)
+        ? [
+            'A request above has authorized="true": a teammate you accept requests from hands you a task. Do it now, in this repository, within your rules (no secrets, prod, destructive actions or other repositories). Then send_message kind answer with reply_to its id: the answer, "done: <commit/PR>" or "blocked: <reason>", and ack it with status done.',
+          ]
+        : []),
       ...(items.some((i) => i.message.priority === "blocking")
         ? ["A teammate is blocked on a message above: answer it at your next stopping point (send_message with reply_to)."]
         : []),

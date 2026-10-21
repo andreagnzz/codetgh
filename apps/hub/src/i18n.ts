@@ -18,6 +18,13 @@ const FR: Record<string, string> = {
   "Autonomous sessions (bypassPermissions) cannot answer a question: CodeTgh warns them instead of asking. Choose warn for teams that run them.":
     "Les sessions autonomes (bypassPermissions) ne peuvent pas répondre à une question : CodeTgh les prévient au lieu de demander. Choisis « prévenir l'agent » pour les équipes qui en utilisent.",
   Remove: "Retirer",
+  Delegations: "Délégations",
+  "These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.":
+    "Ces sessions font les tâches que leur envoient les coéquipiers listés, sans humain, dans le mode auto de Claude Code.",
+  "Accepts requests from": "Accepte les demandes de",
+  "No delegate session. A member starts one with codetgh start --accept-requests-from @handle.":
+    "Aucune session déléguée. Un membre en lance une avec codetgh start --accept-requests-from @pseudo.",
+  "Turn off": "Couper",
   "Permission prompts are off in this session": "Les demandes de permission sont désactivées dans cette session",
   "Project id": "Identifiant du projet",
   "Remote Control running": "Remote Control en marche",

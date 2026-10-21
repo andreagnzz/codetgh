@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, project, user } from "../db/schema.js";
@@ -54,6 +54,32 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
+    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
+    const asked = [...new Set(input.accept_requests_from ?? [])];
+    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
+      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
+    const accept = asked.length
+      ? await tx
+          .select({ userId: membership.userId })
+          .from(membership)
+          .where(
+            and(
+              eq(membership.teamId, p.teamId),
+              eq(membership.status, "active"),
+              ne(membership.role, "guest"),
+              ne(membership.userId, p.user.id),
+              inArray(
+                membership.handle,
+                asked.map((h) => h.slice(1)),
+              ),
+            ),
+          )
+      : [];
+    // Refused, not dropped: a delegate opt-in must say exactly whom it trusts.
+    if (accept.length !== asked.length)
+      throw new HubError("E_INVALID", "--accept-requests-from takes active members of your team other than you, not guests");
+    // claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
+    const launched = !input.source || input.source === "startup" || input.source === "resume";
     const values = {
       kind: input.kind,
       label,
@@ -68,13 +94,24 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
+      // Fails closed: a registration without the opt-in (or with no valid sender) clears it. Only a launch grants it.
+      acceptRequestsFrom: accept.length && launched ? accept.map((m) => m.userId) : null,
     };
     // Outside a repository, a resume keeps the project the session was attached to in the console.
     const { projectId: _, ...kept } = values;
+    // Re-registering with the opt-in keeps the current value, so a « Couper » holds, but only on the same project:
+    // the grant was for one project, and a cd into another repository ends it.
+    const keep = accept.length &&
+      !launched && {
+        acceptRequestsFrom: sql`case when ${agent.projectId} is not distinct from ${input.repo_fingerprint ? projectId : agent.projectId} then ${agent.acceptRequestsFrom} else null end`,
+      };
     const [row] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
-      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: input.repo_fingerprint ? values : kept })
+      .onConflictDoUpdate({
+        target: [agent.teamId, agent.userId, agent.sessionId],
+        set: { ...(input.repo_fingerprint ? values : kept), ...keep },
+      })
       .returning();
     if (!row) throw new HubError("E_INVALID", "agent registration failed");
     await appendAudit(tx, {
@@ -85,7 +122,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       via: "hook",
       action: "agent.session_started",
       subjectId: row.id,
-      data: { source: input.source ?? null },
+      data: { source: input.source ?? null, ...(row.acceptRequestsFrom && { delegate_senders: row.acceptRequestsFrom.length }) },
     });
     return row;
   });
@@ -136,7 +173,7 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
   await db.transaction(async (tx) => {
     const [row] = await tx
       .update(agent)
-      .set({ endedAt: new Date() })
+      .set({ endedAt: new Date(), acceptRequestsFrom: null })
       .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId), isNull(agent.endedAt)))
       .returning({ id: agent.id });
     // Intent claims end with the session; exclusive and shared claims run until their TTL.
@@ -260,4 +297,65 @@ export async function listAgents(db: Db, teamId: string, opts: { projectId?: str
     )
     .orderBy(desc(agent.lastSeenAt))
     .limit(opts.limit ?? 50);
+}
+
+// The live delegate session of `handle` on the sender's project that accepts this sender's requests.
+export async function delegateFor(db: Db, p: Principal, from: Agent, handle: string) {
+  // A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy).
+  if (from.acceptRequestsFrom)
+    throw new HubError("E_DELEGATE_CHAIN", "a delegate session cannot send requests: reply to your requester, or ask a question instead");
+  const [row] = from.projectId
+    ? await db
+        .select({ id: agent.id })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(
+          and(
+            eq(agent.teamId, p.teamId),
+            eq(membership.handle, handle.replace(/^@/, "")),
+            eq(membership.status, "active"),
+            eq(agent.projectId, from.projectId),
+            arrayContains(agent.acceptRequestsFrom, [p.user.id]),
+            isNull(agent.endedAt),
+            isNull(agent.removedAt),
+            gt(agent.lastSeenAt, new Date(Date.now() - 900_000)),
+          ),
+        )
+        .orderBy(desc(agent.lastSeenAt))
+        .limit(1)
+    : [];
+  if (!row)
+    throw new HubError(
+      "E_NO_DELEGATE",
+      `${handle} has no live session on this project that accepts your requests (codetgh start --accept-requests-from @${p.handle}): ask a question instead`,
+    );
+  return row.id;
+}
+
+// Console « Délégations »: the delegate sessions a person may turn off (their own; an admin, the team's).
+export async function listDelegates(db: Db, p: Principal, admin: boolean) {
+  const rows = await db
+    .select({ agent, name: user.name, project: project.name })
+    .from(agent)
+    .innerJoin(user, eq(user.id, agent.userId))
+    .leftJoin(project, eq(project.id, agent.projectId))
+    .where(
+      and(
+        eq(agent.teamId, p.teamId),
+        isNotNull(agent.acceptRequestsFrom),
+        isNull(agent.endedAt),
+        isNull(agent.removedAt),
+        admin ? undefined : eq(agent.userId, p.user.id),
+      ),
+    )
+    .orderBy(desc(agent.lastSeenAt));
+  const ids = [...new Set(rows.flatMap((r) => r.agent.acceptRequestsFrom ?? []))];
+  const senders = !ids.length
+    ? []
+    : await db
+        .select({ userId: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), inArray(membership.userId, ids)));
+  const handleOf = new Map(senders.map((s) => [s.userId, `@${s.handle}`]));
+  return rows.map((r) => ({ ...r, senders: (r.agent.acceptRequestsFrom ?? []).map((id) => handleOf.get(id) ?? "?") }));
 }

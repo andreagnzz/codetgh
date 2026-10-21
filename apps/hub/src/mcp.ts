@@ -22,7 +22,7 @@ import {
 } from "@codetgh/shared";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { type Agent, resolveAgent, setStatus } from "./domain/agents.js";
+import { type Agent, delegateFor, resolveAgent, setStatus } from "./domain/agents.js";
 import { checkPaths, createClaims, releaseClaims } from "./domain/claims.js";
 import { sendHandoff } from "./domain/handoff.js";
 import { takeWrite } from "./domain/limits.js";
@@ -200,15 +200,21 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "ask_peer",
     {
       description:
-        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives between your tool calls, with inbox_read or at your next prompt. priority blocking: you cannot go on without it.",
+        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives between your tool calls, with inbox_read or at your next prompt. priority blocking: you cannot go on without it. kind request: hand a task to the teammate's delegate session on this project (it started with codetgh start --accept-requests-from you); it does the task on its own and replies, and you do not wait (E_NO_DELEGATE if they have none, E_DELEGATE_BUSY if it is on another request).",
       inputSchema: AskPeerInput,
       annotations: WRITE,
       _meta: ALWAYS,
     },
-    async ({ agent, to, question, refs, wait_s, priority }) =>
+    async ({ agent, to, kind, question, refs, wait_s, priority }) =>
       run(async () => {
         const a = await me(agent);
-        const q = await sendMessage(deps, { p, agent: a, via: "mcp" }, { to, kind: "question", body: question, refs, priority });
+        const delegate = kind === "request" ? await delegateFor(db, p, a, to) : undefined;
+        const q = await sendMessage(
+          deps,
+          { p, agent: a, via: "mcp" },
+          { to: delegate ? `agent:${delegate}` : to, kind, body: question, refs, priority, delegate },
+        );
+        const waitS = wait_s ?? (delegate ? 0 : 45);
         const answered = (item: Awaited<ReturnType<typeof findAnswer>>) =>
           item && {
             status: "answered",
@@ -228,7 +234,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           };
           const onMessage = (e: { replyTo: string | null; kind: string }) => e.replyTo === q.id && e.kind === "answer" && done();
           const onStop = (e: { teamId: string }) => e.teamId === p.teamId && done();
-          const timer = setTimeout(done, Math.min(wait_s, ASK_MAX_WAIT_S) * 1000);
+          const timer = setTimeout(done, Math.min(waitS, ASK_MAX_WAIT_S) * 1000);
           bus.on("message", onMessage);
           bus.on("kill", onStop);
           bus.on("revoked", onStop);
@@ -238,7 +244,9 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
         return {
           status: "pending",
           question_id: q.id,
-          hint: "Keep working; the answer will arrive with inbox_read or at your next prompt.",
+          hint: delegate
+            ? "Keep working on your part; the delegate's reply (answer, done or blocked) arrives between your tool calls or wakes you."
+            : "Keep working; the answer will arrive with inbox_read or at your next prompt.",
         };
       }),
   );

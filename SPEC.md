@@ -295,7 +295,7 @@ Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'e
 | send_message | Envoie une note, une question, une réponse, une demande ou une alerte | to, kind, subject, body, priority, refs[], reply_to, requires_ack | Écriture | 1 |
 | inbox_read | Lit les messages non lus ou ceux d'un fil, sans avancer le curseur | thread, page_token, kinds[], limit (20 au plus) | Lecture | 1 |
 | ack | Accuse réception, avance le curseur, répond à une demande | message_ids[] ou up_to, status (accepted, declined, done), note | Écriture | 1 |
-| ask_peer | Pose une question et attend la réponse | to, question, refs[], wait_s (60 au plus) | Écriture, attente | 1 |
+| ask_peer | Pose une question et attend la réponse ; avec kind request, confie une tâche à la session déléguée du coéquipier, sans attendre | to, kind (question ou request), question, refs[], wait_s (60 au plus ; 45 s pour une question, 0 pour une demande) | Écriture, attente | 1 |
 | claim | Réserve des chemins, un glob ou une tâche | scope[], mode, ttl_s, reason | Écriture | 2 |
 | claim_check | Dit qui détient quoi avant une édition | paths[] | Lecture | 2 |
 | claim_release | Libère des réservations | claim_ids[] ou all_mine | Écriture | 2 |
@@ -370,6 +370,9 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_KILL_SWITCH | Interrupteur d'arrêt actif | Travailler sans CodeTgh |
 | E_VERSION_CONFLICT | Tâche modifiée entre-temps | Relire puis recommencer |
 | E_TOO_LARGE | Corps ou pièce jointe trop gros | Résumer et passer par une référence |
+| E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
+| E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
+| E_DELEGATE_CHAIN | Une session déléguée tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
 
 ### Permissions recommandées
 
@@ -782,6 +785,40 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 
 Un message de pair ne peut jamais approuver une invite de permission, modifier des réglages, CLAUDE.md ou des hooks, lancer une commande slash, ni désactiver CodeTgh. Claude Code applique déjà ces règles aux messages entre sessions. Sa documentation de sécurité ne couvre pas, en revanche, le texte injecté par un hook ou renvoyé par un outil MCP : l'enveloppe est donc une convention de CodeTgh, pas une garantie. La défense finale reste le système de permissions de Claude Code, que le plugin ne contourne jamais : le hook PreToolUse répond ask ou deny, ou ne répond rien, jamais allow, qui supprimerait l'invite de permission.
 
+### Sessions déléguées : l'exception à la règle
+
+Le texte d'un pair reste une donnée, sauf dans un cas étroit. Une personne lance elle-même `codetgh start --accept-requests-from @andrea[,@x]`. Sa session devient alors « déléguée » :
+- elle accepte les demandes des membres listés, et d'eux seuls (ni invités, ni elle-même) ;
+- sur le projet de cette session seulement ;
+- jusqu'à la fin de la session ou jusqu'à « Couper » dans la console.
+
+Côté hub :
+- `ask_peer` avec `kind: "request"` vise une personne. Le hub l'adresse à sa session déléguée active, sur le projet de l'expéditeur, si elle accepte cet expéditeur.
+- Sinon, le hub renvoie E_NO_DELEGATE.
+- Une seule demande ouverte par session déléguée (sinon E_DELEGATE_BUSY). Une demande expire après 30 min.
+- Le hub, et lui seul, pose `authorized="true"` sur l'enveloppe. Le contenu reste échappé, et `trust="untrusted-peer"` reste le dernier attribut.
+- Le réveil passe par le rewake et le poll PostToolUse habituels.
+- Le journal d'audit ne garde que des métadonnées.
+- Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
+- Seul le jeton de la personne active le mode, pour sa propre session : le hub range les sessions par utilisateur du jeton et prend l'expéditeur dans le principal authentifié, jamais dans le corps. Il résout la liste lui-même. Un pseudo inconnu, invité ou le sien est refusé (E_INVALID), pas ignoré. Un invité ou une personne en quarantaine ne peut pas lancer de session déléguée (E_FORBIDDEN). Aucun outil MCP ni écran de la console ne l'active.
+- Le mode échoue fermé. Le hub l'efface dans six cas : à la fin de la session ; au retrait de l'agent ; sur « Couper » ; à tout nouvel enregistrement de la session qui ne porte pas l'option ; quand la session passe dans un autre dépôt (CwdChanged) ; quand elle est rattachée à un autre projet depuis la console. Seul un lancement (startup, resume) l'accorde. `/clear`, la compaction et un changement de dossier sur le même projet gardent l'état courant, donc « Couper » tient. Sans état clair, la session n'est pas déléguée.
+
+Côté session :
+- `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.
+- `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`. Elles comparent la commande telle qu'écrite : `cat .env` ou `git push origin +main` leur échappent.
+- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) trois sortes de commandes. Il tourne sans réseau, en moins de 3 s.
+  - Celles qui nomment l'un de ces chemins.
+  - Celles qui forcent un push : `--force`, `-f`, `--force-with-lease`, `+refspec`.
+  - Celles qui construisent leur commande à l'exécution : `eval`, `sh -c` avec une variable, `base64 -d |`, une substitution par `printf`.
+  - Il retire d'abord guillemets, `$'…'` et échappements, et remplace `${HOME}`, `$HOME` par `~`.
+- C'est une liste de blocage au mieux, qui ne peut pas être complète : un script qui ouvre lui-même le fichier, un alias ou un fichier écrit puis lancé lui échappent. D'où la recommandation d'un devcontainer ou d'un clone dédié.
+- `start` ajoute un prompt système fixe, écrit par CodeTgh. Une demande autorisée est une tâche à faire dans ce dépôt. Jamais de secrets, de prod, d'action destructive ni d'autre dépôt.
+- La session répond toujours par `send_message` `reply_to` : la réponse, « done: <commit/PR> » ou « blocked: <raison> ». Une action refusée par Claude Code donne « blocked ». Puis elle appelle `ack` avec `done`.
+
+Toute autre session, et tout autre message dans une session déléguée, suivent la règle générale.
+
+Limite assumée : un pair autorisé peut faire faire à la session tout ce que le mode auto, les règles deny et le hook laissent passer. Ces garde-fous réduisent le risque mais n'isolent rien : la session tourne avec les droits de la personne sur sa machine. Il faut lancer une session déléguée dans un devcontainer ou un clone dédié, sans secrets. La protection tient à la liste d'expéditeurs, au projet unique, au classifieur, aux règles deny, au hook et à « Couper ».
+
 ### Rôles
 
 | Action | Propriétaire | Admin | Membre | Invité |
@@ -846,6 +883,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
 | Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents), administrateur (tous) | 1 |
 | Projets | Voir les sessions de chaque membre par projet ; « Sessions hors projet » : les sessions lancées hors d'un dépôt lié (sans agents système bridge et a2a ni agent REST cli-…), à rattacher à un projet (audit agent.project_set) | Membre (lecture, rattacher ses sessions), administrateur (rattacher toutes) ; jamais un invité | 2 |
+| Délégations | Voir les sessions déléguées, leur projet et les expéditeurs acceptés ; « Couper » retire le mode et fait expirer les demandes non traitées | Membre (ses sessions), administrateur (toutes) | 3 |
 | Jetons | Créer, renouveler et révoquer ses jetons personnels (portée agent) ; la valeur ne s'affiche qu'une fois | Membre | 1 |
 | Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle, révoquer | Administrateur | 1 |
 | Interrupteur d'arrêt | Couper puis rétablir le trafic des agents, avec un motif obligatoire | Administrateur | 1 |

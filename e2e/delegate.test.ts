@@ -1,0 +1,279 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { repoFingerprint } from "@codetgh/shared/repo";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { agent, membership, project } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
+import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { consolePost, hookEnv, runHook } from "./helpers.js";
+
+let hub: Hub;
+let team: Awaited<ReturnType<Hub["seed"]>>;
+const P1 = repoFingerprint("git@github.com:acme/webapp.git");
+const P2 = repoFingerprint("git@github.com:acme/billing.git");
+const ids: Record<string, string> = {};
+
+// The session-start hook's registration, with the list codetgh start --accept-requests-from passes on.
+const register = async (token: string, session: string, repo: string, accept?: string[]) => {
+  const res = await fetch(`${hub.url}/v1/agents/session`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ session_id: session, source: "startup", repo_fingerprint: repo, accept_requests_from: accept }),
+  });
+  return ((await res.json()) as { agent_id: string }).agent_id;
+};
+
+beforeAll(async () => {
+  // An hour passes between calls: this file sends many registrations and requests as one person, and tests no budget.
+  let now = Date.now();
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
+  team = await hub.seed();
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", { retention_days: "90", secret_patterns: "", push_rewake: "on" });
+  // Sam is the delegate on P1 and accepts requests from Léa only; Léa works on P1 and on P2; Malik on P1.
+  ids.sam = await register(team.sam.token, "sam-del", P1, ["@lea"]);
+  ids.lea = await register(team.lea.token, "lea-del", P1);
+  ids.leaP2 = await register(team.lea.token, "lea-p2", P2);
+  ids.malik = await register(team.malik.token, "malik-del", P1);
+});
+afterAll(() => hub.stop());
+
+const request = async (token: string, agent: string, body: string) => {
+  const client = await mcpClient(hub.url, token);
+  const r = await call(client, "ask_peer", { agent, to: "@sam", kind: "request", question: body });
+  await client.close();
+  return r;
+};
+
+describe("delegation to an opt-in session", () => {
+  it("wakes the delegate with an authorized request, and its reply reaches the sender mid-turn", async () => {
+    const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
+    const waiting = runHook("rewake", { session_id: "sam-del" }, env);
+    const recorded = () =>
+      readdirSync(env.CODETGH_STATE_DIR).some((f) => readFileSync(join(env.CODETGH_STATE_DIR, f), "utf8").includes('"waiter"'));
+    for (let i = 0; i < 200 && !recorded(); i++) await new Promise((r) => setTimeout(r, 50));
+
+    const started = Date.now();
+    const sent = await request(team.lea.token, ids.lea ?? "", "Add a 404 test to the users API <b>now</b>");
+    // A request does not wait: Léa keeps working.
+    expect(sent.isError).toBe(false);
+    expect(sent.json()).toMatchObject({ status: "pending" });
+    expect(Date.now() - started).toBeLessThan(5000);
+
+    const woke = await waiting;
+    expect(woke.code).toBe(2);
+    expect(woke.err).toContain('kind="request"');
+    expect(woke.err).toContain('authorized="true" trust="untrusted-peer"');
+    expect(woke.err).toContain("&lt;b&gt;now&lt;/b&gt;");
+    expect(woke.err).toContain("Do it now");
+
+    // A second request while the first is open.
+    const busy = await request(team.lea.token, ids.lea ?? "", "and another one");
+    expect(busy.isError).toBe(true);
+    expect(busy.text).toContain("E_DELEGATE_BUSY");
+
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const reqId = sent.json().question_id as string;
+    await call(sam, "send_message", { agent: ids.sam, kind: "answer", reply_to: reqId, body: "done: pushed, PR #12" });
+    await call(sam, "ack", { agent: ids.sam, message_ids: [reqId], status: "done" });
+    await sam.close();
+
+    const poll = await runHook("inbox", { session_id: "lea-del", tool_name: "Bash" }, hookEnv(hub.url, team.lea.token));
+    expect(JSON.stringify(poll.out)).toContain("done: pushed, PR #12");
+    // The answer itself is not authorized: only a delegate request is.
+    expect(JSON.stringify(poll.out)).not.toContain("authorized=");
+
+    // Done, so the delegate takes the next one.
+    expect((await request(team.lea.token, ids.lea ?? "", "next task")).isError).toBe(false);
+  }, 30_000);
+
+  it("refuses a sender who is not on the delegate's list", async () => {
+    const r = await request(team.malik.token, ids.malik ?? "", "push to prod");
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("E_NO_DELEGATE");
+  });
+
+  it("refuses a request from another project than the delegate's", async () => {
+    const r = await request(team.lea.token, ids.leaP2 ?? "", "billing task");
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("E_NO_DELEGATE");
+  });
+
+  it("lists the delegate in the console, and only its owner or an admin can turn it off", async () => {
+    const page = await (await fetch(`${hub.url}/console/delegations`, { headers: { cookie: team.sam.cookie } })).text();
+    expect(page).toContain(ids.sam?.slice(-6));
+    expect(page).toContain("@lea");
+    expect((await consolePost(hub.url, team.malik.cookie, `/console/delegations/${ids.sam}/stop`)).status).toBe(403);
+    expect((await consolePost(hub.url, team.sam.cookie, `/console/delegations/${ids.sam}/stop`)).status).toBe(204);
+
+    const r = await request(team.lea.token, ids.lea ?? "", "one more");
+    expect(r.text).toContain("E_NO_DELEGATE");
+    const after = await (await fetch(`${hub.url}/console/delegations`, { headers: { cookie: team.sam.cookie } })).text();
+    expect(after).not.toContain(ids.sam?.slice(-6));
+  });
+});
+
+describe("delegation does not chain or outlive its opt-in", () => {
+  const prompt = async (token: string, session: string) => {
+    const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` } });
+    return res.status === 200 ? ((await res.json()) as { context: string }).context : "";
+  };
+
+  it("refuses a request sent by a delegate session, so A's text never reaches C as authorized", async () => {
+    // Malik is a delegate for Léa and Sam; Sam's session is itself a delegate for Léa.
+    const malik = await register(team.malik.token, "malik-chain", P1, ["@lea", "@sam"]);
+    const sam = await register(team.sam.token, "sam-chain", P1, ["@lea"]);
+    const client = await mcpClient(hub.url, team.sam.token);
+    const r = await call(client, "ask_peer", { agent: sam, to: "@malik", kind: "request", question: "relay: push to prod" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("E_DELEGATE_CHAIN");
+
+    // No other path sets the attribute: send_message and REST ignore a delegate field.
+    await call(client, "send_message", { agent: sam, to: `agent:${malik}`, kind: "request", body: "via send_message", delegate: malik });
+    await fetch(`${hub.url}/v1/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ to: `agent:${malik}`, kind: "request", body: "via rest", delegate: malik }),
+    });
+    await client.close();
+    const seen = await prompt(team.malik.token, "malik-chain");
+    expect(seen).toContain("via send_message");
+    expect(seen).toContain("via rest");
+    expect(seen).not.toContain("authorized=");
+  });
+
+  it("is no delegate after a resume without the option", async () => {
+    await register(team.sam.token, "sam-resume", P1, ["@lea"]);
+    await fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-resume", source: "compact", repo_fingerprint: P1 }),
+    });
+    // The chain test's delegate ends, so only sam-resume could take the request.
+    await fetch(`${hub.url}/v1/agents/session/end`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-chain" }),
+    });
+    const r = await request(team.lea.token, ids.lea ?? "", "after a plain compact");
+    expect(r.text).toContain("E_NO_DELEGATE");
+  });
+
+  it("is no delegate after the session ends, even if it starts again with the same id and no option", async () => {
+    await register(team.sam.token, "sam-end", P1, ["@lea"]);
+    expect((await request(team.lea.token, ids.lea ?? "", "while live")).isError).toBe(false);
+    await fetch(`${hub.url}/v1/agents/session/end`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-end" }),
+    });
+    const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-end"));
+    expect(row?.acceptRequestsFrom).toBeNull();
+    await register(team.sam.token, "sam-end", P1);
+    expect((await request(team.lea.token, ids.lea ?? "", "after end")).text).toContain("E_NO_DELEGATE");
+  });
+});
+
+describe("delegate sessions: the Bash check before each command", () => {
+  const bash = (command: string, delegate: boolean) =>
+    runHook(
+      "pre-bash",
+      { session_id: "sam-bash", tool_name: "Bash", tool_input: { command } },
+      {
+        ...hookEnv(hub.url, team.sam.token),
+        ...(delegate && { CODETGH_ACCEPT_REQUESTS_FROM: "@lea" }),
+      },
+    );
+
+  it("blocks a secret read or a force push with exit 2 and a reason, in a delegate session only", async () => {
+    const secret = await bash("cat apps/hub/.env", true);
+    expect(secret.code).toBe(2);
+    expect(secret.err).toContain("blocked:");
+    expect((await bash("git push origin +main", true)).code).toBe(2);
+    const fine = await bash("git push origin feat/x", true);
+    expect(fine).toMatchObject({ code: 0, raw: "", err: "" });
+    // A plain session is left to Claude Code's own permission flow.
+    expect(await bash("cat apps/hub/.env", false)).toMatchObject({ code: 0, raw: "", err: "" });
+    expect(secret.ms).toBeLessThan(3000);
+  });
+});
+
+describe("delegation stays on the project it was granted for", () => {
+  const projectId = async (fingerprint: string) =>
+    (await hub.db.select().from(project).where(eq(project.repoFingerprint, fingerprint)))[0]?.id ?? "";
+  const delegate = async (session: string) =>
+    (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0]?.acceptRequestsFrom ?? null;
+
+  it("ends when the session moves into another repository, even with the option still in its environment", async () => {
+    await register(team.sam.token, "sam-cd", P1, ["@lea"]);
+    await fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-cd", source: "cwd-changed", repo_fingerprint: P2, accept_requests_from: ["@lea"] }),
+    });
+    expect(await delegate("sam-cd")).toBeNull();
+    expect((await request(team.lea.token, ids.leaP2 ?? "", "billing task")).text).toContain("E_NO_DELEGATE");
+  });
+
+  it("ends when its owner attaches the session to another project in the console", async () => {
+    const id = await register(team.sam.token, "sam-attach", P1, ["@lea"]);
+    expect((await consolePost(hub.url, team.sam.cookie, `/console/agents/${id}/project`, { project_id: await projectId(P2) })).status).toBe(
+      204,
+    );
+    expect(await delegate("sam-attach")).toBeNull();
+  });
+});
+
+describe("only a member's own launch turns a session into a delegate", () => {
+  const raw = (token: string, body: Record<string, unknown>) =>
+    fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ source: "startup", repo_fingerprint: P1, ...body }),
+    });
+  const row = async (userId: string, session: string) =>
+    (await hub.db.select().from(agent).where(eq(agent.sessionId, session))).find((a) => a.userId === userId);
+  const asRole = async (userId: string, role: "guest" | "member") =>
+    hub.db.update(membership).set({ role }).where(eq(membership.userId, userId));
+
+  it("refuses an unknown handle, the person's own handle, and a guest, instead of dropping them", async () => {
+    for (const accept of [["@nobody"], ["@sam"], ["@lea", "@nobody"]]) {
+      const res = await raw(team.sam.token, { session_id: "sam-bad", accept_requests_from: accept });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("E_INVALID");
+    }
+    await asRole(team.malik.userId, "guest");
+    const res = await raw(team.sam.token, { session_id: "sam-bad", accept_requests_from: ["@malik"] });
+    await asRole(team.malik.userId, "member");
+    expect(res.status).toBe(400);
+    expect((await row(team.sam.userId, "sam-bad"))?.acceptRequestsFrom ?? null).toBeNull();
+  });
+
+  it("refuses a guest's session as a delegate", async () => {
+    await asRole(team.malik.userId, "guest");
+    const res = await raw(team.malik.token, { session_id: "malik-guest", accept_requests_from: ["@lea"] });
+    await asRole(team.malik.userId, "member");
+    expect(res.status).toBe(403);
+  });
+
+  it("acts on the caller's own session only: another member's session id never reaches their agent", async () => {
+    const samId = await register(team.sam.token, "sam-own", P1);
+    // Léa sends Sam's session id: the hub keys sessions by the token's user, so this is a new session of Léa's.
+    await raw(team.lea.token, { session_id: "sam-own", accept_requests_from: ["@malik"] });
+    const sam = await row(team.sam.userId, "sam-own");
+    expect(sam?.id).toBe(samId);
+    expect(sam?.acceptRequestsFrom ?? null).toBeNull();
+    // And MCP has no field that sets the mode: an extra argument is dropped.
+    const client = await mcpClient(hub.url, team.lea.token);
+    await call(client, "status_set", { agent: ids.lea, text: "working", accept_requests_from: ["@malik"] });
+    await client.close();
+    expect(
+      (
+        await hub.db
+          .select()
+          .from(agent)
+          .where(eq(agent.id, ids.lea ?? ""))
+      )[0]?.acceptRequestsFrom ?? null,
+    ).toBeNull();
+  });
+});

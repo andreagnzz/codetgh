@@ -41,9 +41,10 @@ import {
   setAgentProject,
   setAgentTrust,
   setKillSwitch,
+  stopDelegate,
   updateSettings,
 } from "../domain/admin.js";
-import { listAgents, presence } from "../domain/agents.js";
+import { listAgents, listDelegates, presence } from "../domain/agents.js";
 import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
@@ -732,6 +733,41 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/agents/:id/remove", async (c) => {
     await removeAgent(db, c.get("principal"), c.req.param("id"));
+    return refresh(c);
+  });
+
+  // Sessions started with codetgh start --accept-requests-from: who may hand them tasks; their owner or an admin turns them off.
+  consoleApp.get("/delegations", async (c) => {
+    const p = c.get("principal");
+    const _ = tr(c);
+    const rows = await listDelegates(db, p, isAdmin(p));
+    return page(
+      c,
+      "Delegations",
+      <>
+        <p>{_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}</p>
+        <Table
+          head={[_("Who"), _("Label"), _("Project"), _("Accepts requests from"), _("Last seen"), _("Actions")]}
+          empty={_("No delegate session. A member starts one with codetgh start --accept-requests-from @handle.")}
+          rows={rows.map((r) => [
+            r.name,
+            <>
+              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
+            </>,
+            r.project ?? "",
+            r.senders.join(", "),
+            <>
+              <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
+            </>,
+            <Action post={`/console/delegations/${r.agent.id}/stop`} label={_("Turn off")} />,
+          ])}
+        />
+      </>,
+    );
+  });
+
+  consoleApp.post("/delegations/:id/stop", async (c) => {
+    await stopDelegate(db, c.get("principal"), c.req.param("id"));
     return refresh(c);
   });
 

@@ -163,6 +163,8 @@ export const agent = pgTable(
     clientVersion: text("client_version"),
     // Claude Code's permission mode, kept current by the prompt hook.
     permissionMode: text("permission_mode"),
+    // codetgh start --accept-requests-from: user ids whose requests this session does; null when it is not a delegate.
+    acceptRequestsFrom: text("accept_requests_from").array(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("agent_session_uq").on(t.teamId, t.userId, t.sessionId), index("agent_team_seen_idx").on(t.teamId, t.lastSeenAt)],
@@ -217,6 +219,8 @@ export const message = pgTable(
     capsule: jsonb("capsule").$type<Record<string, unknown>>(),
     encrypted: boolean("encrypted").notNull().default(false),
     taskId: text("task_id"),
+    // A request the hub addressed to a delegate session that accepts its sender: rendered authorized="true".
+    delegated: boolean("delegated").notNull().default(false),
     expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

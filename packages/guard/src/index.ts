@@ -1,6 +1,7 @@
 import { renderPeerMessage } from "./envelope.js";
 import { textFlags } from "./flags.js";
 
+export { delegateBlock } from "./commands.js";
 export { clean, escapeAttr, escapeText, type PeerMeta, renderPeerMessage } from "./envelope.js";
 export { textFlags } from "./flags.js";
 export { type SecretFinding, scanSecrets } from "./secrets.js";

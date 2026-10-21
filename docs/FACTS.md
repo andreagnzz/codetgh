@@ -325,6 +325,28 @@ From [Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifes
 
 So `codetgh start` sets no environment variable for the push mode. `codetgh setup` saves `push_mode=rewake` when the team allows rewake (as before), and `codetgh upgrade` now does the same through `claude plugin configure codetgh@codetgh --values-stdin` with `{"push_mode":"rewake"}`. When the team does not allow it, both keep `hooks` and print that an admin can allow rewake in the console Settings. Tested with a fake `claude` (`packages/cli/test/upgrade.test.ts`, `setup.test.ts`).
 
+### Delegate sessions: auto mode, deny rules, system prompt, environment (docs read 2026-10-21, not run against a real Claude Code)
+
+From [Choose a permission mode](https://code.claude.com/docs/en/permission-modes):
+- `claude --permission-mode auto` starts in auto mode: "a second model, the classifier, reviews actions instead of you", "blocking anything that escalates beyond your request, targets unrecognized infrastructure, or appears driven by hostile content Claude read". Explicit ask rules still prompt.
+- "Deny rules block in every mode, including `bypassPermissions`."
+- When the classifier blocks an action, "Claude receives the reason" (usually the rule name, such as `[Data Exfiltration]`). After 3 blocks in a row or 20 in total, auto mode pauses and Claude Code resumes prompting: an unattended delegate then waits for a human.
+- Auto mode needs a supported model (Opus 4.6+, Sonnet 4.6+, Haiku 5.5, Fable on the Anthropic API); an organization can turn it off (`disableAutoMode`), and a session started with `--permission-mode auto` then starts in Manual.
+- Auto mode does not guarantee safety; a sandbox or container adds defense in depth.
+
+From [Configure permissions](https://code.claude.com/docs/en/permissions):
+- Read rules use gitignore patterns; a bare pattern matches at any depth under the working directory (`Read(.env)` equals `Read(**/.env)`), `~/` anchors at home. A `Read` deny also blocks Edit and Write on that path.
+- Read deny rules also cover file commands Claude Code recognizes in Bash (`cat`, `head`, `tail`, `sed`, `tee`) and redirections, not a script that opens files itself.
+- Bash rules match the command as written; `Bash(rm -rf*)` with no space before `*` also matches `rm -rf/x`. A deny rule matches every subcommand of `a && b`, and past leading variable assignments. It does not match `/bin/rm -rf x`, `bash -c '…'` or `git push origin main --force` (the flag after the branch): the classifier is what reviews those.
+
+From [CLI reference](https://code.claude.com/docs/en/cli-reference): `--append-system-prompt` appends to the default prompt in interactive and `-p` sessions; `--settings` takes an inline JSON string whose keys override the files' for this session; `--permission-mode` accepts `auto`.
+
+From [Hooks](https://code.claude.com/docs/en/hooks): "A hook process inherits the parent environment" (minus `OTEL_*`, and the variables `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` strips). So `codetgh start --accept-requests-from @a,@b` sets `CODETGH_ACCEPT_REQUESTS_FROM` in claude's environment, and the session-start hook sends it to the hub.
+
+From [Hooks](https://code.claude.com/docs/en/hooks) § PreToolUse, exit code 2: the call is blocked and stderr is fed back to Claude. The plugin's `pre-bash` hook (matcher `Bash`) uses it in delegate sessions only, through `delegateBlock` in `@codetgh/guard`. `delegateBlock` first removes quotes, `$'…'`, backslash escapes and `${HOME}`/`$HOME`, then also blocks commands built at run time (`eval`, `sh -c` with a variable, `base64 -d |`, a `printf` substitution). It is a best-effort blocklist and cannot be complete: a script that opens the file itself, an alias, or a file written then run gets past it. Hence the recommendation to run delegate sessions in a devcontainer or a dedicated clone. The deny rules alone are a first layer, not a sandbox: `cat .env` is a recognized file command, but `git push origin +main` and `git push --force-with-lease` are not matched by the prefix rules.
+
+`codetgh start --accept-requests-from` therefore runs `claude --settings '{"enabledPlugins":{…},"permissions":{"deny":["Read(.env*)","Read(*.pem)","Read(*.key)","Read(~/.ssh/**)","Read(~/.aws/**)","Bash(git push --force*)","Bash(git push -f*)","Bash(rm -rf*)"]}}' -n … --append-system-prompt <fixed text> --permission-mode auto`, keeps a `--permission-mode` the user passes, and refuses `bypassPermissions`. Tested with a fake `claude` (`packages/cli/test/start.test.ts`) and end to end against the hub (`e2e/delegate.test.ts`).
+
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
 
 From [Hooks](https://code.claude.com/docs/en/hooks):
