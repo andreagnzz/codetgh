@@ -54,9 +54,16 @@ async function unreadSummary(db: Db, p: Principal, me: Agent) {
   return { byKind: Object.fromEntries(byKind.map((r) => [r.kind, r.n])) as Record<string, number>, blocking: blocking.map((b) => b.id) };
 }
 
+// Agents on the session's own project come first; the sort is stable, so the most recent stay on top within each part.
+const ownProjectFirst = <T extends { agent: Agent }>(rows: T[], me: Agent) =>
+  me.projectId ? rows.sort((a, b) => Number(b.agent.projectId === me.projectId) - Number(a.agent.projectId === me.projectId)) : rows;
+
 export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scope: "team" | "project"; limit: number }) {
   requireMember(p);
-  const agents = await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me.projectId : undefined, limit: opts.limit });
+  const agents = ownProjectFirst(
+    await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me.projectId : undefined, limit: opts.limit }),
+    me,
+  );
   const unread = await unreadSummary(db, p, me);
   return {
     team: free(p.teamName),
@@ -94,7 +101,7 @@ export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
     return `<codetgh_context ${attrs}>You are a guest: read the messages sent to you with inbox_read; you can send notes and questions.</codetgh_context>`;
   const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
   const ov = await teamOverview(db, p, me, { scope: "team", limit: 30 });
-  const agents = await listAgents(db, p.teamId, { limit: 30 });
+  const agents = ownProjectFirst(await listAgents(db, p.teamId, { limit: 30 }), me);
   const tasks = await myOpenTasks(db, p);
   const handoffs = await pendingHandoffs(db, p, me);
   const decisions = await packetDecisions(db, p);
@@ -103,7 +110,7 @@ export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
     .slice(0, 10)
     .map((r) => {
       const status = r.agent.statusExpiresAt && r.agent.statusExpiresAt > new Date() ? r.agent.statusText : "";
-      return `${r.name} (@${r.handle}${r.agent.branch ? `, ${r.agent.branch}` : ""}, ${presence(r.agent)}${status ? `, "${status}"` : ""}, ${ago(r.agent.lastSeenAt)})`;
+      return `${r.name} (@${r.handle}${r.project ? `, ${r.project}` : ""}${r.agent.branch ? `, ${r.agent.branch}` : ""}, ${presence(r.agent)}${status ? `, "${status}"` : ""}, ${ago(r.agent.lastSeenAt)})`;
     });
   // Others' claims only, without their reasons.
   const claims = ov.claims.filter((c) => !c.mine).slice(0, 8);
