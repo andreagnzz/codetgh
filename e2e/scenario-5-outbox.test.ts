@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -162,6 +162,22 @@ describe("outbox (scenario 5, phase 2)", () => {
     const [m] = await hub.db.select().from(message).where(eq(message.body, "queued for the old hub"));
     expect(m?.fromUserId).toBe(team.sam.userId);
     old.stop();
+  });
+
+  it("moves an unreadable outbox aside instead of overwriting it, and fails on a read error", async () => {
+    const file = join(config, "outbox.json");
+    writeFileSync(file, '[{"to":"@lea","kind":"note","body":"half writ');
+    const r = await cli(["send", "--to", "@lea", "--body", "after the crash"], { url: DEAD, token: team.sam.token });
+    expect(r.out).toMatch(/outbox\.json\.corrupt-\d+/);
+    const [aside] = readdirSync(config).filter((f) => f.startsWith("outbox.json.corrupt-"));
+    expect(readFileSync(join(config, aside ?? ""), "utf8")).toContain("half writ");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toHaveLength(1);
+    expect(readdirSync(config).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    rmSync(file);
+    mkdirSync(file);
+    await expect(cli(["send", "--to", "@lea", "--body", "unreadable"], { url: DEAD, token: team.sam.token })).rejects.toThrow();
+    rmSync(file, { recursive: true });
+    writeFileSync(file, "[]");
   });
 
   it("refuses to queue a secret", async () => {

@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -130,16 +141,29 @@ type Queued = {
   account?: string;
 };
 const outboxPath = () => join(configDir(), "outbox.json");
-const readOutbox = (): Queued[] => {
+// A file that does not parse is moved aside, never overwritten: it may hold the only copy of queued messages.
+const readOutbox = (warn: (s: string) => void): Queued[] => {
+  let text: string;
   try {
-    return JSON.parse(readFileSync(outboxPath(), "utf8"));
+    text = readFileSync(outboxPath(), "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
+  }
+  try {
+    return JSON.parse(text);
   } catch {
+    const aside = `${outboxPath()}.corrupt-${Date.now()}`;
+    renameSync(outboxPath(), aside);
+    warn(`the outbox did not parse: moved it to ${aside}, check it and send what it holds again`);
     return [];
   }
 };
 const writeOutbox = (items: Queued[]) => {
   mkdirSync(configDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(outboxPath(), JSON.stringify(items), { mode: 0o600 });
+  const tmp = `${outboxPath()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(items), { mode: 0o600 });
+  renameSync(tmp, outboxPath());
 };
 
 // Throws when the send may succeed later (network, 5xx, 429, 401); returns `rejected` when the hub refused it for good.
@@ -158,11 +182,11 @@ async function postMessage(url: string, token: string, m: Queued) {
 }
 
 // Same idempotency key on every replay, so a send whose reply was lost is stored once.
-async function flushOutbox(url: string, token: string) {
+async function flushOutbox(url: string, token: string, warn: (s: string) => void) {
   let sent = 0;
   let kept = 0;
   const rejected: string[] = [];
-  for (const m of readOutbox()) {
+  for (const m of readOutbox(warn)) {
     if (m.hub !== url || m.account !== account(token)) {
       kept++;
       continue;
@@ -172,7 +196,7 @@ async function flushOutbox(url: string, token: string) {
     if ("rejected" in r) rejected.push(`${m.to}: ${r.rejected}`);
     else sent++;
     // Re-read: a send may have queued more meanwhile.
-    writeOutbox(readOutbox().filter((x) => x.idempotency_key !== m.idempotency_key));
+    writeOutbox(readOutbox(warn).filter((x) => x.idempotency_key !== m.idempotency_key));
   }
   return { sent, kept, rejected, offline: false };
 }
@@ -196,7 +220,7 @@ export async function daemon(o: { url: string; token: string; out: (s: string) =
   let last: string | undefined;
   let delay = 1000;
   while (!o.signal.aborted) {
-    const f = await flushOutbox(o.url, o.token);
+    const f = await flushOutbox(o.url, o.token, o.out);
     if (f.sent) o.out(`outbox ${f.sent} sent`);
     for (const r of f.rejected) o.out(`outbox rejected ${r}`);
     try {
@@ -1188,7 +1212,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const queued = { ...m, queued_at: new Date().toISOString(), hub: url, account: account(token) };
       const r = await postMessage(url, token, queued).catch(() => null);
       if (!r) {
-        writeOutbox([...readOutbox(), queued]);
+        writeOutbox([...readOutbox(io.err), queued]);
         return io.out("hub unreachable: queued in the outbox (codetgh daemon or codetgh outbox flush sends it)");
       }
       if ("rejected" in r) throw new Error(r.rejected);
@@ -1329,10 +1353,10 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .action(async () => {
       const { url, token } = await credentials(deps.keyring);
       if (!url || !token) throw new Error("no hub URL or token: run codetgh login");
-      const f = await flushOutbox(url, token);
+      const f = await flushOutbox(url, token, io.err);
       for (const r of f.rejected) io.err(`rejected ${r}`);
       io.out(
-        `${f.sent} sent${f.kept ? `, ${f.kept} kept for another hub or account (log in there to send them)` : ""}${f.offline ? `, ${readOutbox().length - f.kept} still queued (hub unreachable)` : ""}`,
+        `${f.sent} sent${f.kept ? `, ${f.kept} kept for another hub or account (log in there to send them)` : ""}${f.offline ? `, ${readOutbox(io.err).length - f.kept} still queued (hub unreachable)` : ""}`,
       );
       if (f.offline || f.rejected.length) process.exitCode = 1;
     });
