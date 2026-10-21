@@ -493,8 +493,11 @@ export function createApp({
     const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
     // A bad usage reading is dropped, never the presence refresh.
     const { session_id: _, ...usage } = StatusQuery.safeParse(c.req.query()).data ?? {};
-    if (sessionId && (await touchSession(db, p, sessionId, usage))) bus.emit("presence", { teamId: p.teamId });
-    return c.json(await teamOverview(db, p, await restAgent(p, undefined), { scope: "team", limit: 50 }));
+    const live = sessionId ? await touchSession(db, p, sessionId, usage) : false;
+    if (live) bus.emit("presence", { teamId: p.teamId });
+    // The mod wakes its session on this count: a live session counts only what it can read itself.
+    const me = (live && sessionId && (await agentBySession(db, p, sessionId))) || (await restAgent(p, undefined));
+    return c.json(await teamOverview(db, p, me, { scope: "team", limit: 50 }));
   });
 
   v1.post("/status", async (c) => {
