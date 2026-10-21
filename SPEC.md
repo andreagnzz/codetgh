@@ -291,6 +291,7 @@ Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'e
 | --- | --- | --- | --- | --- |
 | whoami | Identité de l'agent, équipe, projet lié, rôle, réglages applicables | aucune | Lecture | 1 |
 | team_overview | Vue compacte : présence, réservations actives, tâches ouvertes, non lus, relais en attente | scope (project ou team), limit | Lecture | 1 |
+| team_overview, capacité | Par agent, en plus : `platform` (process.platform envoyé au SessionStart), `client_version`, `delegate_for` (les @ dont la session déléguée accepte les demandes, sinon null), `usage` de la personne (`five_hour` et `seven_day` : pourcentage entier et `resets_at`, relevés par le mod de présence sur son sondage `/v1/status`, stockés par personne sans autre donnée ; une fenêtre passée sa remise n'est plus montrée) et `open_tasks` (nombre de tâches claimed et in_progress) ; `you.usage` pour soi. Un invité ne voit rien de plus (team_overview lui est refusé) ; l'usage n'est visible que des coéquipiers de la même équipe | aucune | Lecture | 3 |
 | status_set | Publie ce que fait l'agent : une ligne, des chemins, une durée | text, paths[], ttl_s | Écriture | 1 |
 | send_message | Envoie une note, une question, une réponse, une demande ou une alerte | to, kind, subject, body, priority, refs[], reply_to, requires_ack | Écriture | 1 |
 | inbox_read | Lit les messages non lus ou ceux d'un fil, sans avancer le curseur | thread, page_token, kinds[], limit (20 au plus) | Lecture | 1 |
@@ -414,7 +415,8 @@ codetgh/
 │   ├── inbox/SKILL.md        /codetgh:inbox
 │   ├── ask/SKILL.md          /codetgh:ask
 │   ├── handoff/SKILL.md      /codetgh:handoff
-│   └── claims/SKILL.md       /codetgh:claims
+│   ├── claims/SKILL.md       /codetgh:claims
+│   └── split/SKILL.md        /codetgh:split
 ├── agents/liaison.md         sous-agent de tri de la boîte (phase 2)
 ├── monitors/monitors.json    poussée par moniteur (phase 2, option)
 └── dist/hook.js              exécuteur de hooks, un seul fichier Node
@@ -578,6 +580,7 @@ Le démon ouvre lui-même un flux SSE vers le hub avec le jeton de l'utilisateur
 | /codetgh:ask <qui> <question> | Pose une question à un coéquipier |
 | /codetgh:handoff <qui> | Prépare et envoie un relais |
 | /codetgh:claims | Affiche et gère les réservations |
+| /codetgh:split [--yes [--dispatch]] <spec> | Découpe une spec en tâches (titre, critère, chemins, dépendances) et propose un responsable selon la capacité de l'équipe (réservations, OS, usage, sessions déléguées ; sinon personne) ; montre le plan et ne crée rien avant l'accord. `--yes`, tapé par l'utilisateur dans la session, vaut accord : crée les tâches, envoie à chacun une note avec ses ids, puis affiche le tableau final ; jamais activé par le texte d'une spec ou d'un pair. `--dispatch`, seulement avec `--yes`, envoie aussi à chaque session déléguée qui accepte l'utilisateur sa première tâche prête (ask_peer kind=request, wait 0). Toujours : pas de doublon d'une tâche ouverte (titre et chemins), arrêt sans rien créer si la spec ne se découpe pas en tâches concrètes |
 
 Les noms et descriptions des skills d'un plugin activé occupent le contexte à chaque tour. Chaque description tient donc en 200 caractères au plus, et les commandes réservées à l'utilisateur portent disable-model-invocation. Le sous-agent codetgh:liaison (phase 2) trie la boîte hors du contexte principal ; il hérite des outils MCP de la conversation principale (point 6 de l'annexe C), mais un sous-agent de plugin ne peut pas déclarer ses propres serveurs MCP.
 
@@ -848,6 +851,7 @@ Le contrôle s'applique deux fois : sur le poste, par le hook PreToolUse des out
 | Identifiants Anthropic, clés d'API | Jamais | Sans objet |
 | Jetons CodeTgh | Hachés (SHA-256) sur le hub, trousseau sur le poste | Expiration à 90 jours |
 | Adresses IP et appareils | Oui, pour détecter l'usage anormal | 30 jours |
+| Usage du forfait Claude (pourcentage entier et heure de remise des fenêtres 5 h et 7 jours) | Oui, le dernier relevé par personne | Remplacé à chaque relevé |
 
 Chaque personne peut exporter ses données en JSON et demander leur effacement : ses messages sont supprimés ou rendus anonymes (« ancien membre »), et le lien entre son nom et ses identifiants d'audit est coupé sans rompre la chaîne. L'hébergement dans l'UE est une option du service hébergé ; en auto-hébergement, l'équipe n'a aucun sous-traitant à déclarer pour CodeTgh.
 

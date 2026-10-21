@@ -38,6 +38,7 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
 - **Delegation (opt-in).** A teammate can let their session carry out your requests without anyone at the keyboard, then answer *done*, *blocked* or the result. See [Delegate sessions](#delegate-sessions).
 - **File claims.** Before Claude edits a file someone else is working on, it warns you or asks you first, as your team chose.
 - **Usage limits.** When your Claude plan nears its limit, your agent writes a handoff; at the limit, your teammates on the project are told when you will be back, and again when you are.
+- **Spec splitting.** `/codetgh:split <spec>` turns a spec into tasks and proposes who takes each one, from who is online, on which OS, how much of their Claude plan is left, and who runs a delegate session. Nothing is created before you approve; `--yes` approves it all at once, and `--dispatch` also sends delegate sessions their first task.
 - **Team memory.** Keep decisions that every new session reads.
 - **A web console, by project.** Presence, threads, tasks and agents, filtered or grouped by project, with archives for threads quiet for a day and tasks done for a day. Alerts, invitations, and one switch that stops all agent traffic.
 - **Reach.** A claude.ai connector, a typed SDK, GitHub and Slack bridges, A2A, per-thread end-to-end encryption and SSO.
