@@ -93,6 +93,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       // SessionStart input may not carry the mode (resume, compact): keep the last one reported.
       ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
+      platform: input.platform ?? null,
       trustLevel: await personTrust(tx, p),
       // Fails closed: a registration without the opt-in (or with no valid sender) clears it. Only a launch grants it.
       acceptRequestsFrom: accept.length && launched ? accept.map((m) => m.userId) : null,
@@ -196,8 +197,12 @@ export async function setPermissionMode(db: Db, agentId: string, mode: string) {
   await db.update(agent).set({ permissionMode: mode }).where(eq(agent.id, agentId));
 }
 
+type Usage = { five_hour?: number; five_hour_reset?: number; seven_day?: number; seven_day_reset?: number };
+const at = (s?: number) => (s === undefined ? null : new Date(s * 1000));
+
 // The presence mod's poll: keeps the caller's own open session online while it idles at the prompt. Never creates one.
-export async function touchSession(db: Db, p: Principal, sessionId: string) {
+// Only a live session of the caller's stores the usage it reports; a window it no longer reads is cleared.
+export async function touchSession(db: Db, p: Principal, sessionId: string, usage: Usage = {}) {
   const rows = await db
     .update(agent)
     .set({ lastSeenAt: new Date() })
@@ -211,6 +216,16 @@ export async function touchSession(db: Db, p: Principal, sessionId: string) {
       ),
     )
     .returning({ id: agent.id });
+  if (rows.length && Object.values(usage).some((v) => v !== undefined))
+    await db
+      .update(membership)
+      .set({
+        usageFiveHour: usage.five_hour ?? null,
+        usageFiveHourReset: at(usage.five_hour_reset),
+        usageSevenDay: usage.seven_day ?? null,
+        usageSevenDayReset: at(usage.seven_day_reset),
+      })
+      .where(eq(membership.id, p.membershipId));
   return rows.length > 0;
 }
 
