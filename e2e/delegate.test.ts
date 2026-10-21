@@ -84,8 +84,20 @@ describe("delegation to an opt-in session", () => {
     expect(JSON.stringify(poll.out)).not.toContain("authorized=");
 
     // Done, so the delegate takes the next one.
-    expect((await request(team.lea.token, ids.lea ?? "", "next task")).isError).toBe(false);
+    const next = await request(team.lea.token, ids.lea ?? "", "next task");
+    expect(next.isError).toBe(false);
+    ids.next = next.json().question_id as string;
   }, 30_000);
+
+  it("frees the delegate once a request it accepted is marked done", async () => {
+    const sam = await mcpClient(hub.url, team.sam.token);
+    await call(sam, "ack", { agent: ids.sam, message_ids: [ids.next], status: "accepted" });
+    expect((await request(team.lea.token, ids.lea ?? "", "while busy")).text).toContain("E_DELEGATE_BUSY");
+    const done = await call(sam, "ack", { agent: ids.sam, message_ids: [ids.next], status: "done" });
+    await sam.close();
+    expect(done.json().acked).toBe(1);
+    expect((await request(team.lea.token, ids.lea ?? "", "after done")).isError).toBe(false);
+  });
 
   it("refuses a sender who is not on the delegate's list", async () => {
     const r = await request(team.malik.token, ids.malik ?? "", "push to prod");

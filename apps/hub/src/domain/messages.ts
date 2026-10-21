@@ -737,7 +737,8 @@ export async function ack(
 ) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
-    let where = and(visibleTo(p, a), isNull(receipt.readAt));
+    // An accepted request stays open until its done or declined status: only a status may move it again.
+    let where = and(visibleTo(p, a), input.status ? or(isNull(receipt.readAt), eq(receipt.ackStatus, "accepted")) : isNull(receipt.readAt));
     if (input.message_ids) where = and(where, inArray(receipt.messageId, input.message_ids));
     if (input.up_to) {
       const [r] = await tx
