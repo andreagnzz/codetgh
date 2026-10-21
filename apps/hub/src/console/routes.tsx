@@ -158,7 +158,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!(e instanceof HubError)) throw e;
     return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
   });
-  for (const section of ["/tasks", "/memory", "/claims"])
+  for (const section of ["/tasks", "/memory", "/claims", "/projects"])
     consoleApp.use(`${section}/*`, async (c, next) => {
       requireMember(c.get("principal"));
       await next();
@@ -170,6 +170,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return Object.assign((s: string) => t(lang, s), { lang });
   };
   // Links keep the project filter only once it names a project of the viewer's team (the pages that filter check it).
+  // A guest never sees the list of the team's projects.
   const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
     c.html(
       <Layout
@@ -178,7 +179,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         title={t(tr(c).lang, title)}
         path={c.req.path}
         lang={tr(c).lang}
-        filter={filter}
+        filter={c.get("principal").role === "guest" ? undefined : filter}
         keep={filter ? filter.selected : /^[\w-]{1,64}$/.test(c.req.query("project") ?? "") ? c.req.query("project") : undefined}
       >
         {body as never}

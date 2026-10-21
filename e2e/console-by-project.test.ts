@@ -142,6 +142,19 @@ describe("console: one project at a time", () => {
   });
 });
 
+describe("console: the filter is remembered and follows the pages", () => {
+  const res = (path: string, cookie = team.lea.cookie) => fetch(`${hub.url}${path}`, { headers: { cookie }, redirect: "manual" });
+
+  it("keeps the Projects page from a guest, and the project list from the filter a guest sees", async () => {
+    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+    for (const path of ["/console/projects", `/console/projects?project=${acme}`, "/console/projects?project=none"])
+      expect((await res(path, team.malik.cookie)).status, path).toBe(403);
+    for (const path of ["/console/threads", "/console/agents", `/console/agents?project=${acme}`])
+      expect(await (await res(path, team.malik.cookie)).text(), path).not.toContain("projects-filter");
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
+  });
+});
+
 describe("MCP: who is on which project", () => {
   it("names each agent's project in team_overview, the caller's project first", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
