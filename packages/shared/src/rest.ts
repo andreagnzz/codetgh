@@ -285,6 +285,7 @@ export const REST_ROUTES = {
     method: "GET",
     path: "/v1/stream",
     summary: "Server-sent events: one `message` event per received message, ids only; resume with Last-Event-ID",
+    query: SessionQuery,
     output: StreamEvent,
     sse: true,
   },

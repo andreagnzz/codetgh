@@ -1,6 +1,6 @@
 import type { Client } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -12,8 +12,8 @@ let taskId = "";
 beforeAll(async () => {
   hub = await startHub();
   team = await hub.seed();
-  await startSession(hub.url, team.sam.token, "sam-res");
-  await startSession(hub.url, team.lea.token, "lea-res");
+  await startSession(hub.url, team.sam.token, "sam-res", { repo: ACME_REPO });
+  await startSession(hub.url, team.lea.token, "lea-res", { repo: ACME_REPO });
   sam = await mcpClient(hub.url, team.sam.token);
   lea = await mcpClient(hub.url, team.lea.token);
   malik = await mcpClient(hub.url, team.malik.token);

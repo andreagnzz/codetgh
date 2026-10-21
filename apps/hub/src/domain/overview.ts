@@ -7,6 +7,7 @@ import { requireMember } from "./admin.js";
 import { type Agent, listAgents, presence } from "./agents.js";
 import { liveClaims } from "./claims.js";
 import { packetDecisions } from "./memory.js";
+import { visibleTo } from "./messages.js";
 import { myOpenTasks } from "./tasks.js";
 
 const MAX_CONTEXT_CHARS = 4800; // ≈ 1 200 tokens
@@ -20,20 +21,13 @@ function ago(d: Date) {
 }
 
 // Unread handoffs for the packet: who, which message, task and branch. Never the capsule text.
-async function pendingHandoffs(db: Db, p: Principal, agentId: string) {
+async function pendingHandoffs(db: Db, p: Principal, me: Agent) {
   const rows = await db
     .select({ id: message.id, from: user.name, task: message.taskId, capsule: message.capsule })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
     .innerJoin(user, eq(user.id, message.fromUserId))
-    .where(
-      and(
-        eq(receipt.recipientUserId, p.user.id),
-        or(isNull(receipt.recipientAgentId), eq(receipt.recipientAgentId, agentId)),
-        isNull(receipt.readAt),
-        eq(message.kind, "handoff"),
-      ),
-    )
+    .where(and(visibleTo(p, me), isNull(receipt.readAt), eq(message.kind, "handoff")))
     .limit(3);
   return rows.map((r) => ({
     id: r.id,
@@ -43,14 +37,8 @@ async function pendingHandoffs(db: Db, p: Principal, agentId: string) {
   }));
 }
 
-async function unreadSummary(db: Db, p: Principal, agentId: string) {
-  const visible = and(
-    eq(receipt.recipientUserId, p.user.id),
-    eq(receipt.teamId, p.teamId),
-    or(isNull(receipt.recipientAgentId), eq(receipt.recipientAgentId, agentId)),
-    isNull(receipt.readAt),
-    or(isNull(message.expiresAt), gt(message.expiresAt, new Date())),
-  );
+async function unreadSummary(db: Db, p: Principal, me: Agent) {
+  const visible = and(visibleTo(p, me), isNull(receipt.readAt), or(isNull(message.expiresAt), gt(message.expiresAt, new Date())));
   const byKind = await db
     .select({ kind: message.kind, n: count() })
     .from(receipt)
@@ -69,7 +57,7 @@ async function unreadSummary(db: Db, p: Principal, agentId: string) {
 export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scope: "team" | "project"; limit: number }) {
   requireMember(p);
   const agents = await listAgents(db, p.teamId, { projectId: opts.scope === "project" ? me.projectId : undefined, limit: opts.limit });
-  const unread = await unreadSummary(db, p, me.id);
+  const unread = await unreadSummary(db, p, me);
   return {
     team: free(p.teamName),
     you: { handle: p.handle, agent: me.id },
@@ -108,7 +96,7 @@ export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
   const ov = await teamOverview(db, p, me, { scope: "team", limit: 30 });
   const agents = await listAgents(db, p.teamId, { limit: 30 });
   const tasks = await myOpenTasks(db, p);
-  const handoffs = await pendingHandoffs(db, p, me.id);
+  const handoffs = await pendingHandoffs(db, p, me);
   const decisions = await packetDecisions(db, p);
   const people = agents
     .filter((r) => r.agent.id !== me.id && presence(r.agent) !== "offline")
@@ -181,7 +169,7 @@ export async function statusLine(db: Db, p: Principal, me: Agent) {
     p.role === "guest"
       ? null
       : (await teamOverview(db, p, me, { scope: "team", limit: 30 })).agents.filter((a) => a.presence !== "offline").length;
-  const unread = Object.values((await unreadSummary(db, p, me.id)).byKind).reduce((s, n) => s + n, 0);
+  const unread = Object.values((await unreadSummary(db, p, me)).byKind).reduce((s, n) => s + n, 0);
   const mode = me.pushMode ?? "hooks";
   const parts = [
     `CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`,
