@@ -72,6 +72,8 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
             ),
           )
       : [];
+    // claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
+    const launched = !input.source || input.source === "startup" || input.source === "resume";
     const values = {
       kind: input.kind,
       label,
@@ -86,18 +88,24 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       ...(input.permission_mode && { permissionMode: input.permission_mode }),
       clientVersion: input.client_version ?? null,
       trustLevel: await personTrust(tx, p),
-      // Fails closed: a registration without the opt-in (or with no valid sender) clears it. With the opt-in, /clear and
-      // compaction keep the current value, so a « Couper » holds until claude starts again with the option.
-      ...(!accept.length
-        ? { acceptRequestsFrom: null }
-        : input.source !== "clear" && input.source !== "compact" && { acceptRequestsFrom: accept.map((m) => m.userId) }),
+      // Fails closed: a registration without the opt-in (or with no valid sender) clears it. Only a launch grants it.
+      acceptRequestsFrom: accept.length && launched ? accept.map((m) => m.userId) : null,
     };
     // Outside a repository, a resume keeps the project the session was attached to in the console.
     const { projectId: _, ...kept } = values;
+    // Re-registering with the opt-in keeps the current value, so a « Couper » holds, but only on the same project:
+    // the grant was for one project, and a cd into another repository ends it.
+    const keep = accept.length &&
+      !launched && {
+        acceptRequestsFrom: sql`case when ${agent.projectId} is not distinct from ${input.repo_fingerprint ? projectId : agent.projectId} then ${agent.acceptRequestsFrom} else null end`,
+      };
     const [row] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
-      .onConflictDoUpdate({ target: [agent.teamId, agent.userId, agent.sessionId], set: input.repo_fingerprint ? values : kept })
+      .onConflictDoUpdate({
+        target: [agent.teamId, agent.userId, agent.sessionId],
+        set: { ...(input.repo_fingerprint ? values : kept), ...keep },
+      })
       .returning();
     if (!row) throw new HubError("E_INVALID", "agent registration failed");
     await appendAudit(tx, {

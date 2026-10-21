@@ -800,7 +800,7 @@ Côté hub :
 - Le réveil passe par le rewake et le poll PostToolUse habituels.
 - Le journal d'audit ne garde que des métadonnées.
 - Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
-- Le mode échoue fermé. Le hub l'efface à la fin de la session, au retrait de l'agent, sur « Couper », et à tout nouvel enregistrement de la session qui ne porte pas l'option. Sans état clair, la session n'est pas déléguée.
+- Le mode échoue fermé. Le hub l'efface dans six cas : à la fin de la session ; au retrait de l'agent ; sur « Couper » ; à tout nouvel enregistrement de la session qui ne porte pas l'option ; quand la session passe dans un autre dépôt (CwdChanged) ; quand elle est rattachée à un autre projet depuis la console. Seul un lancement (startup, resume) l'accorde. `/clear`, la compaction et un changement de dossier sur le même projet gardent l'état courant, donc « Couper » tient. Sans état clair, la session n'est pas déléguée.
 
 Côté session :
 - `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.

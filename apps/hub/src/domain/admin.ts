@@ -219,7 +219,8 @@ export async function setAgentProject(db: Db, p: Principal, agentId: string, pro
       .from(project)
       .where(and(eq(project.id, projectId), eq(project.teamId, p.teamId)));
     if (!prj) throw new HubError("E_NOT_FOUND", "project not found");
-    await tx.update(agent).set({ projectId: prj.id }).where(eq(agent.id, a.id));
+    // Delegate mode was granted for one project: moving the session ends it.
+    await tx.update(agent).set({ projectId: prj.id, acceptRequestsFrom: null }).where(eq(agent.id, a.id));
     await appendAudit(tx, { ...byUser(p), action: "agent.project_set", subjectId: a.id, data: { project_id: prj.id } });
   });
 }

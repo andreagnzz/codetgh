@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent } from "../apps/hub/src/db/schema.js";
+import { agent, project } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
@@ -192,5 +192,31 @@ describe("delegate sessions: the Bash check before each command", () => {
     // A plain session is left to Claude Code's own permission flow.
     expect(await bash("cat apps/hub/.env", false)).toMatchObject({ code: 0, raw: "", err: "" });
     expect(secret.ms).toBeLessThan(3000);
+  });
+});
+
+describe("delegation stays on the project it was granted for", () => {
+  const projectId = async (fingerprint: string) =>
+    (await hub.db.select().from(project).where(eq(project.repoFingerprint, fingerprint)))[0]?.id ?? "";
+  const delegate = async (session: string) =>
+    (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0]?.acceptRequestsFrom ?? null;
+
+  it("ends when the session moves into another repository, even with the option still in its environment", async () => {
+    await register(team.sam.token, "sam-cd", P1, ["@lea"]);
+    await fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "sam-cd", source: "cwd-changed", repo_fingerprint: P2, accept_requests_from: ["@lea"] }),
+    });
+    expect(await delegate("sam-cd")).toBeNull();
+    expect((await request(team.lea.token, ids.leaP2 ?? "", "billing task")).text).toContain("E_NO_DELEGATE");
+  });
+
+  it("ends when its owner attaches the session to another project in the console", async () => {
+    const id = await register(team.sam.token, "sam-attach", P1, ["@lea"]);
+    expect((await consolePost(hub.url, team.sam.cookie, `/console/agents/${id}/project`, { project_id: await projectId(P2) })).status).toBe(
+      204,
+    );
+    expect(await delegate("sam-attach")).toBeNull();
   });
 });
