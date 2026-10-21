@@ -12,6 +12,7 @@ import { type Keyring, program } from "../src/main.js";
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 const PATH = process.env.PATH;
+const CWD = process.cwd();
 beforeAll(async () => {
   hub = await startHub();
   team = await hub.seed();
@@ -20,6 +21,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 afterEach(() => {
   process.env.PATH = PATH;
+  process.chdir(CWD);
   delete process.env.CODETGH_URL;
 });
 
@@ -142,12 +144,31 @@ it("rejects a wrong token with the way to get a new one", async () => {
   expect(code).toBe(1);
 });
 
-it("says when the plugin is installed but off, as an earlier codetgh setup left it", async () => {
-  fakeClaude("2.1.296", [{ ...installedPlugin(), enabled: false }]);
+it("takes a plugin installed but off as the normal state: codetgh start turns it on per session", async () => {
+  fakeClaude("2.1.296", [{ ...installedPlugin(), scope: "user", enabled: false, projectEnabled: false }]);
   const { out, code } = await doctor(hub.url, team.lea.token);
-  expect(out).toContain("FAIL plugin codetgh@codetgh installed but off");
-  expect(out).toContain("→ claude plugin enable codetgh@codetgh --scope user");
-  expect(code).toBe(1);
+  expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 installed, enabled per session by codetgh start");
+  expect(out).not.toContain("warn plugin");
+  expect(code).toBe(0);
+});
+
+// claude plugin list has no local-scope entry: the user entry reads enabled, as for user scope.
+it("does not warn about a plugin the launcher turned on at local scope in this repository", async () => {
+  fakeClaude("2.1.296", [{ ...installedPlugin(), scope: "user", enabled: true, projectEnabled: false }]);
+  const repo = mkdtempSync(join(tmpdir(), "codetgh-doctor-repo-"));
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, ".claude/settings.local.json"), JSON.stringify({ enabledPlugins: { "codetgh@codetgh": true } }));
+  process.chdir(repo);
+  const { out } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("ok   plugin codetgh@codetgh 0.0.1 enabled here");
+  expect(out).not.toContain("warn plugin");
+});
+
+it("warns when the plugin is on at user scope, so in every Claude session on this machine", async () => {
+  fakeClaude("2.1.296", [{ ...installedPlugin(), scope: "user", enabled: true, projectEnabled: false }]);
+  const { out, code } = await doctor(hub.url, team.lea.token);
+  expect(out).toContain("warn plugin codetgh@codetgh is on in every Claude session: claude plugin disable codetgh@codetgh --scope user");
+  expect(code).toBe(0);
 });
 
 // Claude Code on Windows prints a different check mark in `claude mcp list`.

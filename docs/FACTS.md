@@ -39,7 +39,7 @@ Environment for phase 0: Claude Code **2.1.296** (`claude --version`), Node 24.2
 | Default hook timeout 600 s (30 s on UserPromptSubmit); SessionEnd hooks share a 1.5 s budget, raised to the largest per-hook `timeout` in settings files (≤ 60 s) or by `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Timeouts on plugin-provided hooks do not raise it, so the plugin's session-end runs in 1.5 s whatever its `timeout` | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § SessionEnd |
 | `claude plugin validate` (2.1.301) accepts a fractional hook `timeout` such as 1.5 and flags a non-number or a value ≤ 0 as an ignored entry | Local run of `claude plugin validate packages/plugin` |
 | `onFailure` defaults to `continue`; `block` needs 2.1.295+. CodeTgh never sets it | [Hooks](https://code.claude.com/docs/en/hooks) |
-| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed) | [Hooks](https://code.claude.com/docs/en/hooks) § Run hooks in the background, § Limitations |
+| `asyncRewake: true` runs a hook in the background and wakes Claude on exit code 2, even when the session is idle; stderr (or stdout if empty) is shown to Claude as a system reminder; its `timeout` is enforced (plain `async` hooks have none); `claude -p` kills async hooks still running at teardown. Real run: P3 below (point 2 closed). The page states no maximum `timeout` (checked 2026-10-20, 2.1.304; only the SessionEnd budget is capped, at 60 s), so the rewake hook uses 3600 s and the waiter listens 3540 s; the upper bound is non vérifié. Real run: P3b below | [Hooks](https://code.claude.com/docs/en/hooks) § Common fields, § Run hooks in the background, § Limitations |
 | A string `userConfig` option can take `options` (a picker in `/config`), needs 2.1.271+; option values reach hooks as `CLAUDE_PLUGIN_OPTION_<KEY>` (key uppercased) | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) § Limit a field to fixed options |
 | `claude plugin validate` checks `.mcp.json` entries and `${user_config.KEY}` references from 2.1.281 | [Plugin manifest reference](https://code.claude.com/docs/en/plugins-reference) |
 
@@ -131,6 +131,22 @@ Result:
 - `CLAUDE_PLUGIN_OPTION_PUSH_MODE` set in the environment reached the hook with `--plugin-dir` (no `/config` value saved).
 
 Notes: Claude Code labels the wake "Stop hook blocking error"; the envelope survives intact. In `claude -p` the session must stay open (stream-json input) for the waiter to live. The run also revealed a timestamp bug unrelated to push (sessions not in UTC), fixed separately.
+
+### P3b: rewake wakes a session idle for 13 minutes (2026-10-20, Claude Code 2.1.304, Linux)
+
+Hook `timeout` 3600, waiter budget 3540 s. Local test hub (`apps/hub/test/harness.ts`, rewake allowed for the team), throwaway tokens for Sam and Malik, installed `codetgh` plugin disabled for the run.
+
+```bash
+CLAUDE_PLUGIN_OPTION_CODETGH_URL=… CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN=<Sam> CLAUDE_PLUGIN_OPTION_PUSH_MODE=rewake \
+  claude --plugin-dir packages/plugin --model haiku --settings '{"enabledPlugins":{"codetgh@codetgh":false}}'   # interactive, in tmux
+# prompt: "Reply with the single word READY"; then no input
+# 13 min after the turn ended: POST /v1/messages as Malik → @sam, kind question, "what is 2+3?"
+```
+
+Result:
+- Turn 1 answered `READY` and ended at 21:07:46Z; the Stop hook recorded the waiter in the session state file.
+- Malik's message was stored at 21:20:52Z, 13 min 6 s into the idle wait, past the old 570 s budget. The waiter exited 2 at 21:21:40Z and the idle session started a turn by itself (`Stop hook feedback`), answering "2+3 is 5" and offering to reply and ack. The 48 s delay came from the machine running the full test suite at the same time (the POST alone took 12 s, and the woken turn's UserPromptSubmit hook hit its 3 s timeout).
+- After `tmux kill-session`, the waiter started by the second turn's Stop exited on its own within seconds.
 
 ### Point 6: a plugin subagent and the session's MCP tools (2026-10-13, Claude Code 2.1.296, Linux)
 
@@ -286,6 +302,29 @@ Measured with a throwaway `CLAUDE_CONFIG_DIR`:
 
 So the project setting wins over the user one, which matches the documented precedence (shared project above user). `codetgh setup` relied on this until 2026-10-16: it installed the plugin off, and `codetgh project new` turned it on in each team repository. It now leaves the plugin on at user scope (in a repository no project has, the hook sends only the fingerprint), so `codetgh doctor` reports a plugin left off by an earlier setup, with `claude plugin enable codetgh@codetgh --scope user`.
 
+### The plugin on only in sessions started by `codetgh start` (2026-10-20, Claude Code 2.1.304, Linux)
+
+From [Plugin loading reference](https://code.claude.com/docs/en/plugins/loading) and [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-reference):
+- `enabledPlugins` merges key by key across sources. From lowest to highest precedence: add-dir < user < project < local < flag (`--settings` at launch) < managed.
+- So `claude --settings '{"enabledPlugins":{"codetgh@codetgh":true}}'` enables the plugin for that session only, even when user scope has it set to `false`.
+- `claude plugin disable <id> --scope user --json` (`--json` needs 2.1.268) reports `failureCode: "already_in_goal_state"` when the plugin is already off.
+
+Measured:
+- `claude plugin disable codetgh@codetgh --scope user --json` on a plugin already off at user scope prints `{"command":"disable","outcome":"failed",…,"failureCode":"already_in_goal_state","alreadyInGoalState":true}` on stdout and exits 1.
+- `claude plugin list --json` lists one entry per install scope, with `scope`, `enabled` and `projectEnabled`. `enabled` is the state in the current folder: in a folder whose `.claude/settings.json` turns the plugin on, the `scope: "user"` entry reads `enabled: true, projectEnabled: true`.
+- `claude --help` lists `-n, --name <name>` ("Set a display name for this session") and `--settings <file-or-json>`. `claude remote-control --help` has `--name` but no `--settings`.
+- In a scratch git repository, with the plugin installed at user scope, `claude plugin enable codetgh@codetgh --scope local --json` exits 0 with `"outcome":"ok"` and writes `{"enabledPlugins":{"codetgh@codetgh":true}}` to `.claude/settings.local.json`. A second run exits 1 with `failureCode: "already_in_goal_state"`. `claude plugin list --json` there shows no `local` entry: the `scope: "user"` entry reads `enabled: true, projectEnabled: false`, as when user scope turns it on.
+
+`codetgh setup` and `codetgh upgrade` therefore run `claude plugin disable codetgh@codetgh --scope user` (with `--json` from 2.1.268), and take `already_in_goal_state` as done. `codetgh start [claude args…]` runs `claude --settings '{"enabledPlugins":{"codetgh@codetgh":true}}' -n "codetgh · <folder>" …`, without `-n` when the user gives `-n` or `--name`. `codetgh project new` no longer writes `enabledPlugins`. `codetgh launcher`, which runs `claude remote-control`, runs that local-scope enable in each project folder it starts, so the plugin is on there for this user only; no fallback write of `settings.local.json` is needed. `codetgh doctor` takes "installed, off" as normal, and warns when the `scope: "user"` entry is `enabled` without `projectEnabled`, unless the folder's `.claude/settings.local.json` turns the plugin on. This replaces the 2026-10-16 choice in the section above. Tested with a fake `claude` (`packages/cli/test/start.test.ts`, `setup.test.ts`, `upgrade.test.ts`, `doctor.test.ts`, `e2e/project-new.test.ts`).
+
+### Push mode for sessions started by `codetgh start` (docs read 2026-10-20, not run against a real Claude Code)
+
+From [Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference) § Where values are stored, § Reference a saved value, § Where each variable resolves:
+- Non-sensitive `userConfig` values are saved under `pluginConfigs` in the user `settings.json`; sensitive ones in the secure credential store.
+- `CLAUDE_PLUGIN_OPTION_<KEY>` is "exported to hook processes for every option" from the saved value. The page does not say that a variable of the same name in the shell that launches `claude` reaches the hooks or overrides the saved option.
+
+So `codetgh start` sets no environment variable for the push mode. `codetgh setup` saves `push_mode=rewake` when the team allows rewake (as before), and `codetgh upgrade` now does the same through `claude plugin configure codetgh@codetgh --values-stdin` with `{"push_mode":"rewake"}`. When the team does not allow it, both keep `hooks` and print that an admin can allow rewake in the console Settings. Tested with a fake `claude` (`packages/cli/test/upgrade.test.ts`, `setup.test.ts`).
+
 ### PostToolUse `additionalContext` reaches the model mid-turn (2026-10-14, Claude Code 2.1.296, Linux)
 
 From [Hooks](https://code.claude.com/docs/en/hooks):
@@ -305,7 +344,7 @@ From [Plugin commands reference](https://code.claude.com/docs/en/plugins/cli-ref
 - `-s, --scope user|project|local`, default `user`.
 - `--config <key=value>` sets a `userConfig` option; repeat it for each option. 2.1.285 added the `<server>.<key>` form for bundled `.mcpb` servers; the plain form predates it (first version not documented).
 - `-y, --yes` (2.1.229) accepts a marketplace-declared install command without the prompt. Without a TTY and without `-y`, such an install is refused. The hub's plugin is an archive source, so no command is shown; `-y` only keeps a non-TTY setup from stalling.
-- `--json` (2.1.268) prints one result object on the last line of stdout. CodeTgh does not use it: the exit code (0 or 1) is enough.
+- `--json` (2.1.268) prints one result object on the last line of stdout. CodeTgh does not use it for install: the exit code (0 or 1) is enough. It does for `plugin disable` (below).
 - Option storage: non-sensitive values go under `pluginConfigs` in the user `settings.json`, `sensitive` ones (`codetgh_token`) to the platform's secure credential store. The docs state this for `userConfig` in general, not for `--config` specifically.
 
 - `claude plugin install` documents no stdin or file channel for option values. `claude plugin configure <name@marketplace> --values-stdin` (2.1.285) reads a JSON object of single-line strings from stdin; options left out keep their saved values.
@@ -403,3 +442,12 @@ Hub public through Tailscale Funnel; claude.ai → Settings → Connectors → c
 - First attempt: tokens were right (`aud=<hub>/mcp`, `iss=<hub>/api/auth`, scope `codetgh`) but /mcp answered 401 "no token payload": the hub fetched its JWKS through its public URL, which the container cannot reach behind Funnel. Fixed in #64 (`jwksUrl` on the hub's own socket).
 - After the fix: one 401 (the unauthenticated first call), then /mcp 200 for claude.ai's tool calls.
 
+### CwdChanged and DirectoryAdded (docs read 2026-10-20, not run against a real Claude Code)
+
+From [Hooks reference](https://code.claude.com/docs/en/hooks) § CwdChanged, § DirectoryAdded, and § hook types per event; [Run Claude Code programmatically](https://code.claude.com/docs/en/headless):
+- **CwdChanged** runs when a shell command in the main conversation changes the working directory (`cd`). No matcher: it fires on every occurrence. Input adds `old_cwd` and `new_cwd` to the common fields (`cwd` is the new directory). No decision control. Claude Code reads `watchPaths` and `systemMessage`, discards `continue`; in an interactive session the `systemMessage` is a brief terminal notification and does not reach the SDK message stream. The hook gets `CLAUDE_ENV_FILE`.
+- **DirectoryAdded** runs after `/add-dir` or the SDK `register_repo_root` control request; not for `--add-dir` at startup (SessionStart covers those), the `/permissions` Workspace tab, or a directory already inside a working directory. Matcher on how it was added: `slash_command` or `register_repo_root`. Input adds `directory` (absolute path) and `source`. Claude Code does not wait for it: the hook runs in the background (default timeout 600 s). With `slash_command` its `systemMessage` reaches Claude as context on the next turn, not the person; with `register_repo_root` it goes to the debug log only.
+- Both events take `command`, `http` and `mcp_tool` hooks, not `prompt` or `agent`.
+- Neither page says whether these events fire under `-p`.
+
+The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository, and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.

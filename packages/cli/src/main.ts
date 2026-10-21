@@ -3,7 +3,7 @@ import { type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -272,19 +272,28 @@ const NOT_LISTED = "not in this machine's launcher list";
 // One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
 // command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
-// finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile).
-function exec(cmd: string, args: string[], opts: { timeout: number; input?: string }) {
+// finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
+function exec(cmd: string, args: string[], opts: { timeout: number; input?: string; cwd?: string }) {
   return new Promise<{ stdout: string }>((resolve, reject) => {
-    const child = spawn(cmd, args, { timeout: opts.timeout, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      timeout: opts.timeout,
+      stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    });
     child.stdin?.end(opts.input);
     let stdout = "";
     child.stdout?.on("data", (d: Buffer) => {
       stdout += d;
     });
     child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve({ stdout }) : reject(new Error(`${cmd} exited with ${code}`))));
+    child.on("close", (code) =>
+      code === 0 ? resolve({ stdout }) : reject(Object.assign(new Error(`${cmd} exited with ${code}`), { stdout })),
+    );
   });
 }
+
+// claude plugin enable/disable --json (2.1.268) on a plugin already in that state: exit 1, and this failureCode on stdout.
+const inGoalState = (e: { stdout?: string }) => /"failureCode":\s*"already_in_goal_state"/.test(e.stdout ?? "");
 
 // Through cmd.exe, killing the child would leave claude running: on Windows, end the whole process tree.
 function stopServer(child: ChildProcess) {
@@ -322,6 +331,13 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       await client.launcherReport({ project_id: t.project_id, running: false, error: run.lastError || "Remote Control exited" });
     }
     const name = `CodeTgh · ${t.project_name.replace(/\p{Cc}/gu, "").slice(0, 60)}`;
+    // remote-control takes no --settings: the plugin goes on at local scope, for this user in this repository only.
+    const on = await exec("claude", ["plugin", "enable", "codetgh@codetgh", "--scope", "local", "--json"], {
+      timeout: 30_000,
+      cwd: dir,
+    }).then(() => true, inGoalState);
+    if (!on)
+      io.out(`${t.project_name}: the CodeTgh plugin is not on there: cd ${dir} && claude plugin enable codetgh@codetgh --scope local`);
     const child = spawn("claude", ["remote-control", "--name", name], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
     const entry = { child, lastError: "" };
     child.stderr?.on("data", (d: Buffer) => {
@@ -361,6 +377,22 @@ const atLeast = (version: string, min: string) => {
   const n = (v: string) => v.split(".").reduce((a, x) => a * 1000 + Number(x), 0);
   return Boolean(version) && n(version) >= n(min);
 };
+
+// Off at user scope, so unrelated sessions do not load it: codetgh start turns it on for its own session (docs/FACTS.md).
+// Already off counts as done; only --json (2.1.268) tells that case apart.
+async function pluginOffAtUserScope() {
+  const version = await exec("claude", ["--version"], { timeout: 5000 }).then(
+    (r) => r.stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? "",
+    () => "",
+  );
+  const json = atLeast(version, "2.1.268") ? ["--json"] : [];
+  return exec("claude", ["plugin", "disable", "codetgh@codetgh", "--scope", "user", ...json], { timeout: 30_000 }).then(
+    () => true,
+    inGoalState,
+  );
+}
+const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
+const REWAKE_OFF = "push mode hooks: an admin can allow rewake in the console Settings, so an idle session wakes up for a message";
 
 type Choice = { value: string; name: string };
 // The same questions as SETUP.md, one at a time with a default; --answers <file> gives them without a terminal.
@@ -525,7 +557,6 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
     // install --marketplace (2.1.292) adds the marketplace and takes the plugin's options in the same command.
     const oneCommand = atLeast(version, ONE_COMMAND_INSTALL);
     const options = { codetgh_url: url, codetgh_token: token, push_mode: pushMode };
-    // On everywhere: in a repository no project has, the hook sends only its fingerprint, and a member's session links it.
     const ok = oneCommand
       ? await run("claude", [
           ...["plugin", "install", "codetgh", "--marketplace", marketplace, "--scope", "user", "-y"],
@@ -562,9 +593,11 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
       ));
     if (configured)
       io.out(
-        `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): restart Claude Code to apply them`,
+        `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): launch Claude with codetgh start to use it`,
       );
     else if (ok) io.out("set the plugin's hub address and token in Claude Code: /plugin configure codetgh@codetgh");
+    if (configured && pushMode === "hooks") io.out(REWAKE_OFF);
+    if (ok && !(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
     if (!ok)
       io.out(`the plugin was not installed (Claude Code missing, or the hub is not on public HTTPS). Run:\n  ${manual.join("\n  ")}`);
   } else io.out(`later: ${manual.join(" && ")}`);
@@ -656,33 +689,38 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     );
   if (version) {
     const list = await run("claude", ["plugin", "list", "--json"], 15000);
-    const plugin = (JSON.parse(list ?? "[]") as Array<{ id: string; version?: string; enabled?: boolean; installPath?: string }>).find(
-      (p) => p.id.startsWith("codetgh@"),
-    );
+    const plugins = JSON.parse(list ?? "[]") as Array<{
+      id: string;
+      version?: string;
+      scope?: string;
+      enabled?: boolean;
+      projectEnabled?: boolean;
+      installPath?: string;
+    }>;
+    const plugin = plugins.find((p) => p.id.startsWith("codetgh@"));
     const marketplace = url ? `${url}/plugin/marketplace.json` : "<hub>/plugin/marketplace.json";
-    const wanted = (() => {
+    check(
+      Boolean(plugin),
+      plugin
+        ? `plugin ${plugin.id} ${plugin.version ?? ""} ${plugin.enabled ? "enabled here" : "installed, enabled per session by codetgh start"}`.replace(
+            "  ",
+            " ",
+          )
+        : "plugin codetgh@codetgh not installed",
+      `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`,
+    );
+    // enabled is the state in this folder, and the list has no local-scope entry: the launcher's local enable reads as user.
+    const local = (() => {
       try {
-        return JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true;
+        return (
+          JSON.parse(readFileSync(join(process.cwd(), ".claude/settings.local.json"), "utf8")).enabledPlugins?.["codetgh@codetgh"] === true
+        );
       } catch {
         return false;
       }
     })();
-    check(
-      plugin?.enabled === true,
-      !plugin
-        ? "plugin codetgh@codetgh not installed"
-        : plugin.enabled
-          ? `plugin ${plugin.id} ${plugin.version ?? ""} enabled here`.replace("  ", " ")
-          : wanted
-            ? `plugin ${plugin.id} turned on in .claude/settings.json but not active`
-            : `plugin ${plugin.id} installed but off`,
-      !plugin
-        ? `claude plugin marketplace add ${marketplace} && claude plugin install codetgh@codetgh`
-        : wanted
-          ? "open Claude Code in this folder and trust it, or run: claude plugin enable codetgh@codetgh --scope project"
-          : // An earlier codetgh setup turned it off at user scope.
-            "claude plugin enable codetgh@codetgh --scope user",
-    );
+    if (!local && plugins.some((p) => p.id.startsWith("codetgh@") && p.scope === "user" && p.enabled && !p.projectEnabled))
+      io.out(`warn plugin codetgh@codetgh is on in every Claude session: claude plugin disable codetgh@codetgh --scope user`);
     if (plugin?.installPath) {
       const files = ["dist/hook.js", "hooks/hooks.json"].every((f) => existsSync(join(plugin.installPath ?? "", f)));
       const node = await run("node", ["--version"], 5000);
@@ -760,6 +798,31 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     });
 
   cli
+    .command("start")
+    .helpGroup("Everyday:")
+    .description("launch Claude Code here with the CodeTgh plugin on for this session only; other arguments go to claude")
+    .argument("[claude args...]")
+    .allowUnknownOption()
+    .action((args: string[]) => {
+      // Flag settings sit above user settings, where setup leaves the plugin off.
+      const argv = ["--settings", JSON.stringify({ enabledPlugins: { "codetgh@codetgh": true } })];
+      if (!args.some((a) => a === "-n" || a === "--name" || a.startsWith("--name=")))
+        argv.push("-n", `codetgh · ${basename(process.cwd())}`);
+      // Ctrl+C reaches claude too, which handles it: this process waits for it instead of leaving it on the terminal.
+      const ignore = () => {};
+      process.on("SIGINT", ignore);
+      return new Promise<void>((resolve, reject) => {
+        const child = spawn("claude", [...argv, ...args], { stdio: "inherit" });
+        child.on("error", () => reject(new Error("Claude Code not found: install it from https://code.claude.com/docs/en/setup")));
+        child.on("exit", (code) => {
+          process.off("SIGINT", ignore);
+          process.exitCode = code ?? 1;
+          resolve();
+        });
+      });
+    });
+
+  cli
     .command("project")
     .helpGroup("Admin:")
     .description("team projects")
@@ -812,10 +875,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           ...settings.extraKnownMarketplaces,
           codetgh: { source: { source: "url", url: marketplace }, autoUpdate: true },
         };
-        settings.enabledPlugins = { ...settings.enabledPlugins, "codetgh@codetgh": true };
         mkdirSync(join(root, ".claude"), { recursive: true });
         writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-        io.out("wrote .claude/settings.json: Claude Code offers the CodeTgh plugin to whoever trusts this folder");
+        io.out("wrote .claude/settings.json: it declares the hub's plugin marketplace");
       } else {
         io.out(
           mkt?.ok
@@ -846,7 +908,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       io.out(`Join our CodeTgh project "${created.name}":`);
       io.out(`1. Install the command: npm install -g ${url}/cli/codetgh.tgz`);
       io.out(`2. Run: codetgh setup   (pick "member", hub ${url}, and the invitation link from your email)`);
-      io.out(`3. Open ${created.name} in Claude Code and trust the folder${valid ? ": it offers the CodeTgh plugin" : ""}.`);
+      io.out(`3. In ${created.name}, launch Claude with: codetgh start`);
       if (!valid) for (const line of manual) io.out(line);
       io.out("No invitation yet? Ask an admin: codetgh invite <email>");
     });
@@ -1135,7 +1197,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .helpGroup("Everyday:")
     .description("update this command and the Claude Code plugin from your team's hub")
     .action(async () => {
-      const { url } = await credentials(deps.keyring);
+      const { url, token } = await credentials(deps.keyring);
       if (!url) throw new Error("no hub URL: run codetgh setup (or codetgh login)");
       const tgz = `${hubAddress(url)}/cli/codetgh.tgz`;
       // exec goes through cross-spawn, so npm.cmd on Windows works like claude.cmd does.
@@ -1151,7 +1213,20 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           );
         });
       io.out(`plugin: ${plugin.stdout.trim() || "updated"}`);
-      io.out("restart Claude Code to load the new plugin");
+      if (!(await pluginOffAtUserScope())) io.out(PLUGIN_OFF_FIX);
+      // Rewake as soon as the team allows it; an unreachable hub leaves the push mode as it is.
+      const who = token ? await whoami(url, token).catch(() => null) : null;
+      if (who?.push_allowed_modes?.includes("rewake")) {
+        const set = await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
+          timeout: 30_000,
+          input: JSON.stringify({ push_mode: "rewake" }),
+        }).then(
+          () => true,
+          () => false,
+        );
+        io.out(set ? "push mode rewake: an idle session wakes up for a message" : "set push mode rewake in Claude Code: /config");
+      } else if (who) io.out(REWAKE_OFF);
+      io.out("launch Claude with codetgh start to load the new plugin");
     });
 
   const keys = cli.command("keys").helpGroup("Advanced:").description("keys for end-to-end encrypted threads");

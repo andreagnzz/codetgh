@@ -27,7 +27,7 @@ import {
 } from "@codetgh/shared/rest";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie } from "hono/cookie";
@@ -41,9 +41,10 @@ import { type Auth, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
-import { team } from "./db/schema.js";
+import { project, team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
 import {
+  type Agent,
   agentBySession,
   canAutoLink,
   createProject,
@@ -236,8 +237,10 @@ export function createApp({
     if (!p.paused && !agent)
       return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
     bus.emit("presence", { teamId: p.teamId });
+    const [prj] = agent?.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, agent.projectId)) : [];
     return c.json({
       agent_id: agent?.id ?? null,
+      project: prj?.name ?? null,
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
@@ -326,8 +329,8 @@ export function createApp({
   });
 
   // Envelopes for the prompt hook and the rewake waiter, with an ETag over the unread seqs.
-  const promptFor = async (p: Principal, agentId: string) => {
-    const { items, more } = await unread(db, p, agentId, { limit: PROMPT_BATCH, byPriority: true });
+  const promptFor = async (p: Principal, a: Agent) => {
+    const { items, more } = await unread(db, p, a, { limit: PROMPT_BATCH, byPriority: true });
     const etag = `"${createHash("sha256")
       .update(items.map((i) => i.seq).join(","))
       .digest("hex")
@@ -404,7 +407,7 @@ export function createApp({
     const release = waitS ? hold(`wait:${p.user.id}`, 10) : () => {};
     try {
       for (;;) {
-        const { etag, context } = await promptFor(p, agent.id);
+        const { etag, context } = await promptFor(p, agent);
         c.header("ETag", etag);
         if (context && seen !== etag) return c.json({ context });
         const left = deadline - Date.now();
@@ -437,7 +440,7 @@ export function createApp({
     const p = c.get("principal");
     const { agent: agentArg, thread, page_token, kinds, limit } = await parse(c, InboxReadInput);
     const afterSeq = page_token ? Number(Buffer.from(page_token, "base64url").toString()) || undefined : undefined;
-    const { items, more } = await unread(db, p, (await restAgent(p, agentArg)).id, { thread, kinds, limit, afterSeq });
+    const { items, more } = await unread(db, p, await restAgent(p, agentArg), { thread, kinds, limit, afterSeq });
     const last = items.at(-1);
     const keys = await wrappedKeys(db, p, [...new Set(items.filter((i) => i.message.encrypted).map((i) => i.message.threadId))]);
     const header = inboxHeader(items);
@@ -523,8 +526,12 @@ export function createApp({
   });
 
   // Token SSE for the daemon: message ids only; the event id is the receipt seq, so a reconnect resumes with Last-Event-ID.
+  // With session_id, only what that session would read in its inbox.
   v1.get("/stream", async (c) => {
     const p = c.get("principal");
+    const session = c.req.query("session_id");
+    const agent = session ? await agentBySession(db, p, session) : null;
+    if (session && !agent) throw new HubError("E_NOT_FOUND", "no such session");
     const resume = c.req.header("last-event-id");
     let last = resume && /^\d+$/.test(resume) ? Number(resume) : await lastReceiptSeq(db, p);
     const release = hold(`stream:${p.user.id}`, 3);
@@ -538,7 +545,7 @@ export function createApp({
       const pump = () => {
         pending = pending
           .then(async () => {
-            for (let rows = await receivedSince(db, p, last); rows.length; rows = await receivedSince(db, p, last))
+            for (let rows = await receivedSince(db, p, last, agent); rows.length; rows = await receivedSince(db, p, last, agent))
               for (const r of rows) {
                 const data = { message_id: r.messageId, thread: r.threadId, kind: r.kind, priority: r.priority };
                 await stream.writeSSE({ event: "message", id: String(r.seq), data: JSON.stringify(data) });

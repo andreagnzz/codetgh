@@ -129,6 +129,18 @@ export const Pill: FC<{ tone?: Tone; children?: Child }> = ({ tone = "neutral", 
   </span>
 );
 
+// Current items, or the archives: threads quiet for a day with nothing unread, tasks finished a day ago.
+export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang }> = ({ base, archived, lang }) => (
+  <nav aria-label={t(lang, "Archives")}>
+    <a href={base} aria-current={archived ? undefined : "page"}>
+      {t(lang, "Current")}
+    </a>{" "}
+    <a href={`${base}?archived=1`} aria-current={archived ? "page" : undefined}>
+      {t(lang, "Archives")}
+    </a>
+  </nav>
+);
+
 export const toneOf = (state: string): Tone =>
   (({ online: "ok", trusted: "ok", open: "warn", quarantined: "danger" }) as Record<string, Tone>)[state] ?? "neutral";
 
