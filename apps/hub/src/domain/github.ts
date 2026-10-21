@@ -22,7 +22,7 @@ export async function createGithubHook(db: Db, p: Principal, hubSecret: string) 
   await db.transaction(async (tx) => {
     await tx
       .update(team)
-      .set({ settings: { ...p.settings, github_hook: hook } })
+      .set({ settings: sql`${team.settings} || ${JSON.stringify({ github_hook: hook })}::jsonb` })
       .where(eq(team.id, p.teamId));
     await appendAudit(tx, {
       teamId: p.teamId,

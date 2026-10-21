@@ -1394,8 +1394,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/settings", async (c) => {
     const f = await form(c);
+    if (f.slack_channel && !/^[A-Z0-9]{1,40}$/.test(f.slack_channel)) throw new HubError("E_INVALID", "invalid Slack channel id");
     await updateSettings(db, c.get("principal"), {
-      retentionDays: Number(f.retention_days) || 90,
+      retentionDays: Number(f.retention_days) || undefined,
       secretPatterns: (f.secret_patterns ?? "")
         .split(/\r?\n/)
         .map((s) => s.trim())
@@ -1403,7 +1404,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       // Prompt-time reading (hooks) is always on; rewake push is the team's opt-in.
       pushAllowedModes: f.push_rewake === "on" ? ["hooks", "rewake"] : ["hooks"],
       autoLinkProjects: f.auto_link_projects === "on",
-      slackChannel: /^[A-Z0-9]{1,40}$/.test(f.slack_channel ?? "") ? f.slack_channel : undefined,
+      memoryAcceptBy: (["member", "admin", "owner"] as const).find((r) => r === f.memory_accept_by),
+      memoryAcceptViaMcp: f.memory_accept_via_mcp === "on",
+      slackChannel: f.slack_channel || undefined,
       loopOrchestrator: f.loop_orchestrator?.replace(/^@/, "") || undefined,
       claimsEnforcement: (CLAIM_ENFORCEMENT as readonly string[]).includes(f.claims_enforcement ?? "")
         ? (f.claims_enforcement as "ask")

@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { membership, message, team as teamTable } from "../src/db/schema.js";
 import { createExternalAgent } from "../src/domain/a2a.js";
-import { changeRole } from "../src/domain/admin.js";
+import { changeRole, updateSettings } from "../src/domain/admin.js";
 import { verifyChain } from "../src/domain/audit.js";
 import { bridgeAuthor } from "../src/domain/bridges.js";
+import { createGithubHook } from "../src/domain/github.js";
 import { contextPacket } from "../src/domain/overview.js";
 import { createInvitation, setMemberHandle } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
@@ -76,6 +77,38 @@ describe("console", () => {
     await post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), { retention_days: "90", strict: "on" });
     const [row] = await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
     expect(row?.settings).not.toHaveProperty("strict");
+  });
+
+  it("saves every setting, and keeps the stored ones a bad or blank field would wipe", async () => {
+    const settings = async () =>
+      (await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId)))[0]?.settings;
+    const save = async (form: Record<string, string>) => post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), form);
+    expect(
+      (await save({ retention_days: "30", memory_accept_by: "admin", memory_accept_via_mcp: "on", slack_channel: "C0123ABC" })).status,
+    ).toBe(204);
+    expect(await settings()).toMatchObject({
+      retention_days: 30,
+      memory_accept_by: "admin",
+      memory_accept_via_mcp: true,
+      slack_channel: "C0123ABC",
+    });
+    const bad = await save({ retention_days: "30", slack_channel: "not a channel" });
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toContain("Slack channel");
+    expect((await save({ retention_days: "", slack_channel: "C0123ABC" })).status).toBe(204);
+    expect(await settings()).toMatchObject({ retention_days: 30, slack_channel: "C0123ABC" });
+    await save({ retention_days: "90" });
+  });
+
+  it("keeps a settings write made while the form was open", async () => {
+    const stale = await principalForToken(hub.db, team.lea.token);
+    if (!stale) throw new Error("setup");
+    const fresh = await principalForToken(hub.db, team.lea.token);
+    if (!fresh) throw new Error("setup");
+    await createGithubHook(hub.db, fresh, "s");
+    await updateSettings(hub.db, stale, { retentionDays: 90, secretPatterns: [] });
+    const [row] = await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
+    expect(row?.settings.github_hook).toBeDefined();
   });
 
   it("keeps admin pages from members", async () => {
