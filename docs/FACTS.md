@@ -473,3 +473,10 @@ From [Hooks reference](https://code.claude.com/docs/en/hooks) § CwdChanged, § 
 - Neither page says whether these events fire under `-p`.
 
 The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository, and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.
+
+### The hub MCP connection drops at every hub restart (observed 2026-10-21, Claude Code 2.1.299–2.1.304)
+
+From Claude Code's own MCP logs (`~/.cache/claude-cli-nodejs/<project>/mcp-logs-plugin-codetgh-hub/*.jsonl`) for sessions on the VPS:
+- **When it drops.** The connection reports `HTTP connection dropped`, then `subscriptions/listen stream dropped (remote); attempting to re-listen`. The connection's age at the drop varies, from 54 s to 17 h, and the drops fall at the times of `codetgh update` runs. So hub restarts trigger them, not a connection lifetime.
+- **How Claude Code retries.** It re-opens the stream about 1 s, 3 s and 7 s after the drop. When the hub is back within that window, it logs `Re-opened subscriptions/listen stream`. When all three fail (`Error POSTing to endpoint`), the person has to reconnect from `/mcp`. The [Agent SDK MCP page](https://code.claude.com/docs/en/agent-sdk/mcp) § Error handling says a failed HTTP server reports `failed` after five reconnection attempts.
+- **Why the hub was down so long.** The image runs `node` as PID 1, which ignores SIGTERM. `docker stop` therefore waited its 10 s grace period before killing it: 10.8 s measured on the hub image, against 1.5 s with `--init`. The compose file sets `init: true` on the hub.
