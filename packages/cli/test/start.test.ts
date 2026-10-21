@@ -83,10 +83,10 @@ describe("--accept-requests-from: a delegate session", () => {
     );
     expect(args.slice(args.indexOf("--permission-mode"), args.indexOf("--permission-mode") + 2)).toEqual(["--permission-mode", "auto"]);
     const prompt = args[args.indexOf("--append-system-prompt") + 1] ?? "";
-    expect(prompt).toContain('<peer_message kind="request" authorized="true">');
-    expect(prompt).toContain("blocked: <reason>");
-    // On Windows claude is claude.cmd: a newline in an argument cuts the command line there.
-    expect(prompt).not.toMatch(/[\r\n]/);
+    expect(prompt).toContain("peer_message envelope with kind=request and authorized=true");
+    expect(prompt).toContain("blocked: reason");
+    // On Windows claude is claude.cmd: cmd.exe cuts at a newline and reads < > | & ^ % " as its own syntax.
+    expect(prompt).toMatch(/^[^<>"|&^%\r\n]*$/);
     expect(args.join(" ")).not.toMatch(/bypassPermissions|skip-permissions/);
     expect(args.at(-1)).toBe("--foo");
     // The session-start hook reads the list from claude's environment and registers it on the hub.
