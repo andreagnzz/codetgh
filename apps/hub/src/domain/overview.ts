@@ -1,7 +1,7 @@
 import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
-import { and, count, eq, gt, isNull, or } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { message, project, receipt, user } from "../db/schema.js";
+import { membership, message, project, receipt, task, user } from "../db/schema.js";
 import type { Principal } from "../principal.js";
 import { requireMember } from "./admin.js";
 import { type Agent, listAgents, presence } from "./agents.js";
@@ -58,6 +58,35 @@ async function unreadSummary(db: Db, p: Principal, me: Agent) {
 const ownProjectFirst = <T extends { agent: Agent }>(rows: T[], me: Agent) =>
   me.projectId ? rows.sort((a, b) => Number(b.agent.projectId === me.projectId) - Number(a.agent.projectId === me.projectId)) : rows;
 
+// A plan window past its reset says nothing about what is left: no reading rather than a stale one.
+const windowOf = (pct: number | null, reset: Date | null) =>
+  pct === null || (reset && reset.getTime() < Date.now()) ? null : { pct, resets_at: reset?.toISOString() ?? null };
+
+// What /codetgh:split weighs per person: handle, plan usage (teammates only: team_overview refuses guests), open tasks.
+async function capacity(db: Db, teamId: string) {
+  const members = await db.select().from(membership).where(eq(membership.teamId, teamId));
+  const tasks = await db
+    .select({ userId: task.assigneeUserId, status: task.status, n: count() })
+    .from(task)
+    .where(and(eq(task.teamId, teamId), inArray(task.status, ["claimed", "in_progress"])))
+    .groupBy(task.assigneeUserId, task.status);
+  return new Map(
+    members.map((m) => {
+      const n = (status: string) => tasks.find((t) => t.userId === m.userId && t.status === status)?.n ?? 0;
+      const five = windowOf(m.usageFiveHour, m.usageFiveHourReset);
+      const seven = windowOf(m.usageSevenDay, m.usageSevenDayReset);
+      return [
+        m.userId,
+        {
+          handle: `@${m.handle}`,
+          usage: five || seven ? { five_hour: five, seven_day: seven } : null,
+          open_tasks: { claimed: n("claimed"), in_progress: n("in_progress") },
+        },
+      ];
+    }),
+  );
+}
+
 export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scope: "team" | "project"; limit: number }) {
   requireMember(p);
   const agents = ownProjectFirst(
@@ -65,9 +94,10 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
     me,
   );
   const unread = await unreadSummary(db, p, me);
+  const cap = await capacity(db, p.teamId);
   return {
     team: free(p.teamName),
-    you: { handle: p.handle, agent: me.id },
+    you: { handle: p.handle, agent: me.id, usage: cap.get(p.user.id)?.usage ?? null },
     paused: p.paused,
     agents_paused: p.agentsPaused,
     agents: agents
@@ -82,6 +112,10 @@ export async function teamOverview(db: Db, p: Principal, me: Agent, opts: { scop
         push_mode: r.agent.pushMode,
         permission_mode: r.agent.permissionMode,
         client_version: r.agent.clientVersion,
+        platform: r.agent.platform,
+        delegate_for: r.agent.acceptRequestsFrom?.map((id) => cap.get(id)?.handle ?? "?") ?? null,
+        usage: cap.get(r.agent.userId)?.usage ?? null,
+        open_tasks: cap.get(r.agent.userId)?.open_tasks ?? { claimed: 0, in_progress: 0 },
         presence: presence(r.agent),
         status: r.agent.statusExpiresAt && r.agent.statusExpiresAt > new Date() ? free(r.agent.statusText) : "",
         last_seen: r.agent.lastSeenAt.toISOString(),

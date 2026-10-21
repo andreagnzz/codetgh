@@ -54,6 +54,11 @@ export const membership = pgTable(
     revokedBy: text("revoked_by"),
     // codetgh pause: the member's own agents stop sending; the person can still write from the console.
     agentsPausedAt: timestamp("agents_paused_at"),
+    // The presence mod's latest Claude plan usage, per person: whole percents and reset times, nothing else.
+    usageFiveHour: integer("usage_five_hour"),
+    usageFiveHourReset: timestamp("usage_five_hour_reset"),
+    usageSevenDay: integer("usage_seven_day"),
+    usageSevenDayReset: timestamp("usage_seven_day_reset"),
   },
   (t) => [uniqueIndex("membership_team_user_uq").on(t.teamId, t.userId), uniqueIndex("membership_team_handle_uq").on(t.teamId, t.handle)],
 );
@@ -161,6 +166,8 @@ export const agent = pgTable(
     // What the session reported at start: the plugin's push mode and the Claude Code version.
     pushMode: text("push_mode"),
     clientVersion: text("client_version"),
+    // process.platform of the machine the session runs on.
+    platform: text("platform"),
     // Claude Code's permission mode, kept current by the prompt hook.
     permissionMode: text("permission_mode"),
     // codetgh start --accept-requests-from: user ids whose requests this session does; null when it is not a delegate.

@@ -16,6 +16,10 @@ import {
 
 // The /v1 REST API in one table: the hub validates with these schemas, /v1/openapi.json and @codetgh/sdk are built from it.
 export const SessionQuery = z.object({ session_id: z.string().min(1).max(200).optional() });
+// The presence mod's poll also reports the Claude plan windows it reads: whole percents, resets in epoch seconds.
+const percent = z.coerce.number().int().min(0).max(100).optional();
+const epoch = z.coerce.number().int().min(0).max(4_102_444_800).optional();
+export const StatusQuery = SessionQuery.extend({ five_hour: percent, five_hour_reset: epoch, seven_day: percent, seven_day_reset: epoch });
 // permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes.
 export const PromptQuery = z.object({
   session_id: z.string().max(200),
@@ -279,8 +283,9 @@ export const REST_ROUTES = {
   status: {
     method: "GET",
     path: "/v1/status",
-    summary: "Who is online, your unread counts and the live claims; session_id keeps that session of yours online",
-    query: SessionQuery,
+    summary:
+      "Who is online, your unread counts and the live claims; session_id keeps that session of yours online and stores the usage it reports",
+    query: StatusQuery,
     output: StatusOutput,
   },
   statusSet: {

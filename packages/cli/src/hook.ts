@@ -192,6 +192,7 @@ async function register(
         push_mode: pushMode,
         permission_mode: input.permission_mode,
         client_version: version,
+        platform: process.platform,
         // codetgh start --accept-requests-from puts the list in claude's environment, which hooks inherit.
         accept_requests_from: process.env.CODETGH_ACCEPT_REQUESTS_FROM?.split(",").filter(Boolean),
       }),

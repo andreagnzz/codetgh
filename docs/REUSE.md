@@ -9,6 +9,7 @@ Decisions: **reuse** (published dependency), **adapt** (copy with attribution), 
 | Project | URL | Version / HEAD | License (from file) | Last commit | Decision | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
 | mcp_agent_mail and its Rust port | — | — | MIT with a clause excluding OpenAI, Anthropic and their contractors | not read | **reject** | Forbidden license clause. Not cloned, not opened, not analyzed. Only the general idea (agent mailboxes, advisory file reservations) is public knowledge |
+| Task Master (claude-task-master) | https://github.com/eyaltoledano/claude-task-master | task-master-ai 0.43.1 · c0c98d3 | MIT with the Commons Clause (« Task Master License », LICENSE read 2026-10-21) | 2026-04-23 | **reject** | Commons Clause is not an allowed license. Considered for /codetgh:split (spec to tasks); nothing read beyond LICENSE, nothing copied: the skill uses the hub's own task_create |
 | claude-peers-mcp | https://github.com/louislva/claude-peers-mcp | 640183f | MIT | 2026-04-26 | adapt (phase 2–3) | Base for the stdio bridge and channel push; the hub replaces its local broker. Nothing copied in phase 0 |
 | claude-code-teams-mcp | https://github.com/cs50victor/claude-code-teams-mcp | bde2088 | MIT (© 2026 victor) | 2026-02-21 | inspire | Inbox formats and tests; single-machine, Python |
 | claude-relay | https://github.com/gvorwaller/claude-relay | 1937dc8 | **none** | 2026-10-06 | **reject** | No LICENSE file: all rights reserved |

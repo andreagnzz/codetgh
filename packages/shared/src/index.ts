@@ -142,6 +142,11 @@ export const AgentSessionInput = z.object({
     .string()
     .regex(/^\d+\.\d+\.\d+$/)
     .optional(),
+  // process.platform: win32, darwin, linux, or another Node platform name.
+  platform: z
+    .string()
+    .regex(/^[a-z0-9]{1,20}$/)
+    .optional(),
   repo_fingerprint: z
     .string()
     .regex(/^[0-9a-f]{64}$/)

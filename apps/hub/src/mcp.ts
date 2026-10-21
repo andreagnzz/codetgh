@@ -89,15 +89,22 @@ function forModel(ov: Awaited<ReturnType<typeof teamOverview>>) {
   ];
   return {
     ...rest,
-    agents: agents.map(({ id, handle, presence, push_mode, permission_mode, client_version, last_seen }) => ({
-      id,
-      handle,
-      presence,
-      push_mode,
-      permission_mode,
-      client_version,
-      last_seen,
-    })),
+    // Capacity for /codetgh:split: hub values only (a checked platform name, member handles, counts).
+    agents: agents.map(
+      ({ id, handle, presence, push_mode, permission_mode, client_version, platform, delegate_for, usage, open_tasks, last_seen }) => ({
+        id,
+        handle,
+        presence,
+        push_mode,
+        permission_mode,
+        client_version,
+        platform,
+        delegate_for,
+        usage,
+        open_tasks,
+        last_seen,
+      }),
+    ),
     team_activity: renderPeerData("team_activity", lines.join("\n")),
   };
 }
