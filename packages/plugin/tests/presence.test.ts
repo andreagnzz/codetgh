@@ -278,6 +278,37 @@ test(
 );
 
 test(
+  "usage limit: a failed usage reading leaves the limit as it was, and tells the team nothing",
+  { options: { ...OPTIONS, push_mode: "rewake" } },
+  async ($, on) => {
+    let reading = true;
+    const s = stubs(
+      on,
+      (e) => {
+        if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+        if (e.method === "POST") return ok("{}");
+        return ok(body({}));
+      },
+      () => {
+        if (!reading) throw new Error("no usage");
+        return [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T05:00:00.000Z" }];
+      },
+    );
+    const posts = () => s.requests.filter((r) => r.method === "POST").map((r) => JSON.parse(r.body ?? "{}").text ?? r.url);
+    await start($);
+    await s.clock.advance(1);
+    expect(posts()).toEqual(["Hit the Claude usage limit, back around 05:00 UTC", "https://hub.example.com/v1/messages"]);
+    reading = false;
+    await s.clock.advance(30_000);
+    await s.clock.advance(30_000);
+    expect(posts().length).toBe(2);
+    reading = true;
+    await s.clock.advance(30_000);
+    expect(posts().length).toBe(2);
+  },
+);
+
+test(
   "reports the live plan windows on its status poll as whole percents and epoch seconds, and nothing else",
   { options: OPTIONS },
   async ($, on) => {

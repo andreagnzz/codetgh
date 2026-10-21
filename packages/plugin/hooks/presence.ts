@@ -93,17 +93,18 @@ async function limits($: EngineInterface, url: string, token: string, handle: st
 async function refresh($: EngineInterface, url: string, token: string) {
   let s: Status;
   let now: number;
-  let live: SessionRateLimit[];
+  let live: SessionRateLimit[] | undefined;
   try {
     now = await $.clock.now();
     // A window past its reset is a stale reading: no API response came since it reopened. No reading, no report.
+    // undefined: usage failed or gave no window, so the limit state stays as it is (a failure is no sign of being back).
     live = await $.session.usage().then(
-      (u) => u.rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now),
-      () => [],
+      (u) => (u.rateLimits.length ? u.rateLimits.filter((w) => !w.resetsAt || Date.parse(w.resetsAt) > now) : undefined),
+      () => undefined,
     );
     // Read on each poll: /clear and resume give the process a new session id.
     const session = encodeURIComponent(await $.session.id());
-    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}${usageQuery(live)}`, {
+    const res = await $.http.fetch(`${url}/v1/status?session_id=${session}${usageQuery(live ?? [])}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
@@ -121,7 +122,7 @@ async function refresh($: EngineInterface, url: string, token: string) {
     $.ui.status(undefined);
     return;
   }
-  await limits($, url, token, s.you.handle, now, live);
+  if (live) await limits($, url, token, s.you.handle, now, live);
 }
 
 export const register: Register = (on, options) => {
