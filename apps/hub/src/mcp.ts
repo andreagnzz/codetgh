@@ -175,7 +175,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     },
     async ({ agent, thread, page_token, kinds, limit }) =>
       run(async () => {
-        const { items, more } = await unread(db, p, (await me(agent)).id, { thread, kinds, limit, afterSeq: fromPageToken(page_token) });
+        const { items, more } = await unread(db, p, await me(agent), { thread, kinds, limit, afterSeq: fromPageToken(page_token) });
         const last = items.at(-1);
         return renderInbox(items, more && last ? pageToken(last.seq) : null);
       }),
@@ -292,7 +292,8 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "task_list",
     {
-      description: "List team tasks, filtered by status or assignee (me or @handle). Titles only.",
+      description:
+        "List team tasks, filtered by status or assignee (me or @handle). Titles only. Tasks done or cancelled for over a day are archived: include_archived lists them.",
       inputSchema: TaskListInput,
       annotations: READ,
     },
@@ -412,7 +413,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     resource(uri, JSON.stringify(forModel(await teamOverview(db, p, await me(), overviewInput)))),
   );
   server.registerResource("inbox", "codetgh://inbox", { description: "Your unread messages, in envelopes." }, async (uri) => {
-    const { items, more } = await unread(db, p, (await me()).id, { limit: 20 });
+    const { items, more } = await unread(db, p, await me(), { limit: 20 });
     const last = items.at(-1);
     return resource(uri, renderInbox(items, more && last ? pageToken(last.seq) : null));
   });

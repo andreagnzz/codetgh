@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -11,6 +11,8 @@ let team: Awaited<ReturnType<Hub["seed"]>>;
 beforeAll(async () => {
   hub = await startHub();
   team = await hub.seed();
+  // Senders work in the same repository as Sam's sessions: a message to a person reaches their sessions on that project.
+  for (const m of [team.lea, team.malik]) await startSession(hub.url, m.token, `${m.handle}-rw`, { repo: ACME_REPO });
 });
 afterAll(() => hub.stop());
 
@@ -29,7 +31,7 @@ const allowRewake = (modes: string[]) =>
 describe("push: rewake mode (opt-in)", () => {
   it("is refused by the hub when an admin turns it off", async () => {
     await allowRewake(["hooks"]);
-    await startSession(hub.url, team.sam.token, "sam-rw0");
+    await startSession(hub.url, team.sam.token, "sam-rw0", { repo: ACME_REPO });
     const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=sam-rw0&wait_s=1`, {
       headers: { Authorization: `Bearer ${team.sam.token}` },
     });
@@ -46,7 +48,7 @@ describe("push: rewake mode (opt-in)", () => {
 
   it("wakes an idle session with the new message, once", async () => {
     await allowRewake(["rewake"]);
-    await startSession(hub.url, team.sam.token, "sam-rw1");
+    await startSession(hub.url, team.sam.token, "sam-rw1", { repo: ACME_REPO });
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     const waiting = runHook("rewake", { session_id: "sam-rw1" }, env);
     // Wait until the first waiter has recorded itself, rather than for a fixed time.
@@ -72,7 +74,7 @@ describe("push: rewake mode (opt-in)", () => {
   });
 
   it("stops waiting when the admin turns the mode off", async () => {
-    await startSession(hub.url, team.sam.token, "sam-rw2");
+    await startSession(hub.url, team.sam.token, "sam-rw2", { repo: ACME_REPO });
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     await allowRewake(["hooks"]);
     const r = await runHook("rewake", { session_id: "sam-rw2" }, env);
@@ -122,7 +124,7 @@ describe("push: rewake survives a failed poll", () => {
 describe("push: rewake under a burst", () => {
   it("wakes a session at most 6 times in 10 minutes, and the rest waits for the next prompt", async () => {
     await allowRewake(["rewake"]);
-    await startSession(hub.url, team.sam.token, "sam-rw-burst");
+    await startSession(hub.url, team.sam.token, "sam-rw-burst", { repo: ACME_REPO });
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     const codes: Array<number | null> = [];
     // From Malik: Léa's rate-limit budget is spent by the tests above.

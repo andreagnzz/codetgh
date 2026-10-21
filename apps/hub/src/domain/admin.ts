@@ -1,7 +1,7 @@
 import type { Role } from "@codetgh/shared";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, personalToken, type TeamSettings, team } from "../db/schema.js";
+import { agent, alert, membership, personalToken, project, type TeamSettings, team } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { appendAudit } from "./audit.js";
@@ -167,6 +167,30 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
       .where(eq(agent.id, a.id));
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
     await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });
+  });
+}
+
+// System agents (bridge, a2a) and the token's REST agent (cli-…, the CLI and the presence mod) are not sessions to place.
+export const isSessionAgent = (a: { kind: string; sessionId: string }) =>
+  a.kind !== "bridge" && a.kind !== "a2a" && !a.sessionId.startsWith("cli-");
+
+export async function setAgentProject(db: Db, p: Principal, agentId: string, projectId: string) {
+  requireMember(p);
+  await db.transaction(async (tx) => {
+    const [a] = await tx
+      .select()
+      .from(agent)
+      .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId), isNull(agent.removedAt)));
+    if (!a) throw new HubError("E_NOT_FOUND", "agent not found");
+    if (a.userId !== p.user.id) requireAdmin(p);
+    if (!isSessionAgent(a)) throw new HubError("E_FORBIDDEN", "only Claude Code sessions can be attached to a project");
+    const [prj] = await tx
+      .select({ id: project.id })
+      .from(project)
+      .where(and(eq(project.id, projectId), eq(project.teamId, p.teamId)));
+    if (!prj) throw new HubError("E_NOT_FOUND", "project not found");
+    await tx.update(agent).set({ projectId: prj.id }).where(eq(agent.id, a.id));
+    await appendAudit(tx, { ...byUser(p), action: "agent.project_set", subjectId: a.id, data: { project_id: prj.id } });
   });
 }
 

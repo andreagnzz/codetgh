@@ -203,6 +203,7 @@ export const TaskListInput = z.object({
   agent: agentId.optional(),
   status: z.enum(TASK_STATUSES).optional(),
   assignee: z.union([z.literal("me"), handle]).optional(),
+  include_archived: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
 

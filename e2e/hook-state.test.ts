@@ -11,6 +11,8 @@ let team: Awaited<ReturnType<Hub["seed"]>>;
 beforeAll(async () => {
   hub = await startHub();
   team = await hub.seed();
+  // The senders work in Sam's repository: a message to a person reaches their sessions on that project.
+  for (const m of [team.lea, team.malik]) await startSession(hub.url, m.token, `${m.handle}-state`, { repo: ACME_REPO });
 });
 afterAll(() => hub.stop());
 
