@@ -160,7 +160,11 @@ if (verb === "ps") {
   const name = flags.find((a) => a.startsWith("--name=")).slice(7);
   const env = { PATH: process.env.PATH, CODETGH_FAKE_CONTAINER: "1" };
   for (const f of flags.filter((a) => a.startsWith("--env="))) env[f.slice(6)] = process.env[f.slice(6)];
-  const child = spawn(cmd, args, { cwd: work, env, stdio: "inherit" });
+  // Windows runs a .cmd shim only through cmd.exe: the fake's own script, directly.
+  const child =
+    process.platform === "win32"
+      ? spawn(process.execPath, [join(dir, cmd + ".mjs"), ...args], { cwd: work, env: { ...env, SystemRoot: process.env.SystemRoot }, stdio: "inherit" })
+      : spawn(cmd, args, { cwd: work, env, stdio: "inherit" });
   writeFileSync(join(boxes, name), String(child.pid));
   child.on("close", (code) => {
     rmSync(join(boxes, name), { force: true });
