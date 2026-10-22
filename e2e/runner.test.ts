@@ -12,7 +12,7 @@ import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { type Keyring, program, runnerOwner, runnerTiming } from "../packages/cli/src/main.js";
+import { type Keyring, program, runnerOwner, runnerTiming, stopRunner } from "../packages/cli/src/main.js";
 import { consolePost, fakeCommand, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -75,6 +75,12 @@ if (stdin.includes("FAIL")) {
   process.exit(1);
 }
 if (stdin.includes("TAMPER")) execFileSync("git", ["config", "alias.x", "!touch pwned"]);
+// A detached child that would outlive the agent: its pid goes to orphan-pid.
+if (stdin.includes("ORPHAN")) {
+  const orphan = spawn("setsid", ["sleep", "300"], { stdio: "ignore" });
+  writeFileSync(join(dir, "orphan-pid"), String(orphan.pid));
+  orphan.unref();
+}
 if (stdin.includes("SLEEP")) {
   writeFileSync(join(dir, "pid"), String(process.pid));
   setTimeout(() => {}, 300_000);
@@ -588,6 +594,41 @@ describe("codetgh runner review loop", () => {
     expect(readFileSync(join(clone, ".git/config"), "utf8")).toBe(config);
     expect(await row(id)).toMatchObject({ status: "review" });
     expect(lines("claude.jsonl").at(-1).job).toMatch(/^[0-9a-f]{24}$/);
+  });
+
+  it("quarantines a worktree whose agent changed the git config before it lost its lease, and never reuses it", async () => {
+    runnerTiming.renewMs = 100;
+    const id = await create("TAMPER SLEEP lost");
+    const done = runner();
+    await waitForPid();
+    await hub.db.update(task).set({ leaseOwner: "another-runner" }).where(eq(task.id, id));
+    expect(await done).toContain("lease lost");
+    runnerTiming.renewMs = 120_000;
+    expect(existsSync(`${worktree(id)}.quarantine`)).toBe(true);
+    git(clone, "config", "--unset", "alias.x");
+    // Back in the queue, as after the other runner's lease expired: the next job refuses the worktree.
+    await hub.db.update(task).set({ status: "todo", leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
+    const before = lines("claude.jsonl").length;
+    await runner();
+    const t = await row(id);
+    expect(t?.status).toBe("blocked");
+    expect(t?.notes.at(-1)?.text).toContain("worktree is quarantined");
+    expect(lines("claude.jsonl")).toHaveLength(before);
+    expect(onOrigin(id)).toBe("");
+  });
+
+  it.skipIf(process.platform !== "linux")("sweeps what the agent left when the runner is stopped mid-job", async () => {
+    rmSync(join(fake, "orphan-pid"), { force: true });
+    const id = await create("ORPHAN SLEEP stop");
+    const done = runner();
+    await waitForPid();
+    await stopRunner();
+    await done;
+    const orphan = Number(readFileSync(join(fake, "orphan-pid"), "utf8"));
+    expect(alive(orphan)).toBe(false);
+    expect((await row(id))?.status).toBe("in_progress");
+    // Still leased to this runner: the next start would resume it.
+    await hub.db.update(task).set({ status: "cancelled", leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
   });
 
   it("leaves a task alone while another runner process holds its lock", async () => {

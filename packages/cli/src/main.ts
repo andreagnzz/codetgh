@@ -496,8 +496,15 @@ const gitBaseline = new Map<string, { common: string; state: string }>();
 
 const stopJob = (job: Job) => {
   job.stopped = true;
-  if (job.child) stopServer(job.child);
+  if (job.child) endAgent(job.child, "SIGTERM");
 };
+
+// Stop every job and wait, bounded, for each to sweep its agent's processes and check the git config.
+export async function stopRunner() {
+  const running = [...jobs.values()];
+  for (const j of running) stopJob(j);
+  await Promise.race([Promise.all(running.map((j) => j.done)), sleep(20_000)]);
+}
 
 type RunnerSettings = ReturnType<typeof RunnerConfig.parse>;
 type Lease = Awaited<ReturnType<CodeTghClient["runnerLease"]>>;
@@ -532,14 +539,15 @@ function endAgent(child: ChildProcess, signal: NodeJS.Signals) {
 // Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
 // ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
 // still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
-async function sweepAgent(marker: string, wt: string) {
-  const tag = `CODETGH_RUNNER_JOB=${marker}\0`;
+// With no marker (a job from before a restart), the worktree alone.
+async function sweepAgent(marker: string | null, wt: string) {
+  const tag = marker && `CODETGH_RUNNER_JOB=${marker}\0`;
   for (let round = 0; round < 5; round++) {
     let found = 0;
     for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d) && Number(d) !== process.pid)) {
       let hit = false;
       try {
-        hit = readFileSync(`/proc/${pid}/environ`, "latin1").includes(tag);
+        hit = !!tag && readFileSync(`/proc/${pid}/environ`, "latin1").includes(tag);
       } catch {}
       try {
         const cwd = readlinkSync(`/proc/${pid}/cwd`);
@@ -585,6 +593,10 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   };
   // One job per task across runner processes too: the author and the reviewer never share the worktree at once.
   const lock = `${wt}.lock`;
+  // Left when an agent's job ended with the git config changed or a process it started still running: never reused.
+  const quarantine = `${wt}.quarantine`;
+  let ran = false;
+  let swept = true;
   let locked = false;
   const takeLock = () => {
     mkdirSync(dirname(wt), { recursive: true, mode: 0o700 });
@@ -613,6 +625,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     chmodSync(log, 0o600);
     // The marker follows every process the agent starts, detached or not, so the sweep finds them.
     const marker = randomBytes(12).toString("hex");
+    ran = true;
     const env: NodeJS.ProcessEnv = { ...process.env, CODETGH_RUNNER: "1", CODETGH_RUNNER_JOB: marker };
     // Not a delegate session: CODETGH_RUNNER turns the same Bash check on instead.
     delete env.CODETGH_ACCEPT_REQUESTS_FROM;
@@ -661,6 +674,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     endAgent(child, "SIGKILL");
     // shortcut: only Linux is swept; elsewhere the group kill is all, so the runner refuses bypassPermissions there.
     const clean = process.platform === "linux" ? await sweepAgent(marker, wt) : true;
+    swept &&= clean;
     return { code, ended, out, clean };
   };
   // The author agent, then its new commits since `since` pushed. false: the job stopped or lost its lease.
@@ -697,6 +711,10 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     chmodSync(logs, 0o700);
     if (!/^tsk_[0-9A-Z]{26}$/.test(task.id)) fail("the hub sent a task id that is not one");
     if (!takeLock()) return say("another runner process works on it: left alone");
+    if (existsSync(quarantine)) fail("the worktree is quarantined: the git config changed or an agent process survived in an earlier job");
+    // Kept from a job before a restart, maybe with its processes: swept before reuse; untouched() below checks the config.
+    if (existsSync(wt) && process.platform === "linux" && !(await sweepAgent(null, wt)))
+      fail("the runner could not stop every process left in the worktree");
     await git(["-C", dir, "fetch", "origin"]);
     step = "the default branch could not be resolved";
     const head = () => git(["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
@@ -833,6 +851,13 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     say(note);
     await update({ status: "blocked", note }).catch((x: Error) => say(`could not report it: ${x.message}`));
   } finally {
+    // Every way out, a lost lease and a stop included: an agent that ran must leave the config as it found it.
+    const base = gitBaseline.get(dir);
+    if (ran && (!swept || !base || gitState(base.common) !== base.state))
+      try {
+        writeFileSync(quarantine, `${new Date().toISOString()} ${step}\n`, { mode: 0o600 });
+        say(`worktree quarantined: ${wt}`);
+      } catch {}
     if (locked) rmSync(lock, { force: true });
     jobs.delete(task.id);
   }
@@ -1691,11 +1716,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         await Promise.all([...jobs.values()].map((j) => j.done));
         return;
       }
-      // Agents stop; their leases are left to expire, so another runner can take the tasks.
-      const stop = () => {
-        for (const j of jobs.values()) stopJob(j);
-        process.exit(0);
-      };
+      // Agents stop and are swept; their leases are left to the next start of this runner, or to expire.
+      const stop = () => stopRunner().then(() => process.exit(0));
       process.on("SIGTERM", stop);
       process.on("SIGINT", stop);
       for (let first = true; ; first = false) {
