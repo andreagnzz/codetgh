@@ -219,6 +219,15 @@ export const RunnerConfig = z.object({
     .positive()
     .max(24 * 60)
     .default(45),
+  // docker: each agent in a throwaway container that sees only its worktree (SPEC « Lanceur et runner »).
+  isolation: z.enum(["docker", "none"]).default("docker"),
+  // The name of the variable on this machine that holds the agent's Claude credential; only that one enters the container.
+  claude_auth_env: z.enum(["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]).default("CLAUDE_CODE_OAUTH_TOKEN"),
+  memory: z
+    .string()
+    .regex(/^[1-9]\d*[mg]$/, "a size such as 4g or 512m")
+    .default("4g"),
+  cpus: z.number().positive().max(64).default(2),
 });
 // .codetgh/routing.json in the repository: ordered rules, the first match wins.
 export const RoutingRules = z.object({

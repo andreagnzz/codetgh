@@ -48,6 +48,8 @@ writeFileSync(
   }),
 );
 copyFileSync(join(root, "packages/cli/dist/codetgh.js"), join(stage, "codetgh.js"));
+// codetgh runner build-image reads it next to the bundle.
+copyFileSync(join(root, "deploy/runner-agent.Dockerfile"), join(stage, "runner-agent.Dockerfile"));
 copyFileSync(join(root, "LICENSE"), join(stage, "LICENSE"));
 copyFileSync(join(root, "NOTICE"), join(stage, "NOTICE"));
 // On Windows npm is npm.cmd, which only runs through a shell; no argument carries a path, so nothing needs quoting.

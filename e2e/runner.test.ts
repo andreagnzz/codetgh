@@ -29,6 +29,7 @@ const git = (cwd: string, ...args: string[]) =>
 
 // A fake claude: records argv, cwd, env and stdin, then acts on the task title it reads on stdin.
 // A fake gh: records argv and prints a PR URL with a growing number.
+// A fake docker: records argv; run starts the command in the folder mounted at /work, with only the --env variables.
 function fakes() {
   const dir = mkdtempSync(join(tmpdir(), "codetgh-fake-runner-"));
   fakeCommand(
@@ -39,7 +40,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const stdin = readFileSync(0, "utf8");
-appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, job: process.env.CODETGH_RUNNER_JOB ?? null, stdin }) + "\\n");
+appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, job: process.env.CODETGH_RUNNER_JOB ?? null, token: process.env.CODETGH_TOKEN ?? null, auth: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null, home: process.env.HOME ?? null, stdin }) + "\\n");
 // The reviewer: REJECT<n> in the title requests changes on the first n reviews, NOVERDICT gives none.
 if (process.argv[3].includes("VERDICT")) {
   const subject = stdin.match(/Subject: (.*)/)[1].replace(/[^A-Za-z0-9]/g, "_");
@@ -75,6 +76,13 @@ if (stdin.includes("FAIL")) {
   process.exit(1);
 }
 if (stdin.includes("TAMPER")) execFileSync("git", ["config", "alias.x", "!touch pwned"]);
+// What a container agent could leave for the runner to commit.
+if (stdin.includes("WORKFLOW")) {
+  execFileSync("mkdir", ["-p", ".github/workflows"]);
+  writeFileSync(".github/workflows/pwn.yml", "on: push\\n");
+}
+if (stdin.includes("SYMLINK")) execFileSync("ln", ["-s", "/etc/passwd", "passwd"]);
+if (stdin.includes("GITFILE")) appendFileSync(".git", "\\n");
 // A detached child that would outlive the agent: its pid goes to orphan-pid.
 if (stdin.includes("ORPHAN")) {
   const orphan = spawn("setsid", ["sleep", "300"], { stdio: "ignore" });
@@ -87,8 +95,11 @@ if (stdin.includes("SLEEP")) {
 } else {
   if (!stdin.includes("NOCOMMIT")) {
     appendFileSync("work.txt", stdin.length + "\\n");
-    execFileSync("git", ["add", "work.txt"]);
-    execFileSync("git", ["-c", "user.name=agent", "-c", "user.email=agent@example.com", "commit", "-q", "-m", "Do the task"]);
+    // In a container git does not work: the runner commits.
+    if (!process.env.CODETGH_FAKE_CONTAINER) {
+      execFileSync("git", ["add", "work.txt"]);
+      execFileSync("git", ["-c", "user.name=agent", "-c", "user.email=agent@example.com", "commit", "-q", "-m", "Do the task"]);
+    }
   }
   console.log(JSON.stringify({ type: "result", is_error: false, result: "done" }));
 }
@@ -112,6 +123,49 @@ if (process.argv[2] === "pr" && process.argv[3] === "create") {
   const n = existsSync(join(dir, "n")) ? Number(readFileSync(join(dir, "n"), "utf8")) + 1 : 1;
   writeFileSync(join(dir, "n"), String(n));
   console.log("https://github.com/acme/webapp/pull/" + n);
+}
+`,
+  );
+  fakeCommand(
+    dir,
+    "docker",
+    `import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { join } from "node:path";
+const dir = ${JSON.stringify(dir)};
+const argv = process.argv.slice(2);
+appendFileSync(join(dir, "docker.jsonl"), JSON.stringify({ argv }) + "\\n");
+// A running container: containers/<name> holds the pid of its command.
+const boxes = join(dir, "containers");
+mkdirSync(boxes, { recursive: true });
+const [verb, ...rest] = argv;
+if (verb === "version") process.exit(process.env.FAKE_DOCKER_DOWN ? 1 : 0);
+if (verb === "ps") {
+  const label = rest.find((a) => a.startsWith("--filter=label=")).slice(15);
+  const job = label.startsWith("codetgh.job=") ? label.slice(12) : null;
+  for (const name of readdirSync(boxes)) if (!job || name === job) console.log(name);
+} else if (verb === "kill" || verb === "rm") {
+  for (const name of rest.filter((a) => !a.startsWith("-"))) {
+    if (!existsSync(join(boxes, name))) continue;
+    try {
+      process.kill(Number(readFileSync(join(boxes, name), "utf8")), "SIGKILL");
+    } catch {}
+    if (verb === "rm") rmSync(join(boxes, name));
+  }
+} else if (verb === "run") {
+  const at = rest.findIndex((a) => !a.startsWith("-"));
+  const flags = rest.slice(0, at);
+  const [cmd, ...args] = rest.slice(at + 1);
+  const work = flags.find((a) => a.startsWith("--mount=") && a.includes(",dst=/work")).match(/src=([^,]+)/)[1];
+  const name = flags.find((a) => a.startsWith("--name=")).slice(7);
+  const env = { PATH: process.env.PATH, CODETGH_FAKE_CONTAINER: "1" };
+  for (const f of flags.filter((a) => a.startsWith("--env="))) env[f.slice(6)] = process.env[f.slice(6)];
+  const child = spawn(cmd, args, { cwd: work, env, stdio: "inherit" });
+  writeFileSync(join(boxes, name), String(child.pid));
+  child.on("close", (code) => {
+    rmSync(join(boxes, name), { force: true });
+    process.exit(code ?? 137);
+  });
 }
 `,
   );
@@ -213,11 +267,13 @@ async function runner(cfg: Record<string, unknown> = {}) {
   const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
   process.env.CODETGH_URL = hub.url;
   process.env.CODETGH_TOKEN = team.lea.token;
+  process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token";
   try {
     await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "runner", "--config", writeConfig(cfg), "--once"]);
   } finally {
     delete process.env.CODETGH_URL;
     delete process.env.CODETGH_TOKEN;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   }
   return out.join("\n");
 }
@@ -253,7 +309,8 @@ describe("codetgh runner", () => {
     expect(agent.argv).toEqual(expect.arrayContaining(["--permission-mode", "auto", "--output-format", "json"]));
     expect(agent.argv.join(" ")).not.toMatch(/bypassPermissions|dangerously/);
     const settings = JSON.parse(agent.argv[agent.argv.indexOf("--settings") + 1]);
-    expect(settings.enabledPlugins).toEqual({ "codetgh@codetgh": true });
+    // In the container: no plugin, nothing of the owner's environment but the Claude credential.
+    expect(settings.enabledPlugins).toBeUndefined();
     expect(settings.permissions.deny).toEqual(
       expect.arrayContaining([
         "Read(.env*)",
@@ -264,9 +321,17 @@ describe("codetgh runner", () => {
       ]),
     );
     expect(agent.argv.slice(agent.argv.indexOf("--model"))).toEqual(["--model", "sonnet", "--effort", "low"]);
-    expect(agent).toMatchObject({ runner: "1", accept: null });
+    expect(agent).toMatchObject({ runner: null, accept: null, token: null, home: null, auth: "test-oauth-token" });
     expect(agent.stdin).toContain('trust="untrusted-peer"');
     expect(agent.stdin).toContain("Subject: plain");
+    expect(agent.argv[1]).toContain("Do not commit");
+    const run = lines("docker.jsonl").find((l) => l.argv[0] === "run").argv;
+    expect(run).toEqual(expect.arrayContaining(["--read-only", "--cap-drop=ALL", `--mount=type=bind,src=${wt},dst=/work`]));
+    expect(run.slice(run.indexOf(`--name=codetgh-job-${slug(parent)}`))).toContain("--env=CLAUDE_CODE_OAUTH_TOKEN");
+    expect(run.join(" ")).not.toContain("test-oauth-token");
+    // The runner commits what the agent left, under a fixed author.
+    expect(git(wt, "log", "-1", "--format=%an <%ae>%n%s")).toBe("CodeTgh runner <runner@codetgh.invalid>\nplain");
+    expect(readdirSync(join(fake, "containers"))).toEqual([]);
 
     const [pr] = lines("gh.jsonl");
     expect(pr.argv).toEqual([
@@ -295,6 +360,19 @@ describe("codetgh runner", () => {
     execFileSync("git", ["-C", wt, "merge-base", "--is-ancestor", `origin/codetgh/${slug(parent)}`, "HEAD"]);
   });
 
+  it("with isolation none, runs claude as this user with the CodeTgh plugin, after a loud warning", async () => {
+    const id = await create("uncontained");
+    const out = await runner({ isolation: "none" });
+    expect(out).toMatch(/^WARNING: isolation none/m);
+    const agent = lines("claude.jsonl").at(-1);
+    expect(agent).toMatchObject({ cwd: worktree(id), runner: "1", accept: null });
+    expect(agent.job).toMatch(/^[0-9a-f]{24}$/);
+    expect(JSON.parse(agent.argv[agent.argv.indexOf("--settings") + 1]).enabledPlugins).toEqual({ "codetgh@codetgh": true });
+    expect(agent.argv[1]).toContain("then commit");
+    expect(git(worktree(id), "log", "-1", "--format=%an")).toBe("agent");
+    expect(await row(id)).toMatchObject({ status: "review" });
+  });
+
   it("sends the hub a fixed reason and the log's name, never the agent's output", async () => {
     const id = await create("FAIL");
     await runner();
@@ -306,7 +384,7 @@ describe("codetgh runner", () => {
 
   it("pushes nothing when the agent changed the repository's git config", async () => {
     const id = await create("TAMPER");
-    await runner();
+    await runner({ isolation: "none" });
     expect((await row(id))?.notes.at(-1)?.text).toContain("git config or hooks changed");
     expect(onOrigin(id)).toBe("");
     git(clone, "config", "--unset", "alias.x");
@@ -316,7 +394,7 @@ describe("codetgh runner", () => {
   it("never runs a hook planted in the repository", async () => {
     const marker = join(root, "hook-ran");
     // Hooks the runner's own git would trigger: the worktree checkout and the push.
-    const hooks = ["post-checkout", "pre-push"];
+    const hooks = ["post-checkout", "pre-commit", "pre-push"];
     for (const hook of hooks) {
       writeFileSync(join(clone, ".git/hooks", hook), `#!/bin/sh\ntouch "${marker.replaceAll("\\", "/")}"\n`);
       chmodSync(join(clone, ".git/hooks", hook), 0o755);
@@ -340,7 +418,7 @@ describe("codetgh runner", () => {
     expect(lines("gh.jsonl")).toHaveLength(before);
     const r = await row(id);
     expect(r?.status).toBe("blocked");
-    expect(r?.notes.at(-1)?.text).toContain("no commit");
+    expect(r?.notes.at(-1)?.text).toContain("the agent made no change");
   });
 
   it("runs at most max_agents agents", async () => {
@@ -389,12 +467,51 @@ describe("codetgh runner", () => {
     expect(r?.notes.at(-1)?.text).toContain("0.02 min");
   });
 
-  // Only Linux can sweep what an agent detached (runJob): elsewhere the runner refuses bypassPermissions.
-  it.skipIf(process.platform === "linux")("refuses bypassPermissions where it cannot sweep the agent's processes", async () => {
-    await expect(runner({ permission_mode: "bypassPermissions" })).rejects.toThrow(/bypassPermissions/);
+  it("refuses bypassPermissions outside a container", async () => {
+    await expect(runner({ permission_mode: "bypassPermissions", isolation: "none" })).rejects.toThrow(
+      /bypassPermissions needs "isolation": "docker"/,
+    );
   });
 
-  it.skipIf(process.platform !== "linux")("passes bypassPermissions only when runner.json asks for it", async () => {
+  it("refuses to start when docker does not answer, or without the agents' credential", async () => {
+    const before = lines("claude.jsonl").length;
+    process.env.FAKE_DOCKER_DOWN = "1";
+    try {
+      await expect(runner()).rejects.toThrow(/docker version failed: install Docker/);
+    } finally {
+      delete process.env.FAKE_DOCKER_DOWN;
+    }
+    await expect(runner({ claude_auth_env: "ANTHROPIC_API_KEY" })).rejects.toThrow(/ANTHROPIC_API_KEY is not set/);
+    await expect(runner({ claude_auth_env: "CODETGH_TOKEN" })).rejects.toThrow(/claude_auth_env/);
+    expect(lines("claude.jsonl")).toHaveLength(before);
+  });
+
+  it("removes the containers this runner left at its start", async () => {
+    const stale = execFileSync("sh", ["-c", "sleep 300 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim();
+    mkdirSync(join(fake, "containers"), { recursive: true });
+    writeFileSync(join(fake, "containers", "codetgh-job-stale"), stale);
+    await runner();
+    expect(existsSync(join(fake, "containers", "codetgh-job-stale"))).toBe(false);
+    expect(alive(Number(stale))).toBe(false);
+    expect(lines("docker.jsonl").map((l) => l.argv.join(" "))).toContain(`ps -aq --filter=label=codetgh.runner=${runnerOwner()}`);
+  });
+
+  for (const [title, what] of [
+    ["WORKFLOW", "a workflow"],
+    ["SYMLINK", "a symlink out of the worktree"],
+    ["GITFILE", "the worktree's .git"],
+  ] as const)
+    it(`blocks a task whose agent changed ${what}, and commits and pushes nothing`, async () => {
+      const id = await create(title);
+      await runner();
+      const t = await row(id);
+      expect(t?.status).toBe("blocked");
+      expect(t?.notes.at(-1)?.text).toMatch(title === "GITFILE" ? /changed the worktree's .git/ : /a path the runner does not commit/);
+      expect(onOrigin(id)).toBe("");
+      expect(git(worktree(id), "rev-list", "--count", "origin/main..HEAD")).toBe("0");
+    });
+
+  it.skipIf(process.platform === "win32")("passes bypassPermissions only when runner.json asks for it", async () => {
     await create("bypass");
     await runner({ permission_mode: "bypassPermissions", auto_merge: true });
     expect(lines("claude.jsonl").at(-1).argv).toEqual(expect.arrayContaining(["--permission-mode", "bypassPermissions"]));
@@ -428,6 +545,17 @@ describe("codetgh runner review loop", () => {
     const [r] = reviewer().slice(-1);
     expect(r.cwd).toBe(worktree(id));
     expect(r.argv[1]).toContain(`PR #${pr}`);
+    expect(r.argv[1]).toContain("/review.diff");
+    const run = lines("docker.jsonl")
+      .filter((l) => l.argv[0] === "run")
+      .at(-1).argv;
+    expect(run).toEqual(
+      expect.arrayContaining([
+        `--mount=type=bind,src=${worktree(id)},dst=/work,readonly`,
+        `--mount=type=bind,src=${worktree(id)}.diff,dst=/review.diff,readonly`,
+      ]),
+    );
+    expect(existsSync(`${worktree(id)}.diff`)).toBe(false);
     expect(r.argv[1]).toContain("VERDICT: APPROVE");
     expect(r.argv).toEqual(expect.arrayContaining(["--permission-mode", "auto", "--model", "opus", "--output-format", "json"]));
     expect(r.stdin).toContain('trust="untrusted-peer"');
@@ -581,7 +709,7 @@ describe("codetgh runner review loop", () => {
 
   it.skipIf(process.platform === "win32")("kills what the agent left running before the tamper check and the push", async () => {
     const id = await create("LATEWRITE");
-    await runner();
+    await runner({ isolation: "none" });
     await sleep(1500);
     expect(await row(id)).toMatchObject({ status: "review" });
     expect(() => git(clone, "config", "alias.late")).toThrow();
@@ -590,7 +718,7 @@ describe("codetgh runner review loop", () => {
   it.skipIf(process.platform !== "linux")("kills a process the agent detached with setsid before the tamper check", async () => {
     const config = readFileSync(join(clone, ".git/config"), "utf8");
     const id = await create("SETSID");
-    await runner();
+    await runner({ isolation: "none" });
     await sleep(1500);
     expect(readFileSync(join(clone, ".git/config"), "utf8")).toBe(config);
     expect(await row(id)).toMatchObject({ status: "review" });
@@ -600,7 +728,7 @@ describe("codetgh runner review loop", () => {
   it("quarantines a worktree whose agent changed the git config before it lost its lease, and never reuses it", async () => {
     runnerTiming.renewMs = 100;
     const id = await create("TAMPER SLEEP lost");
-    const done = runner();
+    const done = runner({ isolation: "none" });
     await waitForPid();
     await hub.db.update(task).set({ leaseOwner: "another-runner" }).where(eq(task.id, id));
     expect(await done).toContain("lease lost");
@@ -627,7 +755,7 @@ describe("codetgh runner review loop", () => {
   it.skipIf(process.platform !== "linux")("sweeps what the agent left when the runner is stopped mid-job", async () => {
     rmSync(join(fake, "orphan-pid"), { force: true });
     const id = await create("ORPHAN SLEEP stop");
-    const done = runner();
+    const done = runner({ isolation: "none" });
     await waitForPid();
     await stopRunner();
     await done;
@@ -652,7 +780,7 @@ describe("codetgh runner review loop", () => {
 
   it("pushes nothing when the agent changed its worktree's own git config", async () => {
     const id = await create("WTCONFIG");
-    await runner();
+    await runner({ isolation: "none" });
     const t = await row(id);
     expect(t?.status).toBe("blocked");
     expect(t?.notes.at(-1)?.text).toContain("git config or hooks changed");
