@@ -144,13 +144,18 @@ Then a fresh `claude -p` reviews the PR in the same worktree, read-only: `Edit`,
 It is bounded like the launcher:
 - it runs on the owner's machine with the owner's token, and the hub only says *on* or *off* and which task to take;
 - the folders come from a local list, and the commands are fixed in the CLI;
-- each agent runs in `auto` mode unless `runner.json` says otherwise. It gets the delegate deny rules, edits denied in `.git`, `.codetgh`, `.claude`, `.github/workflows` and CodeTgh's own files, and the CodeTgh Bash check;
+- each agent, author or reviewer, runs in a throwaway Docker container (`"isolation": "docker"`, the default), which is the security boundary. The container sees only the task's worktree, at `/work`, read-only for the reviewer, with the worktree's `.git` pointer hidden, so git does not work inside. It gets one variable, the Claude credential that `claude_auth_env` names, and nothing else of this machine: no `CODETGH_TOKEN`, no gh token, no SSH agent or keys, no home, no `~/.claude`, no Docker socket. Root filesystem read-only, `/tmp` in memory, every capability dropped, `no-new-privileges`, process, memory and CPU limits, uid 10001. It reaches the network through Docker's default bridge: the internet, and whatever this host or your LAN exposes to that bridge;
+- the author leaves its changes in the worktree, and the runner commits them as `CodeTgh runner <runner@codetgh.invalid>` with the task's title. It refuses, and blocks the task, any change under `.git`, `.github/workflows`, `.codetgh` or `.claude`, a submodule, or a symlink that leads out of the worktree;
+- each agent runs in `auto` mode unless `runner.json` says otherwise, with the delegate deny rules and edits denied in `.git`, `.codetgh`, `.claude`, `.github/workflows` and CodeTgh's own files. The CodeTgh plugin and its Bash check are not in the container;
 - the runner's own git and gh calls ignore repository hooks, fsmonitor and `core.sshCommand`, and it pushes nothing if the repository's git config or hooks changed since it started: restart it after you change them;
-- an agent runs with the owner's rights on this machine: use a dedicated machine or container, without secrets.
+- with `"isolation": "none"` an agent runs with the runner user's rights on this machine, and the runner prints a warning at each start and refuses `bypassPermissions`.
 
 Setup, once:
 
-1. **Claude Code is logged in** on this machine and the CodeTgh plugin is installed (`codetgh setup`). **`gh` is logged in** with push and PR rights on the repositories: `gh auth login`.
+1. **`gh` is logged in** with push and PR rights on the repositories: `gh auth login`. **Docker runs** and this user may use it (`docker version` answers; on Linux, `sudo usermod -aG docker $USER`, then log in again). Membership of the `docker` group is as good as root on this machine: that is one more reason for a dedicated user, below.
+   - **The image.** `codetgh runner build-image` builds `codetgh-runner-agent:<CodeTgh version>` from `deploy/runner-agent.Dockerfile`: Node, git and Claude Code at a pinned version, no gh, no keys. Build it again after each CodeTgh update; the runner refuses to start without it.
+   - **The agents' Claude credential.** Run `claude setup-token` once (a one-year token for your Claude subscription), and give the runner its value as `CLAUDE_CODE_OAUTH_TOKEN`, in a 0600 file the service reads: `install -m 600 /dev/null ~/.config/codetgh/runner.env`, then write `CLAUDE_CODE_OAUTH_TOKEN=…` in it. For API billing, use `ANTHROPIC_API_KEY` and `"claude_auth_env": "ANTHROPIC_API_KEY"` instead. The runner refuses to start when that variable is empty, and passes it to each container by name, never on a command line or in a log.
+   - With `"isolation": "none"` instead: Claude Code logged in on this machine and the CodeTgh plugin installed (`codetgh setup`).
 2. **A clone per project**, with an `origin`. The runner refuses a relative path, or a folder that is not a git repository with an origin.
 3. **The local list and settings.** Write `~/.config/codetgh/runner.json` (mode 0600). The project id is shown on the console's Projects page.
    ```json
@@ -159,10 +164,14 @@ Setup, once:
      "max_agents": 3,
      "permission_mode": "auto",
      "auto_merge": false,
-     "job_timeout_min": 45
+     "job_timeout_min": 45,
+     "isolation": "docker",
+     "claude_auth_env": "CLAUDE_CODE_OAUTH_TOKEN",
+     "memory": "4g",
+     "cpus": 2
    }
    ```
-   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
+   `memory` and `cpus` cap each container. `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
 4. **Optional routing.** `.codetgh/routing.json`, committed on the default branch, picks `--model` and `--effort` with ordered rules; the first match wins. The runner reads it from `origin/HEAD`, never from a worktree:
    ```json
    { "rules": [{ "match": { "role": "reviewer" }, "model": "opus" }, { "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
@@ -176,6 +185,7 @@ Setup, once:
 
    [Service]
    ExecStart=%h/.npm-global/bin/codetgh runner
+   EnvironmentFile=-%h/.config/codetgh/runner.env
    Restart=on-failure
    TimeoutStopSec=30
 
@@ -186,11 +196,12 @@ Setup, once:
    journalctl --user -u codetgh-runner -f      # the tasks it takes, their PRs and blocks
    ```
 
-**Hardened setup (recommended).** An agent runs as the user that runs the runner, and nothing short of OS isolation fully contains it. Run the runner as a dedicated user, or in a container, that owns its own clones and holds no other secrets. On Linux, as a system service:
+**Hardened setup (recommended).** The container holds the agents, but the runner itself holds the CodeTgh token, the gh login and, through Docker, root on the host. Run it as a dedicated user that owns its own clones and holds no other secrets. On Linux, as a system service:
    ```bash
    sudo useradd --system --create-home --home-dir /var/lib/codetgh-runner --shell /bin/bash codetgh-runner
+   sudo usermod -aG docker codetgh-runner
    sudo -u codetgh-runner -H bash -c 'cd && git clone https://github.com/you/my-repo.git'
-   sudo -u codetgh-runner -H bash -c 'codetgh login && claude && gh auth login'   # once, then write its runner.json
+   sudo -u codetgh-runner -H bash -c 'codetgh login && gh auth login && codetgh runner build-image'   # once, then write its runner.json and runner.env
    sudo tee /etc/systemd/system/codetgh-runner.service <<'UNIT'
    [Unit]
    Description=CodeTgh runner (dedicated user)
@@ -199,6 +210,7 @@ Setup, once:
    [Service]
    User=codetgh-runner
    ExecStart=/usr/local/bin/codetgh runner
+   EnvironmentFile=-/var/lib/codetgh-runner/.config/codetgh/runner.env
    Restart=on-failure
    TimeoutStopSec=30
    # The people's homes are out of reach; only the runner's own home is writable.
@@ -213,7 +225,9 @@ Setup, once:
    UNIT
    sudo systemctl daemon-reload && sudo systemctl enable --now codetgh-runner
    ```
-   On Linux the runner tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. This cleanup runs however a job ends, a lost lease or `systemctl stop` included. If the git config changed or a process survived, the runner writes `<worktree>.quarantine` next to the worktree. Since the worktrees share the clone's `.git`, no task of that project runs again, even after a restart, and each one is `blocked`, until you inspect the clone and delete the worktree and the marker. On macOS and Windows the runner can only end the agent's process tree, so it refuses `permission_mode: "bypassPermissions"` there.
+   Each container is named `codetgh-job-<task>` and labelled `codetgh.runner=<runner id>`. A timeout, a lost lease or `systemctl stop` runs `docker kill` on it, and the runner removes it at the end of every job, and removes those a stopped runner left when it starts again. A container that stays quarantines the worktree, like a surviving process below.
+
+   On Linux the runner also tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. This cleanup runs however a job ends, a lost lease or `systemctl stop` included. If the git config changed or a process survived, the runner writes `<worktree>.quarantine` next to the worktree. Since the worktrees share the clone's `.git`, no task of that project runs again, even after a restart, and each one is `blocked`, until you inspect the clone and delete the worktree and the marker. With `"isolation": "none"` this sweep is all there is, and only on Linux; the runner refuses `permission_mode: "bypassPermissions"` without a container.
 
 Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents. The runner keeps one id in `~/.config/codetgh/runner-id`: restarted within 10 minutes, it resumes its own leases; otherwise they expire, a task without a PR goes back to the queue and a task with one goes back to review.
 
