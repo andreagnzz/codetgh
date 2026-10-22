@@ -101,9 +101,11 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     runnerReport: async (report: In<"runnerReport">) => {
       await call("runnerReport", report);
     },
-    runnerReady: async (project: string) => must(await call("runnerReady", { project })),
+    runnerReady: async (project: string, phase?: "review") => must(await call("runnerReady", { project, phase })),
     /** 409 (E_VERSION_CONFLICT) when another runner took the task or it is not ready any more. */
     runnerLease: async (input: In<"runnerLease">) => must(await call("runnerLease", input)),
+    /** The live leases this runner holds, to resume after a restart. */
+    runnerLeases: async (owner: string) => must(await call("runnerLeases", { owner })),
     /** 409 when this runner no longer holds the lease: stop working on the task. */
     runnerRenew: async (input: In<"runnerRenew">) => must(await call("runnerRenew", input)),
     runnerUpdate: async (input: In<"runnerUpdate">) => must(await call("runnerUpdate", input)),
