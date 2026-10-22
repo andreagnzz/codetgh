@@ -186,6 +186,35 @@ Setup, once:
    journalctl --user -u codetgh-runner -f      # the tasks it takes, their PRs and blocks
    ```
 
+**Hardened setup (recommended).** An agent runs as the user that runs the runner, and nothing short of OS isolation fully contains it. Run the runner as a dedicated user, or in a container, that owns its own clones and holds no other secrets. On Linux, as a system service:
+   ```bash
+   sudo useradd --system --create-home --home-dir /var/lib/codetgh-runner --shell /bin/bash codetgh-runner
+   sudo -u codetgh-runner -H bash -c 'cd && git clone https://github.com/you/my-repo.git'
+   sudo -u codetgh-runner -H bash -c 'codetgh login && claude && gh auth login'   # once, then write its runner.json
+   sudo tee /etc/systemd/system/codetgh-runner.service <<'UNIT'
+   [Unit]
+   Description=CodeTgh runner (dedicated user)
+   After=network-online.target
+
+   [Service]
+   User=codetgh-runner
+   ExecStart=/usr/local/bin/codetgh runner
+   Restart=on-failure
+   TimeoutStopSec=30
+   # The people's homes are out of reach; only the runner's own home is writable.
+   ProtectHome=yes
+   ProtectSystem=strict
+   ReadWritePaths=/var/lib/codetgh-runner
+   PrivateTmp=yes
+   NoNewPrivileges=yes
+
+   [Install]
+   WantedBy=multi-user.target
+   UNIT
+   sudo systemctl daemon-reload && sudo systemctl enable --now codetgh-runner
+   ```
+   On Linux the runner tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. On macOS and Windows the runner can only end the agent's process tree, so it refuses `permission_mode: "bypassPermissions"` there.
+
 Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents. The runner keeps one id in `~/.config/codetgh/runner-id`: restarted within 10 minutes, it resumes its own leases; otherwise they expire, a task without a PR goes back to the queue and a task with one goes back to review.
 
 ## Discord bot (optional)

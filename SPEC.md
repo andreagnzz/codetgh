@@ -851,12 +851,12 @@ Modèle de menaces du runner. Un agent du runner exécute le texte d'une tâche 
 - Le routage n'est lu que sur la branche par défaut, jamais dans le worktree.
 - Le mode de permission ne vient que de `runner.json`.
 - Le verdict du relecteur n'est que la dernière ligne du `result` JSON, exacte et seule à nommer un verdict ; un verdict absent ou ambigu vaut demande de changements, jamais approbation. Le texte de la revue va à l'auteur dans une enveloppe <peer_message>, échappé et plafonné, sous un prompt qui le dit non fiable. Les agents du runner ne modifient pas `.github/workflows`.
-- Avant chaque contrôle de la configuration git et chaque push, le runner tue le groupe de processus de l'agent ; il refait le contrôle juste après le push. Un verrou par tâche empêche deux tâches du runner, auteur et relecteur, de partager un worktree.
+- Chaque job porte un marqueur dans l'environnement de l'agent. Une fois l'agent sorti, le runner tue son groupe de processus et, sous Linux, tout processus de l'utilisateur qui porte ce marqueur ou dont le dossier courant est dans le worktree, même détaché, jusqu'à n'en plus trouver. Ensuite seulement il contrôle la configuration git, pousse, puis la contrôle de nouveau. Un échec à chaque étape bloque la tâche. Hors Linux, faute de ce balayage, le runner refuse `bypassPermissions`. Un verrou par tâche empêche deux tâches du runner, auteur et relecteur, de partager un worktree.
 - Le hub ne reçoit qu'une raison fixe et le nom du journal, jamais la sortie de l'agent. La PR ne porte que l'identifiant et le titre de la tâche. Le journal reste local, en 0600.
 
 Le relecteur du runner n'est pas une frontière de sécurité : il lit du code non fiable, qui peut l'orienter. Un humain relit avant de fusionner tout changement sensible ; c'est pourquoi la fusion automatique reste éteinte par défaut et, allumée, ne fait que `gh pr merge --auto`, qui attend les contrôles exigés par GitHub.
 
-Limite assumée : comme une session déléguée, l'agent garde ce que le mode auto, les règles deny et le hook laissent passer, y compris un script qui écrit ailleurs sur la machine. Il faut lancer le runner sur une machine ou dans un conteneur dédiés, sans secrets.
+Limite assumée : comme une session déléguée, l'agent garde ce que le mode auto, les règles deny et le hook laissent passer, y compris un script qui écrit ailleurs sur la machine. Sans isolation par le système, le runner ne peut pas contenir entièrement un agent qui tourne sous le même utilisateur que lui. La seule installation durcie reconnue est un utilisateur dédié ou un conteneur, propriétaire de ses clones et sans autres secrets (docs/DEPLOY.md).
 
 ### Rôles
 
