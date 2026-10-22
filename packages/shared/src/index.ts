@@ -230,7 +230,7 @@ export const TaskCreateInput = z.object({
   paths: z.array(peerPath).max(50).default([]),
   depends_on: z.array(taskId).max(20).default([]),
   assignee: handle.optional(),
-  // For the owner's runner (codetgh runner); a member or the owner sets it, never a guest.
+  // For the owner's runner (codetgh runner); only an owner or an admin sets it.
   runner: z.boolean().default(false),
 });
 
