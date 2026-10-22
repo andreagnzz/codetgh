@@ -96,6 +96,17 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     launcherReport: async (report: { project_id: string; running: boolean; error?: string }) => {
       await call("launcherReport", report);
     },
+    /** Runner queue (owner only): what to run, the leases, and the task updates of their holder. */
+    runnerTargets: async () => must(await call("runnerTargets")),
+    runnerReport: async (report: In<"runnerReport">) => {
+      await call("runnerReport", report);
+    },
+    runnerReady: async (project: string) => must(await call("runnerReady", { project })),
+    /** 409 (E_VERSION_CONFLICT) when another runner took the task or it is not ready any more. */
+    runnerLease: async (input: In<"runnerLease">) => must(await call("runnerLease", input)),
+    /** 409 when this runner no longer holds the lease: stop working on the task. */
+    runnerRenew: async (input: In<"runnerRenew">) => must(await call("runnerRenew", input)),
+    runnerUpdate: async (input: In<"runnerUpdate">) => must(await call("runnerUpdate", input)),
     /** New message ids as they arrive; pass the last event id to resume. */
     async *stream(o: { signal?: AbortSignal; lastEventId?: string } = {}): AsyncGenerator<Out<"stream">> {
       const res = await doFetch(`${base}${REST_ROUTES.stream.path}`, {
