@@ -722,7 +722,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (boxed) {
       await removeContainer();
       // Group-writable for the agent; files an earlier agent made are its own, and already are (the image's umask).
-      if (!reviewer)
+      if (!reviewer && process.getuid)
         await promisify(execFile)("find", [
           wt,
           "-uid",

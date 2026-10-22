@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -35,7 +35,7 @@ function fakes() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
@@ -78,10 +78,10 @@ if (stdin.includes("FAIL")) {
 if (stdin.includes("TAMPER")) execFileSync("git", ["config", "alias.x", "!touch pwned"]);
 // What a container agent could leave for the runner to commit.
 if (stdin.includes("WORKFLOW")) {
-  execFileSync("mkdir", ["-p", ".github/workflows"]);
+  mkdirSync(".github/workflows", { recursive: true });
   writeFileSync(".github/workflows/pwn.yml", "on: push\\n");
 }
-if (stdin.includes("SYMLINK")) execFileSync("ln", ["-s", "/etc/passwd", "passwd"]);
+if (stdin.includes("SYMLINK")) symlinkSync("/etc/passwd", "passwd");
 if (stdin.includes("GITFILE")) appendFileSync(".git", "\\n");
 // A detached child that would outlive the agent: its pid goes to orphan-pid.
 if (stdin.includes("ORPHAN")) {
@@ -487,7 +487,9 @@ describe("codetgh runner", () => {
   });
 
   it("removes the containers this runner left at its start", async () => {
-    const stale = execFileSync("sh", ["-c", "sleep 300 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim();
+    const sleeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 300_000)"], { stdio: "ignore", detached: true });
+    sleeper.unref();
+    const stale = String(sleeper.pid);
     mkdirSync(join(fake, "containers"), { recursive: true });
     writeFileSync(join(fake, "containers", "codetgh-job-stale"), stale);
     await runner();
@@ -496,20 +498,24 @@ describe("codetgh runner", () => {
     expect(lines("docker.jsonl").map((l) => l.argv.join(" "))).toContain(`ps -aq --filter=label=codetgh.runner=${runnerOwner()}`);
   });
 
+  // Windows makes a symlink only with developer mode on.
   for (const [title, what] of [
     ["WORKFLOW", "a workflow"],
     ["SYMLINK", "a symlink out of the worktree"],
     ["GITFILE", "the worktree's .git"],
   ] as const)
-    it(`blocks a task whose agent changed ${what}, and commits and pushes nothing`, async () => {
-      const id = await create(title);
-      await runner();
-      const t = await row(id);
-      expect(t?.status).toBe("blocked");
-      expect(t?.notes.at(-1)?.text).toMatch(title === "GITFILE" ? /changed the worktree's .git/ : /a path the runner does not commit/);
-      expect(onOrigin(id)).toBe("");
-      expect(git(worktree(id), "rev-list", "--count", "origin/main..HEAD")).toBe("0");
-    });
+    it.skipIf(title === "SYMLINK" && process.platform === "win32")(
+      `blocks a task whose agent changed ${what}, and commits and pushes nothing`,
+      async () => {
+        const id = await create(title);
+        await runner();
+        const t = await row(id);
+        expect(t?.status).toBe("blocked");
+        expect(t?.notes.at(-1)?.text).toMatch(title === "GITFILE" ? /changed the worktree's .git/ : /a path the runner does not commit/);
+        expect(onOrigin(id)).toBe("");
+        expect(git(worktree(id), "rev-list", "--count", "origin/main..HEAD")).toBe("0");
+      },
+    );
 
   it.skipIf(process.platform === "win32")("passes bypassPermissions only when runner.json asks for it", async () => {
     await create("bypass");
