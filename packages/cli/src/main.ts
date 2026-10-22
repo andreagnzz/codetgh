@@ -663,25 +663,33 @@ const runnersOwn = (pid: string) => {
   return false;
 };
 
-// Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
-// ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
-// still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
-// With no marker (a job from before a restart), the worktree alone. /proc/<pid>/cwd is a resolved path: compared with
-// the real paths of the worktree and of the clone, whose shared .git the agent could also sit in.
-async function sweepAgent(marker: string | null, wt: string, clone: string) {
+// /proc/<pid>/cwd is a resolved path: compared with the real path of dir.
+const cwdIn = (pid: string, dir: string) => {
+  try {
+    const cwd = readlinkSync(`/proc/${pid}/cwd`);
+    return cwd === dir || cwd.startsWith(`${dir}/`);
+  } catch {
+    return false;
+  }
+};
+const procs = () => readdirSync("/proc").filter((d) => /^\d+$/.test(d) && Number(d) !== process.pid);
+
+// Linux, isolation none: every process this user runs that carries the job's marker in its environment or sits in the
+// worktree, the ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left.
+// false: some still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
+// With no marker (a job from before a restart), the worktree alone. Never the clone: the owner's own shell or Claude
+// session could sit there, and the runner refuses to start on a clone in use.
+async function sweepAgent(marker: string | null, wt: string) {
   const tag = marker && `CODETGH_RUNNER_JOB=${marker}\0`;
-  const dirs = [wt, clone].filter((d) => existsSync(d)).map((d) => realpathSync(d));
+  const dir = existsSync(wt) ? realpathSync(wt) : null;
   for (let round = 0; round < 5; round++) {
     let found = 0;
-    for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d) && Number(d) !== process.pid)) {
+    for (const pid of procs()) {
       let hit = false;
       try {
         hit = !!tag && readFileSync(`/proc/${pid}/environ`, "latin1").includes(tag);
       } catch {}
-      try {
-        const cwd = readlinkSync(`/proc/${pid}/cwd`);
-        hit ||= dirs.some((d) => cwd === d || cwd.startsWith(`${d}/`));
-      } catch {}
+      hit ||= !!dir && cwdIn(pid, dir);
       if (!hit || runnersOwn(pid)) continue;
       found++;
       try {
@@ -856,9 +864,9 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     clearInterval(beat);
     // Whatever it started and left behind could still write to the repository after the checks below.
     endAgent(child, "SIGKILL");
+    // isolation docker: the agent's processes are in its container, and a host sweep would only find the owner's.
     // shortcut: only Linux is swept; elsewhere the group kill is all, so the runner refuses bypassPermissions there.
-    let clean = process.platform === "linux" ? await sweepAgent(marker, wt, dir) : true;
-    if (boxed) clean = (await removeContainer()) && clean;
+    const clean = boxed ? await removeContainer() : process.platform === "linux" ? await sweepAgent(marker, wt) : true;
     swept &&= clean;
     return { code, ended, out, clean };
   };
@@ -1015,7 +1023,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (readdirSync(dirname(wt)).some((f) => f.endsWith(".quarantine")))
       fail("the worktree is quarantined: the git config changed or an agent process survived in an earlier job");
     // Kept from a job before a restart, maybe with its processes: swept before reuse; untouched() below checks the config.
-    if (existsSync(wt) && process.platform === "linux" && !(await sweepAgent(null, wt, dir))) {
+    if (!boxed && existsSync(wt) && process.platform === "linux" && !(await sweepAgent(null, wt))) {
       swept = false;
       fail("the runner could not stop every process left in the worktree");
     }
@@ -2106,6 +2114,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       for (const [id, dir] of Object.entries(cfg.projects)) {
         const origin = await promisify(execFile)("git", ["-C", dir, "remote", "get-url", "origin"], { timeout: 5000 }).catch(() => null);
         if (!origin) throw new Error(`${dir} (project ${id}) is not a git repository with an origin: clone the project there`);
+        // Read-only: a clone someone works in is not the runner's to sweep, commit in or quarantine.
+        if (process.platform === "linux") {
+          const real = realpathSync(dir);
+          const user = procs().find((pid) => cwdIn(pid, real) && !runnersOwn(pid));
+          if (user)
+            throw new Error(
+              `${dir} is in use by another process (pid ${user}, ${readFileSync(`/proc/${user}/comm`, "utf8").trim()}); give the runner its own clone: git clone ${origin.stdout.trim()} ~/runner/${basename(dir)}`,
+            );
+        }
         const common = resolve(dir, (await promisify(execFile)("git", ["-C", dir, "rev-parse", "--git-common-dir"])).stdout.trim());
         gitBaseline.set(dir, { common, state: gitState(common) });
       }
