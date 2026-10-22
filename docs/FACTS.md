@@ -493,3 +493,31 @@ Measured with `claude -p` and `--settings` registering a PreToolUse hook on `Bas
 - With `echo` (read-only, no prompt), the output was the rewritten command's.
 
 So `updatedInput` alone applies the new input and keeps the person's permission flow; `"allow"` would skip prompts no rule skipped, and `"ask"` would prompt where a rule allows, and counts as a denial under bypassPermissions (above). The plugin's `pre-tool-use` hook adds the session's `agent` (saved from the session-start reply, refreshed by the cwd hook) to every CodeTgh tool call that names none, on the plugin's tools and on the claude.ai connector's (`mcp__claude_ai_CodeTgh__.*`, the name the connector gets when it is called « CodeTgh » in claude.ai), with no decision. Every hub tool takes `agent` in its zod input, so it is not dropped. A secret still returns `deny`, without `updatedInput`. Tested in `e2e/mcp-session-agent.test.ts`.
+
+### `claude -p` for runner jobs (docs read 2026-10-22, Claude Code 2.1.307, Linux)
+
+From [CLI reference](https://code.claude.com/docs/en/cli-reference) and [Run Claude Code programmatically](https://code.claude.com/docs/en/headless):
+- **Flags with `-p`.** The headless page says "Not every CLI option combines with `-p`" and names the ones rejected: `--bg`, and `--cloud` with a task description. `--permission-mode` (`default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, `manual`) "Begin[s] in a specified permission mode" and the headless page uses it with `-p` (`--permission-mode auto`). `--settings` takes a file or inline JSON whose keys override the settings files for the session. `--model` and `--effort` (`low` to `max`) set them for the session. None is marked interactive-only. `claude --help` on 2.1.307 lists all four, and `--output-format` "only works with --print".
+- **Output.** `--output-format json` prints one JSON result with `result`, `session_id`, `total_cost_usd`. Claude Code exits 0 on success and non-zero when the run fails.
+- **Default mode.** From v2.1.302, a `-p` run with no mode set starts in Manual mode, where a call that needs approval is denied. The runner always passes `--permission-mode`.
+- **Stdin.** `cat file | claude -p "query"` processes piped content with the prompt. The runner passes its fixed one-line prompt as the argument and the task's peer_message envelope on stdin, so no envelope character goes through cmd.exe on Windows.
+- **Trust and hooks.** A `-p` session shows no workspace trust dialog and still runs the hooks of the project's settings and of enabled plugins, unless `--bare`. The runner's `--settings` turns the CodeTgh plugin on, and `CODETGH_RUNNER=1` turns its `pre-bash` check on.
+- **SIGTERM.** A `-p` run stopped with SIGTERM exits 143 and "terminates the process tree of any Bash command that is still running". The runner's timeout and a lost lease send SIGTERM on Linux and macOS, and `taskkill /T /F` on Windows (`stopServer`).
+
+Not run against a real Claude Code: `e2e/runner.test.ts` uses a fake `claude` and a fake `gh`.
+
+### Runner hardening: git config and permission paths (docs read 2026-10-22, git 2.43, Claude Code 2.1.307)
+
+From [git-config](https://git-scm.com/docs/git-config) § ENVIRONMENT and § VARIABLES:
+- **Overrides.** `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` "will override values in configuration files, but will be overridden by any explicit options passed via git -c": the same command scope as `-c`. The runner sets them on its own git and gh calls, so the git that gh runs gets them too.
+- **`core.hooksPath`.** Git looks for hooks in that directory instead of `$GIT_DIR/hooks`. `/dev/null` holds no hook.
+- **`core.sshCommand`.** fetch and push use it instead of `ssh`, and `GIT_SSH_COMMAND` overrides it. An empty value would leave git with an empty command, so the runner sets `ssh`.
+- **`core.fsmonitor`.** It can name a hook program that git runs. The runner sets `false`.
+- **`protocol.allow`.** It is the default for protocols without their own `protocol.<name>.allow`. The defaults are `always` for http, https, git and ssh, `never` for ext, and `user` for file and the rest. A repository config could set `protocol.ext.allow=always`, so the runner sets `protocol.ext.allow=never` explicitly. It allows https, ssh and file, and refuses the rest.
+- Measured: with planted `post-checkout` and `pre-push` hooks, the runner's `worktree add` and `push` run neither (`e2e/runner.test.ts`). Without these overrides, the test fails. `push -u` and `worktree add -b` without `--no-track` would write `branch.*` to the shared config, so the runner uses neither. That keeps the config hash stable.
+
+From [Permissions](https://code.claude.com/docs/en/permissions) § Read and Edit:
+- "Claude Code checks file permissions against `Edit(path)` and `Read(path)` rules only." A path rule for `Write` is never consulted, so the runner denies with `Edit(...)`.
+- Edit deny rules also cover "file commands Claude Code recognizes in Bash, such as … `sed`, and `tee`, and … the targets of Bash redirections". They do not cover "arbitrary subprocesses that read or write files indirectly", hence the runner's own git hardening and config hash.
+- `//path` is absolute, and a plain `**/x` pattern matches only under the current directory. `//**/.git/**` matches anywhere on the filesystem. On Windows, paths are normalized to `/c/...` before matching.
+

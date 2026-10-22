@@ -6,7 +6,7 @@ import { membership, task, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
-import { requireMember } from "./admin.js";
+import { isAdmin, requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { ARCHIVE_AFTER_MS, assertNoSecrets, type MessagingDeps } from "./messages.js";
@@ -84,6 +84,8 @@ export async function createTask(
   input: { title: string; body: string; paths: string[]; depends_on: string[]; assignee?: string; runner?: boolean },
 ) {
   guard(p, a);
+  // The owner's machine runs a runner task's text through claude -p: only an owner or an admin flags one.
+  if (input.runner && !isAdmin(p)) throw new HubError("E_FORBIDDEN", "only an owner or an admin can flag a task for the runner");
   // The runner picks tasks by project; a task created outside one would never run.
   if (input.runner && !a?.projectId)
     throw new HubError("E_INVALID", "a runner task needs a project: create it from a session in the project's repository");

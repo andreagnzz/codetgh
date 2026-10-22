@@ -9,6 +9,7 @@ let team: Awaited<ReturnType<Hub["seed"]>>;
 let projectId: string;
 let otherProjectId: string;
 let agentId: string;
+let samAgentId: string;
 beforeAll(async () => {
   let now = 0;
   hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
@@ -23,7 +24,8 @@ beforeAll(async () => {
     .where(and(eq(project.teamId, team.teamId), eq(project.name, "acme/billing")));
   projectId = acme?.id ?? "";
   otherProjectId = other?.id ?? "";
-  agentId = (await startSession(hub.url, team.sam.token, "runner-sam", { repo: ACME_REPO })).agent_id ?? "";
+  agentId = (await startSession(hub.url, team.lea.token, "runner-lea", { repo: ACME_REPO })).agent_id ?? "";
+  samAgentId = (await startSession(hub.url, team.sam.token, "runner-sam", { repo: ACME_REPO })).agent_id ?? "";
 });
 afterAll(() => hub.stop());
 
@@ -50,11 +52,11 @@ const switchRunner = async (id: string, on: boolean) =>
     body: new URLSearchParams({ on: on ? "1" : "0" }).toString(),
   });
 
-// Created by Sam's agent in the acme project, as /codetgh:split --run would.
+// Created by Léa's agent (the owner) in the acme project, as /codetgh:split --run would.
 async function create(args: Record<string, unknown>) {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  const r = await call(sam, "task_create", { agent: agentId, title: "t", runner: true, ...args });
-  await sam.close();
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const r = await call(lea, "task_create", { agent: agentId, title: "t", runner: true, ...args });
+  await lea.close();
   if (r.isError) throw new Error(r.text);
   return JSON.parse(r.text) as { id: string; version: number; runner: boolean };
 }
@@ -196,15 +198,29 @@ describe("runner queue", () => {
     await set(t.id, { status: "cancelled" });
   });
 
-  it("lets a member flag a task for the runner, never a guest", async () => {
+  it("lets only an owner or an admin flag a task for the runner, never a member or a guest", async () => {
     expect((await create({ title: "flagged" })).runner).toBe(true);
     expect((await create({ title: "default", runner: undefined })).runner).toBe(false);
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const asMember = await call(sam, "task_create", { agent: samAgentId, title: "member", runner: true });
+    expect(JSON.parse(asMember.text).code).toBe("E_FORBIDDEN");
+    expect((await call(sam, "task_create", { agent: samAgentId, title: "member, manual" })).isError).toBe(false);
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const asAdmin = await call(sam, "task_create", { agent: samAgentId, title: "admin", runner: true });
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    await sam.close();
+    expect(JSON.parse(asAdmin.text).runner).toBe(true);
     await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
     const malik = await mcpClient(hub.url, team.malik.token);
     const r = await call(malik, "task_create", { title: "guest", runner: true });
     await malik.close();
     await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
     expect(JSON.parse(r.text).code).toBe("E_FORBIDDEN");
+    for (const title of ["member", "admin"])
+      await hub.db
+        .update(task)
+        .set({ status: "cancelled" })
+        .where(and(eq(task.title, title), eq(task.teamId, team.teamId)));
     const leaked = await hub.db
       .select()
       .from(task)

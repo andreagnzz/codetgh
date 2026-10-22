@@ -12,7 +12,7 @@ it("groups the commands: what members use every day first, then admin, then adva
       .filter((l) => /^ {2}\S/.test(l))
       .map((l) => l.trim().split(/\s/)[0]);
   expect(group("Everyday:")).toEqual(["setup", "doctor", "start", "status", "send", "inbox", "upgrade"]);
-  expect(group("Admin:").sort()).toEqual(["audit", "backup", "invite", "launcher", "project", "update"]);
+  expect(group("Admin:").sort()).toEqual(["audit", "backup", "invite", "launcher", "project", "runner", "update"]);
   expect(group("Advanced:").sort()).toEqual(["daemon", "help", "keys", "login", "logout", "outbox", "pause", "resume"]);
   expect(help.indexOf("Everyday:")).toBeLessThan(help.indexOf("Admin:"));
   expect(help.indexOf("Admin:")).toBeLessThan(help.indexOf("Advanced:"));

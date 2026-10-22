@@ -135,6 +135,57 @@ Setup, once:
 
 Each folder runs a single Remote Control server. A session you create from claude.ai/code runs in that folder, with your Claude Code permissions and settings. Stop it from the console, or with `systemctl --user stop codetgh-launcher`.
 
+## Runner (optional, owner only)
+
+The runner does the tasks flagged `runner` (`/codetgh:split --run`) of the projects the owner switched on in the console, **Projects**. Only an owner or an admin can flag a task for the runner. For each task it creates a git worktree in `~/.config/codetgh/worktrees/<project>/<task>`, outside the clone, on a branch `codetgh/<task>`. It runs `claude -p` there, pushes the branch and opens a PR with `gh`, titled with the task's title. The task then moves to `review`. A task whose dependency is in review is stacked on the parent's branch.
+
+It is bounded like the launcher:
+- it runs on the owner's machine with the owner's token, and the hub only says *on* or *off* and which task to take;
+- the folders come from a local list, and the commands are fixed in the CLI;
+- each agent runs in `auto` mode unless `runner.json` says otherwise. It gets the delegate deny rules, edits denied in `.git`, `.codetgh`, `.claude` and CodeTgh's own files, and the CodeTgh Bash check;
+- the runner's own git and gh calls ignore repository hooks, fsmonitor and `core.sshCommand`, and it pushes nothing if the repository's git config or hooks changed since it started: restart it after you change them;
+- an agent runs with the owner's rights on this machine: use a dedicated machine or container, without secrets.
+
+Setup, once:
+
+1. **Claude Code is logged in** on this machine and the CodeTgh plugin is installed (`codetgh setup`). **`gh` is logged in** with push and PR rights on the repositories: `gh auth login`.
+2. **A clone per project**, with an `origin`. The runner refuses a relative path, or a folder that is not a git repository with an origin.
+3. **The local list and settings.** Write `~/.config/codetgh/runner.json` (mode 0600). The project id is shown on the console's Projects page.
+   ```json
+   {
+     "projects": { "prj_…": "/home/you/code/my-repo" },
+     "max_agents": 3,
+     "permission_mode": "auto",
+     "auto_merge": false,
+     "job_timeout_min": 45
+   }
+   ```
+   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto`) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
+4. **Optional routing.** `.codetgh/routing.json`, committed on the default branch, picks `--model` and `--effort` with ordered rules; the first match wins. The runner reads it from `origin/HEAD`, never from a worktree:
+   ```json
+   { "rules": [{ "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
+   ```
+5. **Run it as a user service**, like the launcher:
+   ```bash
+   cat > ~/.config/systemd/user/codetgh-runner.service <<'UNIT'
+   [Unit]
+   Description=CodeTgh runner
+   After=network-online.target
+
+   [Service]
+   ExecStart=%h/.npm-global/bin/codetgh runner
+   Restart=on-failure
+   TimeoutStopSec=30
+
+   [Install]
+   WantedBy=default.target
+   UNIT
+   systemctl --user daemon-reload && systemctl --user enable --now codetgh-runner
+   journalctl --user -u codetgh-runner -f      # the tasks it takes, their PRs and blocks
+   ```
+
+Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents and leaves the leases to expire after 10 minutes, so the tasks go back to the queue.
+
 ## Discord bot (optional)
 
 A small bot for a community server: `/install`, `/docs`, `/status` (CI of main), `/bug`, `/security`. It uses Discord's HTTP interactions, so there is no gateway connection and no token at runtime. Every request is checked against Discord's Ed25519 signature. It sees neither the hub nor its data.

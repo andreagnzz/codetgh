@@ -834,14 +834,24 @@ Hors des sessions déléguées, deux programmes du propriétaire lancent quelque
 Le lanceur démarre `claude remote-control` dans le dossier du projet et rapporte ce qui tourne.
 
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
-- Il ne prend que les tâches qui portent `runner = true`. Un membre ou le propriétaire pose ce drapeau à la création de la tâche (`task_create`). Un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
+- Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
 - Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
 - Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
 - Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
 - Les agents tournent en mode `auto`, ou en `bypassPermissions` seulement si `runner.json` le dit, avec les règles deny et le hook Bash des sessions déléguées.
 - L'audit garde le bail, les mises à jour et les changements d'état, en métadonnées seulement.
 
-Limite assumée : comme une session déléguée, un agent du runner tourne avec les droits du propriétaire sur sa machine. Un membre qui pose `runner = true` lui fait faire ce que le mode auto, les règles deny et le hook laissent passer. Il faut lancer le runner sur une machine ou dans un conteneur dédiés, sans secrets.
+Modèle de menaces du runner. Un agent du runner exécute le texte d'une tâche avec les droits du propriétaire sur sa machine. Le texte de la tâche, ce que l'agent écrit dans son worktree et la base de code des PR ne sont pas fiables. D'où ces parades :
+- Seuls un propriétaire ou un administrateur posent `runner = true`.
+- Le worktree vit hors du checkout (`~/.config/codetgh/worktrees/<projet>/<tâche>`).
+- L'agent a les règles deny des sessions déléguées, plus l'écriture interdite dans `.git`, `.codetgh`, `.claude` et les fichiers de CodeTgh.
+- Les appels git et gh du runner ignorent hooks, fsmonitor, commande ssh et transports qui exécutent du code.
+- Le runner ne pousse rien si la configuration ou les hooks git du dépôt ont changé depuis son démarrage.
+- Le routage n'est lu que sur la branche par défaut, jamais dans le worktree.
+- Le mode de permission ne vient que de `runner.json`.
+- Le hub ne reçoit qu'une raison fixe et le nom du journal, jamais la sortie de l'agent. La PR ne porte que l'identifiant et le titre de la tâche. Le journal reste local, en 0600.
+
+Limite assumée : comme une session déléguée, l'agent garde ce que le mode auto, les règles deny et le hook laissent passer, y compris un script qui écrit ailleurs sur la machine. Il faut lancer le runner sur une machine ou dans un conteneur dédiés, sans secrets.
 
 ### Rôles
 
@@ -1214,7 +1224,7 @@ Le runner suit « Lanceur et runner : les deux autres exceptions ». Par défaut
 
 | Fonction | Critère |
 | --- | --- |
-| File du hub | Une tâche n'est prête que si elle porte `runner = true`, est `todo` dans un projet allumé, et que ses dépendances sont `done` ou en `review` avec une PR ; de deux baux simultanés, un seul gagne ; un bail expiré remet la tâche en `todo` ; seul le détenteur du bail la change ; un membre ou un invité reçoit 403 sur `/v1/runner/*` ; un invité ne peut pas créer de tâche `runner` ; l'audit consigne bail et mises à jour |
+| File du hub | Une tâche n'est prête que si elle porte `runner = true`, est `todo` dans un projet allumé, et que ses dépendances sont `done` ou en `review` avec une PR ; de deux baux simultanés, un seul gagne ; un bail expiré remet la tâche en `todo` ; seul le détenteur du bail la change ; un membre ou un invité reçoit 403 sur `/v1/runner/*` ; un membre ou un invité ne peut pas créer de tâche `runner` ; l'audit consigne bail et mises à jour |
 | CLI `codetgh runner` | Avec un faux `claude` et un faux `gh` : trois tâches A ← B, C ; B s'empile sur la branche de A ; une PR par tâche, de base la branche parente ou `main` ; un redémarrage du runner reprend les baux |
 | Revue | Un agent neuf, en lecture seule, répond APPROVE ou REQUEST_CHANGES ; après un tour de corrections puis APPROVE, la tâche attend la fusion ; au-delà de 3 tours, la tâche passe `blocked` et le propriétaire est prévenu |
 | Ré-empilement | À la fusion de A, la tâche A passe `done` et la PR de B passe sur `main` ; un conflit met la tâche en `blocked` avec la raison ; les worktrees sont nettoyés après fusion |

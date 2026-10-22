@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { z } from "zod";
 import {
   AckInput,
@@ -197,6 +198,34 @@ export const RunnerUpdateInput = z.object({
       note: z.string().min(1).max(500).optional(),
     })
     .refine((p) => Object.values(p).some((v) => v !== undefined), { message: "patch needs at least one field" }),
+});
+// ~/.config/codetgh/runner.json, on the runner's machine only: the hub never sends a path or a command.
+export const RunnerConfig = z.object({
+  projects: z.record(
+    z.string(),
+    z.string().refine((p) => isAbsolute(p), "an absolute path to a clone of the project"),
+  ),
+  max_agents: z.number().int().min(1).max(20).default(3),
+  permission_mode: z.enum(["auto", "acceptEdits", "default", "manual", "dontAsk", "plan", "bypassPermissions"]).default("auto"),
+  auto_merge: z.boolean().default(false),
+  job_timeout_min: z
+    .number()
+    .positive()
+    .max(24 * 60)
+    .default(45),
+});
+// .codetgh/routing.json in the repository: ordered rules, the first match wins.
+export const RoutingRules = z.object({
+  rules: z.array(
+    z.object({
+      match: z.object({ role: z.enum(["author", "reviewer"]), size: z.enum(["S", "M", "L"]).optional(), label: z.string().optional() }),
+      model: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._[\]-]{0,99}$/)
+        .optional(),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+    }),
+  ),
 });
 // Browser sign-in (RFC 8628 style): the CLI shows a short code that the person confirms in the console.
 export const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
