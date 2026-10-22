@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { repoFingerprint } from "@codetgh/shared/repo";
+import { RoutingRules } from "@codetgh/shared/rest";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { project, task } from "../apps/hub/src/db/schema.js";
@@ -38,6 +39,11 @@ import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const stdin = readFileSync(0, "utf8");
 appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, stdin }) + "\\n");
+if (stdin.includes("FAIL")) {
+  console.log("a line only the local log may hold");
+  process.exit(1);
+}
+if (stdin.includes("TAMPER")) execFileSync("git", ["config", "alias.x", "!touch pwned"]);
 if (stdin.includes("SLEEP")) {
   writeFileSync(join(dir, "pid"), String(process.pid));
   setTimeout(() => {}, 300_000);
@@ -91,10 +97,24 @@ beforeAll(async () => {
   git(seed, "push", "-q", origin, "main");
   clone = join(root, "clone");
   execFileSync("git", ["clone", "-q", origin, clone]);
+  // The routing table lives on the default branch.
+  mkdirSync(join(seed, ".codetgh"));
+  writeFileSync(
+    join(seed, ".codetgh/routing.json"),
+    JSON.stringify({
+      rules: [
+        { match: { role: "reviewer" }, model: "opus" },
+        { match: { role: "author" }, model: "sonnet", effort: "low" },
+      ],
+    }),
+  );
+  git(seed, "add", ".");
+  git(seed, "commit", "-q", "-m", "Add routing");
+  git(seed, "push", "-q", origin, "main");
   const fingerprint = repoFingerprint(origin);
   projectId = newId("prj");
   await hub.db.insert(project).values({ id: projectId, teamId: team.teamId, name: "acme/runner", repoFingerprint: fingerprint });
-  agentId = (await startSession(hub.url, team.sam.token, "sam-runner", { repo: fingerprint })).agent_id ?? "";
+  agentId = (await startSession(hub.url, team.lea.token, "lea-runner", { repo: fingerprint })).agent_id ?? "";
   expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/runner`, { on: "1" })).status).toBe(204);
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-runner-cfg-"));
   fake = fakes();
@@ -112,16 +132,24 @@ afterAll(async () => {
   await hub.stop();
 });
 
-// Created by Sam's agent, as /codetgh:split --run would.
+// Created by Léa's agent (the owner), as /codetgh:split --run would.
 async function create(title: string, args: Record<string, unknown> = {}) {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  const r = await call(sam, "task_create", { agent: agentId, title, body: `Done when ${title} works.`, runner: true, ...args });
-  await sam.close();
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const r = await call(lea, "task_create", { agent: agentId, title, body: `Done when ${title} works.`, runner: true, ...args });
+  await lea.close();
   if (r.isError) throw new Error(r.text);
   return (JSON.parse(r.text) as { id: string }).id;
 }
 const row = async (id: string) => (await hub.db.select().from(task).where(eq(task.id, id)))[0];
 const slug = (id: string) => id.toLowerCase();
+const worktree = (id: string) => join(process.env.CODETGH_CONFIG_DIR ?? "", "worktrees", projectId, slug(id));
+const onOrigin = (id: string) => {
+  try {
+    return git(origin, "rev-parse", "--verify", "-q", `codetgh/${slug(id)}`);
+  } catch {
+    return "";
+  }
+};
 
 function writeConfig(cfg: Record<string, unknown>) {
   const file = join(mkdtempSync(join(tmpdir(), "codetgh-runner-json-")), "runner.json");
@@ -159,22 +187,14 @@ describe("codetgh runner", () => {
   let parent = "";
 
   it("takes a ready task through a worktree, the agent, a push and a PR on main, then puts it in review", async () => {
+    // A routing file in the checkout is not the default branch's: ignored.
     mkdirSync(join(clone, ".codetgh"), { recursive: true });
-    writeFileSync(
-      join(clone, ".codetgh/routing.json"),
-      JSON.stringify({
-        rules: [
-          { match: { role: "reviewer" }, model: "opus" },
-          { match: { role: "author" }, model: "sonnet", effort: "low" },
-        ],
-      }),
-    );
+    writeFileSync(join(clone, ".codetgh/routing.json"), JSON.stringify({ rules: [{ match: { role: "author" }, model: "opus" }] }));
     parent = await create("plain");
     await runner();
-    const wt = join(clone, ".codetgh/worktrees", slug(parent));
+    const wt = worktree(parent);
     expect(existsSync(join(wt, "work.txt"))).toBe(true);
-    expect(git(origin, "rev-parse", "--verify", `codetgh/${slug(parent)}`)).toMatch(/^[0-9a-f]{40}$/);
-    expect(readFileSync(join(clone, ".git/info/exclude"), "utf8")).toContain("/.codetgh/worktrees/");
+    expect(onOrigin(parent)).toMatch(/^[0-9a-f]{40}$/);
 
     const [agent] = lines("claude.jsonl");
     expect(agent.cwd).toBe(wt);
@@ -183,7 +203,9 @@ describe("codetgh runner", () => {
     expect(agent.argv.join(" ")).not.toMatch(/bypassPermissions|dangerously/);
     const settings = JSON.parse(agent.argv[agent.argv.indexOf("--settings") + 1]);
     expect(settings.enabledPlugins).toEqual({ "codetgh@codetgh": true });
-    expect(settings.permissions.deny).toEqual(expect.arrayContaining(["Read(.env*)", "Bash(git push --force*)"]));
+    expect(settings.permissions.deny).toEqual(
+      expect.arrayContaining(["Read(.env*)", "Bash(git push --force*)", "Edit(//**/.git/**)", "Edit(//**/.claude/**)"]),
+    );
     expect(agent.argv.slice(agent.argv.indexOf("--model"))).toEqual(["--model", "sonnet", "--effort", "low"]);
     expect(agent).toMatchObject({ runner: "1", accept: null });
     expect(agent.stdin).toContain('trust="untrusted-peer"');
@@ -196,11 +218,15 @@ describe("codetgh runner", () => {
       "--base=main",
       `--head=codetgh/${slug(parent)}`,
       "--title=plain",
-      `--body=Task ${parent} from CodeTgh\n\nDone when plain works.`,
+      `--body=Task ${parent} from CodeTgh`,
     ]);
     expect(await row(parent)).toMatchObject({ status: "review", prNumber: 1, branch: `codetgh/${slug(parent)}`, baseBranch: "main" });
-    const logs = readdirSync(join(process.env.CODETGH_CONFIG_DIR ?? "", "runner-logs"));
-    expect(logs).toContain(`${slug(parent)}-1.log`);
+    const logs = join(process.env.CODETGH_CONFIG_DIR ?? "", "runner-logs");
+    expect(readdirSync(logs)).toContain(`${slug(parent)}-1.log`);
+    if (process.platform !== "win32") {
+      expect(statSync(logs).mode & 0o777).toBe(0o700);
+      expect(statSync(join(logs, `${slug(parent)}-1.log`)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("stacks a child on its parent's branch while the parent is in review", async () => {
@@ -208,8 +234,45 @@ describe("codetgh runner", () => {
     await runner();
     expect(lines("gh.jsonl").at(-1).argv).toContain(`--base=codetgh/${slug(parent)}`);
     expect(await row(child)).toMatchObject({ status: "review", prNumber: 2, baseBranch: `codetgh/${slug(parent)}` });
-    const wt = join(clone, ".codetgh/worktrees", slug(child));
+    const wt = worktree(child);
     execFileSync("git", ["-C", wt, "merge-base", "--is-ancestor", `origin/codetgh/${slug(parent)}`, "HEAD"]);
+  });
+
+  it("sends the hub a fixed reason and the log's name, never the agent's output", async () => {
+    const id = await create("FAIL");
+    await runner();
+    const note = (await row(id))?.notes.at(-1)?.text ?? "";
+    expect(note).toBe(`blocked: the agent exited with 1, see runner-logs/${slug(id)}-1.log on the runner`);
+    const log = readFileSync(join(process.env.CODETGH_CONFIG_DIR ?? "", "runner-logs", `${slug(id)}-1.log`), "utf8");
+    expect(log).toContain("a line only the local log may hold");
+  });
+
+  it("pushes nothing when the agent changed the repository's git config", async () => {
+    const id = await create("TAMPER");
+    await runner();
+    expect((await row(id))?.notes.at(-1)?.text).toContain("git config or hooks changed");
+    expect(onOrigin(id)).toBe("");
+    git(clone, "config", "--unset", "alias.x");
+  });
+
+  it("never runs a hook planted in the repository", async () => {
+    const marker = join(root, "hook-ran");
+    // Hooks the runner's own git would trigger: the worktree checkout and the push.
+    const hooks = ["post-checkout", "pre-push"];
+    for (const hook of hooks) {
+      writeFileSync(join(clone, ".git/hooks", hook), `#!/bin/sh\ntouch "${marker.replaceAll("\\", "/")}"\n`);
+      chmodSync(join(clone, ".git/hooks", hook), 0o755);
+    }
+    const id = await create("hooked");
+    await runner();
+    for (const hook of hooks) rmSync(join(clone, ".git/hooks", hook));
+    expect((await row(id))?.status).toBe("review");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("refuses a routing value that could pass for a flag", () => {
+    expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, model: "-x" }] }).success).toBe(false);
+    expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, effort: "--dangerously" }] }).success).toBe(false);
   });
 
   it("blocks a task whose agent made no commit, and opens no PR", async () => {
@@ -253,7 +316,7 @@ describe("codetgh runner", () => {
     expect(alive(pid)).toBe(false);
     expect(out).toContain("lease lost");
     expect((await row(id))?.status).toBe("in_progress");
-    expect(existsSync(join(clone, ".codetgh/worktrees", slug(id)))).toBe(true);
+    expect(existsSync(worktree(id))).toBe(true);
     runnerTiming.renewMs = 120_000;
   });
 
