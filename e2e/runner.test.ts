@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -23,6 +24,8 @@ let root = "";
 let origin = "";
 let clone = "";
 let fake = "";
+let hookUrl = "";
+let hookSecret = "";
 const PATH = process.env.PATH;
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
@@ -117,6 +120,11 @@ appendFileSync(join(dir, "gh.jsonl"), JSON.stringify({ argv, cwd: process.cwd(),
 // As GitHub does when the runner's account opened the PR it reviews.
 if (argv[1] === "review" && (argv.includes("--approve") || argv.includes("--request-changes"))) {
   console.error("failed to create review: GraphQL: Can not approve your own pull request (addPullRequestReview)");
+  process.exit(1);
+}
+// gh pr edit fails on some repositories (a deprecated Projects classic query): the runner falls back to the REST API.
+if (argv[0] === "pr" && argv[1] === "edit" && process.env.FAKE_GH_EDIT_FAIL) {
+  console.error("GraphQL: Projects (classic) is being deprecated");
   process.exit(1);
 }
 if (process.argv[2] === "pr" && process.argv[3] === "create") {
@@ -215,11 +223,15 @@ beforeAll(async () => {
   git(seed, "add", ".");
   git(seed, "commit", "-q", "-m", "Add routing");
   git(seed, "push", "-q", origin, "main");
-  const fingerprint = repoFingerprint(origin);
+  // The GitHub bridge finds the project by its repository's name; the runner by its id and the local clone.
+  const fingerprint = repoFingerprint("github.com/acme/runner");
   projectId = newId("prj");
   await hub.db.insert(project).values({ id: projectId, teamId: team.teamId, name: "acme/runner", repoFingerprint: fingerprint });
   agentId = (await startSession(hub.url, team.lea.token, "lea-runner", { repo: fingerprint })).agent_id ?? "";
   expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/runner`, { on: "1" })).status).toBe(204);
+  const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
+  hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
+  hookSecret = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-runner-cfg-"));
   fake = fakes();
 });
@@ -265,21 +277,55 @@ function writeConfig(cfg: Record<string, unknown>) {
   writeFileSync(file, JSON.stringify({ projects: { [projectId]: clone }, ...cfg }));
   return file;
 }
-async function runner(cfg: Record<string, unknown> = {}) {
+async function cli(args: string[], token = team.lea.token) {
   const keyring: Keyring = { get: () => null, set: () => {}, delete: () => {} };
   const out: string[] = [];
   const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
   process.env.CODETGH_URL = hub.url;
-  process.env.CODETGH_TOKEN = team.lea.token;
+  process.env.CODETGH_TOKEN = token;
   process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token";
   try {
-    await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "runner", "--config", writeConfig(cfg), "--once"]);
+    await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", ...args]);
   } finally {
     delete process.env.CODETGH_URL;
     delete process.env.CODETGH_TOKEN;
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   }
   return out.join("\n");
+}
+const runner = (cfg: Record<string, unknown> = {}) => cli(["runner", "--config", writeConfig(cfg), "--once"]);
+// What GitHub posts when a PR is closed, signed with the team's webhook secret.
+const closePr = (number: number, branch: string, merged: boolean) => {
+  const body = JSON.stringify({
+    action: "closed",
+    repository: { full_name: "acme/runner" },
+    sender: { login: "octocat" },
+    pull_request: { number, title: "a runner PR", merged, head: { ref: branch } },
+  });
+  return fetch(hookUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-event": "pull_request",
+      "x-hub-signature-256": `sha256=${createHmac("sha256", hookSecret).update(body).digest("hex")}`,
+    },
+    body,
+  });
+};
+// A commit someone else pushes to a branch of origin, or a merge of a branch into main.
+function pushToOrigin(branch: string, file: string, text: string) {
+  const work = mkdtempSync(join(root, "push-"));
+  execFileSync("git", ["clone", "-q", "-b", branch, origin, work]);
+  writeFileSync(join(work, file), text);
+  git(work, "add", ".");
+  git(work, "commit", "-q", "-m", `Change ${file}`);
+  git(work, "push", "-q", "origin", branch);
+}
+function mergeOnOrigin(branch: string) {
+  const work = mkdtempSync(join(root, "merge-"));
+  execFileSync("git", ["clone", "-q", origin, work]);
+  git(work, "merge", "-q", "--no-ff", "-m", `Merge ${branch}`, `origin/${branch}`);
+  git(work, "push", "-q", "origin", "main");
 }
 const alive = (pid: number) => {
   try {
@@ -797,5 +843,181 @@ describe("codetgh runner review loop", () => {
     expect(onOrigin(id)).toBe("");
     rmSync(git(worktree(id), "rev-parse", "--path-format=absolute", "--git-path", "config.worktree"));
     rmSync(`${worktree(id)}.quarantine`);
+  });
+});
+
+describe("codetgh runner restack", () => {
+  const edits = () => lines("gh.jsonl").filter((l) => l.argv[0] === "pr" && l.argv[1] === "edit");
+  const reviewsOf = (title: string) =>
+    lines("claude.jsonl").filter((l) => l.argv[1].includes("VERDICT") && l.stdin.includes(`Subject: ${title}`));
+  // A parent in review and a child stacked on its branch, both with a PR.
+  async function stack(name: string) {
+    const parent = await create(`${name} parent`);
+    await runner();
+    const child = await create(`${name} child`, { depends_on: [parent] });
+    await runner();
+    const p = await row(parent);
+    const c = await row(child);
+    expect(c).toMatchObject({ status: "review", baseBranch: p?.branch });
+    return { parent, child, pBranch: p?.branch ?? "", pPr: p?.prNumber ?? 0, cBranch: c?.branch ?? "", cPr: c?.prNumber ?? 0 };
+  }
+
+  it("moves a merged PR's task to done, then retargets its child to main, rebases it and force-pushes it", async () => {
+    const s = await stack("merged");
+    const before = onOrigin(s.child);
+    mergeOnOrigin(s.pBranch);
+    // Another task's PR number on another branch moves nothing.
+    expect((await closePr(s.pPr, "codetgh/someone-else", true)).status).toBe(202);
+    expect((await row(s.parent))?.status).toBe("review");
+    expect((await closePr(s.pPr, s.pBranch, true)).status).toBe(202);
+    const p = await row(s.parent);
+    expect(p).toMatchObject({ status: "done", leaseOwner: null });
+    expect(p?.notes.at(-1)?.text).toBe("merged");
+    const audit = await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, s.parent));
+    expect(audit.find((a) => a.action === "runner.merged")).toMatchObject({ actorType: "hub" });
+
+    const round = (await row(s.child))?.reviewRound;
+    await runner();
+    expect(edits().at(-1)?.argv).toEqual(["pr", "edit", String(s.cPr), "--base", "main"]);
+    expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: "main", reviewRound: round, approved: false });
+    git(origin, "merge-base", "--is-ancestor", "main", s.cBranch);
+    // The child's own commit only, replayed on main: the old tip is not an ancestor, so only a forced push got it there.
+    expect(() => git(origin, "merge-base", "--is-ancestor", before, s.cBranch)).toThrow();
+    expect(git(origin, "rev-list", "--count", `main..${s.cBranch}`)).toBe("1");
+    // The merged task's worktree, local branch and lock are gone.
+    expect(existsSync(worktree(s.parent))).toBe(false);
+    expect(existsSync(`${worktree(s.parent)}.lock`)).toBe(false);
+    expect(git(clone, "branch", "--list", s.pBranch)).toBe("");
+  });
+
+  it("falls back to the REST API when gh pr edit fails", async () => {
+    const s = await stack("fallback");
+    mergeOnOrigin(s.pBranch);
+    await closePr(s.pPr, s.pBranch, true);
+    process.env.FAKE_GH_EDIT_FAIL = "1";
+    try {
+      await runner();
+    } finally {
+      delete process.env.FAKE_GH_EDIT_FAIL;
+    }
+    expect(edits().at(-1)?.argv).toEqual(["pr", "edit", String(s.cPr), "--base", "main"]);
+    expect(
+      lines("gh.jsonl")
+        .filter((l) => l.argv[0] === "api")
+        .at(-1)?.argv,
+    ).toEqual(["api", "-X", "PATCH", `repos/{owner}/{repo}/pulls/${s.cPr}`, "-f", "base=main"]);
+    expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: "main" });
+  });
+
+  it("rebases a child on its parent's new commits and sends it back for one review, without counting a round", async () => {
+    const s = await stack("moving");
+    // As after an approval: the restack must send it back for one review.
+    await hub.db.update(task).set({ approved: true, reviewRound: 1 }).where(eq(task.id, s.child));
+    const reviews = reviewsOf("moving child").length;
+    pushToOrigin(s.pBranch, "extra.txt", "more\n");
+    const count = edits().length;
+    await runner();
+    expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: s.pBranch, reviewRound: 1, approved: false });
+    git(origin, "merge-base", "--is-ancestor", s.pBranch, s.cBranch);
+    expect(git(origin, "rev-list", "--count", `${s.pBranch}..${s.cBranch}`)).toBe("1");
+    expect(edits()).toHaveLength(count);
+    expect(reviewsOf("moving child")).toHaveLength(reviews);
+    await runner();
+    expect(reviewsOf("moving child")).toHaveLength(reviews + 1);
+    expect(await row(s.child)).toMatchObject({ reviewRound: 2, approved: true });
+    // Approved and not moved since: never reviewed again.
+    await runner();
+    expect(reviewsOf("moving child")).toHaveLength(reviews + 1);
+  });
+
+  it("aborts a rebase that conflicts, blocks the child with a fixed reason and pushes nothing", async () => {
+    const s = await stack("conflict");
+    pushToOrigin(s.pBranch, "work.txt", "rewritten\n");
+    const before = onOrigin(s.child);
+    await runner();
+    const c = await row(s.child);
+    expect(c).toMatchObject({ status: "blocked", leaseOwner: null });
+    expect(c?.notes.at(-1)?.text).toBe("restack conflict");
+    expect(onOrigin(s.child)).toBe(before);
+    expect(git(worktree(s.child), "rev-parse", "HEAD")).toBe(before);
+    expect(git(worktree(s.child), "status", "--porcelain")).toBe("");
+    expect(await cli(["run", "status", "--project", projectId])).toMatch(new RegExp(`blocked +${s.child} +restack_conflict`));
+    // Retried, a task with a PR goes back to review, where the next pass restacks it again.
+    await cli(["run", "retry", s.child]);
+    await runner();
+    expect(await row(s.child)).toMatchObject({ status: "review", reviewRound: 0 });
+  });
+
+  it("blocks a runner task whose PR was closed without merge", async () => {
+    const id = await create("closed unmerged");
+    await runner();
+    const t = await row(id);
+    expect((await closePr(t?.prNumber ?? 0, t?.branch ?? "", false)).status).toBe(202);
+    const after = await row(id);
+    expect(after).toMatchObject({ status: "blocked", leaseOwner: null });
+    expect(after?.notes.at(-1)?.text).toBe("PR closed without merge");
+    const audit = await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, id));
+    expect(audit.map((a) => a.action)).toContain("runner.pr_closed");
+  });
+
+  it("never restacks in a quarantined project", async () => {
+    const s = await stack("quarantined");
+    // Not reviewed either: a review job would block on the quarantine.
+    await hub.db.update(task).set({ approved: true }).where(eq(task.id, s.child));
+    pushToOrigin(s.pBranch, "q.txt", "q\n");
+    const before = onOrigin(s.child);
+    writeFileSync(`${worktree(s.parent)}.quarantine`, "test\n");
+    try {
+      await runner();
+    } finally {
+      rmSync(`${worktree(s.parent)}.quarantine`);
+    }
+    expect(onOrigin(s.child)).toBe(before);
+    expect((await row(s.child))?.status).toBe("review");
+  });
+});
+
+describe("codetgh run", () => {
+  it("lists each project's runner tasks: ready, in progress, review with PR and round, blocked with a reason, done", async () => {
+    const review = await create("status review");
+    const failed = await create("FAIL status");
+    await runner();
+    const merged = await create("status merged");
+    await runner();
+    const m = await row(merged);
+    await closePr(m?.prNumber ?? 0, m?.branch ?? "", true);
+    const ready = await create("status ready");
+    const working = await create("status working");
+    await hub.db.update(task).set({ status: "in_progress" }).where(eq(task.id, working));
+    const r = await row(review);
+    const out = await cli(["run", "status", "--project", projectId]);
+    expect(out).toContain(`acme/runner (${projectId})`);
+    expect(out).toMatch(new RegExp(`ready +${ready}`));
+    expect(out).toMatch(new RegExp(`in progress +${working}`));
+    expect(out).toMatch(new RegExp(`review +${review} +PR #${r?.prNumber}, round \\d`));
+    expect(out).toMatch(new RegExp(`blocked +${failed} +runner_error`));
+    expect(out).toMatch(new RegExp(`done 24h +${merged}`));
+    // Without --project: every project of the runner.
+    expect(await cli(["run", "status"])).toContain(`acme/runner (${projectId})`);
+    await expect(cli(["run", "status"], team.sam.token)).rejects.toThrow(/owner/);
+    await hub.db.update(task).set({ status: "cancelled" }).where(eq(task.id, working));
+  });
+
+  it("puts a blocked runner task back in the queue for the owner only, and never while the project is quarantined", async () => {
+    const id = await create("FAIL retry");
+    await runner();
+    expect((await row(id))?.status).toBe("blocked");
+    await expect(cli(["run", "retry", id], team.sam.token)).rejects.toThrow(/owner/);
+    const q = `${worktree(id)}.quarantine`;
+    writeFileSync(q, "test\n");
+    try {
+      await expect(cli(["run", "retry", id])).rejects.toThrow(/quarantine.*inspect.*remove/s);
+    } finally {
+      rmSync(q);
+    }
+    expect((await row(id))?.status).toBe("blocked");
+    expect(await cli(["run", "retry", id])).toContain(`${id} is back in the queue`);
+    expect(await row(id)).toMatchObject({ status: "todo", leaseOwner: null, leaseUntil: null, assigneeUserId: null, reviewRound: 0 });
+    await expect(cli(["run", "retry", id])).rejects.toThrow(/not a blocked runner task/);
   });
 });
