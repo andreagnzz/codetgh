@@ -377,6 +377,8 @@ export const task = pgTable(
     baseBranch: text("base_branch"),
     prNumber: integer("pr_number"),
     reviewRound: integer("review_round").notNull().default(0),
+    // The runner's reviewer approved the PR as it is now; a restack that changes the code clears it.
+    approved: boolean("approved").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
     leaseOwner: text("lease_owner"),
     leaseUntil: timestamp("lease_until"),

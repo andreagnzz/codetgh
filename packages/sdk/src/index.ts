@@ -109,6 +109,10 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     /** 409 when this runner no longer holds the lease: stop working on the task. */
     runnerRenew: async (input: In<"runnerRenew">) => must(await call("runnerRenew", input)),
     runnerUpdate: async (input: In<"runnerUpdate">) => must(await call("runnerUpdate", input)),
+    /** A project's runner tasks, for codetgh run status and the runner's restack. */
+    runnerStatus: async (project: string) => must(await call("runnerStatus", { project })),
+    /** Put a blocked runner task back in the queue. */
+    runnerRetry: async (taskId: string) => must(await call("runnerRetry", { task_id: taskId })),
     /** New message ids as they arrive; pass the last event id to resume. */
     async *stream(o: { signal?: AbortSignal; lastEventId?: string } = {}): AsyncGenerator<Out<"stream">> {
       const res = await doFetch(`${base}${REST_ROUTES.stream.path}`, {
