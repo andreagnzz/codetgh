@@ -323,7 +323,7 @@ const prBody = (o: { action: string; number: number; branch: string; merged?: bo
     },
   });
 };
-const deliverPr = (body: string, delivery = randomUUID()) =>
+const deliverPr = (body: string, delivery: string = randomUUID()) =>
   fetch(hookUrl, {
     method: "POST",
     headers: {
