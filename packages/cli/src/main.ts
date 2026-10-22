@@ -502,6 +502,15 @@ function gitState(common: string) {
   return h.digest("hex");
 }
 const gitBaseline = new Map<string, { common: string; state: string }>();
+const safeGit = (args: string[]) =>
+  promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
+// Jobs of a project share its clone: one fetch at a time, or git fails on the lock files of the refs it updates.
+const fetching = new Map<string, Promise<unknown>>();
+const fetchOrigin = (dir: string) => {
+  const next = (fetching.get(dir) ?? Promise.resolve()).catch(() => {}).then(() => safeGit(["-C", dir, "fetch", "origin"]));
+  fetching.set(dir, next);
+  return next;
+};
 
 // isolation docker: the image runner agents run in (codetgh runner build-image), and the uid they run as, never the owner's.
 const RUNNER_IMAGE = `codetgh-runner-agent:${plugin.version}`;
@@ -600,6 +609,27 @@ function endAgent(child: ChildProcess, signal: NodeJS.Signals) {
   } catch {}
 }
 
+// Spared: the runner's own git and gh of another job, which also run in the clone. They descend from this process through
+// a child that is no job's agent; an agent's processes descend from its agent, or were reparented away when detached.
+const parentPid = (pid: string) => {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1];
+  } catch {
+    return undefined;
+  }
+};
+const runnersOwn = (pid: string) => {
+  const agents = new Set([...jobs.values()].flatMap((j) => (j.child?.pid ? [String(j.child.pid)] : [])));
+  for (let p = pid, i = 0; i < 64; i++) {
+    const up = parentPid(p);
+    if (!up || up === "0" || up === "1") return false;
+    if (up === String(process.pid)) return !agents.has(p);
+    p = up;
+  }
+  return false;
+};
+
 // Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
 // ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
 // still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
@@ -619,7 +649,7 @@ async function sweepAgent(marker: string | null, wt: string, clone: string) {
         const cwd = readlinkSync(`/proc/${pid}/cwd`);
         hit ||= dirs.some((d) => cwd === d || cwd.startsWith(`${d}/`));
       } catch {}
-      if (!hit) continue;
+      if (!hit || runnersOwn(pid)) continue;
       found++;
       try {
         process.kill(Number(pid), "SIGKILL");
@@ -896,7 +926,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       swept = false;
       fail("the runner could not stop every process left in the worktree");
     }
-    await git(["-C", dir, "fetch", "origin"]);
+    await fetchOrigin(dir);
     step = "the default branch could not be resolved";
     const head = () => git(["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
     // A clone made with git remote add has no origin/HEAD until it is asked for.
@@ -945,7 +975,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       if (!r.clean) fail("the runner could not stop every process the agent started");
       untouched();
       step = "git fetch failed";
-      await git(["-C", dir, "fetch", "origin"]);
+      await fetchOrigin(dir);
       if ((await git(["-C", wt, "rev-parse", "HEAD"])) !== before || (await git(["-C", dir, "rev-parse", `origin/${branch}`])) !== pushed)
         fail("the reviewer changed the branch");
       const parsed = reviewVerdict(r.out);
