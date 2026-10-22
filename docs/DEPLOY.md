@@ -213,7 +213,7 @@ Setup, once:
    UNIT
    sudo systemctl daemon-reload && sudo systemctl enable --now codetgh-runner
    ```
-   On Linux the runner tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. On macOS and Windows the runner can only end the agent's process tree, so it refuses `permission_mode: "bypassPermissions"` there.
+   On Linux the runner tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. This cleanup runs however a job ends, a lost lease or `systemctl stop` included. If the git config changed or a process survived, the runner writes `<worktree>.quarantine` next to the worktree and never works there again: the task is `blocked` until you inspect the clone, then delete the worktree and the marker. On macOS and Windows the runner can only end the agent's process tree, so it refuses `permission_mode: "bypassPermissions"` there.
 
 Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents. The runner keeps one id in `~/.config/codetgh/runner-id`: restarted within 10 minutes, it resumes its own leases; otherwise they expire, a task without a PR goes back to the queue and a task with one goes back to review.
 
