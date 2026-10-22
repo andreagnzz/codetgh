@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -519,9 +519,25 @@ const fetchOrigin = (dir: string) => {
   fetching.set(dir, next);
   return next;
 };
+// What the hub sends and the runner turns into a path or a git ref: checked here, since the hub is not trusted with this
+// machine's files. The runner's own branches only, by the exact form of the ids it makes them from.
+const TASK_ID = /^tsk_[0-9A-Z]{26}$/;
+const PROJECT_ID = /^prj_[0-9A-Z]{26}$/;
+const runnerBranch = (b: unknown): b is string => typeof b === "string" && /^codetgh\/tsk_[0-9a-z]{26}$/.test(b);
+const worktreeRoot = () => join(configDir(), "worktrees");
+// p, once its existing part is resolved, symlinks included, lies inside the root of the worktrees.
+const underRoot = (p: string) => {
+  mkdirSync(worktreeRoot(), { recursive: true, mode: 0o700 });
+  const root = realpathSync(worktreeRoot());
+  let known = p;
+  while (!existsSync(known) && dirname(known) !== known) known = dirname(known);
+  const real = join(realpathSync(known), relative(known, p));
+  return real.startsWith(`${root}${sep}`);
+};
 // Any quarantined worktree stops the runner for its whole project: the worktrees share the clone's .git.
 const quarantines = (projectId: string) => {
-  const dir = join(configDir(), "worktrees", projectId);
+  if (!PROJECT_ID.test(projectId)) throw new Error(`refused a project id from the hub: ${JSON.stringify(projectId.slice(0, 80))}`);
+  const dir = join(worktreeRoot(), projectId);
   return existsSync(dir)
     ? readdirSync(dir)
         .filter((f) => f.endsWith(".quarantine"))
@@ -683,11 +699,16 @@ async function sweepAgent(marker: string | null, wt: string, clone: string) {
 // included, stay in the log on this machine and on the PR.
 async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: string, lease: Lease, io: Io, job: Job) {
   const { task } = lease;
+  // Before any path is made from them, the log's included.
+  if (!TASK_ID.test(task.id) || !PROJECT_ID.test(project) || !Number.isInteger(task.attempts) || task.attempts < 0) {
+    jobs.delete(task.id);
+    return io.out(`refused a task from the hub whose id, project or attempt is not one: ${JSON.stringify(task.id.slice(0, 80))}`);
+  }
   const dir = cfg.projects[project] ?? "";
   const slug = task.id.toLowerCase();
   const branch = `codetgh/${slug}`;
   // Outside the checkout, so no path from the worktree leads back into the repository's files.
-  const wt = join(configDir(), "worktrees", project, slug);
+  const wt = join(worktreeRoot(), project, slug);
   const logs = join(configDir(), "runner-logs");
   const log = join(logs, `${slug}-${task.attempts}.log`);
   const git = safeGit;
@@ -988,7 +1009,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   try {
     mkdirSync(logs, { recursive: true, mode: 0o700 });
     chmodSync(logs, 0o700);
-    if (!/^tsk_[0-9A-Z]{26}$/.test(task.id)) fail("the hub sent a task id that is not one");
+    if (!underRoot(wt)) fail("the worktree's path leads out of the runner's folder");
     if (!takeLock()) return say("another runner process works on it: left alone");
     // Any worktree of the project: they share the clone's .git, and a restart would take a tampered config as its baseline.
     if (readdirSync(dirname(wt)).some((f) => f.endsWith(".quarantine")))
@@ -1039,7 +1060,12 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       step = "git rev-parse failed";
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
-      const reviewBase = task.base_branch || main;
+      const reviewBase =
+        !task.base_branch || task.base_branch === main
+          ? main
+          : runnerBranch(task.base_branch)
+            ? task.base_branch
+            : fail("the hub sent a base branch the runner did not make");
       // git does not work in a container: the reviewer reads the diff from a file the runner writes, read-only.
       const diff = boxed ? `${wt}.diff` : undefined;
       if (diff) {
@@ -1112,7 +1138,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       );
     }
 
-    const parents = lease.parents.filter((p) => p.branch && p.pr_number);
+    const parents = lease.parents.filter((p) => runnerBranch(p.branch) && p.pr_number);
     const base = parents[0]?.branch || main;
     const note = parents.length > 1 ? `stacking supports one parent: based on ${base} only` : undefined;
     untouched();
@@ -1180,10 +1206,14 @@ async function dockerReady(cfg: RunnerSettings, config: string) {
 }
 
 // A merged task's worktree, local branch, lock and recorded base. Left alone while a job of this machine holds its lock.
+// Only a path under the runner's own folder, and only a worktree git registered: git worktree remove refuses anything else.
 async function cleanUp(dir: string, projectId: string, id: string) {
-  const wt = join(configDir(), "worktrees", projectId, id.toLowerCase());
+  if (!TASK_ID.test(id) || !PROJECT_ID.test(projectId))
+    throw new Error(`refused a task id from the hub: ${JSON.stringify(id.slice(0, 80))}`);
+  const wt = join(worktreeRoot(), projectId, id.toLowerCase());
   const lock = `${wt}.lock`;
   if (jobs.has(id) || !existsSync(wt)) return;
+  if (!underRoot(wt)) throw new Error(`refused to remove ${wt}: it leads out of ${worktreeRoot()}`);
   if (existsSync(lock))
     try {
       process.kill(Number(readFileSync(lock, "utf8")), 0);
@@ -1208,6 +1238,10 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
       continue;
     }
     const dir = Object.hasOwn(cfg.projects, t.project_id) ? cfg.projects[t.project_id] : undefined;
+    if (!PROJECT_ID.test(t.project_id)) {
+      io.out(`refused a project id from the hub: ${JSON.stringify(t.project_id.slice(0, 80))}`);
+      continue;
+    }
     if (!dir) {
       io.out(`${t.project_name}: ${RUNNER_NOT_LISTED}; add "${t.project_id}": "/path/to/the/clone" to it`);
       await client.runnerReport({ project_id: t.project_id, running: 0, error: RUNNER_NOT_LISTED });
@@ -1224,10 +1258,17 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
     if (!quarantines(t.project_id).length) {
       const { tasks } = await client.runnerStatus(t.project_id);
       for (const x of tasks)
-        if (x.status === "done")
-          await cleanUp(dir, t.project_id, x.id).catch((e: Error) => io.err(`${x.id}: cleanup failed: ${e.message}`));
+        if (x.status === "done") await cleanUp(dir, t.project_id, x.id).catch((e: Error) => io.err(`cleanup failed: ${e.message}`));
+      // Only the runner's own branches: codetgh/<task>, for the task and for its parent.
       const stacked = tasks.flatMap((x) =>
-        x.status === "review" && x.branch && x.parent && !jobs.has(x.id) ? [{ id: x.id, branch: x.branch, parent: x.parent }] : [],
+        x.status === "review" &&
+        TASK_ID.test(x.id) &&
+        x.branch === `codetgh/${x.id.toLowerCase()}` &&
+        x.parent &&
+        runnerBranch(x.parent.branch) &&
+        !jobs.has(x.id)
+          ? [{ id: x.id, branch: x.branch, parent: x.parent }]
+          : [],
       );
       if (stacked.length) await fetchOrigin(dir);
       for (const x of stacked) {
@@ -1252,6 +1293,10 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
       for (const task of (await client.runnerReady(t.project_id, phase)).tasks) {
         if (jobs.size >= cfg.max_agents) break;
         if (jobs.has(task.id)) continue;
+        if (!TASK_ID.test(task.id)) {
+          io.out(`refused a task id from the hub: ${JSON.stringify(task.id.slice(0, 80))}`);
+          continue;
+        }
         const lease = await client.runnerLease({ task_id: task.id, owner, phase }).catch((e: Error) => {
           if (e instanceof CodeTghError && e.status === 409) return null;
           throw e;
@@ -2134,8 +2179,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           ["blocked", (x) => x.status === "blocked", (x) => x.blocked_reason ?? ""],
           ["done 24h", (x) => x.status === "done", (x) => (x.pr_number ? `PR #${x.pr_number}` : "")],
         ];
+        // Hub text on a terminal: no control character, so no escape sequence.
         for (const [label, match, detail] of groups)
-          for (const x of tasks.filter(match)) io.out(`  ${label.padEnd(12)} ${x.id}  ${detail(x)}`.trimEnd());
+          for (const x of tasks.filter(match)) io.out(`  ${label.padEnd(12)} ${x.id}  ${detail(x)}`.trimEnd().replace(/\p{Cc}/gu, "?"));
         if (!tasks.length) io.out("  no runner task");
       }
     });

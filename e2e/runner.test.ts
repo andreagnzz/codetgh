@@ -1,13 +1,25 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { RoutingRules } from "@codetgh/shared/rest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
@@ -985,6 +997,75 @@ describe("codetgh runner restack", () => {
     }
     expect(onOrigin(s.child)).toBe(before);
     expect((await row(s.child))?.status).toBe("review");
+  });
+});
+
+describe("codetgh runner with hub values that would lead out of its folder", () => {
+  // A row only a compromised hub could serve: the hub itself never makes such an id.
+  const crafted = async (id: string, values: Partial<typeof task.$inferInsert>) =>
+    hub.db.insert(task).values({
+      id,
+      teamId: team.teamId,
+      projectId,
+      title: "crafted",
+      createdByUser: team.lea.userId,
+      runner: true,
+      ...values,
+    });
+  const canary = () => {
+    const dir = mkdtempSync(join(tmpdir(), "codetgh-canary-"));
+    writeFileSync(join(dir, "keep"), "x");
+    return dir;
+  };
+
+  it("refuses crafted task ids in a lease, the queue and the status, and touches nothing outside its folder", async () => {
+    const cfg = process.env.CODETGH_CONFIG_DIR ?? "";
+    const outside = canary();
+    // From worktrees/<project>/<id>, three levels up is the config dir's parent.
+    const up = `../../../${outside.slice(tmpdir().length + 1)}`;
+    const ids = [up, `${up}/x`, outside, `tsk_${"A".repeat(25)}/`];
+    const before = lines("claude.jsonl").length;
+    await crafted(ids[0] ?? "", { status: "done", branch: "codetgh/x", prNumber: 900 });
+    await crafted(ids[1] ?? "", { status: "todo" });
+    await crafted(ids[2] ?? "", { status: "claimed", leaseOwner: runnerOwner(), leaseUntil: new Date(Date.now() + 600_000), attempts: 1 });
+    await crafted(ids[3] ?? "", { status: "done" });
+    try {
+      const out = await runner();
+      expect(out).toMatch(/refused/);
+      expect(readdirSync(outside)).toEqual(["keep"]);
+      expect(lines("claude.jsonl")).toHaveLength(before);
+      for (const f of readdirSync(join(cfg, "runner-logs"))) expect(f).toMatch(/^tsk_[0-9a-z]{26}-\d+(\.log|-review\.md)$/);
+      expect(readdirSync(join(cfg, "worktrees"))).toEqual([projectId]);
+      expect(await cli(["run", "status", "--project", projectId])).toContain("acme/runner");
+    } finally {
+      await hub.db.delete(task).where(inArray(task.id, ids));
+    }
+  });
+
+  it("only removes a merged task's worktree when git knows it as one, under its own folder", async () => {
+    const id = await create("cleanup guard");
+    await runner();
+    const wt = worktree(id);
+    // A symlink where the project's folder of worktrees was: cleanup must not follow it out.
+    const outside = canary();
+    const project = join(process.env.CODETGH_CONFIG_DIR ?? "", "worktrees", projectId);
+    const moved = `${project}.real`;
+    renameSync(project, moved);
+    symlinkSync(outside, project);
+    mkdirSync(join(outside, slug(id)));
+    writeFileSync(join(outside, `${slug(id)}.lock`), "999999999");
+    const t = await row(id);
+    await closePr(t?.prNumber ?? 0, t?.branch ?? "", true);
+    try {
+      await runner();
+      expect(readdirSync(outside).sort()).toEqual(["keep", slug(id), `${slug(id)}.lock`].sort());
+    } finally {
+      rmSync(project);
+      renameSync(moved, project);
+    }
+    expect(existsSync(wt)).toBe(true);
+    await runner();
+    expect(existsSync(wt)).toBe(false);
   });
 });
 
