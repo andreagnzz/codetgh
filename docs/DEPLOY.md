@@ -139,10 +139,12 @@ Each folder runs a single Remote Control server. A session you create from claud
 
 The runner does the tasks flagged `runner` (`/codetgh:split --run`) of the projects the owner switched on in the console, **Projects**. Only an owner or an admin can flag a task for the runner. For each task it creates a git worktree in `~/.config/codetgh/worktrees/<project>/<task>`, outside the clone, on a branch `codetgh/<task>`. It runs `claude -p` there, pushes the branch and opens a PR with `gh`, titled with the task's title. The task then moves to `review`. A task whose dependency is in review is stacked on the parent's branch.
 
+Then a fresh `claude -p` reviews the PR in the same worktree, read-only: `Edit`, `Write` and `NotebookEdit` are denied, and so are `git commit`, `git push`, `gh pr merge` and `gh pr review`. It ends with `VERDICT: APPROVE` or `VERDICT: REQUEST_CHANGES`, and the runner posts the review on the PR. GitHub refuses an approval from the PR's author, which the runner's account is, so the review then lands as a comment with the verdict on its last line. On approval the task stays in `review` until the merge. On changes requested the author agent runs again in the worktree with the review, and the runner pushes the fix. After 3 rounds without approval the task is `blocked` and the owner gets a note. Only the last line of the reviewer's JSON `result` counts, and only if no other line names a verdict: a review with no verdict, an ambiguous one, a crash or a timeout counts as changes requested. The review reaches the author capped and escaped, as untrusted data. The reviewer is not a security boundary, since the code it reads can steer it: review anything sensitive yourself before merging, and leave `auto_merge` off for such repositories.
+
 It is bounded like the launcher:
 - it runs on the owner's machine with the owner's token, and the hub only says *on* or *off* and which task to take;
 - the folders come from a local list, and the commands are fixed in the CLI;
-- each agent runs in `auto` mode unless `runner.json` says otherwise. It gets the delegate deny rules, edits denied in `.git`, `.codetgh`, `.claude` and CodeTgh's own files, and the CodeTgh Bash check;
+- each agent runs in `auto` mode unless `runner.json` says otherwise. It gets the delegate deny rules, edits denied in `.git`, `.codetgh`, `.claude`, `.github/workflows` and CodeTgh's own files, and the CodeTgh Bash check;
 - the runner's own git and gh calls ignore repository hooks, fsmonitor and `core.sshCommand`, and it pushes nothing if the repository's git config or hooks changed since it started: restart it after you change them;
 - an agent runs with the owner's rights on this machine: use a dedicated machine or container, without secrets.
 
@@ -160,10 +162,10 @@ Setup, once:
      "job_timeout_min": 45
    }
    ```
-   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto`) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
+   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
 4. **Optional routing.** `.codetgh/routing.json`, committed on the default branch, picks `--model` and `--effort` with ordered rules; the first match wins. The runner reads it from `origin/HEAD`, never from a worktree:
    ```json
-   { "rules": [{ "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
+   { "rules": [{ "match": { "role": "reviewer" }, "model": "opus" }, { "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
    ```
 5. **Run it as a user service**, like the launcher:
    ```bash
@@ -184,7 +186,36 @@ Setup, once:
    journalctl --user -u codetgh-runner -f      # the tasks it takes, their PRs and blocks
    ```
 
-Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents and leaves the leases to expire after 10 minutes, so the tasks go back to the queue.
+**Hardened setup (recommended).** An agent runs as the user that runs the runner, and nothing short of OS isolation fully contains it. Run the runner as a dedicated user, or in a container, that owns its own clones and holds no other secrets. On Linux, as a system service:
+   ```bash
+   sudo useradd --system --create-home --home-dir /var/lib/codetgh-runner --shell /bin/bash codetgh-runner
+   sudo -u codetgh-runner -H bash -c 'cd && git clone https://github.com/you/my-repo.git'
+   sudo -u codetgh-runner -H bash -c 'codetgh login && claude && gh auth login'   # once, then write its runner.json
+   sudo tee /etc/systemd/system/codetgh-runner.service <<'UNIT'
+   [Unit]
+   Description=CodeTgh runner (dedicated user)
+   After=network-online.target
+
+   [Service]
+   User=codetgh-runner
+   ExecStart=/usr/local/bin/codetgh runner
+   Restart=on-failure
+   TimeoutStopSec=30
+   # The people's homes are out of reach; only the runner's own home is writable.
+   ProtectHome=yes
+   ProtectSystem=strict
+   ReadWritePaths=/var/lib/codetgh-runner
+   PrivateTmp=yes
+   NoNewPrivileges=yes
+
+   [Install]
+   WantedBy=multi-user.target
+   UNIT
+   sudo systemctl daemon-reload && sudo systemctl enable --now codetgh-runner
+   ```
+   On Linux the runner tags each agent's processes and kills every one that is still running once the agent exits, those it detached included, before it checks the git config and pushes. So don't keep a shell or an editor open inside a runner worktree: it would be killed too. This cleanup runs however a job ends, a lost lease or `systemctl stop` included. If the git config changed or a process survived, the runner writes `<worktree>.quarantine` next to the worktree. Since the worktrees share the clone's `.git`, no task of that project runs again, even after a restart, and each one is `blocked`, until you inspect the clone and delete the worktree and the marker. On macOS and Windows the runner can only end the agent's process tree, so it refuses `permission_mode: "bypassPermissions"` there.
+
+Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents. The runner keeps one id in `~/.config/codetgh/runner-id`: restarted within 10 minutes, it resumes its own leases; otherwise they expire, a task without a PR goes back to the queue and a task with one goes back to review.
 
 ## Discord bot (optional)
 

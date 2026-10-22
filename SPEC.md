@@ -836,8 +836,9 @@ Le lanceur démarre `claude remote-control` dans le dossier du projet et rapport
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
 - Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
 - Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
-- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
+- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`, ou en `review` si elle a une PR. Le runner garde un identifiant stable (`~/.config/codetgh/runner-id`) : redémarré, il reprend ses propres baux. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
 - Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
+- La revue prend une tâche en `review` avec une PR et moins de 3 tours, par un bail qui la laisse en `review`. Un agent neuf la relit sans outil d'écriture, sans commit, push, fusion ni revue postée ; le runner poste la revue et suit le verdict. Le runner ne passe jamais une tâche en `done` : c'est la fusion qui le fait.
 - Les agents tournent en mode `auto`, ou en `bypassPermissions` seulement si `runner.json` le dit, avec les règles deny et le hook Bash des sessions déléguées.
 - L'audit garde le bail, les mises à jour et les changements d'état, en métadonnées seulement.
 
@@ -849,9 +850,13 @@ Modèle de menaces du runner. Un agent du runner exécute le texte d'une tâche 
 - Le runner ne pousse rien si la configuration ou les hooks git du dépôt ont changé depuis son démarrage.
 - Le routage n'est lu que sur la branche par défaut, jamais dans le worktree.
 - Le mode de permission ne vient que de `runner.json`.
+- Le verdict du relecteur n'est que la dernière ligne du `result` JSON, exacte et seule à nommer un verdict ; un verdict absent ou ambigu vaut demande de changements, jamais approbation. Le texte de la revue va à l'auteur dans une enveloppe <peer_message>, échappé et plafonné, sous un prompt qui le dit non fiable. Les agents du runner ne modifient pas `.github/workflows`.
+- Chaque job porte un marqueur dans l'environnement de l'agent. Une fois l'agent sorti, le runner tue son groupe de processus et, sous Linux, tout processus de l'utilisateur qui porte ce marqueur ou dont le dossier courant est dans le worktree, même détaché, jusqu'à n'en plus trouver. Ensuite seulement il contrôle la configuration git, pousse, puis la contrôle de nouveau. Un échec à chaque étape bloque la tâche. Hors Linux, faute de ce balayage, le runner refuse `bypassPermissions`. Le même nettoyage clôt chaque job, quelle qu'en soit l'issue : fin normale, erreur, délai dépassé, bail perdu, projet éteint ou arrêt du runner. Si la configuration git a changé ou si un processus survit, le worktree est mis en quarantaine par un fichier local : aucun job du projet ne reprend, même après un redémarrage, car les worktrees partagent le `.git` du clone, et la tâche passe `blocked` avec une raison fixe. Au redémarrage, un worktree existant est balayé et contrôlé avant d'être repris. Un verrou par tâche empêche deux tâches du runner, auteur et relecteur, de partager un worktree.
 - Le hub ne reçoit qu'une raison fixe et le nom du journal, jamais la sortie de l'agent. La PR ne porte que l'identifiant et le titre de la tâche. Le journal reste local, en 0600.
 
-Limite assumée : comme une session déléguée, l'agent garde ce que le mode auto, les règles deny et le hook laissent passer, y compris un script qui écrit ailleurs sur la machine. Il faut lancer le runner sur une machine ou dans un conteneur dédiés, sans secrets.
+Le relecteur du runner n'est pas une frontière de sécurité : il lit du code non fiable, qui peut l'orienter. Un humain relit avant de fusionner tout changement sensible ; c'est pourquoi la fusion automatique reste éteinte par défaut et, allumée, ne fait que `gh pr merge --auto`, qui attend les contrôles exigés par GitHub.
+
+Limite assumée : comme une session déléguée, l'agent garde ce que le mode auto, les règles deny et le hook laissent passer, y compris un script qui écrit ailleurs sur la machine. Sans isolation par le système, le runner ne peut pas contenir entièrement un agent qui tourne sous le même utilisateur que lui. La seule installation durcie reconnue est un utilisateur dédié ou un conteneur, propriétaire de ses clones et sans autres secrets (docs/DEPLOY.md).
 
 ### Rôles
 

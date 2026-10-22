@@ -1,5 +1,6 @@
 import type { TaskStatus } from "@codetgh/shared";
-import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { REVIEW_ROUNDS } from "@codetgh/shared/rest";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { project, runTarget, task } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -36,9 +37,23 @@ const ready = (p: Principal) =>
     depsReady,
     projectOn,
   );
+const unleased = () => or(isNull(task.leaseUntil), lt(task.leaseUntil, new Date()));
+// For the runner's reviewer: a PR to review, rounds left, and no runner on it.
+const reviewable = (p: Principal) =>
+  and(
+    eq(task.teamId, p.teamId),
+    eq(task.status, "review"),
+    eq(task.runner, true),
+    isNotNull(task.prNumber),
+    lt(task.reviewRound, REVIEW_ROUNDS),
+    or(isNull(task.assigneeUserId), eq(task.assigneeUserId, p.user.id)),
+    projectOn,
+    unleased(),
+  );
 
 const runnerView = async (db: Db, t: Task) => ({
   ...(await view(db, t)),
+  project_id: t.projectId,
   branch: t.branch,
   base_branch: t.baseBranch,
   pr_number: t.prNumber,
@@ -104,22 +119,21 @@ export async function runStates(db: Db, teamId: string) {
   return db.select().from(runTarget).where(eq(runTarget.teamId, teamId));
 }
 
-// A runner that stopped renewing lost its task: back to the queue, with no assignee and no lease.
+// A runner that stopped renewing lost its task: back to the queue, with no assignee and no lease. A task with a PR goes
+// back to review instead, with its assignee, so its PR and rounds are kept.
 export async function expireLeases(db: Db) {
+  const expired = and(lt(task.leaseUntil, new Date()), inArray(task.status, ["claimed", "in_progress", "review"]));
   await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(task)
-      .set({
-        status: "todo",
-        leaseOwner: null,
-        leaseUntil: null,
-        assigneeUserId: null,
-        assigneeAgentId: null,
-        version: sql`${task.version} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(and(lt(task.leaseUntil, new Date()), inArray(task.status, ["claimed", "in_progress"])))
-      .returning();
+    const back = (where: ReturnType<typeof and>, values: Partial<typeof task.$inferInsert>) =>
+      tx
+        .update(task)
+        .set({ ...values, leaseOwner: null, leaseUntil: null, version: sql`${task.version} + 1`, updatedAt: new Date() })
+        .where(where)
+        .returning();
+    const rows = [
+      ...(await back(and(expired, isNull(task.prNumber)), { status: "todo", assigneeUserId: null, assigneeAgentId: null })),
+      ...(await back(and(expired, isNotNull(task.prNumber)), { status: "review" })),
+    ];
     for (const t of rows)
       await appendAudit(tx, {
         teamId: t.teamId,
@@ -132,40 +146,19 @@ export async function expireLeases(db: Db) {
   });
 }
 
-export async function readyTasks(db: Db, p: Principal, projectId: string) {
+export async function readyTasks(db: Db, p: Principal, projectId: string, phase?: "review") {
   requireOwner(p);
   await expireLeases(db);
   const rows = await db
     .select()
     .from(task)
-    .where(and(ready(p), eq(task.projectId, projectId)))
+    .where(and(phase === "review" ? reviewable(p) : ready(p), eq(task.projectId, projectId)))
     .orderBy(asc(task.createdAt))
     .limit(50);
   return { tasks: await Promise.all(rows.map((t) => runnerView(db, t))) };
 }
 
-// Atomic: one UPDATE that matches only a task still ready and not leased, so of two runners exactly one wins.
-export async function leaseTask(db: Db, p: Principal, taskId: string, owner: string) {
-  requireLive(p);
-  const row = await db.transaction(async (tx) => {
-    const [t] = await tx
-      .update(task)
-      .set({
-        status: "claimed",
-        assigneeUserId: p.user.id,
-        assigneeAgentId: null,
-        leaseOwner: owner,
-        leaseUntil: new Date(Date.now() + LEASE_MS),
-        attempts: sql`${task.attempts} + 1`,
-        version: sql`${task.version} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(task.id, taskId), ready(p), or(isNull(task.leaseUntil), lt(task.leaseUntil, new Date()))))
-      .returning();
-    if (!t) throw new HubError("E_VERSION_CONFLICT", `task ${taskId} is not ready any more: read the queue again`);
-    await audit(tx, p, "runner.leased", t, { attempts: t.attempts });
-    return t;
-  });
+const leaseView = async (db: Db, p: Principal, row: Task) => {
   const parents = row.dependsOn.length
     ? await db
         .select({ task_id: task.id, branch: task.branch, pr_number: task.prNumber })
@@ -173,6 +166,49 @@ export async function leaseTask(db: Db, p: Principal, taskId: string, owner: str
         .where(and(inArray(task.id, row.dependsOn), eq(task.status, "review")))
     : [];
   return { task: await runnerView(db, row), parents, text: await taskView(db, p, row.id) };
+};
+
+// Atomic: one UPDATE that matches only a task still ready and not leased, so of two runners exactly one wins. A review
+// lease keeps the task in review and its attempts: only the lease is taken.
+export async function leaseTask(db: Db, p: Principal, taskId: string, owner: string, phase?: "review") {
+  requireLive(p);
+  const lease = {
+    leaseOwner: owner,
+    leaseUntil: new Date(Date.now() + LEASE_MS),
+    version: sql`${task.version} + 1`,
+    updatedAt: new Date(),
+  };
+  const row = await db.transaction(async (tx) => {
+    const [t] =
+      phase === "review"
+        ? await tx
+            .update(task)
+            .set(lease)
+            .where(and(eq(task.id, taskId), reviewable(p)))
+            .returning()
+        : await tx
+            .update(task)
+            .set({ ...lease, status: "claimed", assigneeUserId: p.user.id, assigneeAgentId: null, attempts: sql`${task.attempts} + 1` })
+            .where(and(eq(task.id, taskId), ready(p), unleased()))
+            .returning();
+    if (!t) throw new HubError("E_VERSION_CONFLICT", `task ${taskId} is not ready any more: read the queue again`);
+    await audit(tx, p, "runner.leased", t, { attempts: t.attempts, ...(phase && { phase }) });
+    return t;
+  });
+  return leaseView(db, p, row);
+}
+
+// What a restarted runner resumes: the live leases under its stable id.
+export async function runnerLeases(db: Db, p: Principal, owner: string) {
+  requireOwner(p);
+  await expireLeases(db);
+  const rows = await db
+    .select()
+    .from(task)
+    .where(and(eq(task.teamId, p.teamId), eq(task.leaseOwner, owner), gt(task.leaseUntil, new Date())))
+    .orderBy(asc(task.createdAt))
+    .limit(50);
+  return { leases: await Promise.all(rows.map((t) => leaseView(db, p, t))) };
 }
 
 export async function renewLease(db: Db, p: Principal, taskId: string, owner: string) {
@@ -185,6 +221,9 @@ export async function renewLease(db: Db, p: Principal, taskId: string, owner: st
   if (!t?.leaseUntil) throw new HubError("E_VERSION_CONFLICT", `this runner no longer holds task ${taskId}: stop working on it`);
   return { lease_until: t.leaseUntil.toISOString() };
 }
+
+// The task machine, plus review → blocked: the reviewer's last round failed.
+const runnerAllowed = (from: TaskStatus): TaskStatus[] => (from === "review" ? [...ALLOWED.review, "blocked"] : ALLOWED[from]);
 
 // The lease is the guard: only its holder changes the task, and only along the task status machine.
 export async function runnerUpdate(
@@ -211,7 +250,9 @@ export async function runnerUpdate(
   if (!current) throw new HubError("E_NOT_FOUND", `no task ${taskId}`);
   if (current.leaseOwner !== owner)
     throw new HubError("E_VERSION_CONFLICT", `this runner no longer holds task ${taskId}: stop working on it`);
-  if (patch.status && patch.status !== current.status && !ALLOWED[current.status].includes(patch.status))
+  // Done comes from the merge, never from the runner.
+  if (patch.status === "done") throw new HubError("E_INVALID", "a runner never sets done: the merge of the PR does");
+  if (patch.status && patch.status !== current.status && !runnerAllowed(current.status).includes(patch.status))
     throw new HubError("E_INVALID", `${current.status} → ${patch.status} is not allowed`);
   const status = patch.status ?? current.status;
   const keepLease = status === "claimed" || status === "in_progress";
