@@ -8,11 +8,11 @@ import { repoFingerprint } from "@codetgh/shared/repo";
 import { RoutingRules } from "@codetgh/shared/rest";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { project, task } from "../apps/hub/src/db/schema.js";
+import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { type Keyring, program, runnerTiming } from "../packages/cli/src/main.js";
+import { type Keyring, program, runnerOwner, runnerTiming } from "../packages/cli/src/main.js";
 import { consolePost, fakeCommand, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -34,12 +34,26 @@ function fakes() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const stdin = readFileSync(0, "utf8");
 appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, stdin }) + "\\n");
+// The reviewer: REJECT<n> in the title requests changes on the first n reviews, NOVERDICT gives none.
+if (process.argv[3].includes("VERDICT")) {
+  const subject = stdin.match(/Subject: (.*)/)[1].replace(/[^A-Za-z0-9]/g, "_");
+  const count = join(dir, "reviews-" + subject);
+  const n = existsSync(count) ? Number(readFileSync(count, "utf8")) + 1 : 1;
+  writeFileSync(count, String(n));
+  console.log("REVIEW-ONLY-LINE round " + n);
+  if (stdin.includes("NOVERDICT") && n === 1) process.exit(0);
+  const reject = Number(stdin.match(/REJECT(\\d)/)?.[1] ?? 0);
+  console.log(n <= reject ? "VERDICT: REQUEST_CHANGES" : "VERDICT: APPROVE");
+  process.exit(0);
+}
+if (stdin.includes("WTCONFIG"))
+  writeFileSync(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "config.worktree"], { encoding: "utf8" }).trim(), "[alias]\\n\\tx = !touch pwned\\n");
 if (stdin.includes("FAIL")) {
   console.log("a line only the local log may hold");
   process.exit(1);
@@ -50,7 +64,7 @@ if (stdin.includes("SLEEP")) {
   setTimeout(() => {}, 300_000);
 } else {
   if (!stdin.includes("NOCOMMIT")) {
-    writeFileSync("work.txt", stdin.length + "\\n");
+    appendFileSync("work.txt", stdin.length + "\\n");
     execFileSync("git", ["add", "work.txt"]);
     execFileSync("git", ["-c", "user.name=agent", "-c", "user.email=agent@example.com", "commit", "-q", "-m", "Do the task"]);
   }
@@ -64,7 +78,14 @@ if (stdin.includes("SLEEP")) {
     `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
-appendFileSync(join(dir, "gh.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + "\\n");
+const argv = process.argv.slice(2);
+const bodyFile = argv.includes("--body-file") ? argv[argv.indexOf("--body-file") + 1] : null;
+appendFileSync(join(dir, "gh.jsonl"), JSON.stringify({ argv, cwd: process.cwd(), body: bodyFile && readFileSync(bodyFile, "utf8") }) + "\\n");
+// As GitHub does when the runner's account opened the PR it reviews.
+if (argv[1] === "review" && (argv.includes("--approve") || argv.includes("--request-changes"))) {
+  console.error("failed to create review: GraphQL: Can not approve your own pull request (addPullRequestReview)");
+  process.exit(1);
+}
 if (process.argv[2] === "pr" && process.argv[3] === "create") {
   const n = existsSync(join(dir, "n")) ? Number(readFileSync(join(dir, "n"), "utf8")) + 1 : 1;
   writeFileSync(join(dir, "n"), String(n));
@@ -128,6 +149,11 @@ afterEach(async () => {
     .update(task)
     .set({ status: "cancelled", leaseOwner: null, leaseUntil: null })
     .where(and(eq(task.projectId, projectId), eq(task.status, "todo")));
+  // Nor reviewed: tasks a test left in review keep their PR for stacking, with no review round left.
+  await hub.db
+    .update(task)
+    .set({ reviewRound: 3 })
+    .where(and(eq(task.projectId, projectId), eq(task.status, "review")));
   rmSync(join(fake, "pid"), { force: true });
 });
 afterAll(async () => {
@@ -338,7 +364,8 @@ describe("codetgh runner", () => {
     await create("bypass");
     await runner({ permission_mode: "bypassPermissions", auto_merge: true });
     expect(lines("claude.jsonl").at(-1).argv).toEqual(expect.arrayContaining(["--permission-mode", "bypassPermissions"]));
-    expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", expect.stringMatching(/^\d+$/), "--merge", "--auto"]);
+    // auto_merge waits for the reviewer's approval.
+    expect(lines("gh.jsonl").at(-1).argv.slice(0, 2)).toEqual(["pr", "create"]);
   });
 
   it("turns the delegate Bash check on in a runner job", async () => {
@@ -352,5 +379,156 @@ describe("codetgh runner", () => {
     expect(secret.code).toBe(2);
     expect(secret.err).toContain("blocked:");
     expect(await bash("git push -u origin codetgh/x")).toMatchObject({ code: 0, raw: "", err: "" });
+  });
+});
+
+describe("codetgh runner review loop", () => {
+  const reviews = (pr: number) => lines("gh.jsonl").filter((l) => l.argv[1] === "review" && l.argv[2] === String(pr));
+  const reviewer = () => lines("claude.jsonl").filter((l) => l.argv[1].includes("VERDICT"));
+
+  it("reviews a PR read-only, posts the review itself, and leaves an approved task in review for the merge", async () => {
+    const id = await create("approve me");
+    await runner();
+    const pr = (await row(id))?.prNumber ?? 0;
+    await runner({ auto_merge: true });
+    const [r] = reviewer().slice(-1);
+    expect(r.cwd).toBe(worktree(id));
+    expect(r.argv[1]).toContain(`PR #${pr}`);
+    expect(r.argv[1]).toContain("VERDICT: APPROVE");
+    expect(r.argv).toEqual(expect.arrayContaining(["--permission-mode", "auto", "--model", "opus"]));
+    expect(r.stdin).toContain('trust="untrusted-peer"');
+    expect(r.stdin).toContain("Subject: approve me");
+    const deny = JSON.parse(r.argv[r.argv.indexOf("--settings") + 1]).permissions.deny;
+    expect(deny).toEqual(
+      expect.arrayContaining([
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        "Bash(git commit *)",
+        "Bash(git push *)",
+        "Bash(gh pr merge *)",
+        "Edit(//**/.git/**)",
+        "Read(.env*)",
+      ]),
+    );
+    // GitHub refuses an approval from the PR's own author: the runner falls back to a comment that carries the verdict.
+    const posted = reviews(pr);
+    expect(posted.map((l) => l.argv[3])).toEqual(["--approve", "--comment"]);
+    expect(posted[1].body).toContain("REVIEW-ONLY-LINE round 1");
+    expect(posted[1].body.trim().split("\n").at(-1)).toBe("VERDICT: APPROVE");
+    expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", String(pr), "--merge", "--auto"]);
+    const t = await row(id);
+    expect(t).toMatchObject({ status: "review", reviewRound: 1, leaseOwner: null });
+    expect(t?.notes.at(-1)?.text).toBe("approved by the runner's reviewer");
+  });
+
+  it("sends requested changes to the author in the same worktree, pushes the fix, and approves on round 2", async () => {
+    const id = await create("REJECT1 fix");
+    await runner();
+    const pr = (await row(id))?.prNumber ?? 0;
+    const first = onOrigin(id);
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review", reviewRound: 1, leaseOwner: null });
+    const fixer = lines("claude.jsonl").at(-1);
+    expect(fixer.argv[1]).not.toContain("VERDICT");
+    expect(fixer.cwd).toBe(worktree(id));
+    expect(fixer.stdin).toContain("Subject: REJECT1 fix");
+    expect(fixer.stdin).toContain("address this review:");
+    expect(fixer.stdin).toContain("REVIEW-ONLY-LINE round 1");
+    expect(onOrigin(id)).not.toBe(first);
+    git(origin, "merge-base", "--is-ancestor", first, onOrigin(id));
+    expect(reviews(pr).map((l) => l.argv[3])).toEqual(["--request-changes", "--comment"]);
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review", reviewRound: 2 });
+
+    // The review text stays between the runner, the PR and the agents: never in the hub's tasks, audit or messages.
+    const hubText = JSON.stringify([
+      await row(id),
+      await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, id)),
+      await hub.db.select().from(message).where(eq(message.teamId, team.teamId)),
+    ]);
+    expect(hubText).not.toContain("REVIEW-ONLY-LINE");
+  });
+
+  it("blocks the task after 3 rounds without approval and tells the owner", async () => {
+    const id = await create("REJECT9 never");
+    await runner();
+    const pr = (await row(id))?.prNumber ?? 0;
+    for (let i = 0; i < 3; i++) await runner();
+    const note = `3 review rounds without approval, see PR #${pr}`;
+    const t = await row(id);
+    expect(t).toMatchObject({ status: "blocked", reviewRound: 3, leaseOwner: null });
+    expect(t?.notes.at(-1)?.text).toBe(note);
+    expect(reviewer().filter((l) => l.stdin.includes("REJECT9"))).toHaveLength(3);
+    const sent = await hub.db.select().from(message).where(eq(message.teamId, team.teamId));
+    expect(sent.filter((m) => m.fromUserId === team.lea.userId && m.body === `${id}: ${note}`)).toHaveLength(1);
+  });
+
+  it("counts a review with no verdict as changes requested, with a note that points to the log", async () => {
+    const id = await create("NOVERDICT once");
+    await runner();
+    await runner();
+    const t = await row(id);
+    expect(t).toMatchObject({ status: "review", reviewRound: 1 });
+    expect(t?.notes.map((n) => n.text)).toContain(
+      `review round 1: no verdict from the reviewer, see runner-logs/${slug(id)}-1.log on the runner`,
+    );
+    expect(lines("claude.jsonl").at(-1).stdin).toContain("address this review:");
+  });
+
+  it("leaves a review leased by another runner alone", async () => {
+    const id = await create("held review");
+    await runner();
+    const res = await fetch(`${hub.url}/v1/runner/lease`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ task_id: id, owner: "another-runner", phase: "review" }),
+    });
+    expect(res.status).toBe(200);
+    const before = reviewer().length;
+    await runner();
+    expect(reviewer()).toHaveLength(before);
+    expect(await row(id)).toMatchObject({ status: "review", reviewRound: 0, leaseOwner: "another-runner" });
+    await hub.db.update(task).set({ leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
+  });
+
+  it("resumes its own leases after a restart: the author job and the review", async () => {
+    const lease = (task_id: string, phase?: string) =>
+      fetch(`${hub.url}/v1/runner/lease`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ task_id, owner: runnerOwner(), phase }),
+      });
+    expect(runnerOwner()).toMatch(/:runner-[0-9a-f]{16}$/);
+    expect(runnerOwner()).toBe(runnerOwner());
+    // Leased by this runner before it stopped: not in the queue any more, so only a resume picks it up.
+    const author = await create("resumed author");
+    expect((await lease(author)).status).toBe(200);
+    await runner();
+    expect(await row(author)).toMatchObject({ status: "review", reviewRound: 0 });
+    expect((await lease(author, "review")).status).toBe(200);
+    await runner();
+    expect(await row(author)).toMatchObject({ status: "review", reviewRound: 1, leaseOwner: null });
+    expect(reviewer().at(-1).stdin).toContain("Subject: resumed author");
+  });
+
+  it("recreates a missing worktree from the PR branch for the review", async () => {
+    const id = await create("lost worktree");
+    await runner();
+    rmSync(worktree(id), { recursive: true, force: true });
+    await runner();
+    expect(reviewer().at(-1).cwd).toBe(worktree(id));
+    expect(await row(id)).toMatchObject({ status: "review", reviewRound: 1 });
+    expect(git(worktree(id), "rev-parse", "HEAD")).toBe(onOrigin(id));
+  });
+
+  it("pushes nothing when the agent changed its worktree's own git config", async () => {
+    const id = await create("WTCONFIG");
+    await runner();
+    const t = await row(id);
+    expect(t?.status).toBe("blocked");
+    expect(t?.notes.at(-1)?.text).toContain("git config or hooks changed");
+    expect(onOrigin(id)).toBe("");
+    rmSync(git(worktree(id), "rev-parse", "--path-format=absolute", "--git-path", "config.worktree"));
   });
 });
