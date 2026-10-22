@@ -310,6 +310,7 @@ describe("codetgh runner", () => {
     expect((await row(id))?.notes.at(-1)?.text).toContain("git config or hooks changed");
     expect(onOrigin(id)).toBe("");
     git(clone, "config", "--unset", "alias.x");
+    rmSync(`${worktree(id)}.quarantine`);
   });
 
   it("never runs a hook planted in the repository", async () => {
@@ -615,6 +616,12 @@ describe("codetgh runner review loop", () => {
     expect(t?.notes.at(-1)?.text).toContain("worktree is quarantined");
     expect(lines("claude.jsonl")).toHaveLength(before);
     expect(onOrigin(id)).toBe("");
+    // The clone's .git is shared: no other task of the project runs until a human clears the quarantine.
+    const other = await create("after quarantine");
+    await runner();
+    expect((await row(other))?.notes.at(-1)?.text).toContain("worktree is quarantined");
+    expect(lines("claude.jsonl")).toHaveLength(before);
+    rmSync(`${worktree(id)}.quarantine`);
   });
 
   it.skipIf(process.platform !== "linux")("sweeps what the agent left when the runner is stopped mid-job", async () => {
@@ -651,5 +658,6 @@ describe("codetgh runner review loop", () => {
     expect(t?.notes.at(-1)?.text).toContain("git config or hooks changed");
     expect(onOrigin(id)).toBe("");
     rmSync(git(worktree(id), "rev-parse", "--path-format=absolute", "--git-path", "config.worktree"));
+    rmSync(`${worktree(id)}.quarantine`);
   });
 });

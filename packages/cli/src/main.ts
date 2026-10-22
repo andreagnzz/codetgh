@@ -539,9 +539,11 @@ function endAgent(child: ChildProcess, signal: NodeJS.Signals) {
 // Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
 // ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
 // still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
-// With no marker (a job from before a restart), the worktree alone.
-async function sweepAgent(marker: string | null, wt: string) {
+// With no marker (a job from before a restart), the worktree alone. /proc/<pid>/cwd is a resolved path: compared with
+// the real paths of the worktree and of the clone, whose shared .git the agent could also sit in.
+async function sweepAgent(marker: string | null, wt: string, clone: string) {
   const tag = marker && `CODETGH_RUNNER_JOB=${marker}\0`;
+  const dirs = [wt, clone].filter((d) => existsSync(d)).map((d) => realpathSync(d));
   for (let round = 0; round < 5; round++) {
     let found = 0;
     for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d) && Number(d) !== process.pid)) {
@@ -551,7 +553,7 @@ async function sweepAgent(marker: string | null, wt: string) {
       } catch {}
       try {
         const cwd = readlinkSync(`/proc/${pid}/cwd`);
-        hit ||= cwd === wt || cwd.startsWith(`${wt}/`);
+        hit ||= dirs.some((d) => cwd === d || cwd.startsWith(`${d}/`));
       } catch {}
       if (!hit) continue;
       found++;
@@ -673,7 +675,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     // Whatever it started and left behind could still write to the repository after the checks below.
     endAgent(child, "SIGKILL");
     // shortcut: only Linux is swept; elsewhere the group kill is all, so the runner refuses bypassPermissions there.
-    const clean = process.platform === "linux" ? await sweepAgent(marker, wt) : true;
+    const clean = process.platform === "linux" ? await sweepAgent(marker, wt, dir) : true;
     swept &&= clean;
     return { code, ended, out, clean };
   };
@@ -711,10 +713,14 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     chmodSync(logs, 0o700);
     if (!/^tsk_[0-9A-Z]{26}$/.test(task.id)) fail("the hub sent a task id that is not one");
     if (!takeLock()) return say("another runner process works on it: left alone");
-    if (existsSync(quarantine)) fail("the worktree is quarantined: the git config changed or an agent process survived in an earlier job");
+    // Any worktree of the project: they share the clone's .git, and a restart would take a tampered config as its baseline.
+    if (readdirSync(dirname(wt)).some((f) => f.endsWith(".quarantine")))
+      fail("the worktree is quarantined: the git config changed or an agent process survived in an earlier job");
     // Kept from a job before a restart, maybe with its processes: swept before reuse; untouched() below checks the config.
-    if (existsSync(wt) && process.platform === "linux" && !(await sweepAgent(null, wt)))
+    if (existsSync(wt) && process.platform === "linux" && !(await sweepAgent(null, wt, dir))) {
+      swept = false;
       fail("the runner could not stop every process left in the worktree");
+    }
     await git(["-C", dir, "fetch", "origin"]);
     step = "the default branch could not be resolved";
     const head = () => git(["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
@@ -853,7 +859,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   } finally {
     // Every way out, a lost lease and a stop included: an agent that ran must leave the config as it found it.
     const base = gitBaseline.get(dir);
-    if (ran && (!swept || !base || gitState(base.common) !== base.state))
+    if (!swept || (ran && (!base || gitState(base.common) !== base.state)))
       try {
         writeFileSync(quarantine, `${new Date().toISOString()} ${step}\n`, { mode: 0o600 });
         say(`worktree quarantined: ${wt}`);
