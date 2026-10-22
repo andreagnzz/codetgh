@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -294,24 +294,35 @@ async function cli(args: string[], token = team.lea.token) {
   return out.join("\n");
 }
 const runner = (cfg: Record<string, unknown> = {}) => cli(["runner", "--config", writeConfig(cfg), "--once"]);
-// What GitHub posts when a PR is closed, signed with the team's webhook secret.
-const closePr = (number: number, branch: string, merged: boolean) => {
-  const body = JSON.stringify({
-    action: "closed",
-    repository: { full_name: "acme/runner" },
+// What GitHub posts about a PR, signed with the team's webhook secret; closePr: a close, timestamped now.
+const prBody = (o: { action: string; number: number; branch: string; merged?: boolean; at?: Date; repo?: string }) => {
+  const at = (o.at ?? new Date()).toISOString();
+  return JSON.stringify({
+    action: o.action,
+    repository: { full_name: o.repo ?? "acme/runner" },
     sender: { login: "octocat" },
-    pull_request: { number, title: "a runner PR", merged, head: { ref: branch } },
+    pull_request: {
+      number: o.number,
+      title: "a runner PR",
+      merged: o.merged ?? false,
+      head: { ref: o.branch },
+      updated_at: at,
+      closed_at: o.action === "closed" ? at : null,
+    },
   });
-  return fetch(hookUrl, {
+};
+const deliverPr = (body: string, delivery = randomUUID()) =>
+  fetch(hookUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-github-event": "pull_request",
+      "x-github-delivery": delivery,
       "x-hub-signature-256": `sha256=${createHmac("sha256", hookSecret).update(body).digest("hex")}`,
     },
     body,
   });
-};
+const closePr = (number: number, branch: string, merged: boolean) => deliverPr(prBody({ action: "closed", number, branch, merged }));
 // A commit someone else pushes to a branch of origin, or a merge of a branch into main.
 function pushToOrigin(branch: string, file: string, text: string) {
   const work = mkdtempSync(join(root, "push-"));
@@ -974,6 +985,69 @@ describe("codetgh runner restack", () => {
     }
     expect(onOrigin(s.child)).toBe(before);
     expect((await row(s.child))?.status).toBe("review");
+  });
+});
+
+describe("GitHub link to runner tasks", () => {
+  const inReview = async (title: string) => {
+    const id = await create(title);
+    await runner();
+    const t = await row(id);
+    expect(t?.status).toBe("review");
+    return { id, number: t?.prNumber ?? 0, branch: t?.branch ?? "" };
+  };
+
+  it("moves a task only on an event of its own repository, PR number and branch", async () => {
+    const t = await inReview("link match");
+    for (const o of [{ repo: "acme/other" }, { number: t.number + 1000 }, { branch: "codetgh/someone-else" }])
+      expect((await deliverPr(prBody({ action: "closed", merged: true, number: t.number, branch: t.branch, ...o }))).status).toBe(202);
+    expect((await row(t.id))?.status).toBe("review");
+  });
+
+  it("moves only a task in review or in progress, never a done one, and never restores on reopen", async () => {
+    const t = await inReview("link states");
+    await hub.db.update(task).set({ status: "blocked" }).where(eq(task.id, t.id));
+    await closePr(t.number, t.branch, true);
+    expect((await row(t.id))?.status).toBe("blocked");
+    await hub.db.update(task).set({ status: "review" }).where(eq(task.id, t.id));
+    await closePr(t.number, t.branch, false);
+    expect((await row(t.id))?.status).toBe("blocked");
+    await deliverPr(prBody({ action: "reopened", number: t.number, branch: t.branch }));
+    expect((await row(t.id))?.status).toBe("blocked");
+    await hub.db.update(task).set({ status: "review" }).where(eq(task.id, t.id));
+    await closePr(t.number, t.branch, true);
+    expect((await row(t.id))?.status).toBe("done");
+    await closePr(t.number, t.branch, false);
+    expect((await row(t.id))?.status).toBe("done");
+  });
+
+  it("ignores an event that is not newer than the last one applied, and a replayed delivery", async () => {
+    const t = await inReview("link order");
+    const later = new Date(Date.now() + 60_000);
+    await deliverPr(prBody({ action: "synchronize", number: t.number, branch: t.branch, at: later }));
+    await deliverPr(prBody({ action: "closed", number: t.number, branch: t.branch, at: new Date() }));
+    expect((await row(t.id))?.status).toBe("review");
+    await deliverPr(prBody({ action: "closed", number: t.number, branch: t.branch, at: new Date(Date.now() + 120_000) }));
+    expect((await row(t.id))?.status).toBe("blocked");
+    expect((await row(t.id))?.prEventAt).toBeInstanceOf(Date);
+  });
+
+  it("does nothing with a replayed signed body once the task is back in review, and audits metadata only", async () => {
+    const t = await inReview("link replay");
+    const body = prBody({ action: "closed", number: t.number, branch: t.branch });
+    expect((await deliverPr(body, "delivery-first")).status).toBe(202);
+    expect((await row(t.id))?.status).toBe("blocked");
+    await cli(["run", "retry", t.id]);
+    await runner();
+    expect((await row(t.id))?.status).toBe("review");
+    expect((await deliverPr(body, "delivery-replayed")).status).toBe(202);
+    expect((await row(t.id))?.status).toBe("review");
+    const audit = (await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, t.id))).filter(
+      (a) => a.action === "runner.pr_closed",
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.data).toMatchObject({ pr_number: t.number, event: "closed", delivery: "delivery-first" });
+    expect(JSON.stringify(audit)).not.toContain("a runner PR");
   });
 });
 

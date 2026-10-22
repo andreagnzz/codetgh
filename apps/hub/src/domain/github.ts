@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { Db } from "../db/index.js";
 import { project, task, team, thread } from "../db/schema.js";
@@ -55,7 +55,15 @@ type Payload = {
   action?: string;
   repository?: { full_name?: string };
   sender?: { login?: string };
-  pull_request?: { number?: number; title?: string; html_url?: string; merged?: boolean; head?: { ref?: string } };
+  pull_request?: {
+    number?: number;
+    title?: string;
+    html_url?: string;
+    merged?: boolean;
+    head?: { ref?: string };
+    updated_at?: string;
+    closed_at?: string | null;
+  };
   check_suite?: { conclusion?: string | null; head_branch?: string | null; head_sha?: string; pull_requests?: Array<{ number?: number }> };
 };
 
@@ -92,24 +100,28 @@ function describe(event: string, e: Payload) {
   return null;
 }
 
-// A runner task's PR, found by its number and its branch: merged, the task is done; closed unmerged, it is blocked. The
-// hub moves it, audited, from metadata only. A replayed delivery finds nothing left to move.
-async function closeRunnerTask(db: Db, teamId: string, projectId: string, authorId: string, e: Payload) {
+// A runner task's PR, matched on the project's repository, its number and its branch `codetgh/<task>`. Each matching event
+// newer than the last one applied, as GitHub dates it, is recorded; a close moves the task only from review or
+// in_progress: merged to done, unmerged to blocked. A done task never changes, a reopen restores nothing (the owner runs
+// codetgh run retry), and a replayed or late delivery is not newer, so it is a no-op. Metadata only.
+async function linkRunnerTask(
+  db: Db,
+  teamId: string,
+  projectId: string,
+  authorId: string,
+  e: Payload,
+  meta: { delivery: string | null; bodyHash: string },
+) {
   const pr = e.pull_request;
-  if (e.action !== "closed" || !pr?.number || !pr.head?.ref) return;
-  const merged = pr.merged === true;
-  const note = { at: new Date().toISOString(), user_id: authorId, agent_id: null, text: merged ? "merged" : "PR closed without merge" };
+  const closing = e.action === "closed";
+  const at = Date.parse((closing ? pr?.closed_at : null) ?? pr?.updated_at ?? "");
+  if (!pr?.number || !pr.head?.ref || Number.isNaN(at)) return;
+  const when = new Date(at);
+  const merged = closing && pr.merged === true;
   await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(task)
-      .set({
-        status: merged ? "done" : "blocked",
-        leaseOwner: null,
-        leaseUntil: null,
-        notes: sql`(${task.notes} || ${JSON.stringify([note])}::jsonb)`,
-        version: sql`${task.version} + 1`,
-        updatedAt: new Date(),
-      })
+    const [t] = await tx
+      .select()
+      .from(task)
       .where(
         and(
           eq(task.teamId, teamId),
@@ -117,29 +129,62 @@ async function closeRunnerTask(db: Db, teamId: string, projectId: string, author
           eq(task.runner, true),
           eq(task.prNumber, pr.number ?? 0),
           eq(task.branch, pr.head?.ref ?? ""),
-          merged ? notInArray(task.status, ["done", "cancelled"]) : inArray(task.status, ["claimed", "in_progress", "review"]),
+          ne(task.status, "done"),
+          or(isNull(task.prEventAt), lt(task.prEventAt, when)),
         ),
       )
+      .for("update");
+    if (!t) return;
+    const moves = closing && (t.status === "review" || t.status === "in_progress");
+    const note = { at: new Date().toISOString(), user_id: authorId, agent_id: null, text: merged ? "merged" : "PR closed without merge" };
+    const [row] = await tx
+      .update(task)
+      .set({
+        prEventAt: when,
+        ...(moves && {
+          status: merged ? ("done" as const) : ("blocked" as const),
+          leaseOwner: null,
+          leaseUntil: null,
+          notes: sql`(${task.notes} || ${JSON.stringify([note])}::jsonb)`,
+          version: sql`${task.version} + 1`,
+          updatedAt: new Date(),
+        }),
+      })
+      .where(eq(task.id, t.id))
       .returning();
-    for (const t of rows) {
-      if (t.notes.length > MAX_NOTES)
-        await tx
-          .update(task)
-          .set({ notes: t.notes.slice(-MAX_NOTES) })
-          .where(eq(task.id, t.id));
-      await appendAudit(tx, {
-        teamId,
-        actorType: "hub",
-        via: "system",
-        action: merged ? "runner.merged" : "runner.pr_closed",
-        subjectId: t.id,
-        data: { status: t.status, version: t.version, pr_number: t.prNumber },
-      });
-    }
+    if (!moves || !row) return;
+    if (row.notes.length > MAX_NOTES)
+      await tx
+        .update(task)
+        .set({ notes: row.notes.slice(-MAX_NOTES) })
+        .where(eq(task.id, row.id));
+    await appendAudit(tx, {
+      teamId,
+      actorType: "hub",
+      via: "system",
+      action: merged ? "runner.merged" : "runner.pr_closed",
+      subjectId: row.id,
+      data: {
+        status: row.status,
+        version: row.version,
+        pr_number: row.prNumber,
+        event: merged ? "merged" : "closed",
+        delivery: meta.delivery,
+        body_sha256: meta.bodyHash,
+      },
+    });
   });
 }
 
-export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId: string, event: string, e: Payload, bodyHash: string) {
+export async function handleGithubEvent(
+  deps: MessagingDeps,
+  log: Logger,
+  teamId: string,
+  event: string,
+  e: Payload,
+  bodyHash: string,
+  delivery: string | null = null,
+) {
   const { db } = deps;
   const what = describe(event, e);
   if (!what || !e.repository?.full_name) return;
@@ -149,7 +194,7 @@ export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId
     .where(and(eq(project.teamId, teamId), eq(project.repoFingerprint, repoFingerprint(`github.com/${e.repository.full_name}`))));
   if (!p) return;
   const author = await bridgeAuthor(db, teamId, "GitHub");
-  if (event === "pull_request") await closeRunnerTask(db, teamId, p.id, author.p.user.id, e);
+  if (event === "pull_request") await linkRunnerTask(db, teamId, p.id, author.p.user.id, e, { delivery, bodyHash });
   const existing = await projectThread(db, teamId, p.id, author.p.user.id);
   try {
     const sent = await sendMessage(

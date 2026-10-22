@@ -379,6 +379,8 @@ export const task = pgTable(
     reviewRound: integer("review_round").notNull().default(0),
     // The runner's reviewer approved the PR as it is now; a restack that changes the code clears it.
     approved: boolean("approved").notNull().default(false),
+    // When the last GitHub event about its PR happened, as GitHub dates it: an event not newer is ignored.
+    prEventAt: timestamp("pr_event_at"),
     attempts: integer("attempts").notNull().default(0),
     leaseOwner: text("lease_owner"),
     leaseUntil: timestamp("lease_until"),

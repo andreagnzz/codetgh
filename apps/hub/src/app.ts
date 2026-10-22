@@ -687,6 +687,8 @@ export function createApp({
         // The signature covers the body, not X-GitHub-Delivery: a replayed body keeps its key whatever id comes with it.
         // Hex: the secret scanner reads a base64 digest as a secret.
         createHash("sha256").update(body).digest("hex"),
+        // Recorded in the audit as metadata; a GitHub delivery id is a UUID.
+        /^[A-Za-z0-9-]{1,64}$/.test(c.req.header("x-github-delivery") ?? "") ? (c.req.header("x-github-delivery") ?? null) : null,
       );
     return c.body(null, 202);
   });
