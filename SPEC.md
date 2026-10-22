@@ -836,8 +836,9 @@ Le lanceur démarre `claude remote-control` dans le dossier du projet et rapport
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
 - Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
 - Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
-- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
+- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`, ou en `review` si elle a une PR. Le runner garde un identifiant stable (`~/.config/codetgh/runner-id`) : redémarré, il reprend ses propres baux. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
 - Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
+- La revue prend une tâche en `review` avec une PR et moins de 3 tours, par un bail qui la laisse en `review`. Un agent neuf la relit sans outil d'écriture, sans commit, push, fusion ni revue postée ; le runner poste la revue et suit le verdict. Le runner ne passe jamais une tâche en `done` : c'est la fusion qui le fait.
 - Les agents tournent en mode `auto`, ou en `bypassPermissions` seulement si `runner.json` le dit, avec les règles deny et le hook Bash des sessions déléguées.
 - L'audit garde le bail, les mises à jour et les changements d'état, en métadonnées seulement.
 

@@ -139,6 +139,8 @@ Each folder runs a single Remote Control server. A session you create from claud
 
 The runner does the tasks flagged `runner` (`/codetgh:split --run`) of the projects the owner switched on in the console, **Projects**. Only an owner or an admin can flag a task for the runner. For each task it creates a git worktree in `~/.config/codetgh/worktrees/<project>/<task>`, outside the clone, on a branch `codetgh/<task>`. It runs `claude -p` there, pushes the branch and opens a PR with `gh`, titled with the task's title. The task then moves to `review`. A task whose dependency is in review is stacked on the parent's branch.
 
+Then a fresh `claude -p` reviews the PR in the same worktree, read-only: `Edit`, `Write` and `NotebookEdit` are denied, and so are `git commit`, `git push`, `gh pr merge` and `gh pr review`. It ends with `VERDICT: APPROVE` or `VERDICT: REQUEST_CHANGES`, and the runner posts the review on the PR. GitHub refuses an approval from the PR's author, which the runner's account is, so the review then lands as a comment with the verdict on its last line. On approval the task stays in `review` until the merge. On changes requested the author agent runs again in the worktree with the review, and the runner pushes the fix. After 3 rounds without approval the task is `blocked` and the owner gets a note. A review with no verdict, a crash or a timeout counts as changes requested.
+
 It is bounded like the launcher:
 - it runs on the owner's machine with the owner's token, and the hub only says *on* or *off* and which task to take;
 - the folders come from a local list, and the commands are fixed in the CLI;
@@ -160,10 +162,10 @@ Setup, once:
      "job_timeout_min": 45
    }
    ```
-   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto`) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
+   `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
 4. **Optional routing.** `.codetgh/routing.json`, committed on the default branch, picks `--model` and `--effort` with ordered rules; the first match wins. The runner reads it from `origin/HEAD`, never from a worktree:
    ```json
-   { "rules": [{ "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
+   { "rules": [{ "match": { "role": "reviewer" }, "model": "opus" }, { "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
    ```
 5. **Run it as a user service**, like the launcher:
    ```bash
@@ -184,7 +186,7 @@ Setup, once:
    journalctl --user -u codetgh-runner -f      # the tasks it takes, their PRs and blocks
    ```
 
-Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents and leaves the leases to expire after 10 minutes, so the tasks go back to the queue.
+Each agent's output goes to `~/.config/codetgh/runner-logs/<task>-<attempt>.log`. A failed task is `blocked` with a fixed reason and the log's name; the agent's output never leaves this machine. The worktree is kept for inspection. Stopping the service stops the agents. The runner keeps one id in `~/.config/codetgh/runner-id`: restarted within 10 minutes, it resumes its own leases; otherwise they expire, a task without a PR goes back to the queue and a task with one goes back to review.
 
 ## Discord bot (optional)
 
