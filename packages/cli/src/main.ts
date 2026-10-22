@@ -2115,12 +2115,20 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         const origin = await promisify(execFile)("git", ["-C", dir, "remote", "get-url", "origin"], { timeout: 5000 }).catch(() => null);
         if (!origin) throw new Error(`${dir} (project ${id}) is not a git repository with an origin: clone the project there`);
         // Read-only: a clone someone works in is not the runner's to sweep, commit in or quarantine.
+        // shortcut: a safety net for the owner, not a boundary: an unreadable /proc only warns. Refuse if it must hold.
         if (process.platform === "linux") {
-          const real = realpathSync(dir);
-          const user = procs().find((pid) => cwdIn(pid, real) && !runnersOwn(pid));
+          let user: string | undefined;
+          let comm = "?";
+          try {
+            const real = realpathSync(dir);
+            user = procs().find((pid) => cwdIn(pid, real) && !runnersOwn(pid));
+            if (user) comm = readFileSync(`/proc/${user}/comm`, "utf8").trim();
+          } catch (e) {
+            io.err(`WARNING: could not check that no other process uses ${dir}: ${(e as Error).message}`);
+          }
           if (user)
             throw new Error(
-              `${dir} is in use by another process (pid ${user}, ${readFileSync(`/proc/${user}/comm`, "utf8").trim()}); give the runner its own clone: git clone ${origin.stdout.trim()} ~/runner/${basename(dir)}`,
+              `${dir} is in use by another process (pid ${user}, ${comm}); give the runner its own clone: git clone ${origin.stdout.trim()} ~/runner/${basename(dir)}`,
             );
         }
         const common = resolve(dir, (await promisify(execFile)("git", ["-C", dir, "rev-parse", "--git-common-dir"])).stdout.trim());

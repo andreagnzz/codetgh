@@ -163,6 +163,9 @@ if (verb === "version") process.exit(process.env.FAKE_DOCKER_DOWN ? 1 : 0);
 if (verb === "ps") {
   const label = rest.find((a) => a.startsWith("--filter=label=")).slice(15);
   const job = label.startsWith("codetgh.job=") ? label.slice(12) : null;
+  // A docker that errors, or a job's container that will not go.
+  if (job && process.env.FAKE_DOCKER_PS_FAIL) process.exit(1);
+  if (job && process.env.FAKE_DOCKER_STUCK) console.log(job);
   for (const name of readdirSync(boxes)) if (!job || name === job) console.log(name);
 } else if (verb === "kill" || verb === "rm") {
   for (const name of rest.filter((a) => !a.startsWith("-"))) {
@@ -862,6 +865,26 @@ describe("codetgh runner review loop", () => {
     }
     expect(existsSync(`${worktree(id)}.quarantine`)).toBe(false);
   });
+
+  for (const [why, flag] of [
+    ["docker ps fails", "FAKE_DOCKER_PS_FAIL"],
+    ["the job's container is still listed", "FAKE_DOCKER_STUCK"],
+  ] as const)
+    it(`with isolation docker, blocks, quarantines and pushes nothing when ${why} after the agent`, async () => {
+      const id = await create(`docker cleanup ${flag}`);
+      process.env[flag] = "1";
+      try {
+        await runner();
+      } finally {
+        delete process.env[flag];
+      }
+      const t = await row(id);
+      expect(t?.status).toBe("blocked");
+      expect(t?.notes.at(-1)?.text).toContain("could not stop every process the agent started");
+      expect(onOrigin(id)).toBe("");
+      expect(existsSync(`${worktree(id)}.quarantine`)).toBe(true);
+      rmSync(`${worktree(id)}.quarantine`);
+    });
 
   it.skipIf(process.platform !== "linux")(
     "with isolation none, kills the marked process in the worktree and spares an unmarked one in the clone",
