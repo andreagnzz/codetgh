@@ -356,16 +356,21 @@ async function preToolUse(input: Input) {
   };
 }
 
-// PreToolUse on Bash, delegate sessions only (codetgh start --accept-requests-from): no network, never "allow".
-// Exit 2 blocks the call and hands the reason to Claude, which replies "blocked: …" to the requester.
+// PreToolUse on Bash, delegate sessions (codetgh start --accept-requests-from) and runner jobs (CODETGH_RUNNER=1) only:
+// no network, never "allow". Exit 2 blocks the call and hands the reason to Claude, which replies "blocked: …".
 async function preBash(input: Input) {
-  if (!process.env.CODETGH_ACCEPT_REQUESTS_FROM) return null;
+  const runner = process.env.CODETGH_RUNNER === "1";
+  if (!process.env.CODETGH_ACCEPT_REQUESTS_FROM && !runner) return null;
   const command = (input.tool_input as { command?: unknown } | undefined)?.command;
   if (typeof command !== "string") return null;
   const { delegateBlock } = await import("@codetgh/guard");
   const reason = delegateBlock(command);
   if (!reason) return null;
-  process.stderr.write(`CodeTgh delegate session: ${reason}. Do not retry another way; reply to the requester with "blocked: ${reason}".`);
+  process.stderr.write(
+    runner
+      ? `CodeTgh runner job: ${reason}. Do not retry another way; stop and end your answer with "blocked: ${reason}".`
+      : `CodeTgh delegate session: ${reason}. Do not retry another way; reply to the requester with "blocked: ${reason}".`,
+  );
   process.exitCode = 2;
   return null;
 }
