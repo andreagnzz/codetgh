@@ -9,6 +9,7 @@ import { RoutingRules } from "@codetgh/shared/rest";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { project, task } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program, runnerTiming } from "../packages/cli/src/main.js";
@@ -83,7 +84,9 @@ const lines = (file: string) =>
     : [];
 
 beforeAll(async () => {
-  hub = await startHub();
+  // Every test creates tasks: a clock that jumps an hour per call keeps the write quota out of the way.
+  let now = 0;
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   // A bare "origin" with one commit on main, and the clone the runner works in.
   root = mkdtempSync(join(tmpdir(), "codetgh-runner-git-"));
