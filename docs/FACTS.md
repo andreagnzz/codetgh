@@ -506,3 +506,18 @@ From [CLI reference](https://code.claude.com/docs/en/cli-reference) and [Run Cla
 
 Not run against a real Claude Code: `e2e/runner.test.ts` uses a fake `claude` and a fake `gh`.
 
+### Runner hardening: git config and permission paths (docs read 2026-10-22, git 2.43, Claude Code 2.1.307)
+
+From [git-config](https://git-scm.com/docs/git-config) § ENVIRONMENT and § VARIABLES:
+- **Overrides.** `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` "will override values in configuration files, but will be overridden by any explicit options passed via git -c": the same command scope as `-c`. The runner sets them on its own git and gh calls, so the git that gh runs gets them too.
+- **`core.hooksPath`.** Git looks for hooks in that directory instead of `$GIT_DIR/hooks`. `/dev/null` holds no hook.
+- **`core.sshCommand`.** fetch and push use it instead of `ssh`, and `GIT_SSH_COMMAND` overrides it. An empty value would leave git with an empty command, so the runner sets `ssh`.
+- **`core.fsmonitor`.** It can name a hook program that git runs. The runner sets `false`.
+- **`protocol.allow`.** It is the default for protocols without their own `protocol.<name>.allow`. The defaults are `always` for http, https, git and ssh, `never` for ext, and `user` for file and the rest. A repository config could set `protocol.ext.allow=always`, so the runner sets `protocol.ext.allow=never` explicitly. It allows https, ssh and file, and refuses the rest.
+- Measured: with planted `post-checkout` and `pre-push` hooks, the runner's `worktree add` and `push` run neither (`e2e/runner.test.ts`). Without these overrides, the test fails. `push -u` and `worktree add -b` without `--no-track` would write `branch.*` to the shared config, so the runner uses neither. That keeps the config hash stable.
+
+From [Permissions](https://code.claude.com/docs/en/permissions) § Read and Edit:
+- "Claude Code checks file permissions against `Edit(path)` and `Read(path)` rules only." A path rule for `Write` is never consulted, so the runner denies with `Edit(...)`.
+- Edit deny rules also cover "file commands Claude Code recognizes in Bash, such as … `sed`, and `tee`, and … the targets of Bash redirections". They do not cover "arbitrary subprocesses that read or write files indirectly", hence the runner's own git hardening and config hash.
+- `//path` is absolute, and a plain `**/x` pattern matches only under the current directory. `//**/.git/**` matches anywhere on the filesystem. On Windows, paths are normalized to `/c/...` before matching.
+
