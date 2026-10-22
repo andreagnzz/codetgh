@@ -158,13 +158,17 @@ export const RunnerReport = z.object({
   running: z.number().int().min(0).max(100),
   error: z.string().max(300).optional(),
 });
-export const RunnerReadyQuery = z.object({ project: z.string().min(1).max(64) });
+// The review phase: tasks in review with a PR and fewer than REVIEW_ROUNDS rounds, for the runner's reviewer.
+export const REVIEW_ROUNDS = 3;
+const phase = z.literal("review").optional();
+export const RunnerReadyQuery = z.object({ project: z.string().min(1).max(64), phase });
 export const RunnerTask = z.object({
   id: z.string(),
   title: z.string(),
   status: z.enum(TASK_STATUSES),
   version: z.number(),
   assignee: z.string().nullable(),
+  project_id: z.string().nullable(),
   depends_on: z.array(z.string()),
   paths: z.array(z.string()),
   runner: z.boolean(),
@@ -177,13 +181,15 @@ export const RunnerTask = z.object({
   updated_at: z.string(),
 });
 export const RunnerReady = z.object({ tasks: z.array(RunnerTask) });
-export const RunnerLeaseInput = z.object({ task_id: taskId, owner: leaseOwner });
+export const RunnerLeaseInput = z.object({ task_id: taskId, owner: leaseOwner, phase });
+export const RunnerLeasesQuery = z.object({ owner: leaseOwner });
 // text: the header, then the creator's title and body in the <peer_message> envelope, as the task resource gives it.
 export const RunnerLease = z.object({
   task: RunnerTask,
   parents: z.array(z.object({ task_id: z.string(), branch: z.string().nullable(), pr_number: z.number().nullable() })),
   text: z.string(),
 });
+export const RunnerLeases = z.object({ leases: z.array(RunnerLease) });
 export const RunnerRenew = z.object({ lease_until: z.string() });
 export const RunnerUpdateInput = z.object({
   task_id: taskId,
@@ -367,7 +373,8 @@ export const REST_ROUTES = {
   runnerReady: {
     method: "GET",
     path: "/v1/runner/ready",
-    summary: "Runner tasks of a switched-on project whose dependencies are done or in review with a PR, oldest first (owner only)",
+    summary:
+      "Runner tasks of a switched-on project whose dependencies are done or in review with a PR, oldest first; phase=review: its tasks in review with a PR, fewer than 3 rounds and no live lease (owner only)",
     query: RunnerReadyQuery,
     output: RunnerReady,
   },
@@ -375,9 +382,16 @@ export const REST_ROUTES = {
     method: "POST",
     path: "/v1/runner/lease",
     summary:
-      "Take a ready task for 10 minutes; returns it, its parents' PR branches and its text in an envelope (owner only; 409 if taken)",
+      "Take a ready task for 10 minutes, or with phase=review a task to review, which stays in review; returns it, its parents' PR branches and its text in an envelope (owner only; 409 if taken)",
     body: RunnerLeaseInput,
     output: RunnerLease,
+  },
+  runnerLeases: {
+    method: "GET",
+    path: "/v1/runner/leases",
+    summary: "The live leases a runner holds, as the lease gave them, so a restarted runner resumes them (owner only)",
+    query: RunnerLeasesQuery,
+    output: RunnerLeases,
   },
   runnerRenew: {
     method: "POST",
@@ -389,7 +403,8 @@ export const REST_ROUTES = {
   runnerUpdate: {
     method: "POST",
     path: "/v1/runner/update",
-    summary: "Set the branch, PR and round of a leased task and move its status; review, blocked or done drops the lease (owner only)",
+    summary:
+      "Set the branch, PR and round of a leased task and move its status, never to done; review or blocked drops the lease (owner only)",
     body: RunnerUpdateInput,
     output: RunnerTask,
   },

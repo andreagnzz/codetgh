@@ -25,6 +25,7 @@ import {
   PublishKeyInput,
   RevokeInvitationsInput,
   RunnerLeaseInput,
+  RunnerLeasesQuery,
   RunnerReadyQuery,
   RunnerReport,
   RunnerUpdateInput,
@@ -83,7 +84,7 @@ import {
   unread,
 } from "./domain/messages.js";
 import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
-import { expireLeases, leaseTask, readyTasks, renewLease, reportRun, runnerUpdate, runTargets } from "./domain/runner.js";
+import { expireLeases, leaseTask, readyTasks, renewLease, reportRun, runnerLeases, runnerUpdate, runTargets } from "./domain/runner.js";
 import { handleSlackCommand, handleSlackEvent, startSlackRelay, validSlackSignature } from "./domain/slack.js";
 import { backchannelLogout } from "./domain/sso.js";
 import { inviteMember, revokeInvitations } from "./domain/teams.js";
@@ -554,11 +555,16 @@ export function createApp({
   v1.get("/runner/ready", async (c) => {
     const parsed = RunnerReadyQuery.safeParse(c.req.query());
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
-    return c.json(await readyTasks(db, c.get("principal"), parsed.data.project));
+    return c.json(await readyTasks(db, c.get("principal"), parsed.data.project, parsed.data.phase));
   });
   v1.post("/runner/lease", async (c) => {
-    const { task_id, owner } = await parse(c, RunnerLeaseInput);
-    return c.json(await leaseTask(db, c.get("principal"), task_id, owner));
+    const { task_id, owner, phase } = await parse(c, RunnerLeaseInput);
+    return c.json(await leaseTask(db, c.get("principal"), task_id, owner, phase));
+  });
+  v1.get("/runner/leases", async (c) => {
+    const parsed = RunnerLeasesQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await runnerLeases(db, c.get("principal"), parsed.data.owner));
   });
   v1.post("/runner/renew", async (c) => {
     const { task_id, owner } = await parse(c, RunnerLeaseInput);
