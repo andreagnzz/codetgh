@@ -493,3 +493,16 @@ Measured with `claude -p` and `--settings` registering a PreToolUse hook on `Bas
 - With `echo` (read-only, no prompt), the output was the rewritten command's.
 
 So `updatedInput` alone applies the new input and keeps the person's permission flow; `"allow"` would skip prompts no rule skipped, and `"ask"` would prompt where a rule allows, and counts as a denial under bypassPermissions (above). The plugin's `pre-tool-use` hook adds the session's `agent` (saved from the session-start reply, refreshed by the cwd hook) to every CodeTgh tool call that names none, on the plugin's tools and on the claude.ai connector's (`mcp__claude_ai_CodeTgh__.*`, the name the connector gets when it is called « CodeTgh » in claude.ai), with no decision. Every hub tool takes `agent` in its zod input, so it is not dropped. A secret still returns `deny`, without `updatedInput`. Tested in `e2e/mcp-session-agent.test.ts`.
+
+### `claude -p` for runner jobs (docs read 2026-10-22, Claude Code 2.1.307, Linux)
+
+From [CLI reference](https://code.claude.com/docs/en/cli-reference) and [Run Claude Code programmatically](https://code.claude.com/docs/en/headless):
+- **Flags with `-p`.** The headless page says "Not every CLI option combines with `-p`" and names the ones rejected: `--bg`, and `--cloud` with a task description. `--permission-mode` (`default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, `manual`) "Begin[s] in a specified permission mode" and the headless page uses it with `-p` (`--permission-mode auto`). `--settings` takes a file or inline JSON whose keys override the settings files for the session. `--model` and `--effort` (`low` to `max`) set them for the session. None is marked interactive-only. `claude --help` on 2.1.307 lists all four, and `--output-format` "only works with --print".
+- **Output.** `--output-format json` prints one JSON result with `result`, `session_id`, `total_cost_usd`. Claude Code exits 0 on success and non-zero when the run fails.
+- **Default mode.** From v2.1.302, a `-p` run with no mode set starts in Manual mode, where a call that needs approval is denied. The runner always passes `--permission-mode`.
+- **Stdin.** `cat file | claude -p "query"` processes piped content with the prompt. The runner passes its fixed one-line prompt as the argument and the task's peer_message envelope on stdin, so no envelope character goes through cmd.exe on Windows.
+- **Trust and hooks.** A `-p` session shows no workspace trust dialog and still runs the hooks of the project's settings and of enabled plugins, unless `--bare`. The runner's `--settings` turns the CodeTgh plugin on, and `CODETGH_RUNNER=1` turns its `pre-bash` check on.
+- **SIGTERM.** A `-p` run stopped with SIGTERM exits 143 and "terminates the process tree of any Bash command that is still running". The runner's timeout and a lost lease send SIGTERM on Linux and macOS, and `taskkill /T /F` on Windows (`stopServer`).
+
+Not run against a real Claude Code: `e2e/runner.test.ts` uses a fake `claude` and a fake `gh`.
+

@@ -106,6 +106,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | `codetgh invite <email>` | Create a 7-day invitation link (admins) |
 | `codetgh project new <name>` | Optional: name a repository's team project |
 | `codetgh launcher` | Owner's machine: run Remote Control for the projects switched on in the console |
+| `codetgh runner` | Owner's machine: do the runner tasks of the projects switched on in the console, one `claude -p` per task in a git worktree, one PR each |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 | `codetgh backup` / `update` | (admins, on the hub's machine) Back up the hub with a restore check, or update the hub safely |
 
