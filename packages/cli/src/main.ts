@@ -11,6 +11,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -528,6 +529,34 @@ function endAgent(child: ChildProcess, signal: NodeJS.Signals) {
   } catch {}
 }
 
+// Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
+// ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
+// still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
+async function sweepAgent(marker: string, wt: string) {
+  const tag = `CODETGH_RUNNER_JOB=${marker}\0`;
+  for (let round = 0; round < 5; round++) {
+    let found = 0;
+    for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d) && Number(d) !== process.pid)) {
+      let hit = false;
+      try {
+        hit = readFileSync(`/proc/${pid}/environ`, "latin1").includes(tag);
+      } catch {}
+      try {
+        const cwd = readlinkSync(`/proc/${pid}/cwd`);
+        hit ||= cwd === wt || cwd.startsWith(`${wt}/`);
+      } catch {}
+      if (!hit) continue;
+      found++;
+      try {
+        process.kill(Number(pid), "SIGKILL");
+      } catch {}
+    }
+    if (!found) return true;
+    await sleep(100);
+  }
+  return false;
+}
+
 // One task: worktree, agent, push, PR; or, for a task in review, one review round and its fixes. Every git and gh call
 // is an argv, never a shell string. What goes to the hub is a fixed reason and the log's name; the details, the review
 // included, stay in the log on this machine and on the PR.
@@ -582,7 +611,9 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     step = "claude could not start";
     const fd = openSync(log, "a", 0o600);
     chmodSync(log, 0o600);
-    const env: NodeJS.ProcessEnv = { ...process.env, CODETGH_RUNNER: "1" };
+    // The marker follows every process the agent starts, detached or not, so the sweep finds them.
+    const marker = randomBytes(12).toString("hex");
+    const env: NodeJS.ProcessEnv = { ...process.env, CODETGH_RUNNER: "1", CODETGH_RUNNER_JOB: marker };
     // Not a delegate session: CODETGH_RUNNER turns the same Bash check on instead.
     delete env.CODETGH_ACCEPT_REQUESTS_FROM;
     const args = [
@@ -628,7 +659,9 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     clearInterval(beat);
     // Whatever it started and left behind could still write to the repository after the checks below.
     endAgent(child, "SIGKILL");
-    return { code, ended, out };
+    // shortcut: only Linux is swept; elsewhere the group kill is all, so the runner refuses bypassPermissions there.
+    const clean = process.platform === "linux" ? await sweepAgent(marker, wt) : true;
+    return { code, ended, out, clean };
   };
   // The author agent, then its new commits since `since` pushed. false: the job stopped or lost its lease.
   const author = async (rule: Rule, stdin: string, since: string, prompt = RUNNER_PROMPT) => {
@@ -639,6 +672,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       lost();
       return false;
     }
+    if (!r.clean) fail("the runner could not stop every process the agent started");
     if (r.ended === "timeout") fail(`the agent ran past ${cfg.job_timeout_min} min and was stopped`);
     if (r.code !== 0) fail(`the agent exited with ${r.code ?? "an error"}`);
     step = "git rev-list failed";
@@ -694,6 +728,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       const r = await claude(reviewPrompt(pr, task.base_branch || main), REVIEW_DENY, rule("reviewer"), lease.text);
       if (job.stopped) return;
       if (r.ended === "lost") return lost();
+      if (!r.clean) fail("the runner could not stop every process the agent started");
       untouched();
       step = "git fetch failed";
       await git(["-C", dir, "fetch", "origin"]);
@@ -1636,6 +1671,11 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       if (!parsed.success)
         throw new Error(`${opts.config}: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
       const cfg = parsed.data;
+      // Only Linux sweeps what an agent detached (sweepAgent): elsewhere an unprompted agent could outlive its checks.
+      if (cfg.permission_mode === "bypassPermissions" && process.platform !== "linux")
+        throw new Error(
+          `${opts.config}: permission_mode bypassPermissions needs Linux, where the runner can stop every process an agent starts`,
+        );
       for (const [id, dir] of Object.entries(cfg.projects)) {
         const origin = await promisify(execFile)("git", ["-C", dir, "remote", "get-url", "origin"], { timeout: 5000 }).catch(() => null);
         if (!origin) throw new Error(`${dir} (project ${id}) is not a git repository with an origin: clone the project there`);

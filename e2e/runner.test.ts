@@ -39,7 +39,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const stdin = readFileSync(0, "utf8");
-appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, stdin }) + "\\n");
+appendFileSync(join(dir, "claude.jsonl"), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), runner: process.env.CODETGH_RUNNER ?? null, accept: process.env.CODETGH_ACCEPT_REQUESTS_FROM ?? null, job: process.env.CODETGH_RUNNER_JOB ?? null, stdin }) + "\\n");
 // The reviewer: REJECT<n> in the title requests changes on the first n reviews, NOVERDICT gives none.
 if (process.argv[3].includes("VERDICT")) {
   const subject = stdin.match(/Subject: (.*)/)[1].replace(/[^A-Za-z0-9]/g, "_");
@@ -61,6 +61,11 @@ if (process.argv[3].includes("VERDICT")) {
   process.exit(0);
 }
 // Leaves a process behind that rewrites the shared git config after the agent exits.
+// Leaves a process in its own session, out of the agent's process group, that writes to the shared git config.
+if (stdin.includes("SETSID")) {
+  const config = join(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim(), "config");
+  spawn("setsid", ["sh", "-c", 'sleep 1; echo "# x" >> "$0"', config], { stdio: "ignore", detached: true }).unref();
+}
 if (stdin.includes("LATEWRITE"))
   spawn("sh", ["-c", "sleep 1; git config alias.late x"], { stdio: "ignore" }).unref();
 if (stdin.includes("WTCONFIG"))
@@ -377,7 +382,12 @@ describe("codetgh runner", () => {
     expect(r?.notes.at(-1)?.text).toContain("0.02 min");
   });
 
-  it("passes bypassPermissions only when runner.json asks for it", async () => {
+  // Only Linux can sweep what an agent detached (runJob): elsewhere the runner refuses bypassPermissions.
+  it.skipIf(process.platform === "linux")("refuses bypassPermissions where it cannot sweep the agent's processes", async () => {
+    await expect(runner({ permission_mode: "bypassPermissions" })).rejects.toThrow(/bypassPermissions/);
+  });
+
+  it.skipIf(process.platform !== "linux")("passes bypassPermissions only when runner.json asks for it", async () => {
     await create("bypass");
     await runner({ permission_mode: "bypassPermissions", auto_merge: true });
     expect(lines("claude.jsonl").at(-1).argv).toEqual(expect.arrayContaining(["--permission-mode", "bypassPermissions"]));
@@ -568,6 +578,16 @@ describe("codetgh runner review loop", () => {
     await sleep(1500);
     expect(await row(id)).toMatchObject({ status: "review" });
     expect(() => git(clone, "config", "alias.late")).toThrow();
+  });
+
+  it.skipIf(process.platform !== "linux")("kills a process the agent detached with setsid before the tamper check", async () => {
+    const config = readFileSync(join(clone, ".git/config"), "utf8");
+    const id = await create("SETSID");
+    await runner();
+    await sleep(1500);
+    expect(readFileSync(join(clone, ".git/config"), "utf8")).toBe(config);
+    expect(await row(id)).toMatchObject({ status: "review" });
+    expect(lines("claude.jsonl").at(-1).job).toMatch(/^[0-9a-f]{24}$/);
   });
 
   it("leaves a task alone while another runner process holds its lock", async () => {
