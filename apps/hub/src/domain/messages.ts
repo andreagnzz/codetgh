@@ -288,8 +288,10 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
           .where(eq(message.threadId, parent.threadId))),
       );
     const recipients = new Map<string, Recipient>();
+    // Naming yourself is a note to your own console and sessions (the runner tells its owner); @team and replies skip you.
+    const toSelf = to.includes(`@${p.handle}`);
     for (const r of addressed.recipients) {
-      if (r.userId === p.user.id && (r.agentId === null || r.agentId === fromAgentId)) continue;
+      if (r.userId === p.user.id && ((r.agentId === null && !toSelf) || r.agentId === fromAgentId)) continue;
       const key = `${r.userId}:${r.agentId ?? ""}`;
       if (!recipients.has(key)) recipients.set(key, r);
     }
