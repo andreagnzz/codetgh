@@ -1,15 +1,16 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { Db } from "../db/index.js";
-import { project, team, thread } from "../db/schema.js";
+import { project, task, team, thread } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { bridgeAuthor, projectThread } from "./bridges.js";
 import { type MessagingDeps, sendMessage } from "./messages.js";
+import { MAX_NOTES } from "./tasks.js";
 
 // Each team has its own webhook URL and secret, so only the GitHub App its admin configured can post to it.
 // The secret is derived from the hub secret and a nonce: rotating the nonce replaces it, and the database never holds it.
@@ -54,7 +55,15 @@ type Payload = {
   action?: string;
   repository?: { full_name?: string };
   sender?: { login?: string };
-  pull_request?: { number?: number; title?: string; html_url?: string; merged?: boolean };
+  pull_request?: {
+    number?: number;
+    title?: string;
+    html_url?: string;
+    merged?: boolean;
+    head?: { ref?: string };
+    updated_at?: string;
+    closed_at?: string | null;
+  };
   check_suite?: { conclusion?: string | null; head_branch?: string | null; head_sha?: string; pull_requests?: Array<{ number?: number }> };
 };
 
@@ -91,7 +100,91 @@ function describe(event: string, e: Payload) {
   return null;
 }
 
-export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId: string, event: string, e: Payload, bodyHash: string) {
+// A runner task's PR, matched on the project's repository, its number and its branch `codetgh/<task>`. Each matching event
+// newer than the last one applied, as GitHub dates it, is recorded; a close moves the task only from review or
+// in_progress: merged to done, unmerged to blocked. A done task never changes, a reopen restores nothing (the owner runs
+// codetgh run retry), and a replayed or late delivery is not newer, so it is a no-op. Metadata only.
+async function linkRunnerTask(
+  db: Db,
+  teamId: string,
+  projectId: string,
+  authorId: string,
+  e: Payload,
+  meta: { delivery: string | null; bodyHash: string },
+) {
+  const pr = e.pull_request;
+  const closing = e.action === "closed";
+  const at = Date.parse((closing ? pr?.closed_at : null) ?? pr?.updated_at ?? "");
+  if (!pr?.number || !pr.head?.ref || Number.isNaN(at)) return;
+  const when = new Date(at);
+  const merged = closing && pr.merged === true;
+  await db.transaction(async (tx) => {
+    const [t] = await tx
+      .select()
+      .from(task)
+      .where(
+        and(
+          eq(task.teamId, teamId),
+          eq(task.projectId, projectId),
+          eq(task.runner, true),
+          eq(task.prNumber, pr.number ?? 0),
+          eq(task.branch, pr.head?.ref ?? ""),
+          ne(task.status, "done"),
+          or(isNull(task.prEventAt), lt(task.prEventAt, when)),
+        ),
+      )
+      .for("update");
+    if (!t) return;
+    const moves = closing && (t.status === "review" || t.status === "in_progress");
+    const note = { at: new Date().toISOString(), user_id: authorId, agent_id: null, text: merged ? "merged" : "PR closed without merge" };
+    const [row] = await tx
+      .update(task)
+      .set({
+        prEventAt: when,
+        ...(moves && {
+          status: merged ? ("done" as const) : ("blocked" as const),
+          leaseOwner: null,
+          leaseUntil: null,
+          notes: sql`(${task.notes} || ${JSON.stringify([note])}::jsonb)`,
+          version: sql`${task.version} + 1`,
+          updatedAt: new Date(),
+        }),
+      })
+      .where(eq(task.id, t.id))
+      .returning();
+    if (!moves || !row) return;
+    if (row.notes.length > MAX_NOTES)
+      await tx
+        .update(task)
+        .set({ notes: row.notes.slice(-MAX_NOTES) })
+        .where(eq(task.id, row.id));
+    await appendAudit(tx, {
+      teamId,
+      actorType: "hub",
+      via: "system",
+      action: merged ? "runner.merged" : "runner.pr_closed",
+      subjectId: row.id,
+      data: {
+        status: row.status,
+        version: row.version,
+        pr_number: row.prNumber,
+        event: merged ? "merged" : "closed",
+        delivery: meta.delivery,
+        body_sha256: meta.bodyHash,
+      },
+    });
+  });
+}
+
+export async function handleGithubEvent(
+  deps: MessagingDeps,
+  log: Logger,
+  teamId: string,
+  event: string,
+  e: Payload,
+  bodyHash: string,
+  delivery: string | null = null,
+) {
   const { db } = deps;
   const what = describe(event, e);
   if (!what || !e.repository?.full_name) return;
@@ -101,6 +194,7 @@ export async function handleGithubEvent(deps: MessagingDeps, log: Logger, teamId
     .where(and(eq(project.teamId, teamId), eq(project.repoFingerprint, repoFingerprint(`github.com/${e.repository.full_name}`))));
   if (!p) return;
   const author = await bridgeAuthor(db, teamId, "GitHub");
+  if (event === "pull_request") await linkRunnerTask(db, teamId, p.id, author.p.user.id, e, { delivery, bodyHash });
   const existing = await projectThread(db, teamId, p.id, author.p.user.id);
   try {
     const sent = await sendMessage(

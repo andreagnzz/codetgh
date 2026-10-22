@@ -39,10 +39,20 @@ it("documents split's approval flags and calls only tools the hub has", async ()
   expect(text).toContain("--dispatch");
   expect(text).toMatch(/never turns a mode on/);
   expect(text).toMatch(/create nothing until the user approves/);
+  // --run: the runner is an assignee, flagged by an owner or an admin only, and gets only self-contained work.
+  expect(text).toContain("--run");
+  expect(text).toContain("`runner: true`");
+  expect(text).toMatch(/only an owner or an admin may set/);
+  expect(text).toMatch(/propose the plan as without `--run`/);
+  expect(text).toMatch(/self-contained, well specified, covered by tests and touch few files/);
+  expect(text).toMatch(/product judgment, secrets or access .*manual QA, or an OS other than Linux/);
+  expect(text).toMatch(/same files go to one owner \(one person, or the runner\)/);
+  expect(text).toContain("with `runner` as the assignee");
+  expect(text).toMatch(/`Size: S`, `Size: M` or `Size: L` \(tasks have no size field\)/);
   const client = await mcpClient(hub.url, team.sam.token);
   const tools = new Set((await client.listTools()).tools.map((t) => t.name));
   await client.close();
-  for (const name of ["team_overview", "task_list", "memory_search", "task_create", "send_message", "ask_peer"])
+  for (const name of ["whoami", "team_overview", "task_list", "memory_search", "task_create", "send_message", "ask_peer"])
     expect(tools.has(name), name).toBe(true);
 });
 

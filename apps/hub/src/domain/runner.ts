@@ -38,18 +38,19 @@ const ready = (p: Principal) =>
     projectOn,
   );
 const unleased = () => or(isNull(task.leaseUntil), lt(task.leaseUntil, new Date()));
-// For the runner's reviewer: a PR to review, rounds left, and no runner on it.
-const reviewable = (p: Principal) =>
+// For the runner's restack: a PR in review, approved or not, and no runner on it.
+const restackable = (p: Principal) =>
   and(
     eq(task.teamId, p.teamId),
     eq(task.status, "review"),
     eq(task.runner, true),
     isNotNull(task.prNumber),
-    lt(task.reviewRound, REVIEW_ROUNDS),
     or(isNull(task.assigneeUserId), eq(task.assigneeUserId, p.user.id)),
     projectOn,
     unleased(),
   );
+// For the runner's reviewer: also not approved as it is, and rounds left.
+const reviewable = (p: Principal) => and(restackable(p), eq(task.approved, false), lt(task.reviewRound, REVIEW_ROUNDS));
 
 const runnerView = async (db: Db, t: Task) => ({
   ...(await view(db, t)),
@@ -58,6 +59,7 @@ const runnerView = async (db: Db, t: Task) => ({
   base_branch: t.baseBranch,
   pr_number: t.prNumber,
   review_round: t.reviewRound,
+  approved: t.approved,
   attempts: t.attempts,
   lease_until: t.leaseUntil?.toISOString() ?? null,
 });
@@ -169,8 +171,8 @@ const leaseView = async (db: Db, p: Principal, row: Task) => {
 };
 
 // Atomic: one UPDATE that matches only a task still ready and not leased, so of two runners exactly one wins. A review
-// lease keeps the task in review and its attempts: only the lease is taken.
-export async function leaseTask(db: Db, p: Principal, taskId: string, owner: string, phase?: "review") {
+// or restack lease keeps the task in review and its attempts: only the lease is taken.
+export async function leaseTask(db: Db, p: Principal, taskId: string, owner: string, phase?: "review" | "restack") {
   requireLive(p);
   const lease = {
     leaseOwner: owner,
@@ -179,18 +181,17 @@ export async function leaseTask(db: Db, p: Principal, taskId: string, owner: str
     updatedAt: new Date(),
   };
   const row = await db.transaction(async (tx) => {
-    const [t] =
-      phase === "review"
-        ? await tx
-            .update(task)
-            .set(lease)
-            .where(and(eq(task.id, taskId), reviewable(p)))
-            .returning()
-        : await tx
-            .update(task)
-            .set({ ...lease, status: "claimed", assigneeUserId: p.user.id, assigneeAgentId: null, attempts: sql`${task.attempts} + 1` })
-            .where(and(eq(task.id, taskId), ready(p), unleased()))
-            .returning();
+    const [t] = phase
+      ? await tx
+          .update(task)
+          .set(lease)
+          .where(and(eq(task.id, taskId), phase === "review" ? reviewable(p) : restackable(p)))
+          .returning()
+      : await tx
+          .update(task)
+          .set({ ...lease, status: "claimed", assigneeUserId: p.user.id, assigneeAgentId: null, attempts: sql`${task.attempts} + 1` })
+          .where(and(eq(task.id, taskId), ready(p), unleased()))
+          .returning();
     if (!t) throw new HubError("E_VERSION_CONFLICT", `task ${taskId} is not ready any more: read the queue again`);
     await audit(tx, p, "runner.leased", t, { attempts: t.attempts, ...(phase && { phase }) });
     return t;
@@ -237,6 +238,7 @@ export async function runnerUpdate(
     base_branch?: string;
     pr_number?: number;
     review_round?: number;
+    approved?: boolean;
     note?: string;
   },
 ) {
@@ -265,6 +267,7 @@ export async function runnerUpdate(
         ...(patch.base_branch && { baseBranch: patch.base_branch }),
         ...(patch.pr_number !== undefined && { prNumber: patch.pr_number }),
         ...(patch.review_round !== undefined && { reviewRound: patch.review_round }),
+        ...(patch.approved !== undefined && { approved: patch.approved }),
         ...(!keepLease && { leaseOwner: null, leaseUntil: null }),
         ...(status === "todo" && { assigneeUserId: null, assigneeAgentId: null }),
         ...(patch.note && {
@@ -282,6 +285,84 @@ export async function runnerUpdate(
         .set({ notes: row.notes.slice(-MAX_NOTES) })
         .where(eq(task.id, row.id));
     await audit(tx, p, "runner.updated", row, { fields: Object.keys(patch) });
+    return runnerView(tx, row);
+  });
+}
+
+// The runner's fixed notes, as codes: what `codetgh run status` shows for a blocked task, never the note itself.
+const BLOCKED_REASONS: Array<[RegExp, string]> = [
+  [/^restack conflict$/, "restack_conflict"],
+  [/^PR closed without merge$/, "pr_closed"],
+  [/^\d+ review rounds without approval/, "review_rounds"],
+  [/quarantined/, "quarantined"],
+  [/^blocked: /, "runner_error"],
+];
+const DAY_MS = 24 * 3600_000;
+
+// A project's runner tasks: the open ones, and those done in the last day, which the runner also cleans up after.
+export async function runnerStatus(db: Db, p: Principal, projectId: string) {
+  requireOwner(p);
+  await expireLeases(db);
+  const rows = await db
+    .select({ t: task, ready: sql<boolean>`(${task.status} = 'todo' and ${depsReady})` })
+    .from(task)
+    .where(
+      and(
+        eq(task.teamId, p.teamId),
+        eq(task.projectId, projectId),
+        eq(task.runner, true),
+        or(
+          inArray(task.status, ["todo", "claimed", "in_progress", "review", "blocked"]),
+          and(eq(task.status, "done"), gt(task.updatedAt, new Date(Date.now() - DAY_MS))),
+        ),
+      ),
+    )
+    .orderBy(asc(task.createdAt))
+    .limit(200);
+  const bases = [...new Set(rows.flatMap((r) => (r.t.baseBranch ? [r.t.baseBranch] : [])))];
+  const parents = bases.length
+    ? await db
+        .select({ id: task.id, status: task.status, branch: task.branch })
+        .from(task)
+        .where(and(eq(task.teamId, p.teamId), inArray(task.branch, bases)))
+    : [];
+  return {
+    tasks: await Promise.all(
+      rows.map(async ({ t, ready }) => {
+        const parent = parents.find((x) => x.branch === t.baseBranch && t.dependsOn.includes(x.id));
+        const note = t.notes.at(-1)?.text ?? "";
+        return {
+          ...(await runnerView(db, t)),
+          ready: !!ready,
+          blocked_reason: t.status === "blocked" ? (BLOCKED_REASONS.find(([re]) => re.test(note))?.[1] ?? "other") : null,
+          parent: parent?.branch ? { task_id: parent.id, status: parent.status, branch: parent.branch } : null,
+        };
+      }),
+    ),
+  };
+}
+
+// The owner's retry: a blocked runner task back to todo (ALLOWED), with no lease, no assignee and its rounds at 0.
+export async function retryTask(db: Db, p: Principal, taskId: string) {
+  requireLive(p);
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(task)
+      .set({
+        status: "todo",
+        assigneeUserId: null,
+        assigneeAgentId: null,
+        leaseOwner: null,
+        leaseUntil: null,
+        reviewRound: 0,
+        approved: false,
+        version: sql`${task.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(task.id, taskId), eq(task.teamId, p.teamId), eq(task.runner, true), eq(task.status, "blocked")))
+      .returning();
+    if (!row) throw new HubError("E_INVALID", `${taskId} is not a blocked runner task of this team`);
+    await audit(tx, p, "runner.retried", row);
     return runnerView(tx, row);
   });
 }

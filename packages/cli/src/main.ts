@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -395,7 +395,15 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
 }
 
 // codetgh runner: the jobs it runs, by task id, for the life of this process.
-type Job = { projectId: string; child?: ChildProcess; container?: string; stopped: boolean; done: Promise<void> };
+// restack: the parent whose branch the task's PR is based on, when that parent moved or was merged.
+type Job = {
+  projectId: string;
+  child?: ChildProcess;
+  container?: string;
+  stopped: boolean;
+  done: Promise<void>;
+  restack?: { status: string; branch: string };
+};
 const jobs = new Map<string, Job>();
 const RUNNER_NOT_LISTED = "not in this machine's runner list";
 // What of a review the runner posts on the PR and gives the author.
@@ -502,6 +510,40 @@ function gitState(common: string) {
   return h.digest("hex");
 }
 const gitBaseline = new Map<string, { common: string; state: string }>();
+const safeGit = (args: string[]) =>
+  promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
+// Jobs of a project share its clone: one fetch at a time, or git fails on the lock files of the refs it updates.
+const fetching = new Map<string, Promise<unknown>>();
+const fetchOrigin = (dir: string) => {
+  const next = (fetching.get(dir) ?? Promise.resolve()).catch(() => {}).then(() => safeGit(["-C", dir, "fetch", "origin"]));
+  fetching.set(dir, next);
+  return next;
+};
+// What the hub sends and the runner turns into a path or a git ref: checked here, since the hub is not trusted with this
+// machine's files. The runner's own branches only, by the exact form of the ids it makes them from.
+const TASK_ID = /^tsk_[0-9A-Z]{26}$/;
+const PROJECT_ID = /^prj_[0-9A-Z]{26}$/;
+const runnerBranch = (b: unknown): b is string => typeof b === "string" && /^codetgh\/tsk_[0-9a-z]{26}$/.test(b);
+const worktreeRoot = () => join(configDir(), "worktrees");
+// p, once its existing part is resolved, symlinks included, lies inside the root of the worktrees.
+const underRoot = (p: string) => {
+  mkdirSync(worktreeRoot(), { recursive: true, mode: 0o700 });
+  const root = realpathSync(worktreeRoot());
+  let known = p;
+  while (!existsSync(known) && dirname(known) !== known) known = dirname(known);
+  const real = join(realpathSync(known), relative(known, p));
+  return real.startsWith(`${root}${sep}`);
+};
+// Any quarantined worktree stops the runner for its whole project: the worktrees share the clone's .git.
+const quarantines = (projectId: string) => {
+  if (!PROJECT_ID.test(projectId)) throw new Error(`refused a project id from the hub: ${JSON.stringify(projectId.slice(0, 80))}`);
+  const dir = join(worktreeRoot(), projectId);
+  return existsSync(dir)
+    ? readdirSync(dir)
+        .filter((f) => f.endsWith(".quarantine"))
+        .map((f) => join(dir, f))
+    : [];
+};
 
 // isolation docker: the image runner agents run in (codetgh runner build-image), and the uid they run as, never the owner's.
 const RUNNER_IMAGE = `codetgh-runner-agent:${plugin.version}`;
@@ -600,6 +642,27 @@ function endAgent(child: ChildProcess, signal: NodeJS.Signals) {
   } catch {}
 }
 
+// Spared: the runner's own git and gh of another job, which also run in the clone. They descend from this process through
+// a child that is no job's agent; an agent's processes descend from its agent, or were reparented away when detached.
+const parentPid = (pid: string) => {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1];
+  } catch {
+    return undefined;
+  }
+};
+const runnersOwn = (pid: string) => {
+  const agents = new Set([...jobs.values()].flatMap((j) => (j.child?.pid ? [String(j.child.pid)] : [])));
+  for (let p = pid, i = 0; i < 64; i++) {
+    const up = parentPid(p);
+    if (!up || up === "0" || up === "1") return false;
+    if (up === String(process.pid)) return !agents.has(p);
+    p = up;
+  }
+  return false;
+};
+
 // Linux: every process this user runs that carries the job's marker in its environment or sits in the worktree, the
 // ones the agent detached with setsid, nohup or a double fork included, gets SIGKILL, until none is left. false: some
 // still run after a few rounds. Other users' processes cannot be read, and cannot write the worktree either.
@@ -619,7 +682,7 @@ async function sweepAgent(marker: string | null, wt: string, clone: string) {
         const cwd = readlinkSync(`/proc/${pid}/cwd`);
         hit ||= dirs.some((d) => cwd === d || cwd.startsWith(`${d}/`));
       } catch {}
-      if (!hit) continue;
+      if (!hit || runnersOwn(pid)) continue;
       found++;
       try {
         process.kill(Number(pid), "SIGKILL");
@@ -636,15 +699,19 @@ async function sweepAgent(marker: string | null, wt: string, clone: string) {
 // included, stay in the log on this machine and on the PR.
 async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: string, lease: Lease, io: Io, job: Job) {
   const { task } = lease;
+  // Before any path is made from them, the log's included.
+  if (!TASK_ID.test(task.id) || !PROJECT_ID.test(project) || !Number.isInteger(task.attempts) || task.attempts < 0) {
+    jobs.delete(task.id);
+    return io.out(`refused a task from the hub whose id, project or attempt is not one: ${JSON.stringify(task.id.slice(0, 80))}`);
+  }
   const dir = cfg.projects[project] ?? "";
   const slug = task.id.toLowerCase();
   const branch = `codetgh/${slug}`;
   // Outside the checkout, so no path from the worktree leads back into the repository's files.
-  const wt = join(configDir(), "worktrees", project, slug);
+  const wt = join(worktreeRoot(), project, slug);
   const logs = join(configDir(), "runner-logs");
   const log = join(logs, `${slug}-${task.attempts}.log`);
-  const git = (args: string[]) =>
-    promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
+  const git = safeGit;
   const gh = (args: string[]) => exec("gh", args, { timeout: 120_000, cwd: wt, env: safeGitEnv() }).then((r) => r.stdout.trim());
   const update = (patch: Patch) => client.runnerUpdate({ task_id: task.id, owner, patch });
   const say = (s: string) => io.out(`${task.id}: ${s}`);
@@ -664,6 +731,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   const lock = `${wt}.lock`;
   // Left when an agent's job ended with the git config changed or a process it started still running: never reused.
   const quarantine = `${wt}.quarantine`;
+  // The commit the task's branch was made on: where a restack replays its commits from.
+  const baseFile = `${wt}.base`;
   let ran = false;
   let swept = true;
   let locked = false;
@@ -883,10 +952,64 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     await update({ status: "review", note: `review fixes pushed to PR #${pr}` });
     say(`review fixes pushed to PR #${pr}`);
   };
+  // The PR's own commits replayed on its parent's new tip, or on the default branch once the parent is merged. No agent
+  // runs; the push replaces only the runner's own branch, with a lease on the tip it last pushed.
+  const restack = async (pr: number, main: string, parent: { status: string; branch: string }) => {
+    const merged = parent.status === "done";
+    const onto = merged ? main : parent.branch;
+    step = "git rev-parse failed";
+    const head = await git(["-C", wt, "rev-parse", "HEAD"]);
+    if (head !== (await git(["-C", dir, "rev-parse", `origin/${branch}`]))) fail("the worktree is not at the head of the PR");
+    const old = existsSync(baseFile)
+      ? readFileSync(baseFile, "utf8").trim()
+      : await git(["-C", wt, "merge-base", "HEAD", `origin/${parent.branch}`]);
+    const target = await git(["-C", dir, "rev-parse", `origin/${onto}`]);
+    if (merged) {
+      step = "gh pr edit failed";
+      // gh pr edit fails on some repositories (a deprecated Projects classic query): the REST API does the same.
+      await gh(["pr", "edit", String(pr), "--base", main]).catch(() =>
+        gh(["api", "-X", "PATCH", `repos/{owner}/{repo}/pulls/${pr}`, "-f", `base=${main}`]),
+      );
+    }
+    untouched();
+    const rebased = await git([
+      "-C",
+      wt,
+      "-c",
+      "user.name=CodeTgh runner",
+      "-c",
+      "user.email=runner@codetgh.invalid",
+      "rebase",
+      "--onto",
+      target,
+      old,
+    ]).then(
+      () => true,
+      () => false,
+    );
+    step = "the hub refused the update";
+    if (!rebased) {
+      await git(["-C", wt, "rebase", "--abort"]).catch(() => {});
+      await update({ status: "blocked", note: "restack conflict", ...(merged && { base_branch: main }) });
+      return say(`PR #${pr}: restack conflict, rebase aborted, nothing pushed`);
+    }
+    const now = await git(["-C", wt, "rev-parse", "HEAD"]);
+    if (now !== head) {
+      untouched();
+      step = "git push failed";
+      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]);
+      untouched();
+    }
+    writeFileSync(baseFile, `${target}\n`, { mode: 0o600 });
+    step = "the hub refused the update";
+    // Changed code goes back for one review, its round count unchanged.
+    await update({ base_branch: onto, ...(now !== head && { approved: false }), note: `restacked on ${onto}` });
+    say(`PR #${pr} restacked on ${onto}`);
+  };
   try {
     mkdirSync(logs, { recursive: true, mode: 0o700 });
     chmodSync(logs, 0o700);
-    if (!/^tsk_[0-9A-Z]{26}$/.test(task.id)) fail("the hub sent a task id that is not one");
+    if (!underRoot(wt)) fail("the worktree's path leads out of the runner's folder");
     if (!takeLock()) return say("another runner process works on it: left alone");
     // Any worktree of the project: they share the clone's .git, and a restart would take a tampered config as its baseline.
     if (readdirSync(dirname(wt)).some((f) => f.endsWith(".quarantine")))
@@ -896,7 +1019,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       swept = false;
       fail("the runner could not stop every process left in the worktree");
     }
-    await git(["-C", dir, "fetch", "origin"]);
+    await fetchOrigin(dir);
     step = "the default branch could not be resolved";
     const head = () => git(["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
     // A clone made with git remote add has no origin/HEAD until it is asked for.
@@ -917,6 +1040,14 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await git(["-C", dir, "worktree", "prune"]);
         await git(["-C", dir, "worktree", "add", "--no-track", "-B", branch, wt, `origin/${branch}`]);
       }
+      if (job.restack) return await restack(pr, main, job.restack);
+      // Retried by the owner after a block: back to review, where the next pass restacks or reviews it.
+      if (task.status === "claimed") {
+        step = "the hub refused the update";
+        await update({ status: "in_progress" });
+        await update({ status: "review", note: `retried: PR #${pr} back to review` });
+        return say(`PR #${pr} back to review`);
+      }
       // Resumed mid-fix: the review is on the PR, posted by this runner. gh does not work in a container: read here.
       if (task.status !== "review") {
         step = "gh pr view failed";
@@ -929,7 +1060,12 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       step = "git rev-parse failed";
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
-      const reviewBase = task.base_branch || main;
+      const reviewBase =
+        !task.base_branch || task.base_branch === main
+          ? main
+          : runnerBranch(task.base_branch)
+            ? task.base_branch
+            : fail("the hub sent a base branch the runner did not make");
       // git does not work in a container: the reviewer reads the diff from a file the runner writes, read-only.
       const diff = boxed ? `${wt}.diff` : undefined;
       if (diff) {
@@ -945,7 +1081,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       if (!r.clean) fail("the runner could not stop every process the agent started");
       untouched();
       step = "git fetch failed";
-      await git(["-C", dir, "fetch", "origin"]);
+      await fetchOrigin(dir);
       if ((await git(["-C", wt, "rev-parse", "HEAD"])) !== before || (await git(["-C", dir, "rev-parse", `origin/${branch}`])) !== pushed)
         fail("the reviewer changed the branch");
       const parsed = reviewVerdict(r.out);
@@ -969,7 +1105,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       const round = task.review_round + 1;
       step = "the hub refused the update";
       if (verdict === "APPROVE") {
-        await update({ review_round: round, note: "approved by the runner's reviewer" });
+        await update({ review_round: round, approved: true, note: "approved by the runner's reviewer" });
         say(`PR #${pr} approved`);
         if (cfg.auto_merge)
           await gh(["pr", "merge", String(pr), "--merge", "--auto"]).catch((e: Error) => {
@@ -1002,13 +1138,16 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       );
     }
 
-    const parents = lease.parents.filter((p) => p.branch && p.pr_number);
+    const parents = lease.parents.filter((p) => runnerBranch(p.branch) && p.pr_number);
     const base = parents[0]?.branch || main;
     const note = parents.length > 1 ? `stacking supports one parent: based on ${base} only` : undefined;
     untouched();
     step = "git worktree add failed";
     // A worktree left by an earlier attempt is reused as it is.
-    if (!existsSync(wt)) await git(["-C", dir, "worktree", "add", "--no-track", "-b", branch, wt, `origin/${base}`]);
+    if (!existsSync(wt)) {
+      await git(["-C", dir, "worktree", "add", "--no-track", "-b", branch, wt, `origin/${base}`]);
+      writeFileSync(baseFile, `${await git(["-C", wt, "rev-parse", "HEAD"])}\n`, { mode: 0o600 });
+    }
     step = "the hub refused the update";
     await update({ status: "in_progress", branch, base_branch: base, ...(note && { note }) });
     if (job.stopped) return;
@@ -1066,6 +1205,26 @@ async function dockerReady(cfg: RunnerSettings, config: string) {
   if (left.length) await docker(["rm", "-f", ...left]);
 }
 
+// A merged task's worktree, local branch, lock and recorded base. Left alone while a job of this machine holds its lock.
+// Only a path under the runner's own folder, and only a worktree git registered: git worktree remove refuses anything else.
+async function cleanUp(dir: string, projectId: string, id: string) {
+  if (!TASK_ID.test(id) || !PROJECT_ID.test(projectId))
+    throw new Error(`refused a task id from the hub: ${JSON.stringify(id.slice(0, 80))}`);
+  const wt = join(worktreeRoot(), projectId, id.toLowerCase());
+  const lock = `${wt}.lock`;
+  if (jobs.has(id) || !existsSync(wt)) return;
+  if (!underRoot(wt)) throw new Error(`refused to remove ${wt}: it leads out of ${worktreeRoot()}`);
+  if (existsSync(lock))
+    try {
+      process.kill(Number(readFileSync(lock, "utf8")), 0);
+      return;
+    } catch {}
+  await safeGit(["-C", dir, "worktree", "remove", "--force", wt]);
+  await safeGit(["-C", dir, "branch", "-D", `codetgh/${id.toLowerCase()}`]).catch(() => {});
+  rmSync(lock, { force: true });
+  rmSync(`${wt}.base`, { force: true });
+}
+
 // One pass: resume the leases this runner held before a restart, lease ready tasks of the projects switched on and
 // listed here, then tasks to review, up to max_agents on this machine.
 async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, held: Lease[] = []) {
@@ -1079,23 +1238,65 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
       continue;
     }
     const dir = Object.hasOwn(cfg.projects, t.project_id) ? cfg.projects[t.project_id] : undefined;
+    if (!PROJECT_ID.test(t.project_id)) {
+      io.out(`refused a project id from the hub: ${JSON.stringify(t.project_id.slice(0, 80))}`);
+      continue;
+    }
     if (!dir) {
       io.out(`${t.project_name}: ${RUNNER_NOT_LISTED}; add "${t.project_id}": "/path/to/the/clone" to it`);
       await client.runnerReport({ project_id: t.project_id, running: 0, error: RUNNER_NOT_LISTED });
       continue;
     }
-    const start = (lease: Lease, what: string) => {
-      const job: Job = { projectId: t.project_id, stopped: false, done: Promise.resolve() };
+    const start = (lease: Lease, what: string, restack?: Job["restack"]) => {
+      const job: Job = { projectId: t.project_id, stopped: false, done: Promise.resolve(), restack };
       jobs.set(lease.task.id, job);
       io.out(`${t.project_name}: ${lease.task.id} ${what}`);
       job.done = runJob(client, cfg, t.project_id, lease, io, job);
     };
     for (const lease of held) if (lease.task.project_id === t.project_id && !jobs.has(lease.task.id)) start(lease, "resumed");
+    // Merged tasks are cleaned up, and stacked PRs whose parent moved or was merged restacked; never in a quarantine.
+    if (!quarantines(t.project_id).length) {
+      const { tasks } = await client.runnerStatus(t.project_id);
+      for (const x of tasks)
+        if (x.status === "done") await cleanUp(dir, t.project_id, x.id).catch((e: Error) => io.err(`cleanup failed: ${e.message}`));
+      // Only the runner's own branches: codetgh/<task>, for the task and for its parent.
+      const stacked = tasks.flatMap((x) =>
+        x.status === "review" &&
+        TASK_ID.test(x.id) &&
+        x.branch === `codetgh/${x.id.toLowerCase()}` &&
+        x.parent &&
+        runnerBranch(x.parent.branch) &&
+        !jobs.has(x.id)
+          ? [{ id: x.id, branch: x.branch, parent: x.parent }]
+          : [],
+      );
+      if (stacked.length) await fetchOrigin(dir);
+      for (const x of stacked) {
+        if (jobs.size >= cfg.max_agents) break;
+        // Exit 1: the parent's tip is not in the PR any more. Any other failure (a deleted branch) moves nothing.
+        const moved =
+          x.parent.status === "done" ||
+          (await safeGit(["-C", dir, "merge-base", "--is-ancestor", `origin/${x.parent.branch}`, `origin/${x.branch}`]).then(
+            () => false,
+            (e: { code?: number }) => e.code === 1,
+          ));
+        if (!moved) continue;
+        const lease = await client.runnerLease({ task_id: x.id, owner, phase: "restack" }).catch((e: Error) => {
+          if (e instanceof CodeTghError && e.status === 409) return null;
+          throw e;
+        });
+        if (lease) start(lease, "restack started", x.parent);
+      }
+    }
     for (const phase of [undefined, "review"] as const) {
       if (jobs.size >= cfg.max_agents) break;
       for (const task of (await client.runnerReady(t.project_id, phase)).tasks) {
         if (jobs.size >= cfg.max_agents) break;
         if (jobs.has(task.id)) continue;
+        if (!TASK_ID.test(task.id)) {
+          io.out(`refused a task id from the hub: ${JSON.stringify(task.id.slice(0, 80))}`);
+          continue;
+        }
         const lease = await client.runnerLease({ task_id: task.id, owner, phase }).catch((e: Error) => {
           if (e instanceof CodeTghError && e.status === 409) return null;
           throw e;
@@ -1950,6 +2151,56 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       });
       if (code !== 0) throw new Error(`docker build exited with ${code ?? "an error"}`);
       io.out(`built ${RUNNER_IMAGE}`);
+    });
+
+  const runQueue = cli.command("run").helpGroup("Admin:").description("the owner's view of the runner queue on the hub: status, retry");
+  const ownerClient = async () => {
+    const { url, token } = await credentials(deps.keyring);
+    if (!url || !token) throw new Error("no hub URL or token: run codetgh login on this machine with the owner's account");
+    return createClient({ url, token });
+  };
+  runQueue
+    .command("status")
+    .description("each runner project's tasks: ready, in progress, review with PR and round, blocked with a reason, done in 24 h")
+    .option("--project <id>", "one project only")
+    .action(async (opts: { project?: string }) => {
+      const client = await ownerClient();
+      const shown = (await client.runnerTargets()).targets.filter((t) => !opts.project || t.project_id === opts.project);
+      if (opts.project && !shown.length) throw new Error(`${opts.project} is not a runner project: switch its runner on in the console`);
+      for (const t of shown) {
+        io.out(`${t.project_name} (${t.project_id})${t.desired ? "" : ", runner off"}`);
+        const { tasks } = await client.runnerStatus(t.project_id);
+        type Row = (typeof tasks)[number];
+        const groups: Array<[string, (x: Row) => boolean, (x: Row) => string]> = [
+          ["ready", (x) => x.status === "todo" && x.ready, () => ""],
+          ["waiting", (x) => x.status === "todo" && !x.ready, (x) => `on ${x.depends_on.join(", ")}`],
+          ["in progress", (x) => x.status === "claimed" || x.status === "in_progress", () => ""],
+          ["review", (x) => x.status === "review", (x) => `PR #${x.pr_number}, round ${x.review_round}${x.approved ? ", approved" : ""}`],
+          ["blocked", (x) => x.status === "blocked", (x) => x.blocked_reason ?? ""],
+          ["done 24h", (x) => x.status === "done", (x) => (x.pr_number ? `PR #${x.pr_number}` : "")],
+        ];
+        // Hub text on a terminal: no control character, so no escape sequence.
+        for (const [label, match, detail] of groups)
+          for (const x of tasks.filter(match)) io.out(`  ${label.padEnd(12)} ${x.id}  ${detail(x)}`.trimEnd().replace(/\p{Cc}/gu, "?"));
+        if (!tasks.length) io.out("  no runner task");
+      }
+    });
+  runQueue
+    .command("retry <task>")
+    .description("put a blocked runner task back in the queue; refused while its project has a quarantined worktree here")
+    .action(async (id: string) => {
+      const client = await ownerClient();
+      // The quarantine is a file on the runner's machine: this checks it on the machine where it runs.
+      for (const t of (await client.runnerTargets()).targets) {
+        if (!(await client.runnerStatus(t.project_id)).tasks.some((x) => x.id === id)) continue;
+        const files = quarantines(t.project_id);
+        if (files.length)
+          throw new Error(
+            `${t.project_name} has a quarantined worktree (${files.join(", ")}): inspect it and the clone's git config, then remove the .quarantine file before a retry`,
+          );
+      }
+      await client.runnerRetry(id);
+      io.out(`${id} is back in the queue`);
     });
 
   const audit = cli.command("audit").helpGroup("Admin:").description("check the team's audit log");

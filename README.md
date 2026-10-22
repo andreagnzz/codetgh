@@ -38,8 +38,8 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
 - **Delegation (opt-in).** A teammate can let their session carry out your requests without anyone at the keyboard, then answer *done*, *blocked* or the result. See [Delegate sessions](#delegate-sessions).
 - **File claims.** Before Claude edits a file someone else is working on, it warns you or asks you first, as your team chose.
 - **Usage limits.** When your Claude plan nears its limit, your agent writes a handoff; at the limit, your teammates on the project are told when you will be back, and again when you are.
-- **Spec splitting.** `/codetgh:split <spec>` turns a spec into tasks and proposes who takes each one, from who is online, on which OS, how much of their Claude plan is left, and who runs a delegate session. Nothing is created before you approve; `--yes` approves it all at once, and `--dispatch` also sends delegate sessions their first task.
-- **Autonomous runner (opt-in).** On your own machine, `codetgh runner` takes the tasks you flagged, gives each one a git worktree and an agent in a throwaway Docker container, opens one PR per task (stacked on its parent's PR), and has a fresh agent review it, up to 3 rounds. You merge. See [Runner](#runner).
+- **Spec splitting.** `/codetgh:split <spec>` turns a spec into tasks and proposes who takes each one, from who is online, on which OS, how much of their Claude plan is left, and who runs a delegate session. Nothing is created before you approve; `--yes` approves it all at once, `--dispatch` also sends delegate sessions their first task, and `--run` (owner or admin) gives the self-contained tasks to the runner.
+- **Autonomous runner (opt-in).** On your own machine, `codetgh runner` takes the tasks you flagged, gives each one a git worktree and an agent in a throwaway Docker container, opens one PR per task (stacked on its parent's PR), and has a fresh agent review it, up to 3 rounds. You merge; the runner then moves the child PRs onto `main`. See [Runner](#runner).
 - **Team memory.** Keep decisions that every new session reads.
 - **A web console, by project.** Presence, threads, tasks and agents, filtered or grouped by project, with archives for threads quiet for a day and tasks done for a day. Alerts, invitations, and one switch that stops all agent traffic.
 - **Reach.** A claude.ai connector, a typed SDK, GitHub and Slack bridges, A2A, per-thread end-to-end encryption and SSO.
@@ -68,6 +68,8 @@ You talk to your Claude in plain words; it calls the CodeTgh tools.
 | Have a teammate's Claude do it now | They run a [delegate session](#delegate-sessions); you say "Delegate to @alex: run the tests and report" |
 | Split a spec | `/codetgh:split spec.md` proposes tasks and owners; `--yes` creates them, `--dispatch` starts delegates |
 | Let agents code it while you sleep | `/codetgh:split --run spec.md`, with the [runner](#runner) on; review and merge the PRs |
+| See what the runner does | `codetgh run status`: ready, in progress, in review (PR and round), blocked (reason), done |
+| Retry a blocked runner task | `codetgh run retry <task>`, on the runner's machine, once you have looked at why it blocked |
 | See who is where | "Who is online and on what?", `codetgh status`, or the console filtered by project |
 | Avoid editing the same file | Automatic: Claude claims what it edits and warns or asks before touching someone else's |
 | Hit your Claude limit | Automatic: a handoff at 90 %, your teammates told at 100 % and again when you are back |
@@ -110,11 +112,14 @@ codetgh runner                      for each ready task, up to max_agents at onc
   git worktree (stacked on the parent PR's branch if it is still open)
   agent in a throwaway container → the runner commits, pushes, opens the PR
   fresh reviewer → VERDICT, posted on the PR → fix rounds, 3 at most
-you review and merge
+you review and merge                the GitHub webhook moves the task to done
+codetgh runner                      child PRs: base moved to main, rebased, pushed, reviewed once more
+codetgh run status | retry <task>   what it does; a blocked task back in the queue
 ```
 
 - **Setup:** `gh` logged in, Docker, `codetgh runner build-image`, a Claude token from `claude setup-token` in `~/.config/codetgh/runner.env`, and `~/.config/codetgh/runner.json` listing each project's local clone. Full steps in [docs/DEPLOY.md](docs/DEPLOY.md#runner-optional-owner-only).
 - **Isolation:** each agent runs in a container that sees only its task's worktree and one Claude credential: no home, keys, gh or CodeTgh token, no git metadata. The runner commits, refuses changes to `.git`, CI workflows and agent settings, and ignores repository hooks.
+- **Merge and restack:** with the team's [GitHub webhook](docs/DEPLOY.md#runner-optional-owner-only) on, a merged PR moves its task to `done` and a PR closed unmerged to `blocked`. A child PR stacked on a merged parent moves to `main`; one whose parent got new commits is rebased on them. The runner force-pushes (with a lease) only its own `codetgh/<task>` branch. A conflict aborts the rebase and blocks the task with "restack conflict". Merged tasks' worktrees are removed.
 - **Defaults:** 3 agents, `auto` permission mode, human merge. Bypass and auto-merge are opt-ins.
 - **Limits:** the reviewer is not a security boundary, because the code it reads can steer it, so review sensitive changes yourself. Agents reach the internet. Run the runner as a dedicated user for the strongest setup.
 
@@ -145,6 +150,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | `codetgh project new <name>` | Optional: name a repository's team project |
 | `codetgh launcher` | Owner's machine: run Remote Control for the projects switched on in the console |
 | `codetgh runner` | Owner's machine: do the runner tasks of the projects switched on in the console, one `claude -p` per task in a git worktree, one PR each |
+| `codetgh run status` / `retry <task>` | Owner: the runner's queue per project; put a blocked runner task back in the queue (refused while the project is quarantined) |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 | `codetgh backup` / `update` | (admins, on the hub's machine) Back up the hub with a restore check, or update the hub safely |
 

@@ -28,6 +28,8 @@ import {
   RunnerLeasesQuery,
   RunnerReadyQuery,
   RunnerReport,
+  RunnerRetryInput,
+  RunnerStatusQuery,
   RunnerUpdateInput,
   SessionQuery,
   StatusQuery,
@@ -84,7 +86,18 @@ import {
   unread,
 } from "./domain/messages.js";
 import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
-import { expireLeases, leaseTask, readyTasks, renewLease, reportRun, runnerLeases, runnerUpdate, runTargets } from "./domain/runner.js";
+import {
+  expireLeases,
+  leaseTask,
+  readyTasks,
+  renewLease,
+  reportRun,
+  retryTask,
+  runnerLeases,
+  runnerStatus,
+  runnerUpdate,
+  runTargets,
+} from "./domain/runner.js";
 import { handleSlackCommand, handleSlackEvent, startSlackRelay, validSlackSignature } from "./domain/slack.js";
 import { backchannelLogout } from "./domain/sso.js";
 import { inviteMember, revokeInvitations } from "./domain/teams.js";
@@ -570,6 +583,12 @@ export function createApp({
     const { task_id, owner } = await parse(c, RunnerLeaseInput);
     return c.json(await renewLease(db, c.get("principal"), task_id, owner));
   });
+  v1.get("/runner/status", async (c) => {
+    const parsed = RunnerStatusQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await runnerStatus(db, c.get("principal"), parsed.data.project));
+  });
+  v1.post("/runner/retry", async (c) => c.json(await retryTask(db, c.get("principal"), (await parse(c, RunnerRetryInput)).task_id)));
   v1.post("/runner/update", async (c) => {
     const { task_id, owner, patch } = await parse(c, RunnerUpdateInput);
     return c.json(await runnerUpdate(deps, c.get("principal"), task_id, owner, patch));
@@ -668,6 +687,8 @@ export function createApp({
         // The signature covers the body, not X-GitHub-Delivery: a replayed body keeps its key whatever id comes with it.
         // Hex: the secret scanner reads a base64 digest as a secret.
         createHash("sha256").update(body).digest("hex"),
+        // Recorded in the audit as metadata; a GitHub delivery id is a UUID.
+        /^[A-Za-z0-9-]{1,64}$/.test(c.req.header("x-github-delivery") ?? "") ? (c.req.header("x-github-delivery") ?? null) : null,
       );
     return c.body(null, 202);
   });

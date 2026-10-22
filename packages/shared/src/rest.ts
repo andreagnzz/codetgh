@@ -158,7 +158,7 @@ export const RunnerReport = z.object({
   running: z.number().int().min(0).max(100),
   error: z.string().max(300).optional(),
 });
-// The review phase: tasks in review with a PR and fewer than REVIEW_ROUNDS rounds, for the runner's reviewer.
+// The review phase: tasks in review with a PR, not approved, and fewer than REVIEW_ROUNDS rounds, for the runner's reviewer.
 export const REVIEW_ROUNDS = 3;
 const phase = z.literal("review").optional();
 export const RunnerReadyQuery = z.object({ project: z.string().min(1).max(64), phase });
@@ -176,13 +176,27 @@ export const RunnerTask = z.object({
   base_branch: z.string().nullable(),
   pr_number: z.number().nullable(),
   review_round: z.number(),
+  approved: z.boolean(),
   attempts: z.number(),
   lease_until: z.string().nullable(),
   updated_at: z.string(),
 });
 export const RunnerReady = z.object({ tasks: z.array(RunnerTask) });
-export const RunnerLeaseInput = z.object({ task_id: taskId, owner: leaseOwner, phase });
+// phase=restack: a task in review with a PR, whatever its rounds, for the runner to rebase on its parent's new base.
+export const RunnerLeaseInput = z.object({ task_id: taskId, owner: leaseOwner, phase: z.enum(["review", "restack"]).optional() });
 export const RunnerLeasesQuery = z.object({ owner: leaseOwner });
+export const RunnerStatusQuery = z.object({ project: z.string().min(1).max(64) });
+// parent: the dependency whose branch the task's PR is based on. blocked_reason: a code read from the runner's fixed note.
+export const RunnerStatus = z.object({
+  tasks: z.array(
+    RunnerTask.extend({
+      ready: z.boolean(),
+      blocked_reason: z.string().nullable(),
+      parent: z.object({ task_id: z.string(), status: z.enum(TASK_STATUSES), branch: z.string() }).nullable(),
+    }),
+  ),
+});
+export const RunnerRetryInput = z.object({ task_id: taskId });
 // text: the header, then the creator's title and body in the <peer_message> envelope, as the task resource gives it.
 export const RunnerLease = z.object({
   task: RunnerTask,
@@ -201,6 +215,7 @@ export const RunnerUpdateInput = z.object({
       base_branch: branchName.optional(),
       pr_number: z.number().int().min(1).max(10_000_000).optional(),
       review_round: z.number().int().min(0).max(10).optional(),
+      approved: z.boolean().optional(),
       note: z.string().min(1).max(500).optional(),
     })
     .refine((p) => Object.values(p).some((v) => v !== undefined), { message: "patch needs at least one field" }),
@@ -383,7 +398,7 @@ export const REST_ROUTES = {
     method: "GET",
     path: "/v1/runner/ready",
     summary:
-      "Runner tasks of a switched-on project whose dependencies are done or in review with a PR, oldest first; phase=review: its tasks in review with a PR, fewer than 3 rounds and no live lease (owner only)",
+      "Runner tasks of a switched-on project whose dependencies are done or in review with a PR, oldest first; phase=review: its tasks in review with a PR, not approved, fewer than 3 rounds and no live lease (owner only)",
     query: RunnerReadyQuery,
     output: RunnerReady,
   },
@@ -391,7 +406,7 @@ export const REST_ROUTES = {
     method: "POST",
     path: "/v1/runner/lease",
     summary:
-      "Take a ready task for 10 minutes, or with phase=review a task to review, which stays in review; returns it, its parents' PR branches and its text in an envelope (owner only; 409 if taken)",
+      "Take a ready task for 10 minutes, or with phase=review a task to review and phase=restack a task in review to rebase, which both stay in review; returns it, its parents' PR branches and its text in an envelope (owner only; 409 if taken)",
     body: RunnerLeaseInput,
     output: RunnerLease,
   },
@@ -408,6 +423,21 @@ export const REST_ROUTES = {
     summary: "Extend a lease by 10 minutes (owner only; 409 if this runner no longer holds it)",
     body: RunnerLeaseInput,
     output: RunnerRenew,
+  },
+  runnerStatus: {
+    method: "GET",
+    path: "/v1/runner/status",
+    summary:
+      "A project's runner tasks: open ones with their PR, round, parent and blocked reason, and those done in the last 24 hours (owner only)",
+    query: RunnerStatusQuery,
+    output: RunnerStatus,
+  },
+  runnerRetry: {
+    method: "POST",
+    path: "/v1/runner/retry",
+    summary: "Put a blocked runner task back in the queue: todo, no lease, no assignee, review rounds at 0 (owner only)",
+    body: RunnerRetryInput,
+    output: RunnerTask,
   },
   runnerUpdate: {
     method: "POST",
