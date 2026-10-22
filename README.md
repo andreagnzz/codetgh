@@ -117,7 +117,7 @@ codetgh runner                      child PRs: base moved to main, rebased, push
 codetgh run status | retry <task>   what it does; a blocked task back in the queue
 ```
 
-- **Setup:** `gh` logged in, Docker, `codetgh runner build-image`, a Claude token from `claude setup-token` in `~/.config/codetgh/runner.env`, and `~/.config/codetgh/runner.json` listing each project's local clone. Full steps in [docs/DEPLOY.md](docs/DEPLOY.md#runner-optional-owner-only).
+- **Setup:** `gh` logged in, Docker, `codetgh runner build-image`, a Claude token from `claude setup-token` in `~/.config/codetgh/runner.env`, and `~/.config/codetgh/runner.json` listing each project's clone for the runner alone (`git clone … ~/runner/<project>`), never the folder you work in. Full steps in [docs/DEPLOY.md](docs/DEPLOY.md#runner-optional-owner-only).
 - **Isolation:** each agent runs in a container that sees only its task's worktree and one Claude credential: no home, keys, gh or CodeTgh token, no git metadata. The runner commits, refuses changes to `.git`, CI workflows and agent settings, and ignores repository hooks.
 - **Merge and restack:** with the team's [GitHub webhook](docs/DEPLOY.md#runner-optional-owner-only) on, a merged PR moves its task to `done` and a PR closed unmerged to `blocked`. A child PR stacked on a merged parent moves to `main`; one whose parent got new commits is rebased on them. The runner force-pushes (with a lease) only its own `codetgh/<task>` branch. A conflict aborts the rebase and blocks the task with "restack conflict". Merged tasks' worktrees are removed.
 - **Defaults:** 3 agents, `auto` permission mode, human merge. Bypass and auto-merge are opt-ins.
