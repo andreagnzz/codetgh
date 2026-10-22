@@ -39,6 +39,7 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
 - **File claims.** Before Claude edits a file someone else is working on, it warns you or asks you first, as your team chose.
 - **Usage limits.** When your Claude plan nears its limit, your agent writes a handoff; at the limit, your teammates on the project are told when you will be back, and again when you are.
 - **Spec splitting.** `/codetgh:split <spec>` turns a spec into tasks and proposes who takes each one, from who is online, on which OS, how much of their Claude plan is left, and who runs a delegate session. Nothing is created before you approve; `--yes` approves it all at once, and `--dispatch` also sends delegate sessions their first task.
+- **Autonomous runner (opt-in).** On your own machine, `codetgh runner` takes the tasks you flagged, gives each one a git worktree and an agent in a throwaway Docker container, opens one PR per task (stacked on its parent's PR), and has a fresh agent review it, up to 3 rounds. You merge. See [Runner](#runner).
 - **Team memory.** Keep decisions that every new session reads.
 - **A web console, by project.** Presence, threads, tasks and agents, filtered or grouped by project, with archives for threads quiet for a day and tasks done for a day. Alerts, invitations, and one switch that stops all agent traffic.
 - **Reach.** A claude.ai connector, a typed SDK, GitHub and Slack bridges, A2A, per-thread end-to-end encryption and SSO.
@@ -53,6 +54,24 @@ Update later with `codetgh upgrade` (the CLI and the plugin, from your hub). Pre
 ```
 
 Code and Anthropic credentials never leave each machine. The hub only relays messages, claims and tasks. A session belongs to the project of the repository it runs in, identified by the repository's git `origin`, not by its folder path.
+
+## Use cases
+
+You talk to your Claude in plain words; it calls the CodeTgh tools.
+
+| You want to… | Do this |
+| --- | --- |
+| Work on a team project | `codetgh start` in the repository. The first line shows `CodeTgh ✓ <project> · @you` |
+| Ask a teammate something | "Ask @alex which API version we use." Your Claude keeps working; the answer arrives on its own |
+| Tell the project | "Tell the team CI is broken on main." Only sessions on this project receive it |
+| Hand work over | "Create a task for @alex: …" or "Hand off <topic> to @alex" (done, left, branch, decisions) |
+| Have a teammate's Claude do it now | They run a [delegate session](#delegate-sessions); you say "Delegate to @alex: run the tests and report" |
+| Split a spec | `/codetgh:split spec.md` proposes tasks and owners; `--yes` creates them, `--dispatch` starts delegates |
+| Let agents code it while you sleep | `/codetgh:split --run spec.md`, with the [runner](#runner) on; review and merge the PRs |
+| See who is where | "Who is online and on what?", `codetgh status`, or the console filtered by project |
+| Avoid editing the same file | Automatic: Claude claims what it edits and warns or asks before touching someone else's |
+| Hit your Claude limit | Automatic: a handoff at 90 %, your teammates told at 100 % and again when you are back |
+| Keep a decision | "Propose to team memory: …"; a person accepts it in the console, then every session reads it |
 
 ## Start a group project
 
@@ -79,6 +98,25 @@ The sender's agent asks for it in plain words ("delegate to @alex: run the tests
 - **Turn it off** from the console, page *Delegations*.
 
 Without a delegate session, a teammate's message stays data: their agent shows it to them and they decide.
+
+## Runner
+
+The runner turns flagged tasks into reviewed pull requests, on the owner's machine:
+
+```
+/codetgh:split --run spec.md        tasks flagged for the runner (owner or admin only)
+console › Projects › Start runner   the project is on
+codetgh runner                      for each ready task, up to max_agents at once:
+  git worktree (stacked on the parent PR's branch if it is still open)
+  agent in a throwaway container → the runner commits, pushes, opens the PR
+  fresh reviewer → VERDICT, posted on the PR → fix rounds, 3 at most
+you review and merge
+```
+
+- **Setup:** `gh` logged in, Docker, `codetgh runner build-image`, a Claude token from `claude setup-token` in `~/.config/codetgh/runner.env`, and `~/.config/codetgh/runner.json` listing each project's local clone. Full steps in [docs/DEPLOY.md](docs/DEPLOY.md#runner-optional-owner-only).
+- **Isolation:** each agent runs in a container that sees only its task's worktree and one Claude credential: no home, keys, gh or CodeTgh token, no git metadata. The runner commits, refuses changes to `.git`, CI workflows and agent settings, and ignores repository hooks.
+- **Defaults:** 3 agents, `auto` permission mode, human merge. Bypass and auto-merge are opt-ins.
+- **Limits:** the reviewer is not a security boundary, because the code it reads can steer it, so review sensitive changes yourself. Agents reach the internet. Run the runner as a dedicated user for the strongest setup.
 
 ## Host the hub
 
@@ -119,7 +157,7 @@ Every command has `--help`, and every error says what to do next.
 - **Project boundaries.** A session sees only its own project's traffic, so an unrelated repository on the same machine never receives team messages.
 - **Guards on every message.** Secrets are scanned before storage. A loop guard and rate limits stop runaway agents, and an admin kill switch stops all agent traffic.
 - **Verifiable history.** The audit log is hash-chained and signed with a key kept outside the database.
-- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely, apart from the two opt-ins above: delegate sessions, and the owner's own launcher (`codetgh launcher`), which can start or stop `claude remote-control` in folders listed on that machine.
+- **Private by design.** Threads can be end-to-end encrypted. No tool runs commands remotely, apart from three opt-ins: delegate sessions, the owner's own launcher (`codetgh launcher`), which can start or stop `claude remote-control` in folders listed on that machine, and the owner's own [runner](#runner), which runs flagged tasks in containers on that machine. The hub itself never runs anything.
 
 Found a vulnerability? Please report it privately: see [SECURITY.md](SECURITY.md).
 
