@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, project, user } from "../db/schema.js";
@@ -170,15 +170,21 @@ export async function setAgentsPaused(db: Db, p: Principal, paused: boolean) {
   return { agents_paused: paused };
 }
 
+// SessionEnd, or a session the hub stopped seeing: the row stays for the audit, it only leaves routing and listings.
+async function endAgents(tx: Db, where: SQL | undefined) {
+  const rows = await tx
+    .update(agent)
+    .set({ endedAt: new Date(), acceptRequestsFrom: null })
+    .where(and(where, isNull(agent.endedAt)))
+    .returning({ id: agent.id, teamId: agent.teamId });
+  // Intent claims end with the session; exclusive and shared claims run until their TTL.
+  for (const row of rows) await releaseFor(tx, { agentId: row.id }, "session_end", true);
+  return rows;
+}
+
 export async function endSession(db: Db, p: Principal, sessionId: string) {
   await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(agent)
-      .set({ endedAt: new Date(), acceptRequestsFrom: null })
-      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId), isNull(agent.endedAt)))
-      .returning({ id: agent.id });
-    // Intent claims end with the session; exclusive and shared claims run until their TTL.
-    if (row) await releaseFor(tx, { agentId: row.id }, "session_end", true);
+    const [row] = await endAgents(tx, and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId)));
     if (row)
       await appendAudit(tx, {
         teamId: p.teamId,
@@ -189,6 +195,17 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
         action: "agent.session_ended",
         subjectId: row.id,
       });
+  });
+}
+
+export const STALE_SESSION_MS = 12 * 3_600_000;
+
+// A Claude Code session that sent nothing for 12 h ended without its SessionEnd (crash, closed laptop): end it the same way.
+export async function expireStaleSessions(db: Db) {
+  await db.transaction(async (tx) => {
+    const rows = await endAgents(tx, and(eq(agent.kind, "claude-code"), lt(agent.lastSeenAt, new Date(Date.now() - STALE_SESSION_MS))));
+    for (const row of rows)
+      await appendAudit(tx, { teamId: row.teamId, actorType: "hub", via: "system", action: "agent.session_expired", subjectId: row.id });
   });
 }
 
