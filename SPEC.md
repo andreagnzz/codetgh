@@ -255,9 +255,9 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | --- | --- |
 | Garantie | Au moins une fois ; le récepteur dédoublonne par id |
 | Ordre | seq croissant par boîte de réception et par fil ; pas d'ordre global |
-| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. Quand send_message, ask_peer ou POST /v1/messages ouvre un tel fil (expéditeur sans projet, adressé à une personne ou à l'équipe), le résultat porte warning : « console only: no project on this thread; name a project or agent:<id> to reach a session ». La console et le CLI de la personne (codetgh inbox) montrent tout |
+| Portée | Une session reçoit ce qui est adressé à son agent (agent:…), et ce qui est adressé à son humain dans un fil du projet de la session ; un message à une personne dans un fil sans projet n'arrive dans aucune session. Le résultat de send_message, ask_peer et POST /v1/messages porte reach : par personne, les sessions vivantes (online ou idle) qui le liront, en identifiants du hub. Un message adressé à des personnes ou à agent:… (une réponse va à l'agent du message parent) qu'aucune de leurs sessions vivantes ne lirait échoue avec E_UNREACHABLE et rien n'est stocké ; l'erreur nomme leurs sessions en ligne et hors ligne, comme team_overview les montre (rien pour un invité) ; allow_offline: true le garde pour leur console et leur prochaine session. @team, thread:, un verdict de boucle et une réponse à un humain n'échouent jamais. La console et le CLI de la personne (codetgh inbox) montrent tout |
 | Curseur | Un curseur de lecture par agent, distinct du page_token de pagination : inbox_read ne l'avance pas, ack l'avance |
-| États | queued, delivered (première lecture), read (accusé), puis accepted, declined ou done pour une request |
+| États | queued, delivered (première lecture, ou poussée par le flux d'une session), read (accusé), puis accepted, declined ou done pour une request ; message_status les donne par destinataire |
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
 | Rétention | Messages 90 jours (réglable) ; décisions, contrats et audit conservés |
 | Tailles | Corps 8 Ko au plus (E_TOO_LARGE au-delà) ; 20 références ; 5 pièces jointes de 256 Ko |
@@ -270,7 +270,7 @@ Journal d'audit. Chaque écriture ajoute un audit_event chaîné : hash = SHA-25
 
 ## Outils MCP
 
-Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'en appelle que quelques-uns par session, et chaque réponse reste sous 2 000 tokens par défaut.
+Le hub expose dix-neuf outils, quelques ressources et trois prompts ; Claude n'en appelle que quelques-uns par session, et chaque réponse reste sous 2 000 tokens par défaut.
 
 ### Conventions
 
@@ -295,6 +295,7 @@ Le hub expose dix-huit outils, quelques ressources et trois prompts ; Claude n'e
 | status_set | Publie ce que fait l'agent : une ligne, des chemins, une durée | text, paths[], ttl_s | Écriture | 1 |
 | send_message | Envoie une note, une question, une réponse, une demande ou une alerte | to, kind, subject, body, priority, refs[], reply_to, requires_ack | Écriture | 1 |
 | inbox_read | Lit les messages non lus ou ceux d'un fil, sans avancer le curseur | thread, page_token, kinds[], limit (20 au plus) | Lecture | 1 |
+| message_status | Par destinataire : remis, lu, statut d'accusé et longueur de la note (jamais son texte) ; pour l'expéditeur et les participants du fil, E_NOT_FOUND sinon | message_id | Lecture | 1 |
 | ack | Accuse réception, avance le curseur, répond à une demande | message_ids[] ou up_to, status (accepted, declined, done), note | Écriture | 1 |
 | ask_peer | Pose une question et attend la réponse ; avec kind request, confie une tâche à la session déléguée du coéquipier, sans attendre | to, kind (question ou request), question, refs[], wait_s (60 au plus ; 45 s pour une question, 0 pour une demande) | Écriture, attente | 1 |
 | claim | Réserve des chemins, un glob ou une tâche | scope[], mode, ttl_s, reason | Écriture | 2 |
@@ -374,6 +375,7 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
 | E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
 | E_DELEGATE_CHAIN | Une session déléguée tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
+| E_UNREACHABLE | Aucune session vivante du destinataire ne lirait le message | Adresser la session en ligne que l'erreur nomme (agent:…), sinon le dire à l'utilisateur ; allow_offline seulement s'il accepte que le message attende |
 
 ### Permissions recommandées
 
@@ -388,6 +390,7 @@ Les lectures et les écritures peu risquantes passent sans invite ; le reste dem
       "mcp__plugin_codetgh_hub__status_set",
       "mcp__plugin_codetgh_hub__ack",
       "mcp__plugin_codetgh_hub__inbox_read",
+      "mcp__plugin_codetgh_hub__message_status",
       "mcp__plugin_codetgh_hub__ask_peer",
       "mcp__plugin_codetgh_hub__send_message",
       "mcp__plugin_codetgh_hub__claim_check",
