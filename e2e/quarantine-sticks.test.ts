@@ -14,7 +14,7 @@ const send = (token: string, kind: string) =>
   fetch(`${hub.url}/v1/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ to: "@lea", kind, body: `a ${kind}`, priority: "normal" }),
+    body: JSON.stringify({ to: "@lea", kind, body: `a ${kind}`, priority: "normal", allow_offline: true }),
   });
 
 it("keeps a member quarantined whatever new session or agent their token opens", async () => {

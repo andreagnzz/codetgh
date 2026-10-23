@@ -14,7 +14,6 @@ import {
 } from "@codetgh/shared";
 import { auditKeyFromSeed, deriveAuditSeed } from "@codetgh/shared/audit";
 import {
-  CONSOLE_ONLY_WARNING,
   CreateProjectInput,
   DeviceStartInput,
   DeviceTokenInput,
@@ -80,6 +79,8 @@ import {
   inboxHeader,
   lastReceiptSeq,
   type MessagingDeps,
+  markDelivered,
+  messageStatus,
   purgeMessages,
   receivedSince,
   sendMessage,
@@ -477,7 +478,7 @@ export function createApp({
       thread: m.threadId,
       hop: m.hop,
       sent_at: m.createdAt.toISOString(),
-      ...("consoleOnly" in m && m.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
+      reach: m.reach,
     });
   });
 
@@ -602,6 +603,7 @@ export function createApp({
   v1.get("/messages/:message_id/thread-key", async (c) =>
     c.json(await threadKeyForMessage(db, c.get("principal"), c.req.param("message_id"))),
   );
+  v1.get("/messages/:message_id/status", async (c) => c.json(await messageStatus(db, c.get("principal"), c.req.param("message_id"))));
 
   v1.post("/ack", async (c) => {
     const p = c.get("principal");
@@ -631,12 +633,20 @@ export function createApp({
       const pump = () => {
         pending = pending
           .then(async () => {
-            for (let rows = await receivedSince(db, p, last, agent); rows.length; rows = await receivedSince(db, p, last, agent))
+            for (let rows = await receivedSince(db, p, last, agent); rows.length; rows = await receivedSince(db, p, last, agent)) {
               for (const r of rows) {
                 const data = { message_id: r.messageId, thread: r.threadId, kind: r.kind, priority: r.priority };
                 await stream.writeSSE({ event: "message", id: String(r.seq), data: JSON.stringify(data) });
                 last = r.seq ?? last;
               }
+              if (agent)
+                await markDelivered(
+                  db,
+                  p,
+                  agent,
+                  rows.map((r) => r.messageId),
+                );
+            }
           })
           .catch(stop);
       };

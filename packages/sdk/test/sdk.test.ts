@@ -22,7 +22,7 @@ describe("@codetgh/sdk", () => {
     const sam = createClient({ url: hub.url, token: team.sam.token });
     const lea = createClient({ url: hub.url, token: team.lea.token });
     await startSession(hub.url, team.lea.token, "lea-sdk");
-    const sent = await sam.send({ to: "@lea", kind: "question", body: "Is <b>v2</b> frozen?" });
+    const sent = await sam.send({ to: "@lea", kind: "question", body: "Is <b>v2</b> frozen?", allow_offline: true });
     expect(sent.id).toMatch(/^msg_/);
 
     const inbox = await lea.inbox({ limit: 20 });
@@ -31,6 +31,7 @@ describe("@codetgh/sdk", () => {
     expect(inbox.envelopes.join("\n")).toContain('trust="untrusted-peer"');
 
     expect((await lea.ack({ up_to: sent.id })).acked).toBeGreaterThan(0);
+    expect((await sam.messageStatus(sent.id)).recipients).toMatchObject([{ handle: "@lea", read_at: expect.any(String) }]);
     expect((await lea.inbox({ limit: 20 })).messages.map((m) => m.id)).not.toContain(sent.id);
   });
 
@@ -41,7 +42,7 @@ describe("@codetgh/sdk", () => {
     const events = lea.stream({ signal: ctl.signal });
     const first = events.next();
     await new Promise((r) => setTimeout(r, 200));
-    const sent = await sam.send({ to: "@lea", kind: "note", body: "streamed" });
+    const sent = await sam.send({ to: "@lea", kind: "note", body: "streamed", allow_offline: true });
     const { value } = await first;
     ctl.abort();
     expect(value).toMatchObject({ message_id: sent.id, kind: "note" });

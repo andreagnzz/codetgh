@@ -54,7 +54,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
   });
 
   it("stores only ciphertext and lets the recipient decrypt locally", async () => {
-    const sent = await cli("sam", ["send", "--encrypt", "--to", "@lea", "--kind", "question", "--body", PLAIN]);
+    const sent = await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--kind", "question", "--body", PLAIN]);
     sentId = sent.out.match(/msg_[0-9A-Z]{26}/)?.[0] ?? "";
     expect(sentId).not.toBe("");
 
@@ -177,6 +177,6 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect(refused.out).toContain("@lea's encryption key changed");
     // After checking with Léa, Sam accepts the new key.
     expect((await cli("sam", ["keys", "trust", "@lea"])).code).toBe(0);
-    expect((await cli("sam", ["send", "--encrypt", "--to", "@lea", "--body", "new plan"])).code).toBe(0);
+    expect((await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--body", "new plan"])).code).toBe(0);
   });
 });

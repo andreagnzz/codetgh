@@ -59,7 +59,7 @@ it("Sam asks Léa through ask_peer and gets her answer in an envelope (scenario 
 
 it("returns pending when nobody answers in time", async () => {
   const sam = await mcpClient(hub.url, team.sam.token);
-  const r = await call(sam, "ask_peer", { to: "@malik", question: "Tu es là ?", wait_s: 1 });
+  const r = await call(sam, "ask_peer", { to: "@malik", question: "Tu es là ?", wait_s: 1, allow_offline: true });
   expect(r.json()).toMatchObject({ status: "pending" });
   await sam.close();
 });

@@ -100,7 +100,7 @@ describe("REST send", () => {
       fetch(`${hub.url}/v1/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-        body: JSON.stringify({ to: "@lea", kind: "note", body: "rest once", idempotency_key: "k-rest-1" }),
+        body: JSON.stringify({ to: "@lea", kind: "note", body: "rest once", idempotency_key: "k-rest-1", allow_offline: true }),
       });
     const a = await (await send()).json();
     const b = await (await send()).json();
@@ -115,7 +115,9 @@ describe("stream", () => {
     const live = sse(team.lea.token, null, (e) => e.length >= 1);
     await new Promise((r) => setTimeout(r, 200));
     const sam = await mcpClient(hub.url, team.sam.token);
-    const sent = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "note", body: "streamed secret-free text" })).text);
+    const sent = JSON.parse(
+      (await call(sam, "send_message", { to: "@lea", kind: "note", body: "streamed secret-free text", allow_offline: true })).text,
+    );
     await sam.close();
     const [first] = await live;
     expect(JSON.parse(first?.data ?? "{}")).toMatchObject({ message_id: sent.id, kind: "note" });
@@ -130,7 +132,10 @@ describe("stream", () => {
 describe("outbox (scenario 5, phase 2)", () => {
   it("queues a CLI send while the hub is down and replays it once", async () => {
     const sam = await hubDownThenUp();
-    const down = await cli(["send", "--to", "@lea", "--body", "sent while offline"], { url: sam.url, token: team.sam.token });
+    const down = await cli(["send", "--allow-offline", "--to", "@lea", "--body", "sent while offline"], {
+      url: sam.url,
+      token: team.sam.token,
+    });
     expect(down.out).toContain("queued");
     expect(down.code).toBe(0);
     const file = join(config, "outbox.json");
@@ -151,7 +156,7 @@ describe("outbox (scenario 5, phase 2)", () => {
 
   it("only sends a queued message to the hub and the account it was written for", async () => {
     const old = await hubDownThenUp();
-    await cli(["send", "--to", "@lea", "--body", "queued for the old hub"], { url: old.url, token: team.sam.token });
+    await cli(["send", "--allow-offline", "--to", "@lea", "--body", "queued for the old hub"], { url: old.url, token: team.sam.token });
     // After logging in elsewhere, or as someone else, the queue is kept, not sent.
     const elsewhere = await cli(["outbox", "flush"], { url: hub.url, token: team.sam.token });
     expect(elsewhere.out).toContain("0 sent, 1 kept for another hub or account");
@@ -208,7 +213,7 @@ describe("outbox (scenario 5, phase 2)", () => {
 
   it("the daemon flushes the outbox and prints one line per incoming message", async () => {
     const back = await hubDownThenUp();
-    await cli(["send", "--to", "@lea", "--body", "flushed by the daemon"], { url: back.url, token: team.sam.token });
+    await cli(["send", "--allow-offline", "--to", "@lea", "--body", "flushed by the daemon"], { url: back.url, token: team.sam.token });
     await back.up();
     const lines: string[] = [];
     const ctl = new AbortController();
@@ -217,7 +222,7 @@ describe("outbox (scenario 5, phase 2)", () => {
     expect(await bodies("flushed by the daemon")).toBe(1);
 
     const lea = await mcpClient(hub.url, team.lea.token);
-    const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body: "ping" })).text);
+    const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body: "ping", allow_offline: true })).text);
     await lea.close();
     for (let i = 0; i < 50 && !lines.some((l) => l.includes(sent.id)); i++) await new Promise((r) => setTimeout(r, 100));
     ctl.abort();

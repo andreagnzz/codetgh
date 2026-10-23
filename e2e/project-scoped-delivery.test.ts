@@ -101,7 +101,7 @@ describe("delivery follows the session's project", () => {
     const res = await fetch(`${hub.url}/v1/messages`, {
       method: "POST",
       headers: auth(team.sam.token),
-      body: JSON.stringify({ to: "@lea", kind: "note", body: "lunch at noon?" }),
+      body: JSON.stringify({ to: "@lea", kind: "note", body: "lunch at noon?", allow_offline: true }),
     });
     const sent = (await res.json()) as { thread: string };
     for (const s of ["lea-p1", "lea-p2", "lea-free"]) expect(await prompt(s)).not.toContain("lunch at noon?");

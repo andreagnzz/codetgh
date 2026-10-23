@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 import {
+  ACK_STATUSES,
   AckInput,
   AgentSessionInput,
   ClaimsCheckRestInput,
@@ -56,14 +57,33 @@ export const ClaimsCheckOutput = z.object({
   ),
 });
 export const PromptOutput = z.object({ context: z.string() });
-export const CONSOLE_ONLY_WARNING = "console only: no project on this thread; name a project or agent:<id> to reach a session";
 export const SentMessage = z.object({
   id: z.string(),
   thread: z.string(),
   hop: z.number(),
   sent_at: z.string(),
-  // Set when the new thread reaches no Claude session, only the console: CONSOLE_ONLY_WARNING.
-  warning: z.string().optional(),
+  // The live sessions that will read it, per person; hub ids only. Omitted for a guest, and on an idempotent replay.
+  reach: z
+    .array(
+      z.object({
+        handle: z.string(),
+        sessions: z.array(z.object({ agent: z.string(), project: z.string().nullable(), presence: z.enum(["online", "idle"]) })),
+      }),
+    )
+    .optional(),
+});
+// Delivery metadata per recipient; the ack note's length, never its text.
+export const MessageStatus = z.object({
+  message_id: z.string(),
+  recipients: z.array(
+    z.object({
+      handle: z.string(),
+      agent: z.string().nullable(),
+      delivered_at: z.string().nullable(),
+      read_at: z.string().nullable(),
+      ack: z.object({ status: z.enum(ACK_STATUSES).nullable(), note_chars: z.number() }).nullable(),
+    }),
+  ),
 });
 export const InboxOutput = z.object({
   messages: z.array(
@@ -353,6 +373,13 @@ export const REST_ROUTES = {
     summary: "The thread of a message, your wrapped key for it and the message's ciphertext, to reply in an encrypted thread",
     params: z.object({ message_id: z.string().regex(/^msg_[0-9A-Z]{26}$/) }),
     output: ThreadKeyOutput,
+  },
+  messageStatus: {
+    method: "GET",
+    path: "/v1/messages/{message_id}/status",
+    summary: "Per recipient: delivered, read and ack status of a message you sent or whose thread you take part in",
+    params: z.object({ message_id: z.string().regex(/^msg_[0-9A-Z]{26}$/) }),
+    output: MessageStatus,
   },
   createProject: {
     method: "POST",

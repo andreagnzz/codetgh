@@ -91,6 +91,7 @@ describe("identity", () => {
       "inbox_read",
       "memory_propose",
       "memory_search",
+      "message_status",
       "send_message",
       "status_set",
       "task_claim",

@@ -10,6 +10,7 @@ import {
   MemoryAcceptInput,
   MemoryProposeInput,
   MemorySearchInput,
+  MessageStatusInput,
   SendMessageInput,
   StatusSetInput,
   TaskClaimInput,
@@ -20,7 +21,6 @@ import {
   type Whoami,
   WhoamiInput,
 } from "@codetgh/shared";
-import { CONSOLE_ONLY_WARNING } from "@codetgh/shared/rest";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { type Agent, delegateFor, resolveAgent, setStatus } from "./domain/agents.js";
@@ -34,6 +34,7 @@ import {
   envelope,
   findAnswer,
   type MessagingDeps,
+  messageStatus,
   renderInbox,
   sendMessage,
   threadView,
@@ -154,7 +155,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "send_message",
     {
       description:
-        "Send a note, question, answer (needs reply_to), request, status or alert. to: @handle, @team, agent:<id> or thread:<id>. Never put keys, tokens or .env content in a message.",
+        "Send a note, question, answer (needs reply_to), request, status or alert. to: @handle, @team, agent:<id> or thread:<id>. reach lists the live sessions that will read it; to a person or agent none of whose sessions would, it fails with E_UNREACHABLE (allow_offline: true leaves it in their console inbox). Never put keys, tokens or .env content in a message.",
       inputSchema: SendMessageInput,
       annotations: WRITE,
       _meta: ALWAYS,
@@ -173,8 +174,23 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           thread: m.threadId,
           hop: m.hop,
           sent_at: m.createdAt.toISOString(),
-          ...("consoleOnly" in m && m.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
+          reach: m.reach,
         };
+      }),
+  );
+
+  server.registerTool(
+    "message_status",
+    {
+      description:
+        "Delivery of a message you sent or whose thread you are in: per recipient, delivered_at (first read by a session), read_at and the ack status.",
+      inputSchema: MessageStatusInput,
+      annotations: READ,
+    },
+    async ({ agent, message_id }) =>
+      run(async () => {
+        await me(agent);
+        return messageStatus(db, p, message_id);
       }),
   );
 
@@ -214,19 +230,19 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "ask_peer",
     {
       description:
-        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives between your tool calls, with inbox_read or at your next prompt. priority blocking: you cannot go on without it. kind request: hand a task to the teammate's delegate session on this project (it started with codetgh start --accept-requests-from you); it does the task on its own and replies, and you do not wait (E_NO_DELEGATE if they have none, E_DELEGATE_BUSY if it is on another request).",
+        "Ask a teammate (@handle) a question and wait up to wait_s seconds. If the result is pending, keep working: the answer arrives between your tool calls, with inbox_read or at your next prompt. priority blocking: you cannot go on without it. kind request: hand a task to the teammate's delegate session on this project (it started with codetgh start --accept-requests-from you); it does the task on its own and replies, and you do not wait (E_NO_DELEGATE if they have none, E_DELEGATE_BUSY if it is on another request). E_UNREACHABLE: no live session of theirs would read it, as with send_message.",
       inputSchema: AskPeerInput,
       annotations: WRITE,
       _meta: ALWAYS,
     },
-    async ({ agent, to, kind, question, refs, wait_s, priority }) =>
+    async ({ agent, to, kind, question, refs, wait_s, priority, allow_offline }) =>
       run(async () => {
         const a = await me(agent);
         const delegate = kind === "request" ? await delegateFor(db, p, a, to) : undefined;
         const q = await sendMessage(
           deps,
           { p, agent: a, via: "mcp" },
-          { to: delegate ? `agent:${delegate}` : to, kind, body: question, refs, priority, delegate },
+          { to: delegate ? `agent:${delegate}` : to, kind, body: question, refs, priority, delegate, allow_offline },
         );
         const waitS = wait_s ?? (delegate ? 0 : 45);
         const answered = (item: Awaited<ReturnType<typeof findAnswer>>) =>
@@ -261,7 +277,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           hint: delegate
             ? "Keep working on your part; the delegate's reply (answer, done or blocked) arrives between your tool calls or wakes you."
             : "Keep working; the answer will arrive with inbox_read or at your next prompt.",
-          ...("consoleOnly" in q && q.consoleOnly && { warning: CONSOLE_ONLY_WARNING }),
+          reach: q.reach,
         };
       }),
   );

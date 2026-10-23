@@ -15,6 +15,7 @@ export const ERROR_CODES = [
   "E_NO_DELEGATE",
   "E_DELEGATE_BUSY",
   "E_DELEGATE_CHAIN",
+  "E_UNREACHABLE",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -69,6 +70,8 @@ export const SendMessageInput = z
     reply_to: messageId.optional(),
     requires_ack: z.boolean().optional(),
     idempotency_key: z.string().max(64).optional(),
+    // A message to people or sessions must reach a live session of theirs (E_UNREACHABLE); true leaves it in their console inbox.
+    allow_offline: z.boolean().optional(),
     // Only the team's loop orchestrator, replying in a thread the loop guard muted.
     loop_verdict: z.object({ reopen: z.boolean() }).optional(),
     // End-to-end encrypted: body is ciphertext from the client, which also scanned and flagged the plain text.
@@ -123,7 +126,10 @@ export const AskPeerInput = z.object({
   wait_s: z.number().int().min(0).max(60).optional(),
   // blocking: you cannot go on without the answer; the teammate's agent is told to answer at its next stopping point.
   priority: z.enum(["normal", "blocking"]).default("normal"),
+  allow_offline: z.boolean().optional(),
 });
+
+export const MessageStatusInput = z.object({ agent: agentId.optional(), message_id: messageId });
 
 export const PUSH_MODES = ["hooks", "rewake", "channel"] as const;
 // Claude Code's permission mode as hooks report it (default, acceptEdits, bypassPermissions…): letters only, so a mode
