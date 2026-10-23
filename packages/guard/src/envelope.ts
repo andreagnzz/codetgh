@@ -16,6 +16,19 @@ export const escapeAttr = (s: string, max = 60) =>
       .join(""),
   );
 
+// A short teammate text in a tool result that has no envelope: look-alikes folded, invisible and bidi characters gone,
+// every run of whitespace or control characters one space, cut before escaping, then &, <, > and " as entities.
+export const escapeLine = (s: string, max = 60) =>
+  escapeText(
+    Array.from(
+      clean(s)
+        .replace(/[\s\p{Cc}]+/gu, " ")
+        .trim(),
+    )
+      .slice(0, max)
+      .join(""),
+  );
+
 const MAX_BODY_BYTES = 8192;
 
 function truncate(text: string, id: string) {

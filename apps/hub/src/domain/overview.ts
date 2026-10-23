@@ -1,4 +1,4 @@
-import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
 import { and, count, eq, gt, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, task, user } from "../db/schema.js";
@@ -12,8 +12,10 @@ import { myOpenTasks } from "./tasks.js";
 
 const MAX_CONTEXT_CHARS = 4800; // ≈ 1 200 tokens
 
-// Free fields written by peers (label, branch, status) are one line, 60 characters, escaped.
-const free = (s: string | null | undefined) => (s ? escapeAttr(s, 60) : "");
+// Free fields written by peers (label, branch, status) are one clean line, 60 characters, escaped.
+const free = (s: string | null | undefined) => (s ? escapeLine(s, 60) : "");
+// What the envelope would flag in those words, for the object they sit in.
+const flagsOf = (...texts: (string | null | undefined)[]) => textFlags(texts.filter(Boolean).join("\n"));
 
 function ago(d: Date) {
   const min = Math.round((Date.now() - d.getTime()) / 60_000);
@@ -153,20 +155,22 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     return [
       {
         handle: m.handle,
-        name: free(m.name),
-        status: free(m.status?.text),
+        name_untrusted: free(m.name),
+        status_untrusted: free(m.status?.text),
+        flags: flagsOf(m.name, m.status?.text),
         status_age_s: m.status?.at ? Math.round((Date.now() - m.status.at.getTime()) / 1000) : null,
         ...(!opts.compact && { usage: m.usage }),
         open_tasks: m.open_tasks,
         last_seen: m.lastSeen?.toISOString() ?? null,
         sessions: rows.map((r) => ({
           agent: r.agent.id,
-          project: free(r.project),
+          project_untrusted: free(r.project),
+          label_untrusted: free(r.agent.label),
+          flags: flagsOf(r.project, r.agent.label),
           presence: presence(r.agent),
           last_seen: r.agent.lastSeenAt.toISOString(),
           platform: r.agent.platform,
           delegate_for: r.agent.acceptRequestsFrom?.map((id) => (ppl.get(id) ? `@${ppl.get(id)?.handle}` : "?")) ?? null,
-          label: free(r.agent.label),
         })),
       },
     ];

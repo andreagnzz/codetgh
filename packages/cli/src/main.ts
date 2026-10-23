@@ -2003,7 +2003,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       io.out(`${s.team}, you are @${s.you.handle}${s.paused ? " (CodeTgh is paused by an admin)" : ""}`);
       if (s.agents_paused) io.out("Sending: your agents are paused (codetgh resume)");
       io.out(
-        `Online: ${online.length ? online.map((p) => `${p.name} @${p.handle} (${p.sessions.map((x) => `${x.label}, ${x.presence}`).join("; ")})`).join("; ") : "nobody else"}`,
+        `Online: ${online.length ? online.map((p) => `${p.name_untrusted} @${p.handle} (${p.sessions.map((x) => `${x.label_untrusted}, ${x.presence}`).join("; ")})`).join("; ") : "nobody else"}`,
       );
       io.out(`Unread: ${total}${total ? ` (${unread.map(([k, n]) => `${n} ${k}`).join(", ")}): codetgh inbox` : ""}`);
       if (s.blocking_message_ids.length) io.out(`Blocking requests: ${s.blocking_message_ids.join(", ")}`);

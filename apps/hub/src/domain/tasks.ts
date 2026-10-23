@@ -1,4 +1,4 @@
-import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { TaskStatus } from "@codetgh/shared";
 import { and, desc, eq, inArray, isNull, lt, ne, not, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
@@ -44,8 +44,8 @@ async function userByHandle(db: Db, p: Principal, handle: string) {
   return m;
 }
 
-// Peer-written title stays one escaped line, under the list's one trust field; body and notes are only read through
-// task_get, in an envelope.
+// A peer-written title stays one clean escaped line, in a field named for what it is, with the flags the envelope would
+// carry, under the list's trust field; body and notes are only read through task_get, in an envelope.
 export async function view(db: Db, t: Task) {
   const [assignee] = t.assigneeUserId
     ? await db
@@ -55,7 +55,8 @@ export async function view(db: Db, t: Task) {
     : [];
   return {
     id: t.id,
-    title: escapeAttr(t.title, 120),
+    title_untrusted: escapeLine(t.title, 120),
+    flags: textFlags(t.title),
     status: t.status,
     version: t.version,
     assignee: assignee?.handle ?? null,

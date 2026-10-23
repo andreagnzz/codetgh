@@ -39,5 +39,5 @@ it("tells apart one person's sessions on the same branch: project and agent id",
   await startSession(hub.url, team.sam.token, "sam-ov");
   const overview = JSON.parse((await call(sam, "team_overview", { scope: "team" })).text);
   const lea = overview.people.find((p: { handle: string }) => p.handle === "lea");
-  expect(lea.sessions.map((s: { project: string }) => s.project).sort()).toEqual(["acme/billing", "acme/webapp"]);
+  expect(lea.sessions.map((s: { project_untrusted: string }) => s.project_untrusted).sort()).toEqual(["acme/billing", "acme/webapp"]);
 });
