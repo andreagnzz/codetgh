@@ -145,7 +145,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
   const offline =
     opts.online_only === false
       ? [...ppl]
-          .filter(([id, m]) => !byPerson.has(id) && (!handle || m.handle === handle))
+          .filter(([id, m]) => id !== p.user.id && !byPerson.has(id) && (!handle || m.handle === handle))
           .sort(([, a], [, b]) => (b.lastSeen?.getTime() ?? 0) - (a.lastSeen?.getTime() ?? 0))
           .map(([id]) => [id, []] as [string, typeof sessions])
       : [];

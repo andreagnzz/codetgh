@@ -144,6 +144,8 @@ describe("team_overview by person", () => {
     const { ov } = await overview(team.sam.token, { online_only: false });
     expect(person(ov, "malik")).toMatchObject({ sessions: [], last_seen: null });
     expect(person(ov, "lea")?.sessions).toHaveLength(4);
+    // The caller is online through this very call: never listed as a person with no session.
+    expect(person((await overview(team.malik.token, { online_only: false })).ov, "malik")).toBeUndefined();
   });
 
   it("filters by handle and by project, the caller's or a named one", async () => {
