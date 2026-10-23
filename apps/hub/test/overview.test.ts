@@ -1,16 +1,28 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { and, eq, inArray, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, auditEvent, claim } from "../src/db/schema.js";
+import { agent, auditEvent, claim, project } from "../src/db/schema.js";
 import { expireStaleSessions } from "../src/domain/agents.js";
 import { newId } from "../src/ids.js";
-import { ACME_REPO, type Hub, startHub, startSession } from "./harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 const BILLING = repoFingerprint("git@github.com:acme/billing.git");
 const hoursAgo = (n: number) => new Date(Date.now() - n * 3_600_000);
 const ids: Record<string, string> = {};
+let billing = "";
+
+type Session = { agent: string; project: string; presence: string; usage?: unknown };
+type Person = { handle: string; status: string; status_age_s: number | null; last_seen: string | null; sessions: Session[] };
+type Overview = { people: Person[]; trust: string; claims?: unknown[]; you: { handle: string; usage?: unknown } };
+const overview = async (token: string, args: Record<string, unknown> = {}) => {
+  const client = await mcpClient(hub.url, token);
+  const r = await call(client, "team_overview", args);
+  await client.close();
+  return { text: r.text, ov: JSON.parse(r.text) as Overview };
+};
+const person = (ov: Overview, handle: string) => ov.people.find((p) => p.handle === handle);
 
 // The field report: every restart made a new agent, 13 for 2 people, 6 of them not seen for over 12 hours.
 beforeAll(async () => {
@@ -39,6 +51,9 @@ beforeAll(async () => {
         .set({ lastSeenAt: hoursAgo(age) })
         .where(eq(agent.id, ids[session] ?? ""));
   }
+  billing = (await hub.db.select({ id: project.id }).from(project).where(eq(project.repoFingerprint, BILLING)))[0]?.id ?? "";
+  // Léa's plan usage, as her presence mod reports it.
+  await fetch(`${hub.url}/v1/status?session_id=lea-1&five_hour=42`, { headers: { Authorization: `Bearer ${team.lea.token}` } });
 });
 afterAll(() => hub.stop());
 
@@ -90,5 +105,75 @@ describe("stale sessions", () => {
     // A second run finds nothing more to end.
     await expireStaleSessions(hub.db);
     expect((await hub.db.select().from(auditEvent).where(eq(auditEvent.action, "agent.session_expired"))).length).toBe(6);
+  });
+});
+
+describe("team_overview by person", () => {
+  it("lists 2 people, only their live sessions, and their usage once", async () => {
+    const { ov, text } = await overview(team.sam.token);
+    expect(ov.people.map((p) => p.handle).sort()).toEqual(["lea", "sam"]);
+    expect(
+      person(ov, "lea")
+        ?.sessions.map((s) => s.agent)
+        .sort(),
+    ).toEqual(["lea-1", "lea-2", "lea-3", "lea-4"].map((s) => ids[s]).sort());
+    // Sam calls with several live sessions, so from his auto agent: his own sessions are listed, never the caller.
+    expect(
+      person(ov, "sam")
+        ?.sessions.map((s) => s.agent)
+        .sort(),
+    ).toEqual(["sam-1", "sam-2"].map((s) => ids[s]).sort());
+    expect(person(ov, "lea")?.sessions.every((s) => s.presence !== "offline" && !("usage" in s))).toBe(true);
+    expect(text.match(/"five_hour"/g)).toHaveLength(1);
+    expect(person(ov, "lea")).toMatchObject({ usage: { five_hour: { pct: 42 } }, open_tasks: { claimed: 0, in_progress: 0 } });
+    expect(ov.you.handle).toBe("sam");
+    expect(ov.trust).toMatch(/^untrusted-peer: /);
+    expect(text).not.toContain("<peer_message");
+  });
+
+  it("lists offline people once, with no session, when online_only is false", async () => {
+    expect(person((await overview(team.sam.token)).ov, "malik")).toBeUndefined();
+    const { ov } = await overview(team.sam.token, { online_only: false });
+    expect(person(ov, "malik")).toMatchObject({ sessions: [], last_seen: null });
+    expect(person(ov, "lea")?.sessions).toHaveLength(4);
+  });
+
+  it("filters by handle and by project, the caller's or a named one", async () => {
+    expect((await overview(team.sam.token, { handle: "@lea" })).ov.people.map((p) => p.handle)).toEqual(["lea"]);
+    const named = (await overview(team.sam.token, { project: billing })).ov;
+    expect(named.people.map((p) => p.handle)).toEqual(["lea"]);
+    expect(person(named, "lea")?.sessions.map((s) => s.agent)).toEqual([ids["lea-3"]]);
+    const current = (await overview(team.sam.token, { agent: ids["sam-1"], project: "current" })).ov;
+    expect(
+      person(current, "lea")
+        ?.sessions.map((s) => s.agent)
+        .sort(),
+    ).toEqual(["lea-1", "lea-2", "lea-4"].map((s) => ids[s]).sort());
+    expect(person(current, "sam")?.sessions.map((s) => s.agent)).toEqual([ids["sam-2"]]);
+  });
+
+  it("keeps people and live sessions only when compact", async () => {
+    const { ov, text } = await overview(team.sam.token, { compact: true });
+    expect(person(ov, "lea")?.sessions).toHaveLength(4);
+    expect(text).not.toContain("usage");
+    expect(ov.claims).toBeUndefined();
+  });
+
+  it("shows the latest status_set past its expiry, escaped on one line, with its age, as the console does", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    expect((await call(lea, "status_set", { agent: ids["lea-2"], text: "deploy <script>x</script>\nnow", ttl_s: 60 })).isError).toBe(false);
+    await lea.close();
+    await hub.db
+      .update(agent)
+      .set({ statusSetAt: hoursAgo(3), statusExpiresAt: hoursAgo(1) })
+      .where(eq(agent.id, ids["lea-2"] ?? ""));
+    const lp = person((await overview(team.sam.token)).ov, "lea");
+    expect(lp?.status).toBe("deploy &lt;script&gt;x&lt;/script&gt; now");
+    expect(lp?.status_age_s).toBeGreaterThanOrEqual(10_790);
+    expect(lp?.status_age_s).toBeLessThan(10_900);
+    // The dashboard's presence list: the same text, and when it was set.
+    const html = await (await fetch(`${hub.url}/console`, { headers: { cookie: team.sam.cookie } })).text();
+    expect(html).toContain("deploy &lt;script&gt;x&lt;/script&gt; now");
+    expect(html).toContain(`datetime="${hoursAgo(3).toISOString().slice(0, 13)}`);
   });
 });

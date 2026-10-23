@@ -407,7 +407,7 @@ Docs read 2026-10-16 ([Mods overview](https://code.claude.com/docs/en/plugins/mo
 
 Real run (tmux, throwaway hub from `apps/hub/test/harness.ts`, Léa and Malik online, Sam's token): the line read `CodeTgh · 2 online · 0 unread`; after Léa sent Sam a note it read `· 1 unread` within 30 s and the toast `CodeTgh: 1 unread` was raised; with the hub stopped the line disappeared at the next refresh. The token appeared 0 times in the debug log.
 
-Limits: `/v1/status` counts the unread of the token's member (messages to the person, or to the token's REST agent), not of one Claude session's agent; the REST agent `cli-<token>` it registers, like any teammate's, counts as online.
+Limits: `/v1/status` counts the unread of the token's member (messages to the person, or to the token's REST agent), not of one Claude session's agent; the REST agent `cli-<token>` it registers, like any teammate's, counted as online until team_overview listed people (2026-10-23): a `cli-` agent is not a session there, and counts nobody online.
 
 ### Mods: the current session id (docs read 2026-10-20, Claude Code 2.1.304)
 
@@ -447,7 +447,7 @@ Real sessions on the team's hub, in a linked repository, plugin installed from t
 - **Default (auto) mode.** SessionStart printed `CodeTgh ✓ <project> · @<handle> · push rewake · Claude Code 2.1.301 · 0 online · 1 unread · ⚠ rewake is off for this team …`; the presence mod drew `⚠ codetgh: CodeTgh · 0 online · 1 unread` under the prompt.
 - **Bypass** (`claude --dangerously-skip-permissions`, warning accepted). **SessionStart input carries no `permission_mode` on 2.1.301**: the agent row had none after start, so the start line cannot show `bypass`. The first prompt sent it and the row read `bypassPermissions`.
 - `/exit` ended the session on the hub (`ended_at` set) within the SessionEnd budget.
-- The mod's first `GET /v1/status` registers the token's REST agent (`<handle>@cli`), which then counts as online for 90 s; later polls do not refresh it.
+- The mod's first `GET /v1/status` registers the token's REST agent (`<handle>@cli`), which then counted as online for 90 s; later polls do not refresh it. Since team_overview lists people with their sessions, a `cli-` agent is never one of them.
 
 ### Plugin auto-update and updating from the shell (docs read 2026-10-16, not run against a real Claude Code)
 

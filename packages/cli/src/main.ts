@@ -1997,13 +1997,13 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           if (e instanceof CodeTghError) throw e;
           throw new Error(`cannot reach the hub at ${url}: run codetgh doctor`);
         });
-      const online = s.agents.filter((a) => a.presence !== "offline");
+      const online = s.people.filter((p) => p.sessions.length);
       const unread = Object.entries(s.unread).filter(([, n]) => n > 0);
       const total = unread.reduce((sum, [, n]) => sum + n, 0);
       io.out(`${s.team}, you are @${s.you.handle}${s.paused ? " (CodeTgh is paused by an admin)" : ""}`);
       if (s.agents_paused) io.out("Sending: your agents are paused (codetgh resume)");
       io.out(
-        `Online: ${online.length ? online.map((a) => `${a.name} @${a.handle} (${a.branch ? `${a.branch}, ` : ""}${a.presence})`).join("; ") : "nobody else"}`,
+        `Online: ${online.length ? online.map((p) => `${p.name} @${p.handle} (${p.sessions.map((x) => `${x.label}, ${x.presence}`).join("; ")})`).join("; ") : "nobody else"}`,
       );
       io.out(`Unread: ${total}${total ? ` (${unread.map(([k, n]) => `${n} ${k}`).join(", ")}): codetgh inbox` : ""}`);
       if (s.blocking_message_ids.length) io.out(`Blocking requests: ${s.blocking_message_ids.join(", ")}`);

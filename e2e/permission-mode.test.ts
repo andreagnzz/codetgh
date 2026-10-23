@@ -36,9 +36,6 @@ it("shows a bypass session to its person and to the team, and follows a mode cha
   expect(line).toContain("⚠ bypass: permission prompts are off");
   expect(await mode("sam-pm")).toBe("bypassPermissions");
 
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const overview = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
-  expect(overview.agents).toContainEqual(expect.objectContaining({ handle: "sam", permission_mode: "bypassPermissions" }));
   const who = await (
     await fetch(`${hub.url}/v1/whoami?session_id=sam-pm`, { headers: { authorization: `Bearer ${team.sam.token}` } })
   ).json();
@@ -50,7 +47,6 @@ it("shows a bypass session to its person and to the team, and follows a mode cha
   // shift+tab back to Manual: the next prompt reports it.
   await runHook("user-prompt-submit", { session_id: "sam-pm", cwd: repo, prompt: "go on", permission_mode: "default" }, sam);
   expect(await mode("sam-pm")).toBe("default");
-  await lea.close();
 });
 
 it("still blocks secrets in bypass, and warns on a claim conflict", async () => {

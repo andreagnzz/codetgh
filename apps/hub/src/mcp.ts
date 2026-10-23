@@ -1,4 +1,3 @@
-import { renderPeerData } from "@codetgh/guard";
 import {
   AckInput,
   AskPeerInput,
@@ -78,38 +77,6 @@ export function whoami(p: Principal, a: Agent | null): Whoami {
   };
 }
 
-// For a model: the JSON keeps ids, handles and states; every word a teammate wrote (team, names, labels, projects,
-// branches, statuses) moves into one peer envelope.
-function forModel(ov: Awaited<ReturnType<typeof teamOverview>>) {
-  const { team, agents, ...rest } = ov;
-  const lines = [
-    `Team: ${team}`,
-    ...agents.map(
-      (a) => `@${a.handle}: ${[a.name, a.label, a.project, a.branch, a.status && `"${a.status}"`].filter(Boolean).join(" · ")}`,
-    ),
-  ];
-  return {
-    ...rest,
-    // Capacity for /codetgh:split: hub values only (a checked platform name, member handles, counts).
-    agents: agents.map(
-      ({ id, handle, presence, push_mode, permission_mode, client_version, platform, delegate_for, usage, open_tasks, last_seen }) => ({
-        id,
-        handle,
-        presence,
-        push_mode,
-        permission_mode,
-        client_version,
-        platform,
-        delegate_for,
-        usage,
-        open_tasks,
-        last_seen,
-      }),
-    ),
-    team_activity: renderPeerData("team_activity", lines.join("\n")),
-  };
-}
-
 // One server per request; the hub resolved the principal from the token, never from tool arguments.
 export function createMcpServer(deps: MessagingDeps, p: Principal) {
   const { db, bus } = deps;
@@ -126,11 +93,12 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "team_overview",
     {
-      description: "Compact view of the team: who is online, their branch and status, your unread counts and blocking requests.",
+      description:
+        "The team by person: status, usage, open tasks and live sessions (agent id to address, project, presence), your unread counts and blocking requests. online_only (default true), handle, project (an id or current), compact (no usage, no claims).",
       inputSchema: TeamOverviewInput,
       annotations: READ,
     },
-    async ({ agent, scope, limit }) => run(async () => forModel(await teamOverview(db, p, await me(agent), { scope, limit }))),
+    async ({ agent, ...opts }) => run(async () => teamOverview(db, p, await me(agent), opts)),
   );
 
   server.registerTool(
@@ -433,7 +401,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   const resource = (uri: URL, value: string) => ({ contents: [{ uri: uri.href, mimeType: "text/plain", text: value }] });
   const overviewInput = TeamOverviewInput.parse({});
   server.registerResource("team_overview", "codetgh://team/overview", { description: "Same data as team_overview." }, async (uri) =>
-    resource(uri, JSON.stringify(forModel(await teamOverview(db, p, await me(), overviewInput)))),
+    resource(uri, JSON.stringify(await teamOverview(db, p, await me(), overviewInput))),
   );
   server.registerResource("inbox", "codetgh://inbox", { description: "Your unread messages, in envelopes." }, async (uri) => {
     const { items, more } = await unread(db, p, await me(), { limit: 20 });

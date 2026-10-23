@@ -10,7 +10,7 @@ In bypass there is no permission prompt to catch a mistake. The `<peer_message>`
 
 ## Bypass sessions
 
-A session started with `codetgh start --dangerously-skip-permissions` shows `bypass` on its first line, with a ⚠ note, and in Console → Agents and Projects. `team_overview` and `whoami` give its `permission_mode`; a change with shift+tab reaches the hub with the next prompt.
+A session started with `codetgh start --dangerously-skip-permissions` shows `bypass` on its first line, with a ⚠ note, and in Console → Agents and Projects. `whoami` gives its `permission_mode`; a change with shift+tab reaches the hub with the next prompt.
 
 What CodeTgh still guarantees in bypass:
 - a secret in a tool call is denied by the `pre-tool-use` hook, and the hub refuses it in a message whatever the session's mode;

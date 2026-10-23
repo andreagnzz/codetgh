@@ -29,7 +29,7 @@ it("removes an agent from the lists, keeps its history, and brings it back if th
   // Other agents no longer see it either.
   const leaMcp = await mcpClient(hub.url, team.lea.token);
   const overview = JSON.parse((await call(leaMcp, "team_overview", { scope: "team" })).text);
-  expect(overview.agents.map((a: { id: string }) => a.id)).not.toContain(old);
+  expect(overview.people.flatMap((p: { sessions: { agent: string }[] }) => p.sessions.map((s) => s.agent))).not.toContain(old);
 
   // claude --continue on the same session: it is a live session again.
   expect((await startSession(hub.url, team.sam.token, "sam-old")).agent_id).toBe(old);

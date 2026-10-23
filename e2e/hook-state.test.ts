@@ -104,6 +104,6 @@ it("marks the agent offline at session end", async () => {
   expect(r.code).toBe(0);
   const lea = await mcpClient(hub.url, team.lea.token);
   const overview = (await call(lea, "team_overview")).json();
-  expect(overview.agents.find((a: { id: string }) => a.id === agent_id)?.presence).toBe("offline");
+  expect(overview.people.flatMap((p: { sessions: { agent: string }[] }) => p.sessions.map((s) => s.agent))).not.toContain(agent_id);
   await lea.close();
 });

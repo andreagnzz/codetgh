@@ -38,7 +38,6 @@ it("tells apart one person's sessions on the same branch: project and agent id",
   const sam = await mcpClient(hub.url, team.sam.token);
   await startSession(hub.url, team.sam.token, "sam-ov");
   const overview = JSON.parse((await call(sam, "team_overview", { scope: "team" })).text);
-  // Project names are peer words: in the overview's envelope, not in its JSON.
-  expect(overview.team_activity).toContain("acme/billing");
-  expect(overview.team_activity).toContain("acme/webapp");
+  const lea = overview.people.find((p: { handle: string }) => p.handle === "lea");
+  expect(lea.sessions.map((s: { project: string }) => s.project).sort()).toEqual(["acme/billing", "acme/webapp"]);
 });
