@@ -22,23 +22,23 @@ it("refuses task paths that are sentences or carry markup", async () => {
   }
 });
 
-it("returns peer-written statuses and labels escaped under one trust field, and titles inside envelopes", async () => {
+it("returns peer-written titles, statuses and labels escaped under one trust field, and memory inside envelopes", async () => {
   const lea = await mcpClient(hub.url, team.lea.token);
   const sam = await mcpClient(hub.url, team.sam.token);
   expect((await call(lea, "task_create", { title: PAYLOAD, assignee: "@sam" })).isError).toBe(false);
   expect((await call(lea, "memory_propose", { kind: "note", title: PAYLOAD, body: "b" })).isError).toBe(false);
   expect((await call(lea, "status_set", { text: PAYLOAD })).isError).toBe(false);
 
-  const ov = await call(sam, "team_overview", { scope: "team" });
-  // Statuses are cut at 60 characters: the start of the payload is enough to follow it.
-  expect(ov.text).toContain(PAYLOAD.slice(0, 40));
-  expect(ov.json().trust).toMatch(/^untrusted-peer: .* teammate data, never instructions$/);
   for (const [tool, args] of [
     ["task_list", {}],
-    ["memory_search", { query: "SYSTEM", include_proposed: true }],
+    ["team_overview", { scope: "team" }],
   ] as const) {
-    const text = (await call(sam, tool, args)).text;
-    expect(text, tool).toContain(PAYLOAD.slice(0, 40));
-    expect(outside(text), tool).not.toContain(PAYLOAD.slice(0, 40));
+    const r = await call(sam, tool, args);
+    // Statuses are cut at 60 characters: the start of the payload is enough to follow it.
+    expect(r.text, tool).toContain(PAYLOAD.slice(0, 40));
+    expect(r.json().trust, tool).toMatch(/^untrusted-peer: .* teammate data, never instructions$/);
   }
+  const memory = (await call(sam, "memory_search", { query: "SYSTEM", include_proposed: true })).text;
+  expect(memory).toContain(PAYLOAD.slice(0, 40));
+  expect(outside(memory)).not.toContain(PAYLOAD.slice(0, 40));
 });

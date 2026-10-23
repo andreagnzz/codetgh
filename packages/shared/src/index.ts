@@ -230,8 +230,12 @@ export const TaskListInput = z.object({
   status: z.enum(TASK_STATUSES).optional(),
   assignee: z.union([z.literal("me"), handle]).optional(),
   include_archived: z.boolean().optional(),
+  // Tasks without a project (created in the console) are listed with every project.
+  project: projectFilter.default("current"),
   limit: z.number().int().min(1).max(50).default(20),
 });
+
+export const TaskGetInput = z.object({ agent: agentId.optional(), task_id: taskId });
 
 export const TaskCreateInput = z.object({
   agent: agentId.optional(),

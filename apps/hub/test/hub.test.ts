@@ -95,6 +95,7 @@ describe("identity", () => {
       "status_set",
       "task_claim",
       "task_create",
+      "task_get",
       "task_list",
       "task_update",
       "team_overview",
