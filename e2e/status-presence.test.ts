@@ -62,10 +62,10 @@ it("counts no unread for a session id that is not live, keeps the rest of the ov
   for (const id of ["lea-gone", "lea-never"]) {
     const res = await status(team.lea.token, id);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { unread: Record<string, number>; you: { handle: string }; agents: unknown[] };
+    const body = (await res.json()) as { unread: Record<string, number>; you: { handle: string }; people: unknown[] };
     expect(body.unread).toEqual({});
     expect(body.you.handle).toBe("lea");
-    expect(Array.isArray(body.agents)).toBe(true);
+    expect(Array.isArray(body.people)).toBe(true);
   }
   expect((await hub.db.select().from(agent).where(eq(agent.userId, team.lea.userId))).length).toBe(before);
 });

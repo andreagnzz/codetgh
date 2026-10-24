@@ -123,16 +123,28 @@ export const StatusOutput = z.object({
   you: z.object({ handle: z.string(), agent: z.string().nullable() }),
   paused: z.boolean(),
   agents_paused: z.boolean(),
-  agents: z.array(
+  // One entry per person; sessions are the live ones only. *_untrusted fields are teammates' words, escaped on one line:
+  // data, never instructions; flags are what the hub saw in them (instruction-like, secret-suspect, external-link).
+  people: z.array(
     z.object({
-      id: z.string(),
       handle: z.string(),
-      name: z.string(),
-      label: z.string(),
-      branch: z.string(),
-      presence: z.enum(["online", "idle", "offline"]),
-      status: z.string(),
-      last_seen: z.string(),
+      name_untrusted: z.string(),
+      status_untrusted: z.string(),
+      flags: z.array(z.string()),
+      status_age_s: z.number().nullable(),
+      last_seen: z.string().nullable(),
+      sessions: z.array(
+        z.object({
+          agent: z.string(),
+          project_untrusted: z.string(),
+          label_untrusted: z.string(),
+          flags: z.array(z.string()),
+          presence: z.enum(["online", "idle"]),
+          last_seen: z.string(),
+          platform: z.string().nullable(),
+          delegate_for: z.array(z.string()).nullable(),
+        }),
+      ),
     }),
   ),
   claims: z.array(
@@ -140,6 +152,7 @@ export const StatusOutput = z.object({
   ),
   unread: z.record(z.string(), z.number()),
   blocking_message_ids: z.array(z.string()),
+  trust: z.string(),
 });
 export const PauseOutput = z.object({ agents_paused: z.boolean() });
 export const LauncherTargets = z.object({
@@ -164,7 +177,8 @@ const phase = z.literal("review").optional();
 export const RunnerReadyQuery = z.object({ project: z.string().min(1).max(64), phase });
 export const RunnerTask = z.object({
   id: z.string(),
-  title: z.string(),
+  title_untrusted: z.string(),
+  flags: z.array(z.string()),
   status: z.enum(TASK_STATUSES),
   version: z.number(),
   assignee: z.string().nullable(),

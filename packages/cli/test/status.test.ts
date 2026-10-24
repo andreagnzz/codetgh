@@ -38,7 +38,7 @@ it("shows who is online, my unread messages and the live claims", async () => {
 
   const out = await cli(hub.url, team.lea.token, ["status"]);
   expect(out).toContain("Acme web, you are @lea");
-  expect(out).toMatch(/Online: Sam @sam \(feat\/login, online\)/);
+  expect(out).toMatch(/Online: Sam @sam \(sam@feat\/login, online\)/);
   expect(out).toContain("Unread: 1 (1 question): codetgh inbox");
   expect(out).toMatch(/Claims: api\/login\.ts → @sam \(exclusive, \d+ min\)/);
   // Peer text is not shown here: only who, where and counts.

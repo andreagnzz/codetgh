@@ -31,6 +31,7 @@ it("keeps tasks, memory, claims and the team view from a guest's agent", async (
   const malik = await mcpClient(hub.url, team.malik.token);
   for (const [tool, args] of [
     ["task_list", {}],
+    ["task_get", { task_id: taskId }],
     ["memory_search", { query: "Billing", include_proposed: true }],
     ["team_overview", { scope: "team" }],
   ] as const) {

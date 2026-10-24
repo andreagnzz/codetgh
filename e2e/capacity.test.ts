@@ -34,13 +34,12 @@ it("reports platform at session start and usage on the status poll, and shows th
   }
   await samMcp.close();
   const ov = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
-  expect(ov.agents).toContainEqual(
+  expect(ov.people).toContainEqual(
     expect.objectContaining({
       handle: "sam",
-      platform: process.platform,
-      delegate_for: null,
       usage: { five_hour: { pct: 42, resets_at: new Date(reset * 1000).toISOString() }, seven_day: { pct: 7, resets_at: null } },
       open_tasks: { claimed: 1, in_progress: 1 },
+      sessions: [expect.objectContaining({ platform: process.platform, delegate_for: null })],
     }),
   );
   await lea.close();
@@ -53,7 +52,9 @@ it("names the teammates a delegate session works for", async () => {
   await runHook("session-start", { session_id: "malik-del", source: "startup", cwd: repo }, env);
   const lea = await mcpClient(hub.url, team.lea.token);
   const ov = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
-  expect(ov.agents).toContainEqual(expect.objectContaining({ handle: "malik", delegate_for: ["@lea"] }));
+  expect(ov.people).toContainEqual(
+    expect.objectContaining({ handle: "malik", sessions: [expect.objectContaining({ delegate_for: ["@lea"] })] }),
+  );
   await lea.close();
 });
 

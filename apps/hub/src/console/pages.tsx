@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
 import type { Child, FC } from "hono/jsx";
 import { BrandHead, Logo } from "../brand.js";
-import { type listAgents, presence } from "../domain/agents.js";
+import { type listAgents, presence, statusOf } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
 import type { Principal } from "../principal.js";
 
@@ -211,6 +211,7 @@ type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];
 type RowAction = (r: AgentRow) => Child;
 const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, action }) => {
   const state = presence(r.agent);
+  const status = statusOf(r.agent);
   return (
     <li>
       <span class="who-name">{r.name}</span>{" "}
@@ -239,7 +240,17 @@ const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, 
           <Pill tone="danger">{t(lang, "quarantined")}</Pill>
         </>
       )}
-      {r.agent.statusText && <span class="status meta">{r.agent.statusText}</span>}
+      {status && (
+        <span class="status meta">
+          {status.text}
+          {status.at && (
+            <>
+              {" · "}
+              <When at={status.at} lang={lang} />
+            </>
+          )}
+        </span>
+      )}
       {action?.(r)}
     </li>
   );

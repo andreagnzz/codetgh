@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, project, user } from "../db/schema.js";
@@ -13,13 +13,20 @@ import { releaseFor } from "./claims.js";
 export type Agent = typeof agent.$inferSelect;
 type Via = "mcp" | "rest" | "hook";
 
+// A session is live (online or idle) while seen within this.
+export const LIVE_MS = 900_000;
+
 export function presence(a: Pick<Agent, "lastSeenAt" | "endedAt">, now = Date.now()) {
   if (a.endedAt) return "offline" as const;
   const age = now - a.lastSeenAt.getTime();
-  return age < 90_000 ? ("online" as const) : age < 900_000 ? ("idle" as const) : ("offline" as const);
+  return age < 90_000 ? ("online" as const) : age < LIVE_MS ? ("idle" as const) : ("offline" as const);
 }
 
 export const oneLine = (s: string, max = 60) => s.replace(/\s+/g, " ").slice(0, max);
+
+// The one rule for a status, in the console and in team_overview: the last status_set until another replaces it, even
+// past its ttl, with when it was set (null for one set before the hub kept that).
+export const statusOf = (a: Pick<Agent, "statusText" | "statusSetAt">) => (a.statusText ? { text: a.statusText, at: a.statusSetAt } : null);
 
 // Quarantine follows the person: their token can open new sessions, so any quarantined agent of theirs (removed or
 // not) makes every agent of theirs quarantined, until an admin trusts them again.
@@ -170,15 +177,21 @@ export async function setAgentsPaused(db: Db, p: Principal, paused: boolean) {
   return { agents_paused: paused };
 }
 
+// SessionEnd, or a session the hub stopped seeing: the row stays for the audit, it only leaves routing and listings.
+async function endAgents(tx: Db, where: SQL | undefined) {
+  const rows = await tx
+    .update(agent)
+    .set({ endedAt: new Date(), acceptRequestsFrom: null })
+    .where(and(where, isNull(agent.endedAt)))
+    .returning({ id: agent.id, teamId: agent.teamId });
+  // Intent claims end with the session; exclusive and shared claims run until their TTL.
+  for (const row of rows) await releaseFor(tx, { agentId: row.id }, "session_end", true);
+  return rows;
+}
+
 export async function endSession(db: Db, p: Principal, sessionId: string) {
   await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(agent)
-      .set({ endedAt: new Date(), acceptRequestsFrom: null })
-      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId), isNull(agent.endedAt)))
-      .returning({ id: agent.id });
-    // Intent claims end with the session; exclusive and shared claims run until their TTL.
-    if (row) await releaseFor(tx, { agentId: row.id }, "session_end", true);
+    const [row] = await endAgents(tx, and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, sessionId)));
     if (row)
       await appendAudit(tx, {
         teamId: p.teamId,
@@ -189,6 +202,17 @@ export async function endSession(db: Db, p: Principal, sessionId: string) {
         action: "agent.session_ended",
         subjectId: row.id,
       });
+  });
+}
+
+export const STALE_SESSION_MS = 12 * 3_600_000;
+
+// A Claude Code session that sent nothing for 12 h ended without its SessionEnd (crash, closed laptop): end it the same way.
+export async function expireStaleSessions(db: Db) {
+  await db.transaction(async (tx) => {
+    const rows = await endAgents(tx, and(eq(agent.kind, "claude-code"), lt(agent.lastSeenAt, new Date(Date.now() - STALE_SESSION_MS))));
+    for (const row of rows)
+      await appendAudit(tx, { teamId: row.teamId, actorType: "hub", via: "system", action: "agent.session_expired", subjectId: row.id });
   });
 }
 
@@ -299,7 +323,12 @@ export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: s
   await db.transaction(async (tx) => {
     await tx
       .update(agent)
-      .set({ statusText: oneLine(input.text, 200), statusPaths: input.paths, statusExpiresAt: new Date(Date.now() + input.ttl_s * 1000) })
+      .set({
+        statusText: oneLine(input.text, 200),
+        statusPaths: input.paths,
+        statusSetAt: new Date(),
+        statusExpiresAt: new Date(Date.now() + input.ttl_s * 1000),
+      })
       .where(eq(agent.id, a.id));
     await appendAudit(tx, {
       teamId: p.teamId,
