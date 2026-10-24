@@ -57,6 +57,7 @@ import {
   canAutoLink,
   createProject,
   endSession,
+  expireStaleSessions,
   registerSession,
   resolveAgent,
   setAgentsPaused,
@@ -127,6 +128,7 @@ const PROMPT_BATCH = 5;
 const CHECKPOINT_EVERY_MS = 10 * 60_000;
 const PURGE_EVERY_MS = 60 * 60_000;
 const LEASE_SWEEP_MS = 60_000;
+const SESSION_SWEEP_MS = 10 * 60_000;
 const PROMPT_BUDGET = 9500;
 
 // Request lines carry ids, status and latency only: never headers, tokens or message text.
@@ -182,6 +184,11 @@ export function createApp({
     LEASE_SWEEP_MS,
   );
   leaseTimer.unref();
+  const sessionTimer = setInterval(
+    () => expireStaleSessions(db).catch((e: Error) => logger.error({ err: e.name }, "session expiry failed")),
+    SESSION_SWEEP_MS,
+  );
+  sessionTimer.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
@@ -888,6 +895,7 @@ export function createApp({
       clearInterval(checkpointTimer);
       clearInterval(purgeTimer);
       clearInterval(leaseTimer);
+      clearInterval(sessionTimer);
       stopSlack();
       return mcp.close();
     },

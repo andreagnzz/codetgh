@@ -1,6 +1,6 @@
 import type { EngineInterface, Register, SessionRateLimit } from "claude-code";
 
-type Status = { you: { handle: string }; agents: { handle: string; presence: string }[]; unread: Record<string, number> };
+type Status = { you: { handle: string }; people: { handle: string; sessions: unknown[] }[]; unread: Record<string, number> };
 
 // The Stop hook's rewake waiter gives up after this (REWAKE_BUDGET_MS in hook.ts); after it, only the mod can wake the session.
 const REWAKE_MS = 3_540_000;
@@ -25,7 +25,8 @@ let rewake = false;
 
 // Counts only: no handle, status or message text a peer wrote reaches the screen.
 function counts(s: Status) {
-  const online = s.agents.filter((a) => a.presence !== "offline" && a.handle !== s.you.handle).length;
+  // Teammates with a live session: the hub lists only live sessions.
+  const online = s.people.filter((p) => p.sessions.length && p.handle !== s.you.handle).length;
   const total = Object.values(s.unread).reduce((n, k) => n + (Number(k) || 0), 0);
   return { online, unread: total };
 }

@@ -46,7 +46,7 @@ it("cuts a revoked member everywhere within 5 seconds (scenario 6)", async () =>
 
   const sam = await mcpClient(hub.url, team.sam.token);
   const overview = (await call(sam, "team_overview")).json();
-  expect(overview.agents.filter((a: { handle: string; presence: string }) => a.handle === "malik" && a.presence !== "offline")).toEqual([]);
+  expect(overview.people.filter((p: { handle: string }) => p.handle === "malik")).toEqual([]);
   const tokens = await hub.db.select().from(personalToken).where(eq(personalToken.userId, team.malik.userId));
   expect(tokens.every((t) => t.revokedAt)).toBe(true);
   const claims = await hub.db.select().from(claim).where(eq(claim.holderUserId, team.malik.userId));

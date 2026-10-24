@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, fakeCommand, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -51,13 +51,11 @@ it("warns once an admin turns rewake off", async () => {
   expect(await start("sam-status-2")).toContain("rewake is off for this team");
 });
 
-it("shows each session's push mode and Claude Code version to the team", async () => {
+it("shows each session's push mode and Claude Code version to the team in the console", async () => {
   const html = await (await fetch(`${hub.url}/console/agents`, { headers: { cookie: team.lea.cookie } })).text();
   expect(html).toContain("Push");
+  expect(html).toContain("rewake");
   expect(html).toContain("2.1.299");
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const overview = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
-  expect(overview.agents).toContainEqual(expect.objectContaining({ handle: "sam", push_mode: "rewake", client_version: "2.1.299" }));
 });
 
 it("treats a push mode the plugin no longer offers (an old channel install) as hooks", async () => {

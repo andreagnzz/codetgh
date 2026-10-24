@@ -104,7 +104,7 @@ async function othersLive(tx: Db, p: Principal, a: Agent) {
 }
 
 // team_overview: live claims of the team (or of the agent's project), the agent's own included. No reasons: they are peer text.
-export async function liveClaims(db: Db, p: Principal, a: Agent | null, opts: { scope: "team" | "project"; limit: number }) {
+export async function liveClaims(db: Db, p: Principal, a: Agent | null, opts: { projectId?: string | null; limit: number }) {
   requireMember(p);
   const rows = await db
     .select({ claim, handle: membership.handle })
@@ -115,7 +115,7 @@ export async function liveClaims(db: Db, p: Principal, a: Agent | null, opts: { 
         eq(claim.teamId, p.teamId),
         isNull(claim.releasedAt),
         gt(claim.expiresAt, new Date()),
-        opts.scope === "project" && a?.projectId ? or(eq(claim.projectId, a.projectId), isNull(claim.projectId)) : undefined,
+        opts.projectId ? or(eq(claim.projectId, opts.projectId), isNull(claim.projectId)) : undefined,
       ),
     )
     .orderBy(asc(claim.expiresAt))

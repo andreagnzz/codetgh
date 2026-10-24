@@ -220,13 +220,14 @@ describe("console: the filter is remembered and follows the pages", () => {
 });
 
 describe("MCP: who is on which project", () => {
-  it("names each agent's project in team_overview, the caller's project first", async () => {
+  it("names each session's project in team_overview, the caller's project first", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
     const ov = JSON.parse((await call(lea, "team_overview", { scope: "team" })).text);
-    expect(ov.team_activity).toContain("acme/webapp");
-    expect(ov.team_activity).toMatch(/@malik: [^\n]*· acme ·/);
-    const first = ov.team_activity.split("\n").find((l: string) => l.startsWith("@"));
-    expect(first).toContain("feat/acme");
+    type Person = { handle: string; sessions: { project_untrusted: string; label_untrusted: string }[] };
+    const sam = ov.people.find((p: Person) => p.handle === "sam");
+    expect(sam.sessions.map((s: { project_untrusted: string }) => s.project_untrusted)).toContain("acme/webapp");
+    expect(ov.people[0].handle).toBe("malik");
+    expect(ov.people[0].sessions[0]).toMatchObject({ project_untrusted: "acme", label_untrusted: "malik@feat/acme" });
   });
 
   it("names each online agent's project at session start, the session's project first", () => {

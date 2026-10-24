@@ -176,6 +176,8 @@ export const agent = pgTable(
     statusText: text("status_text"),
     statusPaths: text("status_paths").array(),
     statusExpiresAt: timestamp("status_expires_at"),
+    // When status_set last ran: every view shows the status with its age, past its expiry too.
+    statusSetAt: timestamp("status_set_at"),
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
     endedAt: timestamp("ended_at"),
     // Removed from the console: hidden from every list until the same session starts again.

@@ -45,10 +45,21 @@ const ref = z.object({
 
 export const WhoamiInput = z.object({ agent: agentId.optional() });
 
+const handle = z.string().regex(/^@[a-z0-9-]{1,40}$/);
+// A project id, "current" (the project of the caller's session) or "all".
+const projectFilter = z.union([z.enum(["current", "all"]), z.string().regex(/^prj_[0-9A-Z]{26}$/)]);
+
 export const TeamOverviewInput = z.object({
   agent: agentId.optional(),
   scope: z.enum(["project", "team"]).default("team"),
+  // Live sessions listed, at most.
   limit: z.number().int().min(1).max(50).default(20),
+  // false: also the people with no live session, once each, with when they were last seen.
+  online_only: z.boolean().default(true),
+  handle: handle.optional(),
+  project: projectFilter.optional(),
+  // People and their live sessions only: no usage, no claims.
+  compact: z.boolean().default(false),
 });
 
 export const StatusSetInput = z.object({
@@ -219,15 +230,18 @@ export const ClaimsCheckRestInput = z.object({ session_id: z.string().min(1).max
 export const TASK_STATUSES = ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const taskId = z.string().regex(/^tsk_[0-9A-Z]{26}$/);
-const handle = z.string().regex(/^@[a-z0-9-]{1,40}$/);
 
 export const TaskListInput = z.object({
   agent: agentId.optional(),
   status: z.enum(TASK_STATUSES).optional(),
   assignee: z.union([z.literal("me"), handle]).optional(),
   include_archived: z.boolean().optional(),
+  // Tasks without a project (created in the console) are listed with every project.
+  project: projectFilter.default("current"),
   limit: z.number().int().min(1).max(50).default(20),
 });
+
+export const TaskGetInput = z.object({ agent: agentId.optional(), task_id: taskId });
 
 export const TaskCreateInput = z.object({
   agent: agentId.optional(),

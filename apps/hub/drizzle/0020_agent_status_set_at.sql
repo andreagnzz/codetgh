@@ -1,0 +1,1 @@
+ALTER TABLE "agent" ADD COLUMN "status_set_at" timestamp;
