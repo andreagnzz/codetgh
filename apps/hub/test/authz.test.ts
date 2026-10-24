@@ -17,7 +17,7 @@ describe("direct threads stay between their participants", () => {
   it("refuses to reply into or address someone else's DM, and allows team threads", async () => {
     const sam = await mcpClient(hub.url, team.sam.token);
     const malik = await mcpClient(hub.url, team.malik.token);
-    const dm = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "question", body: "privé" })).text);
+    const dm = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "question", body: "privé", allow_offline: true })).text);
     expect(code(await call(malik, "send_message", { kind: "answer", reply_to: dm.id, body: "faux" }))).toBe("E_NOT_FOUND");
     expect(code(await call(malik, "send_message", { kind: "note", to: `thread:${dm.thread}`, body: "x" }))).toBe("E_NOT_FOUND");
     const html = await (await fetch(`${hub.url}/console/threads/${dm.thread}`, { headers: { cookie: team.malik.cookie } })).text();
@@ -62,7 +62,9 @@ describe("rate limit", () => {
     for (let i = 0; i < 12; i++) {
       const { agent_id } = await startSession(hub.url, team.sam.token, `burst-${i}`);
       const sam = await mcpClient(hub.url, team.sam.token);
-      results.push((await call(sam, "send_message", { agent: agent_id, to: "@lea", kind: "note", body: `n${i}` })).text);
+      results.push(
+        (await call(sam, "send_message", { agent: agent_id, to: "@lea", kind: "note", body: `n${i}`, allow_offline: true })).text,
+      );
       await sam.close();
     }
     expect(results.filter((t) => t.includes("E_RATE_LIMITED")).length).toBeGreaterThan(0);

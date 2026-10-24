@@ -41,7 +41,9 @@ it("never guesses the session when the token has several live ones: the call goe
   expect((await agentRow(t?.createdByAgent ?? null))?.sessionId).toMatch(/^auto-/);
   expect(t?.projectId).toBeNull();
 
-  const sent = JSON.parse((await call(malik, "send_message", { to: "@lea", kind: "note", body: "from nowhere" })).text) as { id: string };
+  const sent = JSON.parse(
+    (await call(malik, "send_message", { to: "@lea", kind: "note", body: "from nowhere", allow_offline: true })).text,
+  ) as { id: string };
   const [m] = await hub.db.select().from(message).where(eq(message.id, sent.id));
   const from = await agentRow(m?.fromAgentId ?? null);
   expect(from?.sessionId).toMatch(/^auto-/);

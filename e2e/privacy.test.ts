@@ -16,9 +16,9 @@ beforeAll(async () => {
   const sam = await mcpClient(hub.url, team.sam.token);
   const lea = await mcpClient(hub.url, team.lea.token);
   const malik = await mcpClient(hub.url, team.malik.token);
-  await call(sam, "send_message", { to: "@lea", kind: "note", body: `note de Sam ${MARKER}` });
-  await call(lea, "send_message", { to: "@sam", kind: "note", body: "réponse de Léa à Sam" });
-  await call(lea, "send_message", { to: "@malik", kind: "note", body: "message privé Léa → Malik" });
+  await call(sam, "send_message", { to: "@lea", kind: "note", body: `note de Sam ${MARKER}`, allow_offline: true });
+  await call(lea, "send_message", { to: "@sam", kind: "note", body: "réponse de Léa à Sam", allow_offline: true });
+  await call(lea, "send_message", { to: "@malik", kind: "note", body: "message privé Léa → Malik", allow_offline: true });
   await call(sam, "claim", { scope: ["api/sam.ts"] });
   const t = JSON.parse((await call(sam, "task_create", { title: "Tâche de Sam" })).text);
   await call(sam, "task_claim", { task_id: t.id, expected_version: 1 });

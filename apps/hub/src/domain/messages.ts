@@ -8,7 +8,8 @@ import { agent, alert, membership, message, receipt, team, thread, threadKey, us
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
-import type { Agent } from "./agents.js";
+import { isSessionAgent } from "./admin.js";
+import { type Agent, listed, presence } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import type { Bus } from "./bus.js";
 import type { RateLimiter } from "./limits.js";
@@ -95,7 +96,8 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       const [r] = await tx
         .select({ userId: agent.userId, id: agent.id })
         .from(agent)
-        .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6))));
+        .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6)), listed()));
+      // One answer for an id that is unknown, in another team, removed or long gone: it says nothing a sender could not list.
       if (!r) throw new HubError("E_NOT_FOUND", `no agent ${a}`);
       out.push({ userId: r.userId, agentId: r.id });
     } else if (a.startsWith("thread:")) {
@@ -112,6 +114,74 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
     }
   }
   return { recipients: out, threadId, teamWide };
+}
+
+// SPEC « Livraison »: the live sessions (online or idle) that would read a message: the agent itself for agent:<id>, else the
+// person's sessions on the thread's project. Only sessions team_overview lists (seen in the last 24 h or not ended).
+async function reachOf(tx: Db, p: Principal, recipients: Recipient[], projectId: string | null) {
+  const userIds = [...new Set(recipients.map((r) => r.userId))];
+  const people = await tx
+    .select({ userId: membership.userId, handle: membership.handle })
+    .from(membership)
+    .where(and(eq(membership.teamId, p.teamId), inArray(membership.userId, userIds)));
+  const agents = await tx
+    .select()
+    .from(agent)
+    .where(and(eq(agent.teamId, p.teamId), inArray(agent.userId, userIds), listed()))
+    .orderBy(desc(agent.lastSeenAt));
+  const sessions = agents.filter(isSessionAgent);
+  const handleOf = new Map(people.map((m) => [m.userId, `@${m.handle}`]));
+  const reads = (r: Recipient, a: Agent) =>
+    a.userId === r.userId &&
+    presence(a) !== "offline" &&
+    (r.agentId ? a.id === r.agentId : projectId !== null && a.projectId === projectId);
+  return {
+    reach: userIds.flatMap((u) => {
+      const live = sessions.filter((a) => a.userId === u && recipients.some((r) => reads(r, a)));
+      return live.length
+        ? [
+            {
+              handle: handleOf.get(u) ?? "?",
+              sessions: live.map((a) => ({ agent: a.id, project: a.projectId, presence: presence(a) })),
+            },
+          ]
+        : [];
+    }),
+    // An agent that is no session (a2a, a bridge, the person's CLI) reads through its own channel: never missed.
+    missed: recipients
+      .filter((r) => !sessions.some((a) => reads(r, a)) && !agents.some((a) => a.id === r.agentId && !isSessionAgent(a)))
+      .map((r) => ({ r, handle: handleOf.get(r.userId) ?? "?", sessions: sessions.filter((a) => a.userId === r.userId) })),
+  };
+}
+
+const since = (d: Date) => {
+  const min = Math.round((Date.now() - d.getTime()) / 60_000);
+  return min < 60 ? `${min} min` : `${Math.round(min / 60)} h`;
+};
+
+// What team_overview shows a member, as hub values (handles, agent and project ids, presence, times): never a name or a label
+// a teammate wrote, and an ended session reads as offline. Guests never get here.
+function unreachable(missed: Awaited<ReturnType<typeof reachOf>>["missed"], projectId: string | null) {
+  const lines = missed.map(({ r, handle, sessions }) => {
+    const who = r.agentId ? `agent:${r.agentId} (${handle})` : handle;
+    const target = r.agentId ? sessions.find((a) => a.id === r.agentId) : undefined;
+    const others = sessions.filter((a) => a !== target);
+    const live = others.filter((a) => presence(a) !== "offline");
+    const off = others.filter((a) => presence(a) === "offline");
+    const detail = [
+      target && `that session is offline (last seen ${since(target.lastSeenAt)} ago)`,
+      live.length &&
+        `${live.length} session${live.length > 1 ? "s" : ""} online: ${live
+          .map(
+            (a) =>
+              `agent:${a.id} (${a.projectId ? `project ${a.projectId}` : "no project"}, ${presence(a) === "online" ? "online" : `idle ${since(a.lastSeenAt)}`})`,
+          )
+          .join(", ")}${r.agentId ? "" : `, but this thread ${projectId ? `is on project ${projectId}` : "has no project"}`}`,
+      off[0] && `${off.length} offline (last seen ${since(off[0].lastSeenAt)} ago)`,
+    ].filter(Boolean);
+    return `${who} has no session that would receive this: ${detail.length ? detail.join("; ") : "no session in the last 24 h"}.`;
+  });
+  return `${lines.join(" ")} Address agent:<id>, or pass allow_offline: true to leave it in their console inbox.`;
 }
 
 function maskedExcerpt(findings: Array<{ masked: string }>) {
@@ -205,7 +275,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       .select()
       .from(message)
       .where(and(eq(message.fromAgentId, fromAgentId), eq(message.idempotencyKey, input.idempotency_key)));
-    if (dup) return dup;
+    if (dup) return { ...dup, reach: undefined };
   }
   if (authoredBy === "agent" && p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (authoredBy === "agent" && p.agentsPaused)
@@ -353,7 +423,6 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
 
     // One thread per conversation: a reply joins its parent's thread, anything else opens a new one.
     let threadId = parent?.threadId ?? addressed.threadId;
-    const opened = !threadId;
     if (!threadId) {
       threadId = newId("thr");
       await tx.insert(thread).values({
@@ -382,6 +451,18 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       if ([p.user.id, ...[...recipients.values()].map((r) => r.userId)].some((u) => !holders.has(u)))
         throw new HubError("E_INVALID", "only the people who hold this thread's key can take part"); // shortcut: no re-wrap for newcomers
     }
+    // An agent's message to people or sessions (a reply goes to the parent's agent) must reach one of their live sessions;
+    // @team, thread:, a loop verdict, a reply to a human and a human's own words (console, Slack) never fail. Nothing is
+    // stored when it does. Presence is what team_overview shows members, not guests: a guest's send neither fails nor reports
+    // it. allow_offline reports none either, so a send that cannot fail tells nothing about who is online.
+    const reached = p.role === "guest" || input.allow_offline ? null : await reachOf(tx, p, [...recipients.values()], t.projectId);
+    const direct =
+      authoredBy === "agent" &&
+      (to.length > 0 || Boolean(parent?.fromAgentId)) &&
+      !addressed.teamWide &&
+      !addressed.threadId &&
+      !input.loop_verdict;
+    if (direct && reached?.missed.length) throw new HubError("E_UNREACHABLE", unreachable(reached.missed, t.projectId));
 
     let hop = 0;
     // Bridges (GitHub, Slack) relay events, not conversation: the loop guard counts agents talking to agents.
@@ -536,8 +617,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       muted: false as const,
       row: row as typeof message.$inferSelect,
       recipientUserIds: [...new Set([...recipients.values()].map((r) => r.userId))],
-      // A new project-less thread to a person or the team reaches their console, never a session (SPEC).
-      consoleOnly: opened && !t.projectId && [...recipients.values()].some((r) => r.agentId === null),
+      reach: reached?.reach,
     };
   });
 
@@ -568,7 +648,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     kind: result.row.kind,
     recipientUserIds: result.recipientUserIds,
   });
-  return { ...result.row, consoleOnly: result.consoleOnly };
+  return { ...result.row, reach: result.reach };
 }
 
 // Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
@@ -653,6 +733,56 @@ export async function unread(
       .set({ deliveredAt: new Date() })
       .where(and(inArray(receipt.seq, seqs), isNull(receipt.deliveredAt)));
   return { items: rows.slice(0, opts.limit) as InboxItem[], more: rows.length > opts.limit };
+}
+
+// A session's stream pushed these: delivered, as a first read is (unread()).
+export async function markDelivered(db: Db, p: Principal, a: Agent, messageIds: string[]) {
+  if (messageIds.length)
+    await db
+      .update(receipt)
+      .set({ deliveredAt: new Date() })
+      .where(and(visibleTo(p, a), inArray(receipt.messageId, messageIds), isNull(receipt.deliveredAt)));
+}
+
+// message_status: delivery metadata for a message's sender and its recipients (as threadView, not the whole thread). The sender
+// of a message to one person sees that person's row; anyone else sees their own rows, and counts for the rest (none for an
+// encrypted message, whose other recipients a recipient has no business knowing). Never another person's timestamps.
+export async function messageStatus(db: Db, p: Principal, messageId: string) {
+  const [m] = await db
+    .select({ id: message.id, fromUserId: message.fromUserId, encrypted: message.encrypted })
+    .from(message)
+    .where(and(eq(message.id, messageId), eq(message.teamId, p.teamId)));
+  const rows = m
+    ? await db
+        .select({ handle: membership.handle, receipt })
+        .from(receipt)
+        .innerJoin(membership, and(eq(membership.userId, receipt.recipientUserId), eq(membership.teamId, receipt.teamId)))
+        .where(eq(receipt.messageId, m.id))
+        .orderBy(asc(receipt.seq))
+    : [];
+  const mine = rows.filter((r) => r.receipt.recipientUserId === p.user.id);
+  const sender = m?.fromUserId === p.user.id;
+  if (!m || !(sender || mine.length)) throw new HubError("E_NOT_FOUND", `no message ${messageId}`);
+  const shown = sender && new Set(rows.map((r) => r.receipt.recipientUserId)).size <= 1 ? rows : mine;
+  const rest = rows.filter((r) => !shown.includes(r));
+  return {
+    message_id: m.id,
+    recipients: shown.map(({ handle, receipt: r }) => ({
+      handle: `@${handle}`,
+      agent: r.recipientAgentId,
+      delivered_at: r.deliveredAt?.toISOString() ?? null,
+      read_at: r.readAt?.toISOString() ?? null,
+      ack: r.ackStatus || r.ackNote ? { status: r.ackStatus, note_chars: r.ackNote?.length ?? 0 } : null,
+    })),
+    others:
+      rest.length && (sender || !m.encrypted)
+        ? {
+            count: rest.length,
+            delivered: rest.filter((r) => r.receipt.deliveredAt).length,
+            read: rest.filter((r) => r.receipt.readAt).length,
+          }
+        : null,
+  };
 }
 
 // The hub cannot read an encrypted body: readers get a pointer to the client that can.

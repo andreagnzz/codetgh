@@ -49,7 +49,7 @@ async function bridge(pushMode: string) {
 
 const send = async (body: string) => {
   const lea = await mcpClient(hub.url, team.lea.token);
-  const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body })).text);
+  const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body, allow_offline: true })).text);
   await lea.close();
   return sent.id as string;
 };

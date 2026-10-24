@@ -235,6 +235,7 @@ export async function createClaims(
         body: `I claimed ${input.scope.join(", ")} (${input.mode}) which overlaps your shared claim on ${h.scope}.`,
         priority: "normal",
         refs: [],
+        allow_offline: true,
       },
     ).catch(() => {});
   }

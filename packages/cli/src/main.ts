@@ -142,6 +142,7 @@ type Queued = {
   subject?: string;
   body: string;
   idempotency_key: string;
+  allow_offline?: boolean;
   encrypted?: { keys?: Array<{ handle: string; wrapped: string }>; flags: string[] };
   queued_at: string;
   hub?: string;
@@ -1128,7 +1129,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         say(note);
         const { handle } = await client.whoami();
         await client
-          .send({ to: `@${handle}`, kind: "note", subject: "Runner task blocked", body: `${task.id}: ${note}` })
+          .send({ to: `@${handle}`, kind: "note", subject: "Runner task blocked", body: `${task.id}: ${note}`, allow_offline: true })
           .catch((e: Error) => say(`could not tell the owner: ${e.message}`));
         return;
       }
@@ -2273,6 +2274,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       io.out(`ok   Chain intact: ${r.events} events, ${r.checkpoints} signed checkpoint${r.checkpoints === 1 ? "" : "s"}.`);
     });
 
+  type SendOpts = {
+    to?: string;
+    replyTo?: string;
+    kind: string;
+    subject?: string;
+    body?: string;
+    encrypt?: boolean;
+    allowOffline?: boolean;
+  };
   cli
     .command("send")
     .helpGroup("Everyday:")
@@ -2283,7 +2293,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .option("--subject <text>", "one-line subject")
     .option("--body <text>", "message text (default: read from stdin)")
     .option("--encrypt", "end-to-end encrypt: the hub stores ciphertext only (needs codetgh keys init)")
-    .action(async (opts: { to?: string; replyTo?: string; kind: string; subject?: string; body?: string; encrypt?: boolean }) => {
+    .option("--allow-offline", "send even if no live session of the recipient would read it: it waits in their console inbox")
+    .action(async (opts: SendOpts) => {
       const { url, token } = await credentials(deps.keyring);
       if (!url || !token) throw new Error("no hub URL or token: run codetgh login");
       let body = opts.body;
@@ -2300,6 +2311,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         subject: opts.subject,
         body,
         idempotency_key: randomUUID(),
+        allow_offline: opts.allowOffline,
       };
       const parsed = SendMessageInput.safeParse({ ...m, ...(opts.encrypt && { encrypted: { flags: [] } }) });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "invalid message");

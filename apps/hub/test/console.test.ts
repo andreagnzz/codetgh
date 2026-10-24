@@ -126,7 +126,9 @@ describe("console", () => {
 
   it("escapes agent text in threads", async () => {
     const sam = await mcpClient(hub.url, team.sam.token);
-    const sent = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "note", body: "<img src=x onerror=alert(1)>" })).text);
+    const sent = JSON.parse(
+      (await call(sam, "send_message", { to: "@lea", kind: "note", body: "<img src=x onerror=alert(1)>", allow_offline: true })).text,
+    );
     const html = await (await fetch(`${hub.url}/console/threads/${sent.thread}`, { headers: { cookie: team.lea.cookie } })).text();
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<img src=x");
@@ -174,7 +176,7 @@ describe("roles", () => {
 describe("kill switch", () => {
   it("refuses agent writes at once, keeps reads and the console, and resumes on confirmation", async () => {
     const sam = await mcpClient(hub.url, team.sam.token);
-    const pending = call(sam, "ask_peer", { to: "@lea", question: "Encore là ?", wait_s: 30 });
+    const pending = call(sam, "ask_peer", { to: "@lea", question: "Encore là ?", wait_s: 30, allow_offline: true });
     await new Promise((r) => setTimeout(r, 200));
     const started = Date.now();
     expect((await post("/console/kill-switch", team.lea.cookie, await csrf(team.lea.cookie), { reason: "incident" })).status).toBe(204);
@@ -186,7 +188,7 @@ describe("kill switch", () => {
     expect((await fetch(`${hub.url}/console`, { headers: { cookie: team.lea.cookie } })).status).toBe(200);
     expect((await post("/console/kill-switch/resume", team.lea.cookie, await csrf(team.lea.cookie), { confirm: "no" })).status).toBe(400);
     expect((await post("/console/kill-switch/resume", team.lea.cookie, await csrf(team.lea.cookie), { confirm: "yes" })).status).toBe(204);
-    expect((await call(sam, "send_message", { to: "@lea", kind: "note", body: "back" })).isError).toBe(false);
+    expect((await call(sam, "send_message", { to: "@lea", kind: "note", body: "back", allow_offline: true })).isError).toBe(false);
     await sam.close();
   });
 });
@@ -196,7 +198,9 @@ describe("audit chain under concurrent writes", () => {
     const lea = await mcpClient(hub.url, team.lea.token);
     const malik = await mcpClient(hub.url, team.malik.token);
     await Promise.all(
-      Array.from({ length: 20 }, (_, i) => call(i % 2 ? lea : malik, "send_message", { to: "@sam", kind: "note", body: `n${i}` })),
+      Array.from({ length: 20 }, (_, i) =>
+        call(i % 2 ? lea : malik, "send_message", { to: "@sam", kind: "note", body: `n${i}`, allow_offline: true }),
+      ),
     );
     expect(await verifyChain(hub.db, team.teamId)).toBeNull();
     await lea.close();

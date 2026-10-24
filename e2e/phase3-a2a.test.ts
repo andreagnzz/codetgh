@@ -62,7 +62,13 @@ describe("A2A (phase 3)", () => {
 
     const lea = await mcpClient(hub.url, team.lea.token);
     // A reply in the thread meant for a teammate only: never shown to the external agent.
-    await call(lea, "send_message", { to: "@sam", reply_to: q?.id, kind: "note", body: "internal: do not tell them about the beta" });
+    await call(lea, "send_message", {
+      to: "@sam",
+      reply_to: q?.id,
+      kind: "note",
+      body: "internal: do not tell them about the beta",
+      allow_offline: true,
+    });
     await call(lea, "send_message", { reply_to: q?.id, kind: "answer", body: "100 requests per minute." });
     await lea.close();
     const after = await client.getTask({ tenant: "", id: task?.id ?? "", historyLength: 10 }, auth());

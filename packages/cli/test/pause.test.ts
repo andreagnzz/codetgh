@@ -33,7 +33,7 @@ async function cli(token: string, args: string[]) {
 }
 const agentSends = async (token: string) => {
   const c = await mcpClient(hub.url, token);
-  const r = await call(c, "send_message", { to: "@lea", kind: "note", body: "status update" });
+  const r = await call(c, "send_message", { to: "@lea", kind: "note", body: "status update", allow_offline: true });
   await c.close();
   return r;
 };

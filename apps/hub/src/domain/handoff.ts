@@ -78,10 +78,11 @@ export async function sendHandoff(deps: MessagingDeps, p: Principal, a: Agent, h
     throw new HubError("E_TOO_LARGE", "handoff over 6 KB: shorten the lists and point to files instead");
   const { agent: _agent, to, ...capsule } = h;
   // Same pipeline as any message: kill switch, roles, rate limit, secret scan, loop guard, envelope.
+  // A handoff waits for the recipient's next session on the project (its context packet), so it may find none live.
   const sent = await sendMessage(
     deps,
     { p, agent: a, via: "mcp" },
-    { to, kind: "handoff", priority: "high", requires_ack: true, body, refs: [], capsule, task_id: h.task_id },
+    { to, kind: "handoff", priority: "high", requires_ack: true, body, refs: [], capsule, task_id: h.task_id, allow_offline: true },
   );
 
   // Human decision: a handoff with a task reassigns it to the recipient.

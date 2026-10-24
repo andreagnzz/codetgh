@@ -15,7 +15,9 @@ afterAll(() => hub.stop());
 it("mutes a thread after 5 agent messages in a row and lets a human reopen it (scenario 8)", async () => {
   const sam = await mcpClient(hub.url, team.sam.token);
   const lea = await mcpClient(hub.url, team.lea.token);
-  let last = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "question", body: "Format des dates ?" })).text);
+  let last = JSON.parse(
+    (await call(sam, "send_message", { to: "@lea", kind: "question", body: "Format des dates ?", allow_offline: true })).text,
+  );
   for (let i = 1; i <= 4; i++) {
     const who = i % 2 ? lea : sam;
     const r = await call(who, "send_message", { kind: "answer", reply_to: last.id, body: `réponse ${i}` });

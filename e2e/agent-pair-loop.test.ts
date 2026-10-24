@@ -18,14 +18,14 @@ it("stops two agents that keep opening new threads to each other, but never a hu
   // No reply_to: every message opens a new thread, so the per-thread guard never sees a streak.
   for (let i = 0; i < 12; i++) {
     const [who, to] = i % 2 ? [lea, "@sam"] : [sam, "@lea"];
-    const r = await call(who, "send_message", { to, kind: "note", body: `ping ${i}` });
+    const r = await call(who, "send_message", { to, kind: "note", body: `ping ${i}`, allow_offline: true });
     expect(r.isError).toBe(false);
   }
   const blocked = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "note", body: "ping 12" })).text);
   expect(blocked.code).toBe("E_LOOP_GUARD");
   expect(blocked.message).toMatch(/between you and @lea/);
   // Other pairs are not affected.
-  expect((await call(sam, "send_message", { to: "@malik", kind: "note", body: "hello" })).isError).toBe(false);
+  expect((await call(sam, "send_message", { to: "@malik", kind: "note", body: "hello", allow_offline: true })).isError).toBe(false);
 
   // A human answer from the console still goes through.
   const [last] = await hub.db.select().from(message).where(eq(message.body, "ping 10"));

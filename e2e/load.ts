@@ -34,7 +34,12 @@ await Promise.all(
     await new Promise((r) => setTimeout(r, Math.random() * 30_000));
     while (Date.now() < deadline) {
       let t = performance.now();
-      const r = await call(client, "send_message", { to: `@agent-${(i + 1) % AGENTS}`, kind: "note", body: `status update ${Date.now()}` });
+      const r = await call(client, "send_message", {
+        to: `@agent-${(i + 1) % AGENTS}`,
+        kind: "note",
+        body: `status update ${Date.now()}`,
+        allow_offline: true,
+      });
       send.push(performance.now() - t);
       if (r.isError) errors++;
       t = performance.now();

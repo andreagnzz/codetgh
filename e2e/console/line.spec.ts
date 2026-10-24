@@ -9,14 +9,14 @@ test.beforeEach(async () => {
   team = await hub.seed();
   await startSession(hub.url, team.sam.token, "sam-line");
   const sam = await mcpClient(hub.url, team.sam.token);
-  await call(sam, "send_message", { to: "@lea", kind: "note", body: "first" });
+  await call(sam, "send_message", { to: "@lea", kind: "note", body: "first", allow_offline: true });
   await sam.close();
 });
 test.afterEach(() => hub.stop());
 
 const send = async (body: string) => {
   const sam = await mcpClient(hub.url, team.sam.token);
-  await call(sam, "send_message", { to: "@lea", kind: "question", body });
+  await call(sam, "send_message", { to: "@lea", kind: "question", body, allow_offline: true });
   await sam.close();
 };
 

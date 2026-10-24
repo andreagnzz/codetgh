@@ -33,7 +33,7 @@ it("shows who is online, my unread messages and the live claims", async () => {
   await startSession(hub.url, team.sam.token, "sam-status", { branch: "feat/login", repo: ACME_REPO });
   const sam = await mcpClient(hub.url, team.sam.token);
   await call(sam, "claim", { scope: ["api/login.ts"], mode: "exclusive", reason: "rewrite" });
-  await call(sam, "send_message", { to: "@lea", kind: "question", body: "Can I change the login contract?" });
+  await call(sam, "send_message", { to: "@lea", kind: "question", body: "Can I change the login contract?", allow_offline: true });
   await sam.close();
 
   const out = await cli(hub.url, team.lea.token, ["status"]);

@@ -16,7 +16,13 @@ it("never writes a request's text to the logs when the database refuses it", asy
     const res = await fetch(`${hub.url}/v1/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ to: "@lea", kind: "note", body: "private plan\u0000 for the launch", priority: "normal" }),
+      body: JSON.stringify({
+        to: "@lea",
+        kind: "note",
+        body: "private plan\u0000 for the launch",
+        priority: "normal",
+        allow_offline: true,
+      }),
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(await res.text()).not.toContain("private plan");
