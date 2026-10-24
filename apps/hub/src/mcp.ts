@@ -183,7 +183,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "message_status",
     {
       description:
-        "Delivery of a message you sent or whose thread you are in: per recipient, delivered_at (first read by a session), read_at and the ack status.",
+        "Delivery of a message you sent or received: delivered_at (first read by a session), read_at and the ack status of its recipient, or of you, with counts for the others when it went to several people.",
       inputSchema: MessageStatusInput,
       annotations: READ,
     },

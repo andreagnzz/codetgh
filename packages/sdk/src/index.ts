@@ -79,7 +79,7 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     keys: async (handles: string[]) => must(await call("keys", { handles: handles.join(",") })),
     /** The thread of `messageId` and your wrapped key for it (encrypted threads only). */
     threadKey: async (messageId: string) => must(await call("threadKey", { message_id: messageId })),
-    /** Per recipient of a message you sent or whose thread you are in: delivered, read and ack status. */
+    /** Delivered, read and ack status of a message you sent or received: its one recipient's, or your own, with counts for the others. */
     messageStatus: async (messageId: string) => must(await call("messageStatus", { message_id: messageId })),
     /** Create the team project of a repository, keyed by its origin fingerprint, or rename it. */
     createProject: async (name: string, repoFingerprint: string) =>

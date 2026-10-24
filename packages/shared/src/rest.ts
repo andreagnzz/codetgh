@@ -72,7 +72,8 @@ export const SentMessage = z.object({
     )
     .optional(),
 });
-// Delivery metadata per recipient; the ack note's length, never its text.
+// Delivery metadata, never the ack note's text. recipients: the sender of a message to one person sees that person's row, anyone
+// else their own; others: counts for the receipts not shown.
 export const MessageStatus = z.object({
   message_id: z.string(),
   recipients: z.array(
@@ -84,6 +85,7 @@ export const MessageStatus = z.object({
       ack: z.object({ status: z.enum(ACK_STATUSES).nullable(), note_chars: z.number() }).nullable(),
     }),
   ),
+  others: z.object({ count: z.number(), delivered: z.number(), read: z.number() }).nullable(),
 });
 export const InboxOutput = z.object({
   messages: z.array(
@@ -377,7 +379,8 @@ export const REST_ROUTES = {
   messageStatus: {
     method: "GET",
     path: "/v1/messages/{message_id}/status",
-    summary: "Per recipient: delivered, read and ack status of a message you sent or whose thread you take part in",
+    summary:
+      "Delivered, read and ack status of a message you sent or received: its one recipient's, or your own, with counts for the others",
     params: z.object({ message_id: z.string().regex(/^msg_[0-9A-Z]{26}$/) }),
     output: MessageStatus,
   },

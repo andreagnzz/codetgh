@@ -747,28 +747,44 @@ export async function markDelivered(db: Db, p: Principal, a: Agent, messageIds: 
       .where(and(visibleTo(p, a), inArray(receipt.messageId, messageIds), isNull(receipt.deliveredAt)));
 }
 
-// message_status: delivery metadata per recipient, for the people of the message's thread; anyone else learns nothing.
+// message_status: delivery metadata for a message's sender and its recipients (as threadView, not the whole thread). The sender
+// of a message to one person sees that person's row; anyone else sees their own rows, and counts for the rest (none for an
+// encrypted message, whose other recipients a recipient has no business knowing). Never another person's timestamps.
 export async function messageStatus(db: Db, p: Principal, messageId: string) {
   const [m] = await db
-    .select({ id: message.id, threadId: message.threadId })
+    .select({ id: message.id, fromUserId: message.fromUserId, encrypted: message.encrypted })
     .from(message)
     .where(and(eq(message.id, messageId), eq(message.teamId, p.teamId)));
-  if (!m || !(await threadParticipants(db, m.threadId)).includes(p.user.id)) throw new HubError("E_NOT_FOUND", `no message ${messageId}`);
-  const rows = await db
-    .select({ handle: membership.handle, receipt })
-    .from(receipt)
-    .innerJoin(membership, and(eq(membership.userId, receipt.recipientUserId), eq(membership.teamId, receipt.teamId)))
-    .where(eq(receipt.messageId, m.id))
-    .orderBy(asc(receipt.seq));
+  const rows = m
+    ? await db
+        .select({ handle: membership.handle, receipt })
+        .from(receipt)
+        .innerJoin(membership, and(eq(membership.userId, receipt.recipientUserId), eq(membership.teamId, receipt.teamId)))
+        .where(eq(receipt.messageId, m.id))
+        .orderBy(asc(receipt.seq))
+    : [];
+  const mine = rows.filter((r) => r.receipt.recipientUserId === p.user.id);
+  const sender = m?.fromUserId === p.user.id;
+  if (!m || !(sender || mine.length)) throw new HubError("E_NOT_FOUND", `no message ${messageId}`);
+  const shown = sender && new Set(rows.map((r) => r.receipt.recipientUserId)).size <= 1 ? rows : mine;
+  const rest = rows.filter((r) => !shown.includes(r));
   return {
     message_id: m.id,
-    recipients: rows.map(({ handle, receipt: r }) => ({
+    recipients: shown.map(({ handle, receipt: r }) => ({
       handle: `@${handle}`,
       agent: r.recipientAgentId,
       delivered_at: r.deliveredAt?.toISOString() ?? null,
       read_at: r.readAt?.toISOString() ?? null,
       ack: r.ackStatus || r.ackNote ? { status: r.ackStatus, note_chars: r.ackNote?.length ?? 0 } : null,
     })),
+    others:
+      rest.length && (sender || !m.encrypted)
+        ? {
+            count: rest.length,
+            delivered: rest.filter((r) => r.receipt.deliveredAt).length,
+            read: rest.filter((r) => r.receipt.readAt).length,
+          }
+        : null,
   };
 }
 
