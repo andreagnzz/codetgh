@@ -71,6 +71,9 @@ async function assertCanJoin(tx: Db, p: Principal, t: { id: string; kind: string
   if (!sent.length && !got.length) throw new HubError("E_NOT_FOUND", `no ${label}`);
 }
 
+// The agents team_overview lists: not removed, and not ended for over a day. Anything else is, to a sender, no agent.
+const listed = () => and(isNull(agent.removedAt), or(isNull(agent.endedAt), gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000))));
+
 async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
   const out: Recipient[] = [];
   let threadId: string | null = null;
@@ -96,7 +99,8 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       const [r] = await tx
         .select({ userId: agent.userId, id: agent.id })
         .from(agent)
-        .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6))));
+        .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6)), listed()));
+      // One answer for an id that is unknown, in another team, removed or long gone: it says nothing a sender could not list.
       if (!r) throw new HubError("E_NOT_FOUND", `no agent ${a}`);
       out.push({ userId: r.userId, agentId: r.id });
     } else if (a.startsWith("thread:")) {
@@ -126,14 +130,7 @@ async function reachOf(tx: Db, p: Principal, recipients: Recipient[], projectId:
   const agents = await tx
     .select()
     .from(agent)
-    .where(
-      and(
-        eq(agent.teamId, p.teamId),
-        inArray(agent.userId, userIds),
-        isNull(agent.removedAt),
-        or(isNull(agent.endedAt), gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000))),
-      ),
-    )
+    .where(and(eq(agent.teamId, p.teamId), inArray(agent.userId, userIds), listed()))
     .orderBy(desc(agent.lastSeenAt));
   const sessions = agents.filter(isSessionAgent);
   const handleOf = new Map(people.map((m) => [m.userId, `@${m.handle}`]));
@@ -165,22 +162,17 @@ const since = (d: Date) => {
   return min < 60 ? `${min} min` : `${Math.round(min / 60)} h`;
 };
 
-// Hub values only (handles, agent and project ids, times): never a name or label a teammate wrote. A guest sees no presence.
-function unreachable(missed: Awaited<ReturnType<typeof reachOf>>["missed"], projectId: string | null, guest: boolean) {
+// What team_overview shows a member, as hub values (handles, agent and project ids, presence, times): never a name or a label
+// a teammate wrote, and an ended session reads as offline. Guests never get here.
+function unreachable(missed: Awaited<ReturnType<typeof reachOf>>["missed"], projectId: string | null) {
   const lines = missed.map(({ r, handle, sessions }) => {
     const who = r.agentId ? `agent:${r.agentId} (${handle})` : handle;
-    if (guest) return `${who} has no session that would receive this.`;
     const target = r.agentId ? sessions.find((a) => a.id === r.agentId) : undefined;
     const others = sessions.filter((a) => a !== target);
     const live = others.filter((a) => presence(a) !== "offline");
     const off = others.filter((a) => presence(a) === "offline");
     const detail = [
-      r.agentId &&
-        (!target
-          ? "that agent is no live session"
-          : target.endedAt
-            ? "that session ended"
-            : `that session is offline (last seen ${since(target.lastSeenAt)} ago)`),
+      target && `that session is offline (last seen ${since(target.lastSeenAt)} ago)`,
       live.length &&
         `${live.length} session${live.length > 1 ? "s" : ""} online: ${live
           .map(
@@ -192,7 +184,7 @@ function unreachable(missed: Awaited<ReturnType<typeof reachOf>>["missed"], proj
     ].filter(Boolean);
     return `${who} has no session that would receive this: ${detail.length ? detail.join("; ") : "no session in the last 24 h"}.`;
   });
-  return `${lines.join(" ")} ${guest ? "Pass" : "Address agent:<id>, or pass"} allow_offline: true to leave it in their console inbox.`;
+  return `${lines.join(" ")} Address agent:<id>, or pass allow_offline: true to leave it in their console inbox.`;
 }
 
 function maskedExcerpt(findings: Array<{ masked: string }>) {
@@ -464,16 +456,16 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     }
     // An agent's message to people or sessions (a reply goes to the parent's agent) must reach one of their live sessions;
     // @team, thread:, a loop verdict, a reply to a human and a human's own words (console, Slack) never fail. Nothing is
-    // stored when it does.
-    const reached = await reachOf(tx, p, [...recipients.values()], t.projectId);
+    // stored when it does. Presence is what team_overview shows members, not guests: a guest's send neither fails nor reports
+    // it. allow_offline reports none either, so a send that cannot fail tells nothing about who is online.
+    const reached = p.role === "guest" || input.allow_offline ? null : await reachOf(tx, p, [...recipients.values()], t.projectId);
     const direct =
       authoredBy === "agent" &&
       (to.length > 0 || Boolean(parent?.fromAgentId)) &&
       !addressed.teamWide &&
       !addressed.threadId &&
       !input.loop_verdict;
-    if (direct && !input.allow_offline && reached.missed.length)
-      throw new HubError("E_UNREACHABLE", unreachable(reached.missed, t.projectId, p.role === "guest"));
+    if (direct && reached?.missed.length) throw new HubError("E_UNREACHABLE", unreachable(reached.missed, t.projectId));
 
     let hop = 0;
     // Bridges (GitHub, Slack) relay events, not conversation: the loop guard counts agents talking to agents.
@@ -628,7 +620,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       muted: false as const,
       row: row as typeof message.$inferSelect,
       recipientUserIds: [...new Set([...recipients.values()].map((r) => r.userId))],
-      reach: p.role === "guest" ? undefined : reached.reach,
+      reach: reached?.reach,
     };
   });
 

@@ -93,7 +93,8 @@ describe("a message that reaches nobody is an error", () => {
     const before = await stored();
     const toEnded = await send({ agent: ids["sam-p1"], to: `agent:${ids["lea-old"]}` });
     expect(toEnded.out.code).toBe("E_UNREACHABLE");
-    expect(toEnded.out.message).toContain(`agent:${ids["lea-old"]} (@lea) has no session that would receive this: that session ended`);
+    expect(toEnded.out.message).toContain(`agent:${ids["lea-old"]} (@lea) has no session that would receive this: that session is offline`);
+    expect(toEnded.out.message).not.toMatch(/ended/);
     expect(toEnded.out.message).toContain(`1 session online: agent:${ids["lea-p1"]}`);
     const reply = await send({ agent: ids["sam-p1"], reply_to: q.out.id, kind: "answer", body: "5432" });
     expect(reply.out.code).toBe("E_UNREACHABLE");
@@ -123,15 +124,16 @@ describe("a message that reaches nobody is an error", () => {
   it("keeps a message for the console and the next session with allow_offline", async () => {
     const r = await send({ agent: ids["sam-p1"], to: "@malik", allow_offline: true });
     expect(r.isError).toBe(false);
-    expect(r.out.reach).toEqual([]);
+    expect(r.out).not.toHaveProperty("reach");
     const asked = await tool("ask_peer", { agent: ids["sam-p1"], to: "@malik", question: "there?", wait_s: 0, allow_offline: true });
-    expect(asked.out).toMatchObject({ status: "pending", reach: [] });
+    expect(asked.out).toMatchObject({ status: "pending" });
+    expect(asked.out).not.toHaveProperty("reach");
     const rest = await fetch(`${hub.url}/v1/messages`, {
       method: "POST",
       headers: auth(team.sam.token),
       body: JSON.stringify({ to: "@malik", kind: "note", body: "from the CLI", allow_offline: true }),
     });
-    expect(await rest.json()).toMatchObject({ reach: [] });
+    expect(await rest.json()).not.toHaveProperty("reach");
   });
 
   it("never refuses @team or thread:, and says whom they reach", async () => {

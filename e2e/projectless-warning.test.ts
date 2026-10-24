@@ -27,7 +27,7 @@ it("refuses a project-less message to a person unless allow_offline, and never o
   expect(refused.code).toBe("E_UNREACHABLE");
   expect(refused.message).toContain("this thread has no project");
   const toLea = await send({ to: "@lea", body: "from nowhere", allow_offline: true });
-  expect(toLea.reach).toEqual([]);
+  expect(toLea).not.toHaveProperty("reach");
   expect((await send({ to: "@team", body: "to all, from nowhere" })).reach).toEqual([]);
   expect((await send({ to: `agent:${leaOnP1}`, body: "to a session" })).reach).toHaveLength(1);
   expect((await send({ to: "@lea", body: "from a project", agent: samOnP1 }, sam)).reach).toHaveLength(1);
@@ -36,7 +36,8 @@ it("refuses a project-less message to a person unless allow_offline, and never o
   expect(reply.reach).toEqual([{ handle: "@malik", sessions: [{ agent: expect.any(String), project: null, presence: "online" }] }]);
   expect(JSON.parse((await call(malik, "ask_peer", { to: "@lea", question: "anyone?", wait_s: 0 })).text).code).toBe("E_UNREACHABLE");
   const asked = JSON.parse((await call(malik, "ask_peer", { to: "@lea", question: "anyone?", wait_s: 0, allow_offline: true })).text);
-  expect(asked).toMatchObject({ status: "pending", reach: [] });
+  expect(asked).toMatchObject({ status: "pending" });
+  expect(asked).not.toHaveProperty("reach");
   await malik.close();
   await sam.close();
   await lea.close();
