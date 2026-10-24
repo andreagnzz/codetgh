@@ -9,7 +9,7 @@ import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
 import { isSessionAgent } from "./admin.js";
-import { type Agent, presence } from "./agents.js";
+import { type Agent, listed, presence } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import type { Bus } from "./bus.js";
 import type { RateLimiter } from "./limits.js";
@@ -70,9 +70,6 @@ async function assertCanJoin(tx: Db, p: Principal, t: { id: string; kind: string
   // Same answer as an unknown id, so ids seen elsewhere reveal nothing.
   if (!sent.length && !got.length) throw new HubError("E_NOT_FOUND", `no ${label}`);
 }
-
-// The agents team_overview lists: not removed, and not ended for over a day. Anything else is, to a sender, no agent.
-const listed = () => and(isNull(agent.removedAt), or(isNull(agent.endedAt), gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000))));
 
 async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
   const out: Recipient[] = [];

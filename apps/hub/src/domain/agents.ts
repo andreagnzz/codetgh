@@ -342,13 +342,19 @@ export async function setStatus(db: Db, p: Principal, a: Agent, input: { text: s
   });
 }
 
+// Not STALE_SESSION_MS (12 h): that ends a Claude Code session nobody heard from, this is how long an ended or silent agent stays
+// in the lists, so a teammate can still see it went offline. The two answer different questions.
+const LISTED_MS = 24 * 3_600_000;
+
+// The agents team_overview lists, and the only ones a sender may address by id: not removed, and not ended for over a day.
+export const listed = () => and(isNull(agent.removedAt), or(isNull(agent.endedAt), gt(agent.lastSeenAt, new Date(Date.now() - LISTED_MS))));
+
 // userId and where filter before the limit; total counts the rows the limit cut.
 export async function listAgents(
   db: Db,
   teamId: string,
   opts: { projectId?: string | null; userId?: string; where?: SQL; limit?: number } = {},
 ) {
-  const recent = gt(agent.lastSeenAt, new Date(Date.now() - 24 * 3600_000));
   return db
     .select({
       agent,
@@ -364,8 +370,7 @@ export async function listAgents(
     .where(
       and(
         eq(agent.teamId, teamId),
-        isNull(agent.removedAt),
-        or(recent, isNull(agent.endedAt)),
+        listed(),
         opts.projectId ? eq(agent.projectId, opts.projectId) : sql`true`,
         opts.userId ? eq(agent.userId, opts.userId) : undefined,
         opts.where,
