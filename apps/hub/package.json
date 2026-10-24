@@ -27,7 +27,7 @@
     "htmx-ext-sse": "2.2.4",
     "htmx.org": "2.0.11",
     "jose": "6.2.12",
-    "nodemailer": "10.1.0",
+    "nodemailer": "10.1.4",
     "pg": "8.23.1",
     "picomatch": "4.0.7",
     "pino": "10.4.0",
