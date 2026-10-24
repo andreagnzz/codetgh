@@ -45,7 +45,7 @@ Decisions: **reuse** (published dependency), **adapt** (copy with attribution), 
 | oidc-provider | OAuth plan B | 9.12.2 | MIT | f72e14e · 2026-10-12 | plan B | — |
 | jose | JWT, JWKS | 6.2.12 | MIT | b112a5e · 2026-10-13 | reuse | 1 (transitive in 0) |
 | oauth4webapi | OAuth flow replay in tests; CLI PKCE | 3.8.8 | MIT | 8ba8319 · 2026-10-13 | reuse | 0 (tests) |
-| nodemailer | Magic links and invitation emails, behind `SMTP_URL` (any provider); `jsonTransport` in dev and tests | 10.1.0 | **MIT-0** (LICENSE read 2026-10-13: the MIT text without the notice-retention condition); no dependencies | c8671c4 · 2026-10-13 | reuse | 1 — MIT-0 added to the allowlist by the human |
+| nodemailer | Magic links and invitation emails, behind `SMTP_URL` (any provider); `jsonTransport` in dev and tests | 10.1.4 | **MIT-0** (LICENSE read 2026-10-24: the MIT text without the notice-retention condition); no dependencies; bumped from 10.1.0 for the addressparser advisories (patched in 10.1.4) | 2a7e952 · 2026-10-18 | reuse | 1 — MIT-0 added to the allowlist by the human |
 | @types/nodemailer | Typings | 8.0.2 | MIT (DefinitelyTyped) | — | reuse (dev) | 1 |
 | @secretlint/core, preset recommend | Secret detection | 13.0.7 | MIT | fd51611 · 2026-10-13 | reuse | 1 |
 | @napi-rs/keyring | OS keychain | 2.1.1 | MIT | 97aa4e0 · 2026-10-10 | reuse | 1 |
