@@ -270,7 +270,7 @@ Journal d'audit. Chaque écriture ajoute un audit_event chaîné : hash = SHA-25
 
 ## Outils MCP
 
-Le hub expose dix-neuf outils, quelques ressources et trois prompts ; Claude n'en appelle que quelques-uns par session, et chaque réponse reste sous 2 000 tokens par défaut.
+Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en appelle que quelques-uns par session, et chaque réponse reste sous 2 000 tokens par défaut.
 
 ### Conventions
 
