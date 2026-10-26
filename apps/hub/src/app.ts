@@ -59,6 +59,7 @@ import {
   createProject,
   endSession,
   expireStaleSessions,
+  isLaunch,
   registerSession,
   resolveAgent,
   setActivity,
@@ -281,7 +282,7 @@ export function createApp({
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
-      ...(agent && { status_line: await statusLine(db, p, agent) }),
+      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(parsed.data.source)) }),
     });
   });
 

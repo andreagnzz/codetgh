@@ -338,3 +338,6 @@ export const WhoamiSchema = z.object({
   push_allowed_modes: z.array(z.enum(PUSH_MODES)),
 });
 export type Whoami = z.infer<typeof WhoamiSchema>;
+
+// agt_01M5…ABCD: the ends of an agent id, to match a startup line with team_overview.
+export const shortAgentId = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;

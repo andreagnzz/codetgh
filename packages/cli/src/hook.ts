@@ -262,9 +262,10 @@ async function sessionStart(input: Input) {
         // Linked since an earlier start of this session: the other hooks must stop returning early.
         unlinked: false,
       });
-    // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
+    // The person sees one line saying CodeTgh is on: with its push mode and version when a session starts or resumes, short
+    // after /clear and compaction (the hub chooses by the source).
     const shown =
-      body.status_line && (input.source === "startup" || input.source === "resume")
+      body.status_line && ["startup", "resume", "clear", "compact"].includes(input.source ?? "")
         ? { systemMessage: body.status_line.replace(/\p{Cc}/gu, "") }
         : {};
     return {

@@ -66,6 +66,9 @@ export async function canAutoLink(db: Db, p: Principal) {
   return p.role !== "guest" && p.settings.auto_link_projects !== false && (await personTrust(db, p)) === "trusted";
 }
 
+// claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
+export const isLaunch = (source?: string) => !source || source === "startup" || source === "resume";
+
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
@@ -106,8 +109,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
     // Refused, not dropped: a delegate opt-in must say exactly whom it trusts.
     if (accept.length !== asked.length)
       throw new HubError("E_INVALID", "--accept-requests-from takes active members of your team other than you, not guests");
-    // claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
-    const launched = !input.source || input.source === "startup" || input.source === "resume";
+    const launched = isLaunch(input.source);
     const values = {
       kind: input.kind,
       label,
