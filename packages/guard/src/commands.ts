@@ -14,7 +14,7 @@ const SECRET_PATHS = [
 ];
 
 // a -f cluster (-f, -fu), --force, --force-with-lease, --force-if-includes, or a +refspec (+main, +HEAD:main).
-const FORCE_ARG = /^(?:-[a-zA-Z]*f[a-zA-Z]*|--force[\w=-]*|\+\S+)$/;
+const FORCE_ARG = /^(?:-[a-zA-Z]*f[a-zA-Z]*|--force\S*|\+\S+)$/;
 
 // Checked on the raw text: these run a command the text does not show.
 const DYNAMIC = [
