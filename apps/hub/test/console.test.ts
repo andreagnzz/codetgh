@@ -136,6 +136,20 @@ describe("console", () => {
   });
 });
 
+describe("thread state", () => {
+  it("says a person muted a thread they muted, not the loop guard", async () => {
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const sent = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "note", body: "mute me", allow_offline: true })).text);
+    const page = async () => (await fetch(`${hub.url}/console/threads/${sent.thread}`, { headers: { cookie: team.lea.cookie } })).text();
+    expect(await page()).toContain("open");
+    expect((await post(`/console/threads/${sent.thread}/mute`, team.lea.cookie, await csrf(team.lea.cookie))).status).toBe(204);
+    const muted = await page();
+    expect(muted).toContain("muted by a person");
+    expect(muted).not.toContain("loop guard");
+    await sam.close();
+  });
+});
+
 describe("roles", () => {
   it("leaves the hub's own members (a2a-, bridge-) out of role changes", async () => {
     const p = await principalForToken(hub.db, team.lea.token);

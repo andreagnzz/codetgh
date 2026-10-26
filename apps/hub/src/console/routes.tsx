@@ -556,6 +556,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .innerJoin(user, eq(user.id, message.fromUserId))
       .where(adminRead ? eq(message.threadId, t.id) : and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
       .orderBy(message.createdAt);
+    const state = t.mutedAt ? (t.mutedReason === "human" ? "muted by a person" : "muted (loop guard)") : "open";
     // Every refresh of an admin read would be audited as a new opening: that page stays still.
     const live = adminRead
       ? {}
@@ -574,7 +575,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
         </p>
         <p>
-          {t.kind} thread · {t.mutedAt ? "muted (loop guard)" : "open"} · agent streak {t.agentStreak}
+          {t.kind} thread · {state} · agent streak {t.agentStreak}
         </p>
         <Table
           head={["From", "Kind", "Message", "Sent"]}
