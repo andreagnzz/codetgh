@@ -4,7 +4,7 @@ import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, task, user } from "../db/schema.js";
 import type { Principal } from "../principal.js";
 import { isSessionAgent, requireMember } from "./admin.js";
-import { type Agent, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
+import { type Agent, activityOf, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
 import { liveClaims } from "./claims.js";
 import { packetDecisions } from "./memory.js";
 import { visibleTo } from "./messages.js";
@@ -168,6 +168,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
           label_untrusted: free(r.agent.label),
           flags: flagsOf(r.project, r.agent.label),
           presence: presence(r.agent),
+          activity: activityOf(r.agent),
           last_seen: r.agent.lastSeenAt.toISOString(),
           platform: r.agent.platform,
           delegate_for: r.agent.acceptRequestsFrom?.map((id) => (ppl.get(id) ? `@${ppl.get(id)?.handle}` : "?")) ?? null,

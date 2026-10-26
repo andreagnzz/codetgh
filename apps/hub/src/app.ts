@@ -30,6 +30,7 @@ import {
   RunnerRetryInput,
   RunnerStatusQuery,
   RunnerUpdateInput,
+  SessionActivityInput,
   SessionQuery,
   StatusQuery,
 } from "@codetgh/shared/rest";
@@ -60,6 +61,7 @@ import {
   expireStaleSessions,
   registerSession,
   resolveAgent,
+  setActivity,
   setAgentsPaused,
   setPermissionMode,
   setStatus,
@@ -446,6 +448,10 @@ export function createApp({
     if (!agent || agent.endedAt || p.paused) return c.body(null, 204);
     const mode = PromptQuery.shape.permission_mode.safeParse(c.req.query("permission_mode")).data;
     if (mode && mode !== agent.permissionMode) await setPermissionMode(db, agent.id, mode);
+    // The turn rides on this call: the prompt hook says in_turn, the PostToolUse poll names its tool. Bad values are dropped.
+    const activity = PromptQuery.shape.activity.safeParse(c.req.query("activity")).data;
+    const tool = PromptQuery.shape.tool.safeParse(c.req.query("tool")).data;
+    if (activity || tool) await setActivity(db, p, agent.sessionId, { activity, tool });
     const waitS = Math.min(Math.max(Number(c.req.query("wait_s")) || 0, 0), 55);
     if (waitS && !(p.settings.push_allowed_modes ?? []).includes("rewake"))
       throw new HubError("E_FORBIDDEN", "rewake push is not allowed for this team (console Settings)");
@@ -463,6 +469,14 @@ export function createApp({
     } finally {
       release();
     }
+  });
+
+  // The Stop hook has no call that always runs: it posts the idle state itself. Nothing for a session that is not the caller's.
+  v1.post("/agents/activity", async (c) => {
+    const p = c.get("principal");
+    const { session_id, activity } = await parse(c, SessionActivityInput);
+    if (!p.paused) await setActivity(db, p, session_id, { activity });
+    return c.body(null, 204);
   });
 
   // CLI, daemon and SDK: the named agent, else one stable agent per token, so an outbox replay lands in the same idempotency scope.
