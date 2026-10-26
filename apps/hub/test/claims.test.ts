@@ -147,7 +147,11 @@ describe("claims", () => {
   it("releases on request and intent claims at session end", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
     expect(JSON.parse((await call(lea, "claim_release", { all_mine: true })).text).released).toBeGreaterThan(0);
-    expect((await preEdit(team.sam.token, "sam-claims", "api/users.ts")).status).toBe(204);
+    // Free to edit, but Léa's release is recent: Sam is told she worked on it, as a warning.
+    const after = await preEdit(team.sam.token, "sam-claims", "api/users.ts");
+    expect(after.body?.decision).toBe("warn");
+    expect(after.body?.reason).toContain("@lea edited this path");
+    expect(after.body?.reason).toContain("(claim released)");
     await fetch(`${hub.url}/v1/agents/session/end`, {
       method: "POST",
       headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },

@@ -2,14 +2,14 @@ import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { TaskStatus } from "@codetgh/shared";
 import { and, desc, eq, inArray, isNull, lt, ne, not, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { membership, task, user } from "../db/schema.js";
+import { agent, membership, task, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
-import { isAdmin, requireMember } from "./admin.js";
-import type { Agent } from "./agents.js";
+import { isAdmin, isSessionAgent, requireMember } from "./admin.js";
+import { type Agent, listed, presence } from "./agents.js";
 import { appendAudit } from "./audit.js";
-import { ARCHIVE_AFTER_MS, assertNoSecrets, type MessagingDeps } from "./messages.js";
+import { ARCHIVE_AFTER_MS, assertNoSecrets, type MessagingDeps, sendMessage } from "./messages.js";
 
 type Task = typeof task.$inferSelect;
 
@@ -44,8 +44,8 @@ async function userByHandle(db: Db, p: Principal, handle: string) {
   return m;
 }
 
-// A peer-written title stays one clean escaped line, in a field named for what it is, with the flags the envelope would
-// carry, under the list's trust field; body and notes are only read through task_get, in an envelope.
+// A peer-written title or blocked reason stays one clean escaped line, in a field named for what it is, with the flags the
+// envelope would carry, under the list's trust field; body and notes are only read through task_get, in an envelope.
 export async function view(db: Db, t: Task) {
   const [assignee] = t.assigneeUserId
     ? await db
@@ -56,13 +56,15 @@ export async function view(db: Db, t: Task) {
   return {
     id: t.id,
     title_untrusted: escapeLine(t.title, 120),
-    flags: textFlags(t.title),
+    flags: textFlags(t.blockedReason ? `${t.title}\n${t.blockedReason}` : t.title),
     status: t.status,
     version: t.version,
     assignee: assignee?.handle ?? null,
     depends_on: t.dependsOn,
     paths: t.paths,
     runner: t.runner,
+    ...(t.verifyTag && { verify: { tag: t.verifyTag } }),
+    ...(t.blockedReason && { blocked_reason_untrusted: escapeLine(t.blockedReason, 200) }),
     updated_at: t.updatedAt.toISOString(),
   };
 }
@@ -83,7 +85,15 @@ export async function createTask(
   deps: MessagingDeps,
   p: Principal,
   a: Agent | null,
-  input: { title: string; body: string; paths: string[]; depends_on: string[]; assignee?: string; runner?: boolean },
+  input: {
+    title: string;
+    body: string;
+    paths: string[];
+    depends_on: string[];
+    assignee?: string;
+    verify?: { tag: string } | "none";
+    runner?: boolean;
+  },
 ) {
   guard(p, a);
   // The owner's machine runs a runner task's text through claude -p: only an owner or an admin flags one.
@@ -91,7 +101,11 @@ export async function createTask(
   // The runner picks tasks by project; a task created outside one would never run.
   if (input.runner && !a?.projectId)
     throw new HubError("E_INVALID", "a runner task needs a project: create it from a session in the project's repository");
-  await assertNoSecrets(deps, { p, agent: a, via: a ? "mcp" : "console" }, `${input.title}\n${input.body}\n${input.paths.join("\n")}`);
+  await assertNoSecrets(
+    deps,
+    { p, agent: a, via: a ? "mcp" : "console" },
+    `${input.title}\n${input.body}\n${input.paths.join("\n")}\n${typeof input.verify === "object" ? input.verify.tag : ""}`,
+  );
   const { db } = deps;
   if (input.depends_on.length) {
     const found = await db
@@ -114,6 +128,8 @@ export async function createTask(
         paths: input.paths,
         dependsOn: input.depends_on,
         assigneeUserId: assignee?.userId ?? null,
+        verifyTag: typeof input.verify === "object" ? input.verify.tag : null,
+        verifySetBy: typeof input.verify === "object" ? p.user.id : null,
         createdByUser: p.user.id,
         createdByAgent: a?.id ?? null,
         runner: input.runner ?? false,
@@ -172,39 +188,121 @@ export async function claimTask(db: Db, p: Principal, a: Agent, input: { task_id
   });
 }
 
+// A session of the person that is online or idle (the presence rule of team_overview), on the task's project if it has one.
+async function hasLiveSession(db: Db, teamId: string, userId: string, projectId: string | null) {
+  const rows = await db
+    .select()
+    .from(agent)
+    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), listed()));
+  return rows.some((a) => isSessionAgent(a) && presence(a) !== "offline" && (!projectId || a.projectId === projectId));
+}
+
+type Patch = {
+  status?: TaskStatus;
+  assignee?: string;
+  note?: string;
+  verify?: { tag: string } | "none";
+  reason?: string;
+  takeover_note?: string;
+  override_deps?: boolean;
+};
+
 export async function updateTask(
   deps: MessagingDeps,
   p: Principal,
   a: Agent | null,
-  input: { task_id: string; expected_version: number; patch: { status?: TaskStatus; assignee?: string; note?: string } },
+  input: { task_id: string; expected_version: number; patch: Patch },
 ) {
   guard(p, a);
   const { db } = deps;
   const { patch } = input;
-  if (patch.note) await assertNoSecrets(deps, { p, agent: a, via: a ? "mcp" : "console" }, patch.note);
+  const author = { p, agent: a, via: a ? ("mcp" as const) : ("console" as const) };
+  const words = [patch.note, patch.reason, patch.takeover_note, typeof patch.verify === "object" ? patch.verify.tag : undefined]
+    .filter(Boolean)
+    .join("\n");
+  if (words) await assertNoSecrets(deps, author, words);
   const [current] = await db
     .select()
     .from(task)
     .where(and(eq(task.id, input.task_id), eq(task.teamId, p.teamId)));
   if (!current) throw new HubError("E_NOT_FOUND", `no task ${input.task_id}`);
-  const admin = p.role === "owner" || p.role === "admin";
-  if (current.assigneeUserId !== p.user.id && current.createdByUser !== p.user.id && !admin)
-    throw new HubError("E_FORBIDDEN", "only the assignee, the creator or an admin can change this task");
+  const admin = isAdmin(p);
+  const toMe = patch.assignee === "@me" || patch.assignee === `@${p.handle}`;
+  // A claimed or in_progress task of a teammate: taking it over keeps its status and its notes.
+  const former =
+    toMe && (current.status === "claimed" || current.status === "in_progress") && current.assigneeUserId !== p.user.id
+      ? current.assigneeUserId
+      : null;
+  const takeover = former !== null;
+  const privileged = current.assigneeUserId === p.user.id || current.createdByUser === p.user.id || admin;
+  const forbidden = (why: string) => new HubError("E_FORBIDDEN", why);
+  // Anyone else may only take over, and nothing else rides along in that request.
+  if (!privileged && !(takeover && Object.entries(patch).every(([k, v]) => v === undefined || k === "assignee" || k === "takeover_note")))
+    throw forbidden(
+      "only the assignee, the creator or an admin can change this task: to take over a teammate's claimed or in_progress task, set assignee @me",
+    );
+  const [was] = former
+    ? await db
+        .select({ handle: membership.handle, role: membership.role })
+        .from(membership)
+        .where(and(eq(membership.userId, former), eq(membership.teamId, p.teamId)))
+    : [];
+  if (former) {
+    if (current.runner || (current.leaseUntil && current.leaseUntil > new Date()))
+      throw forbidden("a runner task, or a task a runner holds, cannot be taken over");
+    const live = await hasLiveSession(db, p.teamId, former, current.projectId);
+    if (live && !patch.takeover_note)
+      throw forbidden("the assignee has a live session: pass takeover_note (1-500 characters) to take the task over");
+    // A plain member waits for the assignee to be gone; the creator or an admin may act with a note.
+    if (!privileged && live) throw forbidden("the assignee has a live session: only the task's creator or an admin can take it over");
+    if (!privileged && (was?.role === "owner" || was?.role === "admin"))
+      throw forbidden("the assignee is an owner or an admin: ask them, or an admin, to hand it over");
+  }
+  if (patch.takeover_note && !takeover)
+    throw new HubError("E_INVALID", "takeover_note goes with assignee @me on a teammate's claimed or in_progress task");
   if (patch.status && patch.status !== current.status && !ALLOWED[current.status].includes(patch.status))
     throw new HubError(
       "E_INVALID",
       `${current.status} → ${patch.status} is not allowed${patch.status === "claimed" ? " (use task_claim)" : ""}`,
     );
-  const assignee = patch.assignee && patch.assignee !== "none" ? await userByHandle(db, p, patch.assignee) : null;
+  const reason = patch.reason?.replace(/\s+/g, " ");
+  if (patch.status === "blocked" ? !reason : reason)
+    throw new HubError(
+      "E_INVALID",
+      patch.status === "blocked" ? "blocked needs a reason (1-200 characters)" : "reason goes with status blocked",
+    );
+  if (patch.override_deps && !admin) throw new HubError("E_FORBIDDEN", "only an owner or an admin can override dependencies");
+  const notes: string[] = patch.note ? [patch.note] : [];
+  if ((patch.status === "in_progress" || patch.status === "done") && patch.status !== current.status && current.dependsOn.length) {
+    const open = await db
+      .select({ id: task.id })
+      .from(task)
+      .where(and(inArray(task.id, current.dependsOn), ne(task.status, "done")));
+    const ids = open.map((t) => t.id).join(", ");
+    if (open.length && !patch.override_deps) throw new HubError("E_INVALID", `blocked by ${ids}: finish them first`);
+    if (open.length) notes.push(`dependencies overridden by @${p.handle}: ${ids}`);
+  }
+  if (patch.status === "blocked") notes.push(`blocked because: ${reason}`);
+  if (takeover) notes.push(`taken over by @${p.handle}${patch.takeover_note ? `: ${patch.takeover_note}` : ""}`);
+  const assignee = toMe
+    ? { userId: p.user.id }
+    : patch.assignee && patch.assignee !== "none"
+      ? await userByHandle(db, p, patch.assignee)
+      : null;
   const toTodo = patch.status === "todo";
-  return db.transaction(async (tx) => {
+  const at = new Date().toISOString();
+  const row = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(task)
       .set({
-        ...(patch.status && { status: patch.status }),
+        ...(patch.status && { status: patch.status, blockedReason: patch.status === "blocked" ? (reason ?? null) : null }),
+        ...(patch.verify && {
+          verifyTag: patch.verify === "none" ? null : patch.verify.tag,
+          verifySetBy: patch.verify === "none" ? null : p.user.id,
+        }),
         ...((patch.assignee || toTodo) && { assigneeUserId: assignee?.userId ?? null, assigneeAgentId: null }),
-        ...(patch.note && {
-          notes: sql`(${task.notes} || ${JSON.stringify([{ at: new Date().toISOString(), user_id: p.user.id, agent_id: a?.id ?? null, text: patch.note }])}::jsonb)`,
+        ...(notes.length && {
+          notes: sql`(${task.notes} || ${JSON.stringify(notes.map((text) => ({ at, user_id: p.user.id, agent_id: a?.id ?? null, text })))}::jsonb)`,
         }),
         version: sql`${task.version} + 1`,
         updatedAt: new Date(),
@@ -221,9 +319,24 @@ export async function updateTask(
         .update(task)
         .set({ notes: row.notes.slice(-MAX_NOTES) })
         .where(eq(task.id, row.id));
-    await audit(tx, p, a, "task.updated", row, { fields: Object.keys(patch) });
-    return view(tx, row);
+    await audit(tx, p, a, takeover ? "task.taken_over" : "task.updated", row, {
+      fields: Object.keys(patch),
+      ...(takeover && { taken_from: former }),
+    });
+    return row;
   });
+  if (takeover && was) {
+    // Same internal send as the shared-claim note: it waits in their console inbox when no session would read it.
+    await sendMessage(deps, author, {
+      to: `@${was.handle}`,
+      kind: "note",
+      body: `@${p.handle} took over task ${row.id}${patch.takeover_note ? `: ${patch.takeover_note}` : "."}`,
+      priority: "normal",
+      refs: [],
+      allow_offline: true,
+    }).catch(() => {});
+  }
+  return view(db, row);
 }
 
 export async function listTasks(

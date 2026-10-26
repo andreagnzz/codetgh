@@ -354,6 +354,8 @@ export const claim = pgTable(
   (t) => [
     index("claim_active_project_idx").on(t.teamId, t.projectId, t.expiresAt).where(sql`${t.releasedAt} is null`),
     index("claim_holder_idx").on(t.holderAgentId).where(sql`${t.releasedAt} is null`),
+    // Released and expired rows stay: claim_check and pre-edit read the last 30 minutes of them.
+    index("claim_recent_idx").on(t.teamId, t.expiresAt),
   ],
 );
 
@@ -389,6 +391,11 @@ export const task = pgTable(
     approved: boolean("approved").notNull().default(false),
     // When the last GitHub event about its PR happened, as GitHub dates it: an event not newer is ignored.
     prEventAt: timestamp("pr_event_at"),
+    // The git tag whose creation on GitHub finishes the task, and why a blocked task is blocked (a teammate's words, or a hub code).
+    verifyTag: text("verify_tag"),
+    // Who set the tag: when it arrives, the task is finished only if they could still update the task.
+    verifySetBy: text("verify_set_by"),
+    blockedReason: text("blocked_reason"),
     attempts: integer("attempts").notNull().default(0),
     leaseOwner: text("lease_owner"),
     leaseUntil: timestamp("lease_until"),

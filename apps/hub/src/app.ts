@@ -53,6 +53,7 @@ import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
 import { membership, project, team } from "./db/schema.js";
 import { a2aAgentForToken, a2aServer } from "./domain/a2a.js";
+import { requireMember } from "./domain/admin.js";
 import {
   type Agent,
   agentBySession,
@@ -71,7 +72,7 @@ import {
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
 import { Bus } from "./domain/bus.js";
-import { checkPaths, preEdit } from "./domain/claims.js";
+import { checkPaths, noClaims, preEdit } from "./domain/claims.js";
 import { clientIp, DEVICE_INTERVAL_S, DEVICE_TTL_S, DeviceAuth } from "./domain/device.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
 import { githubSecret, handleGithubEvent, teamForGithubHook, validGithubSignature } from "./domain/github.js";
@@ -371,11 +372,21 @@ export function createApp({
     return decision ? c.json(decision) : c.body(null, 204);
   });
 
+  // By session (the Stop hook), or by repository (the pre-push hook has no session): none for a repository the team has not linked.
   v1.post("/claims/check", async (c) => {
     const p = c.get("principal");
+    // Like claim_check: who holds what is for members, and the answer must not tell which repositories are linked.
+    requireMember(p);
     const input = await parse(c, ClaimsCheckRestInput);
-    const agent = await agentBySession(db, p, input.session_id);
-    return c.json(agent ? (await checkPaths(db, p, agent, input.paths)).result : { paths: [] });
+    const projectId = input.repo_fingerprint
+      ? (
+          await db
+            .select({ id: project.id })
+            .from(project)
+            .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)))
+        )[0]?.id
+      : (await agentBySession(db, p, input.session_id ?? ""))?.projectId;
+    return c.json(projectId === undefined ? noClaims(input.paths) : (await checkPaths(db, p, projectId, input.paths)).result);
   });
 
   // Envelopes for the prompt hook and the rewake waiter, with an ETag over the unread seqs.

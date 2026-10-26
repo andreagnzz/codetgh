@@ -511,7 +511,7 @@ function gitState(common: string) {
   return h.digest("hex");
 }
 const gitBaseline = new Map<string, { common: string; state: string }>();
-const safeGit = (args: string[]) =>
+export const safeGit = (args: string[]) =>
   promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
 // Jobs of a project share its clone: one fetch at a time, or git fails on the lock files of the refs it updates.
 const fetching = new Map<string, Promise<unknown>>();
@@ -1901,6 +1901,72 @@ const DELEGATE_PROMPT = [
   "Always reply with send_message kind answer, reply_to the request id: the answer, done: commit or PR, or blocked: reason when you cannot or when Claude Code or CodeTgh refused an action. Then ack the request with status done.",
 ].join(" ");
 
+// The opt-in pre-push hook (codetgh hooks install): git runs it with the remote's name and URL, and one line per ref on
+// stdin. Without codetgh on PATH it lets the push through.
+const PREPUSH_SIGNATURE = "# codetgh:pre-push";
+const PREPUSH_HOOK = [
+  "#!/bin/sh",
+  `${PREPUSH_SIGNATURE} (written by codetgh hooks install, removed by codetgh hooks uninstall)`,
+  "command -v codetgh >/dev/null 2>&1 || exit 0",
+  'exec codetgh claims check-push "$@"',
+  "",
+].join("\n");
+const PREPUSH_BUDGET_MS = 3000;
+
+// Where git looks for hooks here: .git/hooks, or core.hooksPath.
+async function prePushFile() {
+  const dir = await exec("git", ["rev-parse", "--git-path", "hooks"], { timeout: 5000 }).then(
+    (r) => r.stdout.trim(),
+    () => {
+      throw new Error("this folder is not in a git repository");
+    },
+  );
+  return resolve(dir, "pre-push");
+}
+const isOurPrePush = (file: string) => existsSync(file) && readFileSync(file, "utf8").includes(PREPUSH_SIGNATURE);
+
+// The files other people hold that this push carries, as lines to print: those held exclusively refuse the push, the
+// others (intent, which any edit makes, and shared) only warn. Throws when it cannot tell: the caller fails open.
+async function claimedInPush(io: Io, creds: { url: string; token: string }) {
+  const until = Date.now() + PREPUSH_BUDGET_MS;
+  const left = () => Math.max(1, until - Date.now());
+  const git = (...args: string[]) => exec("git", args, { timeout: left() }).then((r) => r.stdout.trim());
+  const refs = io.stdin.isTTY ? "" : await readToken(io);
+  const files = new Set<string>();
+  for (const line of refs.split("\n")) {
+    const [ref, local, , remote] = line.split(" ");
+    // Branches that are pushed, not deleted; a new branch is compared with the default branch it forked from.
+    if (!ref?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
+    let from = remote && !/^0+$/.test(remote) ? remote : "";
+    if (!from) {
+      let known = "";
+      for (const b of ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master"])
+        known ||= await git("rev-parse", "--verify", "-q", b).then(
+          () => b,
+          () => "",
+        );
+      if (!known) throw new Error("no origin/HEAD, origin/main or origin/master to compare a new branch with");
+      from = await git("merge-base", local, known);
+    }
+    // shortcut: a push of more than 200 files is checked on the first 200 (the hub's limit per call).
+    for (const f of (await git("diff", "--name-only", "-z", from, local)).split("\0")) if (f) files.add(f);
+  }
+  if (!files.size) return { refuse: [], warn: [] };
+  const origin = await git("remote", "get-url", "origin");
+  const { paths } = await createClient({ ...creds, timeoutMs: left() }).checkClaims({
+    repo_fingerprint: repoFingerprint(origin),
+    paths: [...files].slice(0, 200),
+  });
+  const lines = (mode: (m: string) => boolean) =>
+    paths.flatMap((x) => {
+      const holders = x.holders.filter((h) => mode(h.mode));
+      return holders.length
+        ? [`  ${x.path}  ${holders.map((h) => `@${h.handle} (${h.mode}, ${h.remaining_min} min left)`).join(", ")}`]
+        : [];
+    });
+  return { refuse: lines((m) => m === "exclusive"), warn: lines((m) => m !== "exclusive") };
+}
+
 export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   const { io } = deps;
   const cli = new Command("codetgh").description("CodeTgh: connect your Claude to your team's hub").exitOverride();
@@ -2681,6 +2747,63 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       throw new Error(
         `the hub is not ready after ${opts.wait} s: roll back with git checkout ${before} && docker ${compose.join(" ")} up -d --build`,
       );
+    });
+
+  const hooks = cli.command("hooks").helpGroup("Advanced:").description("git hooks for this repository (opt-in)");
+  hooks
+    .command("install")
+    .description(
+      "add a pre-push hook that refuses a push carrying files another person has claimed exclusively (codetgh claims check-push)",
+    )
+    .option("--force", "replace a pre-push hook that is not CodeTgh's")
+    .action(async (opts: { force?: boolean }) => {
+      const file = await prePushFile();
+      if (existsSync(file) && !opts.force && !isOurPrePush(file))
+        throw new Error(
+          `${file} is not CodeTgh's, so it is left alone: call "codetgh claims check-push" from it yourself, or run this again with --force to replace it`,
+        );
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, PREPUSH_HOOK, { mode: 0o755 });
+      chmodSync(file, 0o755);
+      io.out(
+        `installed ${file}: git push now stops on files others have claimed exclusively. Push anyway with CODETGH_ALLOW_PUSH=1 or git push --no-verify.`,
+      );
+    });
+  hooks
+    .command("uninstall")
+    .description("remove the pre-push hook that codetgh hooks install wrote")
+    .action(async () => {
+      const file = await prePushFile();
+      if (!existsSync(file)) return io.out("no CodeTgh pre-push hook here");
+      if (!isOurPrePush(file)) return io.out(`${file} is not CodeTgh's: left alone`);
+      rmSync(file);
+      io.out(`removed ${file}`);
+    });
+
+  const claimsCmd = cli.command("claims").helpGroup("Advanced:").description("claims from git hooks");
+  claimsCmd
+    .command("check-push [remote] [url]")
+    .description(
+      "pre-push check, run by the hook: refuse (exit 1) when another person holds an exclusive claim on a pushed file, warn for intent and shared claims; fails open",
+    )
+    .action(async () => {
+      if (process.env.CODETGH_ALLOW_PUSH === "1") return;
+      try {
+        const creds = await credentials(deps.keyring);
+        if (!creds.url || !creds.token) throw new Error("no hub URL or token: run codetgh login");
+        const { refuse, warn } = await claimedInPush(io, creds);
+        // Paths come from the local repository, handles from the hub: no control character reaches the terminal.
+        const say = (lines: string[]) => {
+          for (const line of lines) io.err(line.replace(/\p{Cc}/gu, "?"));
+        };
+        if (refuse.length) say(["codetgh: push refused, these files are claimed exclusively by someone else right now:", ...refuse]);
+        if (warn.length) say(["codetgh: these files are also claimed by others (not blocking the push):", ...warn]);
+        if (!refuse.length) return;
+        say(["Ask them first (codetgh send --to @handle), or push anyway: CODETGH_ALLOW_PUSH=1 git push, or git push --no-verify."]);
+        process.exitCode = 1;
+      } catch (e) {
+        io.err(`codetgh: claims not checked (${(e as Error).message.split("\n")[0]?.replace(/\p{Cc}/gu, "?")})`);
+      }
     });
 
   cli

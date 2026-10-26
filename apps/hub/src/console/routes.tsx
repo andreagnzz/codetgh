@@ -1453,8 +1453,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(
       <Result>
         <p>
-          In your GitHub App (Settings → Webhook), set these, then subscribe to Pull request and Check suite events. The secret is shown
-          once.
+          In your GitHub App (Settings → Webhook), set these, then subscribe to Pull request, Check suite and Create events. The secret is
+          shown once.
         </p>
         <pre>{`Webhook URL: ${config.publicUrl}/bridges/github/${hook.id}\nSecret: ${hook.secret}`}</pre>
       </Result>,
@@ -1774,6 +1774,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </label>
           <label>
             Assignee (@handle or none) <input name="assignee" />
+          </label>
+          <label>
+            Reason (needed for blocked) <input name="reason" maxlength={200} />
           </label>
           <label>
             Note <input name="note" maxlength={500} />
