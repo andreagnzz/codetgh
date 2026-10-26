@@ -884,6 +884,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/agents/a2a", async (c) => {
+    requireFresh(c);
     const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "");
     c.header("Cache-Control", "no-store");
     return c.html(
@@ -1040,6 +1041,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/tokens", async (c) => {
+    // A 90-day token outlives the session: same gate as the device approval.
+    requireFresh(c);
     const p = c.get("principal");
     const label = ((await form(c)).label ?? "").slice(0, 60) || "token";
     const { id, token } = await createPersonalToken(db, { userId: p.user.id, teamId: p.teamId, label });
