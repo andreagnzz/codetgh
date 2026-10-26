@@ -244,8 +244,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     shown < total && (
       <p class="meta">{tr(c)("Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
     );
-  // ?before= of the Older link: rows created before that time.
-  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt) => {
+  // ?before= of the Older link: rows created or last updated before that time.
+  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt | typeof thread.lastMessageAt) => {
     const before = c.req.query("before");
     return before && !Number.isNaN(Date.parse(before)) ? lt(col, new Date(before)) : undefined;
   };
@@ -460,7 +460,6 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const _ = tr(c);
     const mine = (await participantThreads(p)).map((r) => r.id);
-    const before = c.req.query("before");
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
     const found = await db
@@ -472,7 +471,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           visibleThreads(p, mine),
           onProject(thread.projectId, f),
           archived ? archivedThread() : not(archivedThread()),
-          before && !Number.isNaN(Date.parse(before)) ? lt(thread.lastMessageAt, new Date(before)) : undefined,
+          olderThan(c, thread.lastMessageAt),
         ),
       )
       .orderBy(desc(thread.lastMessageAt))
