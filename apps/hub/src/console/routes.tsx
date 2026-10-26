@@ -31,6 +31,7 @@ import {
 } from "../db/schema.js";
 import { createExternalAgent } from "../domain/a2a.js";
 import {
+  byUser,
   changeRole,
   isAdmin,
   isSessionAgent,
@@ -532,16 +533,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const adminRead = t.kind === "direct" && !participant;
     if (adminRead) {
       requireAdmin(p);
-      await db.transaction((tx) =>
-        appendAudit(tx, {
-          teamId: p.teamId,
-          actorType: "user",
-          actorUserId: p.user.id,
-          via: "console",
-          action: "thread.read_by_admin",
-          subjectId: t.id,
-        }),
-      );
+      await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
     }
     return { t, adminRead };
   };
@@ -630,14 +622,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .update(thread)
         .set(mute ? { mutedAt: new Date(), mutedReason: "human" } : { mutedAt: null, mutedReason: null, agentStreak: 0 })
         .where(eq(thread.id, t.id));
-      await appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: mute ? "thread.muted" : "thread.reopened",
-        subjectId: t.id,
-      });
+      await appendAudit(tx, { ...byUser(p), action: mute ? "thread.muted" : "thread.reopened", subjectId: t.id });
     });
     return refresh(c);
   });
@@ -1070,16 +1055,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const label = ((await form(c)).label ?? "").slice(0, 60) || "token";
     const { id, token } = await createPersonalToken(db, { userId: p.user.id, teamId: p.teamId, label });
-    await db.transaction((tx) =>
-      appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: "token.created",
-        subjectId: id,
-      }),
-    );
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "token.created", subjectId: id }));
     c.header("Cache-Control", "no-store");
     return c.html(
       <Result>
@@ -1143,15 +1119,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { code, keys } = await deviceInput(c);
     const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
     await db.transaction((tx) =>
-      appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: "device.approved",
-        subjectId: entry.id,
-        data: { label: entry.label },
-      }),
+      appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
     return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
   });
@@ -1360,9 +1328,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireAdmin(p);
     await writeCheckpoint(db, p.teamId, auditKey);
     const { events, checkpoints } = await exportAudit(db, p.teamId);
-    await db.transaction((tx) =>
-      appendAudit(tx, { teamId: p.teamId, actorType: "user", actorUserId: p.user.id, via: "console", action: "audit.exported" }),
-    );
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "audit.exported" }));
     c.header("Content-Disposition", `attachment; filename="codetgh-audit-${p.teamId}.json"`);
     return c.json({
       team_id: p.teamId,
