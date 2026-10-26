@@ -73,6 +73,29 @@ describe("claims belong to a person, not to a session", () => {
   });
 });
 
+describe("team_overview and the startup packet", () => {
+  it("count every claim of the caller's person as theirs, from any of their sessions", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const sam = await mcpClient(hub.url, team.sam.token);
+    await call(lea, "claim", { agent: sessions.lea1, scope: ["mine/one.ts"] });
+    type Overview = { claims: Array<{ scope: string; holder: string; mine: boolean }> };
+    const seen = async (c: typeof lea, agent: string | undefined) =>
+      ((await call(c, "team_overview", { agent })).json() as Overview).claims.find((x) => x.scope === "mine/one.ts");
+    // Held by Léa's first session: still hers from her second one, and someone else's for Sam.
+    expect(await seen(lea, sessions.lea2)).toMatchObject({ holder: "@lea", mine: true });
+    expect(await seen(lea, sessions.lea1)).toMatchObject({ mine: true });
+    expect(await seen(sam, sessions.sam)).toMatchObject({ holder: "@lea", mine: false });
+
+    // The packet a new session starts with lists other people's claims only.
+    const own = await startSession(hub.url, team.lea.token, "lea-three", { repo: ACME_REPO });
+    expect(own.context).not.toContain("mine/one.ts");
+    const other = await startSession(hub.url, team.sam.token, "sam-two", { repo: ACME_REPO });
+    expect(other.context).toContain("mine/one.ts");
+    await lea.close();
+    await sam.close();
+  });
+});
+
 describe("recent overlap", () => {
   const released = (scope: string) =>
     hub.db

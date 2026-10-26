@@ -143,8 +143,8 @@ async function recentEdits(tx: Db, p: Principal, projectId: string | null, paths
   });
 }
 
-// team_overview: live claims of the team (or of the agent's project), the agent's own included. No reasons: they are peer text.
-export async function liveClaims(db: Db, p: Principal, a: Agent | null, opts: { projectId?: string | null; limit: number }) {
+// team_overview: live claims of the team (or of the agent's project), the caller's own included: mine is any claim of their person. No reasons: they are peer text.
+export async function liveClaims(db: Db, p: Principal, opts: { projectId?: string | null; limit: number }) {
   requireMember(p);
   const rows = await db
     .select({ claim, handle: membership.handle })
@@ -165,7 +165,7 @@ export async function liveClaims(db: Db, p: Principal, a: Agent | null, opts: { 
     scope: escapeAttr(c.scope, 300),
     mode: c.mode,
     holder: `@${handle}`,
-    mine: c.holderAgentId === a?.id,
+    mine: c.holderUserId === p.user.id,
     minutes_left: Math.max(1, Math.round((c.expiresAt.getTime() - Date.now()) / 60_000)),
   }));
 }
