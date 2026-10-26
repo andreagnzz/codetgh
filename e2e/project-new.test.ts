@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
-import { fakeCommand } from "./helpers.js";
+import { fakeCommand, gitRepo } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -51,9 +51,7 @@ if (\`\${a} \${b}\` === "plugin validate") {
   return dir;
 }
 function repo(origin: string) {
-  const dir = mkdtempSync(join(tmpdir(), "codetgh-repo-"));
-  execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["remote", "add", "origin", origin], { cwd: dir });
+  const dir = gitRepo(origin);
   process.chdir(dir);
   return dir;
 }
