@@ -34,7 +34,7 @@ export function loadConfig(env = process.env): Config {
     dataDir: env.CODETGH_DATA_DIR ?? "./data",
     databaseUrl: env.DATABASE_URL,
     smtpUrl: env.SMTP_URL,
-    mailFrom: env.MAIL_FROM,
+    mailFrom: env.MAIL_FROM || undefined,
     auditKey: env.CODETGH_AUDIT_KEY,
     slackBotToken: env.SLACK_BOT_TOKEN,
     slackSigningSecret: env.SLACK_SIGNING_SECRET,

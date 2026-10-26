@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -18,10 +19,11 @@ it("rate-limits a person's writes the way it limits their messages", async () =>
   expect(codes.slice(0, 9)).toEqual(Array(9).fill(null));
   expect(codes).toContain("E_RATE_LIMITED");
   // A new session does not reset the budget: it is per person.
-  const res = await fetch(`${hub.url}/v1/agents/session`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ session_id: "sam-wq2", branch: "main", repo_fingerprint: ACME_REPO, repo_name: "acme/webapp" }),
+  const res = await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
+    session_id: "sam-wq2",
+    branch: "main",
+    repo_fingerprint: ACME_REPO,
+    repo_name: "acme/webapp",
   });
   expect(res.status).toBe(429);
 });

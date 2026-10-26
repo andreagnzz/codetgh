@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
+import { hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -84,10 +85,10 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect((await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--kind", "answer", "--body", "Agreed, Friday."])).code).toBe(0);
     expect((await cli("sam", ["inbox"])).out).toContain("Agreed, Friday.");
 
-    const plain = await fetch(`${hub.url}/v1/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ reply_to: sentId, kind: "note", body: "plain text in an encrypted thread" }),
+    const plain = await hubRest(hub.url, team.lea.token, "POST", "/v1/messages", {
+      reply_to: sentId,
+      kind: "note",
+      body: "plain text in an encrypted thread",
     });
     expect(plain.status).toBe(400);
     expect(
@@ -117,12 +118,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     await expect(cli("sam", ["send", "--encrypt", "--to", "@lea", "--subject", "users table migration", "--body", "x"])).rejects.toThrow(
       "no subject",
     );
-    const send = (body: Record<string, unknown>) =>
-      fetch(`${hub.url}/v1/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    const send = (body: Record<string, unknown>) => hubRest(hub.url, team.lea.token, "POST", "/v1/messages", body);
     const sealed = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.body;
     expect((await send({ reply_to: sentId, kind: "note", body: sealed, subject: "in clear", encrypted: { flags: [] } })).status).toBe(400);
     const refs = await send({
@@ -137,12 +133,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
   });
 
   it("checks the shape of what claims to be encrypted, and marks it as unscanned by the hub", async () => {
-    const send = (body: Record<string, unknown>) =>
-      fetch(`${hub.url}/v1/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    const send = (body: Record<string, unknown>) => hubRest(hub.url, team.sam.token, "POST", "/v1/messages", body);
     // Plain text dressed as an encrypted reply.
     expect((await send({ reply_to: sentId, kind: "note", body: "v1.not-really.ciphertext", encrypted: { flags: [] } })).status).toBe(400);
     const [row] = await hub.db.select().from(message).where(eq(message.id, sentId));
@@ -166,11 +157,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
 
   it("pins each recipient's public key, and refuses to seal for a key the hub swapped", async () => {
     // Someone holding Léa's token (or the hub itself) replaces her public key with one they control.
-    const swapped = await fetch(`${hub.url}/v1/keys`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ public_key: publicKeyOf(newKeyPair().privateKey) }),
-    });
+    const swapped = await hubRest(hub.url, team.lea.token, "POST", "/v1/keys", { public_key: publicKeyOf(newKeyPair().privateKey) });
     expect(swapped.status).toBeLessThan(300);
     const refused = await cli("sam", ["send", "--encrypt", "--to", "@lea", "--body", "new plan"]);
     expect(refused.code).toBe(1);

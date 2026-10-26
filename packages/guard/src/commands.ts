@@ -4,6 +4,9 @@
 // itself, an alias, a file written then run). It narrows what a request can do, it does not isolate: run delegate
 // sessions in a devcontainer or a dedicated clone.
 
+// The plugin hook has 3 s and fails open, and a long command makes the regexes below backtrack past it: refuse it unchecked.
+const MAX_COMMAND_LENGTH = 8192;
+
 // Glob characters (*?[]) count as part of a name, so cat *.pem and cat .env* are seen; names match in any case.
 const EDGE = String.raw`(?:^|[\s=:<>/(~*?\]])`;
 const END = String.raw`(?=$|[\s;|&)<>/])`;
@@ -14,14 +17,14 @@ const SECRET_PATHS = [
 ];
 
 // a -f cluster (-f, -fu), --force, --force-with-lease, --force-if-includes, or a +refspec (+main, +HEAD:main).
-const FORCE_ARG = /^(?:-[a-zA-Z]*f[a-zA-Z]*|--force[\w=-]*|\+\S+)$/;
+const FORCE_ARG = /^(?:-[a-zA-Z]*f[a-zA-Z]*|--force\S*|\+\S+)$/;
 
 // Checked on the raw text: these run a command the text does not show.
 const DYNAMIC = [
   /(?:^|[\s;&|(`])eval(?=\s|$)/,
   /\bbase64\s+(?:-d|-D|--decode)\b[^|]*\|/,
-  /(?:\$\(|`)[^)`]*\b(?:printf|xxd|base64|rev|tr|od)\b/,
-  /\b(?:ba|z|da|k)?sh\s+(?:-\w+\s+)*-c\s+\S*[^\n]*[$`]/,
+  /(?:\$\(|`)(?:(?!\$\()[^)`])*\b(?:printf|xxd|base64|rev|tr|od)\b/,
+  /\b(?:ba|z|da|k)?sh\s+(?:-\w+\s+)*-c\s+[^\n$`]*[$`]/,
 ];
 
 // What the shell would see once it removed quoting: line continuations, $'…' and "…" quotes, backslash escapes,
@@ -35,6 +38,8 @@ const normalize = (command: string) =>
     .replace(/\$\{?HOME\}?/g, "~");
 
 export function delegateBlock(command: string): string | null {
+  if (command.length > MAX_COMMAND_LENGTH)
+    return `it is too long to check (over ${MAX_COMMAND_LENGTH} characters): write files with the Edit tool, run shorter commands`;
   if (DYNAMIC.some((r) => r.test(command)))
     return "it builds the command at run time (dynamic: eval, sh -c with variables, decoded or substituted text)";
   const plain = normalize(command);
@@ -42,12 +47,14 @@ export function delegateBlock(command: string): string | null {
   const windows = normalize(command.replace(/\\(?=[\w.~-])/g, "/"));
   if (SECRET_PATHS.some((r) => r.test(plain) || r.test(windows))) return "it reads a secret file (.env, *.pem, *.key, ~/.ssh or ~/.aws)";
   // Shell separators split the command, so a; b and what sh -c runs are seen too.
-  for (const part of plain.split(/[;&|\n]+/)) {
-    const words = part.split(/[\s()]+/).filter(Boolean);
-    const git = words.indexOf("git");
-    const push = words.indexOf("push", git + 1);
-    if (git >= 0 && push > git && words.slice(push + 1).some((w) => FORCE_ARG.test(w)))
-      return "it force-pushes (--force, -f, --force-with-lease or a +refspec)";
-  }
+  // git may be spelled /usr/bin/git, ./git or C:\Git\cmd\git.exe.
+  for (const text of [plain, windows])
+    for (const part of text.split(/[;&|\n]+/)) {
+      const words = part.split(/[\s()]+/).filter(Boolean);
+      const git = words.findIndex((w) => /(?:^|\/)git(?:\.exe)?$/i.test(w));
+      const push = words.indexOf("push", git + 1);
+      if (git >= 0 && push > git && words.slice(push + 1).some((w) => FORCE_ARG.test(w)))
+        return "it force-pushes (--force, -f, --force-with-lease or a +refspec)";
+    }
   return null;
 }

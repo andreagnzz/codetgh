@@ -1,6 +1,7 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { hubRest } from "./helpers.js";
 
 // A new thread with no project reaches no session of a person: a message to them fails unless allow_offline.
 let hub: Hub;
@@ -41,11 +42,7 @@ it("refuses a project-less message to a person unless allow_offline, and never o
   await malik.close();
   await sam.close();
   await lea.close();
-  const rest = await fetch(`${hub.url}/v1/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${team.malik.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ to: "@lea", kind: "note", body: "from the CLI" }),
-  });
+  const rest = await hubRest(hub.url, team.malik.token, "POST", "/v1/messages", { to: "@lea", kind: "note", body: "from the CLI" });
   expect(rest.status).toBe(409);
   expect((await rest.json()).code).toBe("E_UNREACHABLE");
 });

@@ -172,12 +172,11 @@ export async function csrf(url: string, cookie: string) {
   return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
 }
 
-// One tool call on its own connection.
-export async function callTool(url: string, token: string, name: string, args: Record<string, unknown>) {
+export async function callOnce(url: string, token: string, name: string, args: Record<string, unknown> = {}) {
   const client = await mcpClient(url, token);
   const r = await call(client, name, args);
   await client.close();
-  return { isError: r.isError, out: r.json() };
+  return r;
 }
 
 export const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });

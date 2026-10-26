@@ -1,7 +1,7 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { auth, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { auth, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { consolePost, stream } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -29,47 +29,15 @@ const prompt = async (session: string, waitS = 0) => {
   });
   return res.status === 200 ? ((await res.json()) as { context: string }).context : "";
 };
-const inbox = async (agent: string) => {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const text = (await call(lea, "inbox_read", { agent })).text;
-  await lea.close();
-  return text;
-};
+const inbox = async (agent: string) => (await callOnce(hub.url, team.lea.token, "inbox_read", { agent })).text;
 const samSends = async (to: string, body: string) => {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  const sent = JSON.parse((await call(sam, "send_message", { agent: ids["sam-p1"], to, kind: "note", body })).text);
-  await sam.close();
+  const sent = JSON.parse((await callOnce(hub.url, team.sam.token, "send_message", { agent: ids["sam-p1"], to, kind: "note", body })).text);
   return sent as { id: string; thread: string };
 };
-// Reads a session's SSE stream until `until` resolves, and returns what arrived.
-const stream = (session: string) => {
-  const ctl = new AbortController();
-  let text = "";
-  const done = fetch(`${hub.url}/v1/stream?session_id=${session}`, { headers: auth(team.lea.token), signal: ctl.signal })
-    .then(async (res) => {
-      for await (const chunk of res.body ?? []) text += new TextDecoder().decode(chunk);
-    })
-    .catch(() => {});
-  return {
-    ready: async () => {
-      for (let i = 0; i < 100 && !text.includes("event: ready"); i++) await new Promise((r) => setTimeout(r, 20));
-    },
-    waitFor: async (s: string) => {
-      for (let i = 0; i < 100 && !text.includes(s); i++) await new Promise((r) => setTimeout(r, 20));
-      return text;
-    },
-    close: async () => {
-      ctl.abort();
-      await done;
-      return text;
-    },
-  };
-};
-
 describe("delivery follows the session's project", () => {
   it("brings a P1 thread message to the P1 session only: inbox, prompt, rewake and stream", async () => {
-    const s1 = stream("lea-p1");
-    const s2 = stream("lea-p2");
+    const s1 = stream(hub.url, team.lea.token, "lea-p1");
+    const s2 = stream(hub.url, team.lea.token, "lea-p2");
     await Promise.all([s1.ready(), s2.ready()]);
     const woke1 = prompt("lea-p1", 5);
     const woke2 = prompt("lea-p2", 2);

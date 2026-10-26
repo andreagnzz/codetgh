@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, project, task, team as teamTable } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -15,7 +15,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 const json = (r: { text: string }) => JSON.parse(r.text);
 
 describe("tasks", () => {

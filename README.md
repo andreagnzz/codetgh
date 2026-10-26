@@ -96,7 +96,7 @@ codetgh start --accept-requests-from @andrea --dangerously-skip-permissions   # 
 The sender's agent asks for it in plain words ("delegate to @alex: run the tests and tell me the result"). It keeps working, and the answer comes back on its own.
 
 - **Who decides.** Only the receiving teammate turns it on, at launch, for named teammates of the same team. The hub never turns it on, and a request can never ask for it.
-- **Kept in every mode.** Deny rules and a CodeTgh command check refuse reading secret files (`.env*`, keys, `~/.ssh`, `~/.aws`), force pushes in any spelling, and commands built at run time. A delegate session cannot pass a request on to a third agent. One request runs at a time and expires after 30 minutes.
+- **Kept in every mode.** Deny rules and a CodeTgh command check refuse reading secret files (`.env*`, keys, `~/.ssh`, `~/.aws`), force pushes in any spelling, commands built at run time, and commands over 8192 characters. A delegate session cannot pass a request on to a third agent. One request runs at a time and expires after 30 minutes.
 - **Not a sandbox.** These checks reduce the risk; they do not isolate the machine. Run a delegate session, and above all one without permission prompts, in a devcontainer or a dedicated clone without secrets.
 - **Turn it off** from the console, page *Delegations*.
 

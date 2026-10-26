@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, team as teamTable } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { consolePost, fakeGithubToken, gitRepo, hookEnv, runHook } from "./helpers.js";
+import { consolePost, fakeGithubToken, gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -31,7 +31,7 @@ it("shows a bypass session to its person and to the team, and follows a mode cha
     { session_id: "sam-pm", source: "startup", cwd: repo, permission_mode: "bypassPermissions" },
     sam,
   );
-  const line = String((start.out as Out)?.systemMessage ?? "");
+  const line = systemMessage(start);
   expect(line).toMatch(/· bypass ·/);
   expect(line).toContain("⚠ bypass: permission prompts are off");
   expect(await mode("sam-pm")).toBe("bypassPermissions");

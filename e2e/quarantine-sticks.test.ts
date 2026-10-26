@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -11,11 +11,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const send = (token: string, kind: string) =>
-  fetch(`${hub.url}/v1/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ to: "@lea", kind, body: `a ${kind}`, priority: "normal", allow_offline: true }),
-  });
+  hubRest(hub.url, token, "POST", "/v1/messages", { to: "@lea", kind, body: `a ${kind}`, priority: "normal", allow_offline: true });
 
 it("keeps a member quarantined whatever new session or agent their token opens", async () => {
   const first = (await startSession(hub.url, team.sam.token, "sam-q1", { repo: ACME_REPO })).agent_id;

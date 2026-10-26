@@ -81,8 +81,12 @@ async function limits($: EngineInterface, url: string, token: string, handle: st
     // State flips before the calls: one try per transition, a hub down loses it.
     if (top && used >= 100 && !limited) {
       limited = true;
-      const reset = top.resetsAt ? Date.parse(top.resetsAt) : undefined;
-      const back = reset ? `around ${new Date(reset).toISOString().slice(11, 16)} UTC` : "once it resets";
+      // Blocked until the last of the full windows resets, and a reset days away needs its date.
+      const resets = live.flatMap((w) => (w.percentUsed >= 100 && w.resetsAt ? [Date.parse(w.resetsAt)] : []));
+      const reset = resets.length ? Math.max(...resets) : undefined;
+      const at = reset ? new Date(reset).toISOString() : "";
+      const when = reset && reset - now > 20 * 3_600_000 ? at.slice(5, 16).replace("T", " ") : at.slice(11, 16);
+      const back = reset ? `around ${when} UTC` : "once it resets";
       const ttl = reset ? Math.min(86400, Math.max(60, Math.round((reset - now) / 1000))) : 3600;
       const note = `@${handle} hit the Claude usage limit; back ${back}. See the latest handoff in this project.`;
       await tell($, url, token, `Hit the Claude usage limit, back ${back}`, ttl, note);

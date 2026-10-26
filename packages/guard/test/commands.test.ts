@@ -84,16 +84,58 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
     "git push --for\\ce origin main",
     "git push origin main \\\n--force",
     "git push origin main \\\r\n  -f",
+    "git push --force-with-lease=main:abc123 origin main",
+    "git push --force-with-lease=origin/main origin main",
+    "git push origin main --force-with-lease=main:abc",
+    "/usr/bin/git push --force origin main",
+    "git.exe push -f origin main",
+    '"C:\\Program Files\\Git\\cmd\\git.exe" push -f',
+    "./git push -f",
   ])("blocks a force push: %s", (cmd) => {
     expect(delegateBlock(cmd)).toMatch(/force/);
   });
 
-  it.each(["git push origin feat/x", "git push -u origin HEAD", "git status && git log --oneline -5"])(
+  it.each(["git push origin feat/x", "git push -u origin HEAD", "git status && git log --oneline -5", "echo github push"])(
     "lets ordinary work run: %s",
     (cmd) => {
       expect(delegateBlock(cmd)).toBeNull();
     },
   );
+
+  // The hook has 3 s and fails open, so a long command must not make a regex backtrack.
+  it.each([`bash -c '${"a".repeat(7000)}'; cat .env`, `${"$(".repeat(3500)}; cat .env`])(
+    "answers a long command quickly",
+    (cmd) => {
+      const t0 = performance.now();
+      expect(delegateBlock(cmd)).toMatch(/secret/);
+      expect(performance.now() - t0).toBeLessThan(500);
+    },
+    60000,
+  );
+
+  // Super-linear on a 100 kB input (20 s and 1.7 s measured): over the cap the command is refused without being scanned.
+  const backtracking = {
+    "a glob run of .env": (size: number) => `${"*.env".repeat(Math.floor(size / 5))}@; cat ~/.ssh/id`.slice(-size),
+    "a run of base64 -d": (size: number) => `${"base64 -d ".repeat(Math.floor(size / 10))}; cat .env`.slice(-size),
+  };
+
+  it.each(Object.entries(backtracking))("refuses %s over 8192 characters without scanning it", (_, build) => {
+    const t0 = performance.now();
+    expect(delegateBlock(build(100000))).toMatch(/too long to check \(over 8192 characters\)/);
+    expect(performance.now() - t0).toBeLessThan(50);
+  });
+
+  it.each(Object.entries(backtracking))("still decides %s just under the cap", (_, build) => {
+    const cmd = build(8000);
+    expect(cmd.length).toBeLessThan(8192);
+    const t0 = performance.now();
+    expect(delegateBlock(cmd)).toMatch(/secret/);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+
+  it("does not refuse a 200 character command", () => {
+    expect(delegateBlock(`git commit -m "${"fix: ".repeat(30)}"`.slice(0, 200))).toBeNull();
+  });
 
   it("lets ordinary files with similar names run", () => {
     for (const cmd of [

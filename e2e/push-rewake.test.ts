@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, callOnce, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -17,9 +17,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const send = async (body: string) => {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  await call(lea, "send_message", { to: "@sam", kind: "question", body });
-  await lea.close();
+  await callOnce(hub.url, team.lea.token, "send_message", { to: "@sam", kind: "question", body });
 };
 const allowRewake = (modes: string[]) =>
   consolePost(hub.url, team.lea.cookie, "/console/settings", {

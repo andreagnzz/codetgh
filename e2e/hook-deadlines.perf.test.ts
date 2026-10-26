@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { fakeCommand, gitRepo, hookEnv, runHook } from "./helpers.js";
+import { additionalContext, fakeCommand, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 // A hub that answers every request, but only after a delay: each call alone fits its timeout, the sum does not.
 const DELAYS: Record<string, number> = {
@@ -40,7 +40,7 @@ it("session-start stays within its 5 s limit when the CLI and both registrations
   const r = await runHook("session-start", { session_id: "slow-start", source: "clear", cwd: repo }, env);
   expect(r.code).toBe(0);
   expect(r.ms, `session-start took ${r.ms} ms`).toBeLessThan(4800);
-  expect((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext).toBe("slow hub context");
+  expect(additionalContext(r)).toBe("slow hub context");
 });
 
 // The slow git stand-in is an sh script: execFile on Windows runs no script without a shell.

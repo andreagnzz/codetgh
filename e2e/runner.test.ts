@@ -26,7 +26,7 @@ import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program, runnerOwner, runnerTiming, stopRunner } from "../packages/cli/src/main.js";
-import { consolePost, fakeCommand, hookEnv, runHook } from "./helpers.js";
+import { alive, consolePost, fakeCommand, hookEnv, hubRest, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -370,14 +370,6 @@ function mergeOnOrigin(branch: string) {
   git(work, "merge", "-q", "--no-ff", "-m", `Merge ${branch}`, `origin/${branch}`);
   git(work, "push", "-q", "origin", "main");
 }
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 async function waitForPid() {
   for (let i = 0; i < 200 && !existsSync(join(fake, "pid")); i++) await sleep(25);
   return Number(readFileSync(join(fake, "pid"), "utf8"));
@@ -801,10 +793,10 @@ describe("codetgh runner review loop", () => {
   it("leaves a review leased by another runner alone", async () => {
     const id = await create("held review");
     await runner();
-    const res = await fetch(`${hub.url}/v1/runner/lease`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ task_id: id, owner: "another-runner", phase: "review" }),
+    const res = await hubRest(hub.url, team.lea.token, "POST", "/v1/runner/lease", {
+      task_id: id,
+      owner: "another-runner",
+      phase: "review",
     });
     expect(res.status).toBe(200);
     const before = reviewer().length;
@@ -816,11 +808,7 @@ describe("codetgh runner review loop", () => {
 
   it("resumes its own leases after a restart: the author job and the review", async () => {
     const lease = (task_id: string, phase?: string) =>
-      fetch(`${hub.url}/v1/runner/lease`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-        body: JSON.stringify({ task_id, owner: runnerOwner(), phase }),
-      });
+      hubRest(hub.url, team.lea.token, "POST", "/v1/runner/lease", { task_id, owner: runnerOwner(), phase });
     expect(runnerOwner()).toMatch(/:runner-[0-9a-f]{16}$/);
     expect(runnerOwner()).toBe(runnerOwner());
     // Leased by this runner before it stopped: not in the queue any more, so only a resume picks it up.
