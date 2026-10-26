@@ -42,12 +42,14 @@ export function delegateBlock(command: string): string | null {
   const windows = normalize(command.replace(/\\(?=[\w.~-])/g, "/"));
   if (SECRET_PATHS.some((r) => r.test(plain) || r.test(windows))) return "it reads a secret file (.env, *.pem, *.key, ~/.ssh or ~/.aws)";
   // Shell separators split the command, so a; b and what sh -c runs are seen too.
-  for (const part of plain.split(/[;&|\n]+/)) {
-    const words = part.split(/[\s()]+/).filter(Boolean);
-    const git = words.indexOf("git");
-    const push = words.indexOf("push", git + 1);
-    if (git >= 0 && push > git && words.slice(push + 1).some((w) => FORCE_ARG.test(w)))
-      return "it force-pushes (--force, -f, --force-with-lease or a +refspec)";
-  }
+  // git may be spelled /usr/bin/git, ./git or C:\Git\cmd\git.exe.
+  for (const text of [plain, windows])
+    for (const part of text.split(/[;&|\n]+/)) {
+      const words = part.split(/[\s()]+/).filter(Boolean);
+      const git = words.findIndex((w) => /(?:^|\/)git(?:\.exe)?$/i.test(w));
+      const push = words.indexOf("push", git + 1);
+      if (git >= 0 && push > git && words.slice(push + 1).some((w) => FORCE_ARG.test(w)))
+        return "it force-pushes (--force, -f, --force-with-lease or a +refspec)";
+    }
   return null;
 }

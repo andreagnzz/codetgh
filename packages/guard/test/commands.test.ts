@@ -87,11 +87,15 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
     "git push --force-with-lease=main:abc123 origin main",
     "git push --force-with-lease=origin/main origin main",
     "git push origin main --force-with-lease=main:abc",
+    "/usr/bin/git push --force origin main",
+    "git.exe push -f origin main",
+    '"C:\\Program Files\\Git\\cmd\\git.exe" push -f',
+    "./git push -f",
   ])("blocks a force push: %s", (cmd) => {
     expect(delegateBlock(cmd)).toMatch(/force/);
   });
 
-  it.each(["git push origin feat/x", "git push -u origin HEAD", "git status && git log --oneline -5"])(
+  it.each(["git push origin feat/x", "git push -u origin HEAD", "git status && git log --oneline -5", "echo github push"])(
     "lets ordinary work run: %s",
     (cmd) => {
       expect(delegateBlock(cmd)).toBeNull();
