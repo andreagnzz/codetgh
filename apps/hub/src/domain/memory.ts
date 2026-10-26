@@ -5,7 +5,7 @@ import { memoryItem, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
-import { requireMember } from "./admin.js";
+import { byUser, requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps } from "./messages.js";
@@ -139,9 +139,7 @@ export async function decideMemory(
       if (wasPinned) await tx.update(memoryItem).set({ pinned: true }).where(eq(memoryItem.id, item.id));
     }
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
+      ...byUser(p),
       via,
       action: `memory.${status}`,
       subjectId: item.id,
@@ -160,10 +158,7 @@ export async function setPinned(db: Db, p: Principal, itemId: string, pinned: bo
       .returning({ id: memoryItem.id });
     if (!row) throw new HubError("E_NOT_FOUND", "no accepted item with this id");
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: pinned ? "memory.pinned" : "memory.unpinned",
       subjectId: itemId,
     });

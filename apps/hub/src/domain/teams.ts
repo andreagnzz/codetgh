@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { RESERVED_HANDLE, requireAdmin, requireHumanMember } from "./admin.js";
+import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -127,9 +127,7 @@ export async function revokeInvitations(db: Db, p: Principal, by: { id: string }
     if (!rows.length) throw new HubError("E_NOT_FOUND", "no pending invitation to revoke");
     for (const r of rows)
       await appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
+        ...byUser(p),
         via,
         action: "invitation.revoked",
         subjectId: r.id,
@@ -167,10 +165,7 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
       .set({ settings: sql`jsonb_set(${team.settings}, '{loop_orchestrator}', to_jsonb(${handle}::text))` })
       .where(and(eq(team.id, p.teamId), sql`${team.settings}->>'loop_orchestrator' = ${m.handle}`));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "member.handle_changed",
       subjectId: membershipId,
     });
@@ -183,10 +178,7 @@ export async function setDisplayName(db: Db, p: Principal, name: string) {
   await db.transaction(async (tx) => {
     await tx.update(user).set({ name: clean }).where(eq(user.id, p.user.id));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "member.renamed",
       subjectId: p.membershipId,
     });
@@ -200,10 +192,7 @@ export async function renameTeam(db: Db, p: Principal, name: string) {
   await db.transaction(async (tx) => {
     await tx.update(team).set({ name: clean }).where(eq(team.id, p.teamId));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "team.renamed",
       subjectId: p.teamId,
     });
