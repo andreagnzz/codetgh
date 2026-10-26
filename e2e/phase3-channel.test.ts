@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { buildSync } from "esbuild";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -48,9 +48,9 @@ async function bridge(pushMode: string) {
 }
 
 const send = async (body: string) => {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body, allow_offline: true })).text);
-  await lea.close();
+  const sent = JSON.parse(
+    (await callOnce(hub.url, team.lea.token, "send_message", { to: "@sam", kind: "question", body, allow_offline: true })).text,
+  );
   return sent.id as string;
 };
 const wait = async (check: () => boolean, ms = 3000) => {

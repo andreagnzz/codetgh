@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, callOnce, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -38,12 +38,8 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const request = async (token: string, agent: string, body: string) => {
-  const client = await mcpClient(hub.url, token);
-  const r = await call(client, "ask_peer", { agent, to: "@sam", kind: "request", question: body });
-  await client.close();
-  return r;
-};
+const request = (token: string, agent: string, body: string) =>
+  callOnce(hub.url, token, "ask_peer", { agent, to: "@sam", kind: "request", question: body });
 
 describe("delegation to an opt-in session", () => {
   it("wakes the delegate with an authorized request, and its reply reaches the sender mid-turn", async () => {
