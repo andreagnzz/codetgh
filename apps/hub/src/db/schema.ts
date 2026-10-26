@@ -373,7 +373,7 @@ export const task = pgTable(
     notes: jsonb("notes").$type<Array<{ at: string; user_id: string; agent_id: string | null; text: string }>>().notNull().default([]),
     createdByUser: text("created_by_user").notNull(),
     createdByAgent: text("created_by_agent"),
-    // Runner queue: only a member or the owner sets `runner`; the lease is held by one runner at a time.
+    // Runner queue: only an owner or an admin sets `runner`; the lease is held by one runner at a time.
     runner: boolean("runner").notNull().default(false),
     branch: text("branch"),
     baseBranch: text("base_branch"),
