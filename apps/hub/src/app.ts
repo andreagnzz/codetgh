@@ -753,7 +753,7 @@ export function createApp({
     }
     // Slack wants an answer within 3 s: acknowledge, then relay.
     if (payload.type === "event_callback" && payload.event)
-      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.message }, "slack event not relayed"));
+      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.name }, "slack event not relayed"));
     return c.body(null, 200);
   });
   app.post("/bridges/slack/commands", bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
