@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { ROLES, type Role } from "@codetgh/shared";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, invitation, membership, oauthAccessToken, oauthRefreshToken, personalToken, session, team, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { RESERVED_HANDLE, requireAdmin, requireHumanMember } from "./admin.js";
+import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -91,15 +91,21 @@ export async function inviteMember(
   if (!/^[^\s@]+@[^\s@]+$/.test(input.email)) throw new HubError("E_INVALID", "invalid email");
   const { token } = await createInvitation(deps.db, { teamId: p.teamId, email: input.email, role, invitedBy: p.user.id, via, days });
   const link = `${deps.publicUrl}/invite/${token}`;
+  let emailed = false;
   if (deps.mailer.enabled) {
-    await deps.mailer.send({
-      to: input.email,
-      subject: `Join ${p.teamName} on CodeTgh`,
-      text: `${p.user.name} invited you to ${p.teamName} on CodeTgh as ${role}.\nAccept within ${days} days:\n${link}`,
-    });
+    try {
+      await deps.mailer.send({
+        to: input.email,
+        subject: `Join ${p.teamName} on CodeTgh`,
+        text: `${p.user.name} invited you to ${p.teamName} on CodeTgh as ${role}.\nAccept within ${days} days:\n${link}`,
+      });
+      emailed = true;
+    } catch {
+      // The invitation is committed and the clear link is only returned here: a mail error can carry the address, so it is not logged.
+    }
   }
   const expires_at = new Date(Date.now() + days * 86_400_000).toISOString();
-  return { link, email: input.email, role, emailed: deps.mailer.enabled, days, expires_at };
+  return { link, email: input.email, role, emailed, days, expires_at };
 }
 
 // An admin cancels invitations not used yet, by id (console) or by email (CLI); their links stop working at once.
@@ -121,9 +127,7 @@ export async function revokeInvitations(db: Db, p: Principal, by: { id: string }
     if (!rows.length) throw new HubError("E_NOT_FOUND", "no pending invitation to revoke");
     for (const r of rows)
       await appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
+        ...byUser(p),
         via,
         action: "invitation.revoked",
         subjectId: r.id,
@@ -139,7 +143,7 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
   if (RESERVED_HANDLE.test(handle)) throw new HubError("E_INVALID", "handles starting with bridge- or a2a- are reserved");
   await db.transaction(async (tx) => {
     const [m] = await tx
-      .select({ userId: membership.userId })
+      .select({ userId: membership.userId, handle: membership.handle })
       .from(membership)
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)));
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
@@ -155,11 +159,13 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)))
       .returning({ id: membership.id });
     if (!rows.length) throw new HubError("E_NOT_FOUND", "member not found");
+    // The orchestrator is stored as a handle: it follows its member instead of staying on a name someone else can take.
+    await tx
+      .update(team)
+      .set({ settings: sql`jsonb_set(${team.settings}, '{loop_orchestrator}', to_jsonb(${handle}::text))` })
+      .where(and(eq(team.id, p.teamId), sql`${team.settings}->>'loop_orchestrator' = ${m.handle}`));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "member.handle_changed",
       subjectId: membershipId,
     });
@@ -172,10 +178,7 @@ export async function setDisplayName(db: Db, p: Principal, name: string) {
   await db.transaction(async (tx) => {
     await tx.update(user).set({ name: clean }).where(eq(user.id, p.user.id));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "member.renamed",
       subjectId: p.membershipId,
     });
@@ -189,10 +192,7 @@ export async function renameTeam(db: Db, p: Principal, name: string) {
   await db.transaction(async (tx) => {
     await tx.update(team).set({ name: clean }).where(eq(team.id, p.teamId));
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "team.renamed",
       subjectId: p.teamId,
     });
@@ -330,6 +330,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .from(membership)
       .where(and(eq(membership.id, input.membershipId), eq(membership.teamId, input.teamId)));
     if (!m || m.status !== "active") throw new HubError("E_NOT_FOUND", "member not found");
+    await requireNotBridge(tx, input.teamId, m.userId);
     if (m.role === "owner" && input.actorRole !== "owner") throw new HubError("E_FORBIDDEN", "an admin cannot revoke an owner");
     if (m.userId === input.actorUserId) throw new HubError("E_FORBIDDEN", "you cannot revoke yourself");
     const now = new Date();

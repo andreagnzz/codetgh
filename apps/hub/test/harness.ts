@@ -167,6 +167,11 @@ export async function call(client: Client, name: string, args: Record<string, un
   return { text, isError: Boolean(r.isError), json: () => JSON.parse(text.split("\n\n")[0] ?? "null") };
 }
 
+export async function csrf(url: string, cookie: string) {
+  const html = await (await fetch(`${url}/console`, { headers: { cookie } })).text();
+  return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
+}
+
 export async function callOnce(url: string, token: string, name: string, args: Record<string, unknown> = {}) {
   const client = await mcpClient(url, token);
   const r = await call(client, name, args);

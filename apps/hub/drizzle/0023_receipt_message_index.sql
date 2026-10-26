@@ -1,0 +1,1 @@
+CREATE INDEX "receipt_message_idx" ON "receipt" USING btree ("message_id");

@@ -5,6 +5,7 @@ import type { Db } from "../db/index.js";
 import { project, runTarget, task } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
+import { byUser } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps } from "./messages.js";
 import { ALLOWED, MAX_NOTES, taskView, view } from "./tasks.js";
@@ -89,10 +90,7 @@ export async function setRunDesired(db: Db, p: Principal, projectId: string, on:
       .values({ projectId, teamId: p.teamId, ...values })
       .onConflictDoUpdate({ target: runTarget.projectId, set: values });
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: on ? "runner.requested" : "runner.stopped",
       subjectId: projectId,
     });

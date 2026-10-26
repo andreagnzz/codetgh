@@ -1,6 +1,7 @@
+import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { invitation, membership, team as teamTable, user } from "../apps/hub/src/db/schema.js";
+import { agent, invitation, membership, team as teamTable, user } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -60,6 +61,75 @@ describe("members", () => {
       .from(membership)
       .where(eq(membership.id, sam?.id ?? ""));
     expect(after?.handle).toBe("samuel");
+  });
+
+  it("moves the loop orchestrator setting along when its member gets a new handle", async () => {
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { loop_orchestrator: "malik" } })
+      .where(eq(teamTable.id, team.teamId));
+    const [malik] = await hub.db.select().from(membership).where(eq(membership.userId, team.malik.userId));
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${malik?.id}/handle`, { handle: "malika" })).status).toBe(204);
+    const [t] = await hub.db.select({ s: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
+    expect(t?.s.loop_orchestrator).toBe("malika");
+    await hub.db.update(teamTable).set({ settings: {} }).where(eq(teamTable.id, team.teamId));
+  });
+
+  it("refuses to revoke a bridge member, so the GitHub webhook keeps working", async () => {
+    const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
+    const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const secret = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
+    const deliver = () => {
+      const body = JSON.stringify({
+        action: "opened",
+        repository: { full_name: "acme/webapp", html_url: "https://github.com/acme/webapp" },
+        sender: { login: "octocat" },
+        pull_request: {
+          number: 9,
+          title: "Add pages",
+          html_url: "https://github.com/acme/webapp/pull/9",
+          merged: false,
+          head: { ref: "feat/p", sha: "abc1234" },
+        },
+      });
+      return fetch(hookUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": "pull_request",
+          "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+        },
+        body,
+      });
+    };
+    expect((await deliver()).status).toBe(202);
+    const [bridge] = await hub.db.select().from(membership).where(eq(membership.handle, "bridge-github"));
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${bridge?.id}/revoke`)).status).toBe(403);
+    expect((await deliver()).status).toBe(202);
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, bridge?.id ?? ""));
+    expect(after?.status).toBe("active");
+  });
+
+  it("revokes an a2a member, so an admin can cut an external agent whose token leaked", async () => {
+    const created = await (await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Leaky bot" })).text();
+    const token = created.match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const [bot] = await hub.db.select().from(agent).where(eq(agent.label, "Leaky bot"));
+    const [m] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.userId, bot?.userId ?? ""));
+    const send = () => fetch(`${hub.url}/a2a`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: "{}" });
+    expect((await send()).status).not.toBe(401);
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${m?.id}/revoke`)).status).toBe(204);
+    expect((await send()).status).toBe(401);
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, m?.id ?? ""));
+    expect(after?.status).toBe("revoked");
   });
 
   it("lets anyone change their own display name", async () => {

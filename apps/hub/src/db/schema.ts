@@ -280,7 +280,7 @@ export const receipt = pgTable(
     ackStatus: text("ack_status"),
     ackNote: text("ack_note"),
   },
-  (t) => [index("receipt_recipient_idx").on(t.recipientUserId, t.readAt, t.seq)],
+  (t) => [index("receipt_recipient_idx").on(t.recipientUserId, t.readAt, t.seq), index("receipt_message_idx").on(t.messageId)],
 );
 
 export const alert = pgTable(
@@ -381,7 +381,7 @@ export const task = pgTable(
     notes: jsonb("notes").$type<Array<{ at: string; user_id: string; agent_id: string | null; text: string }>>().notNull().default([]),
     createdByUser: text("created_by_user").notNull(),
     createdByAgent: text("created_by_agent"),
-    // Runner queue: only a member or the owner sets `runner`; the lease is held by one runner at a time.
+    // Runner queue: only an owner or an admin sets `runner`; the lease is held by one runner at a time.
     runner: boolean("runner").notNull().default(false),
     branch: text("branch"),
     baseBranch: text("base_branch"),

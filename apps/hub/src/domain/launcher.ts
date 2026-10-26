@@ -3,6 +3,7 @@ import type { Db } from "../db/index.js";
 import { launchTarget, project } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
+import { byUser } from "./admin.js";
 import { appendAudit } from "./audit.js";
 
 // The bounded launcher: the owner only says "on" or "off" for a project. Which folder and which command run is decided
@@ -25,10 +26,7 @@ export async function setLaunchDesired(db: Db, p: Principal, projectId: string, 
       .values({ projectId, teamId: p.teamId, ...values })
       .onConflictDoUpdate({ target: launchTarget.projectId, set: values });
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: on ? "launcher.requested" : "launcher.stopped",
       subjectId: projectId,
     });

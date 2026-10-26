@@ -13,6 +13,7 @@ let fake: Server;
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 let threadTs = "";
+const logged: string[] = [];
 
 beforeAll(async () => {
   // A fake Slack Web API that records calls.
@@ -30,6 +31,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => fake.listen(0, resolve));
   hub = await startHub({
+    logLines: logged,
     config: {
       slackBotToken: "xoxb-test",
       slackSigningSecret: SIGNING,
@@ -175,5 +177,17 @@ describe("Slack bridge (phase 3)", () => {
     await until(() => posts.some((p) => p.method === "chat.postEphemeral"));
     expect((await hub.db.select().from(message)).length).toBe(before);
     expect(posts.find((p) => p.method === "chat.postEphemeral")?.body).toMatchObject({ user: "U_EVE", channel: "C123" });
+  });
+
+  it("never logs a reply's text when the database refuses it", async () => {
+    // Postgres refuses NUL in text: the driver's error carries the query parameters, the reply included.
+    const before = logged.length;
+    expect(
+      (await event({ type: "message", channel: "C123", user: "U_LEA", text: "private plan\u0000 launch", thread_ts: threadTs, ts: "3.1" }))
+        .status,
+    ).toBe(200);
+    await until(() => logged.slice(before).some((l) => l.includes("slack event not relayed")));
+    expect(logged.slice(before).some((l) => l.includes("slack event not relayed"))).toBe(true);
+    expect(logged.join("\n")).not.toContain("private plan");
   });
 });

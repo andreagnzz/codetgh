@@ -162,6 +162,13 @@
       "when": 1793012193404,
       "tag": "0022_task_verify_blocked",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793015005644,
+      "tag": "0023_receipt_message_index",
+      "breakpoints": true
     }
   ]
 }

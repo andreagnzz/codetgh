@@ -182,7 +182,10 @@ export function createApp({
       logger.error({ err: (e as Error).name }, "checkpoint failed");
     }
   };
-  const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
+  const checkpointTimer = setInterval(
+    () => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")),
+    CHECKPOINT_EVERY_MS,
+  );
   checkpointTimer.unref();
   const purgeTimer = setInterval(
     () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),

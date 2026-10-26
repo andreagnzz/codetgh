@@ -15,7 +15,7 @@ import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { requireAdmin } from "./admin.js";
+import { byUser, requireAdmin } from "./admin.js";
 import { type Agent, oneLine } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { envelope, type MessagingDeps, sendMessage } from "./messages.js";
@@ -45,10 +45,7 @@ export async function createExternalAgent(db: Db, p: Principal, name: string) {
       })
       .returning({ id: agent.id });
     await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
+      ...byUser(p),
       action: "agent.a2a_created",
       subjectId: row?.id,
     });
