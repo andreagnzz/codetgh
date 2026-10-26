@@ -114,6 +114,27 @@ describe("team memory", () => {
     await lea.close();
   });
 
+  it("keeps memory_accept off while the team is paused, but not the console", async () => {
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { memory_accept_by: "owner", memory_accept_via_mcp: true } })
+      .where(eq(teamTable.id, team.teamId));
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const p = json(await call(sam, "memory_propose", { kind: "note", title: "Pause test", body: "Decided during a pause." }));
+    await hub.db.update(teamTable).set({ killSwitchAt: new Date() }).where(eq(teamTable.id, team.teamId));
+    try {
+      expect(code(await call(lea, "memory_accept", { item_id: p.id, decision: "accept" }))).toBe("E_KILL_SWITCH");
+      const [still] = await hub.db.select().from(memoryItem).where(eq(memoryItem.id, p.id));
+      expect(still?.status).toBe("proposed");
+      expect((await decide(team.lea.cookie, p.id, "accept")).status).toBe(204);
+    } finally {
+      await hub.db.update(teamTable).set({ killSwitchAt: null, settings: {} }).where(eq(teamTable.id, team.teamId));
+      await sam.close();
+      await lea.close();
+    }
+  });
+
   it("puts pinned and accepted decisions in the session packet", async () => {
     const [current] = await hub.db.select().from(memoryItem).where(eq(memoryItem.status, "accepted"));
     await hub.db
