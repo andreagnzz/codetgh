@@ -330,6 +330,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .from(membership)
       .where(and(eq(membership.id, input.membershipId), eq(membership.teamId, input.teamId)));
     if (!m || m.status !== "active") throw new HubError("E_NOT_FOUND", "member not found");
+    await requireHumanMember(tx, input.teamId, m.userId);
     if (m.role === "owner" && input.actorRole !== "owner") throw new HubError("E_FORBIDDEN", "an admin cannot revoke an owner");
     if (m.userId === input.actorUserId) throw new HubError("E_FORBIDDEN", "you cannot revoke yourself");
     const now = new Date();
