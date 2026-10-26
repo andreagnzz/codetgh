@@ -282,14 +282,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           .from(memoryItem)
           .where(and(eq(memoryItem.teamId, p.teamId), eq(memoryItem.status, "proposed")))
       : [];
-    const alerts = isAdmin(p)
-      ? await db
-          .select()
-          .from(alert)
-          .where(and(eq(alert.teamId, p.teamId), eq(alert.status, "open")))
-          .orderBy(desc(alert.createdAt))
-          .limit(20)
-      : [];
+    const openAlerts = and(eq(alert.teamId, p.teamId), eq(alert.status, "open"));
+    const alerts = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(5) : [];
+    const [alertCount] = isAdmin(p) ? await db.select({ n: count() }).from(alert).where(openAlerts) : [];
+    const nAlerts = alertCount?.n ?? 0;
     const line = await recentLine(p);
     const dayAgo = Date.now() - 86_400_000;
     const recent = line.filter((r) => r.message.createdAt.getTime() >= dayAgo);
@@ -334,7 +330,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </section>
           <section aria-labelledby="todo-h">
             <h2 id="todo-h">{_("To handle")}</h2>
-            {toValidate.length === 0 && alerts.length === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
+            {toValidate.length === 0 && nAlerts === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
             <ul class="todo">
               {toValidate.length > 0 && (
                 <li>
@@ -346,16 +342,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   </a>
                 </li>
               )}
-              {alerts.slice(0, 5).map((a) => (
+              {alerts.map((a) => (
                 <li>
                   <Pill tone="danger">{_(a.kind)}</Pill> <span class="excerpt">{a.excerpt.slice(0, 120)}</span>{" "}
                   <When at={a.createdAt} lang={_.lang} />
                 </li>
               ))}
-              {alerts.length > 0 && (
+              {nAlerts > 0 && (
                 <li>
                   <a href="/console/alerts">
-                    {_("Review alerts")} ({alerts.length})
+                    {_("Review alerts")} ({nAlerts})
                   </a>
                 </li>
               )}
