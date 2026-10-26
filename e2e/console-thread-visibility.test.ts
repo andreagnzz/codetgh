@@ -51,3 +51,24 @@ it("audits an admin's opening of someone else's direct thread once, and gives th
   expect(await reads()).toHaveLength(1);
   await sam.close();
 });
+
+const dashboard = async (cookie: string) => (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
+
+it("keeps a reply addressed to one person off the other members' activity line", async () => {
+  await startSession(hub.url, team.lea.token, "lea-line");
+  await startSession(hub.url, team.sam.token, "sam-line");
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const sam = await mcpClient(hub.url, team.sam.token);
+  await call(lea, "send_message", { to: "@team", kind: "question", body: "Who deploys on Friday?" });
+  const [q] = await hub.db.select().from(message).where(eq(message.body, "Who deploys on Friday?"));
+  await call(sam, "send_message", { reply_to: q?.id, kind: "answer", body: "Private: Sam deploys." });
+  const [a] = await hub.db.select().from(message).where(eq(message.body, "Private: Sam deploys."));
+
+  const malik = await dashboard(team.malik.cookie);
+  expect(malik).toContain(`data-mid="${q?.id}"`);
+  expect(malik).not.toContain(`data-mid="${a?.id}"`);
+  expect(await dashboard(team.lea.cookie)).toContain(`data-mid="${a?.id}"`);
+  expect(await dashboard(team.sam.cookie)).toContain(`data-mid="${a?.id}"`);
+  await lea.close();
+  await sam.close();
+});

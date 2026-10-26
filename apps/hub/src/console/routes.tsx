@@ -425,7 +425,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   const visibleThreads = (p: Principal, mine: string[]) =>
     isAdmin(p) ? undefined : or(p.role === "guest" ? undefined : eq(thread.kind, "team"), inArray(thread.id, mine));
 
-  // The activity line: who wrote to whom, never what. Same visibility as the thread list.
+  // The activity line: who wrote to whom, never what. Same visibility as the thread page: a reply addressed to one person
+  // stays between them, admins excepted.
   async function recentLine(p: Principal) {
     const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
     return db
@@ -433,7 +434,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
-      .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine)))
+      .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine), isAdmin(p) ? undefined : sentOrReceivedBy(db, p)))
       .orderBy(desc(message.createdAt))
       .limit(40);
   }
