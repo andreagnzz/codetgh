@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gt, gte } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { alert, auditCheckpoint, auditEvent, team as teamTable } from "../src/db/schema.js";
 import { appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../src/domain/audit.js";
-import { type Hub, startHub } from "./harness.js";
+import { csrf, type Hub, startHub } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -204,15 +204,10 @@ describe("checkpoint anchor", () => {
 });
 
 describe("console", () => {
-  async function csrf(cookie: string) {
-    const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-    return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
-  }
-
   it("lets an admin verify the chain and download a signed export", async () => {
     const verify = await fetch(`${hub.url}/console/audit/verify`, {
       method: "POST",
-      headers: { cookie: team.lea.cookie, "X-CSRF-Token": await csrf(team.lea.cookie) },
+      headers: { cookie: team.lea.cookie, "X-CSRF-Token": await csrf(hub.url, team.lea.cookie) },
     });
     expect(await verify.text()).toContain("Chain intact");
     const res = await fetch(`${hub.url}/console/audit/export`, { headers: { cookie: team.lea.cookie } });

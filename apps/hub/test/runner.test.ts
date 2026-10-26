@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, project, task } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { ACME_REPO, call, csrf, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -37,17 +37,13 @@ const rest = (token: string, method: "GET" | "POST", path: string, body?: unknow
   });
 const owner = (method: "GET" | "POST", path: string, body?: unknown) => rest(team.lea.token, method, path, body);
 
-async function csrf(cookie: string) {
-  const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-  return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
-}
 const switchRunner = async (id: string, on: boolean) =>
   fetch(`${hub.url}/console/projects/${id}/runner`, {
     method: "POST",
     headers: {
       cookie: team.lea.cookie,
       "content-type": "application/x-www-form-urlencoded",
-      "X-CSRF-Token": await csrf(team.lea.cookie),
+      "X-CSRF-Token": await csrf(hub.url, team.lea.cookie),
     },
     body: new URLSearchParams({ on: on ? "1" : "0" }).toString(),
   });

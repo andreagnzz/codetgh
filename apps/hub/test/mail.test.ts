@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { membership } from "../src/db/schema.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { createMailer, type Mailer } from "../src/mailer.js";
-import { type Hub, startHub } from "./harness.js";
+import { csrf, type Hub, startHub } from "./harness.js";
 
 // jsonTransport keeps mail in memory; `enabled` is forced so the hub behaves as with SMTP_URL set.
 let mailer: Mailer;
@@ -16,15 +16,14 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-async function csrf(cookie: string) {
-  const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-  return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
-}
-
 it("emails the invitation link and still shows it", async () => {
   const res = await fetch(`${hub.url}/console/members/invite`, {
     method: "POST",
-    headers: { cookie: team.lea.cookie, "X-CSRF-Token": await csrf(team.lea.cookie), "content-type": "application/x-www-form-urlencoded" },
+    headers: {
+      cookie: team.lea.cookie,
+      "X-CSRF-Token": await csrf(hub.url, team.lea.cookie),
+      "content-type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({ email: "zoe@acme.test", role: "member" }).toString(),
   });
   const html = await res.text();
@@ -45,7 +44,7 @@ it("still shows the invitation link when the mail server refuses the message", a
       method: "POST",
       headers: {
         cookie: team.lea.cookie,
-        "X-CSRF-Token": await csrf(team.lea.cookie),
+        "X-CSRF-Token": await csrf(hub.url, team.lea.cookie),
         "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({ email: "yana@acme.test", role: "member" }).toString(),

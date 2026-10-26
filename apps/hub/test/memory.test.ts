@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { call, csrf, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -14,14 +14,10 @@ afterAll(() => hub.stop());
 const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 const json = (r: { text: string }) => JSON.parse(r.text.split("\n\n")[0] ?? "null");
 
-async function csrf(cookie: string) {
-  const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-  return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
-}
 const decide = async (cookie: string, id: string, decision: "accept" | "reject", note = "") =>
   fetch(`${hub.url}/console/memory/${id}/decide`, {
     method: "POST",
-    headers: { cookie, "X-CSRF-Token": await csrf(cookie), "content-type": "application/x-www-form-urlencoded" },
+    headers: { cookie, "X-CSRF-Token": await csrf(hub.url, cookie), "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ decision, note }).toString(),
   });
 

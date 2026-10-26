@@ -9,7 +9,7 @@ import { createGithubHook } from "../src/domain/github.js";
 import { contextPacket } from "../src/domain/overview.js";
 import { createInvitation, setMemberHandle } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { call, csrf, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -18,11 +18,6 @@ beforeAll(async () => {
   team = await hub.seed();
 });
 afterAll(() => hub.stop());
-
-async function csrf(cookie: string) {
-  const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-  return html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;/)?.[1] ?? "";
-}
 
 const post = (path: string, cookie: string, token: string | null, form: Record<string, string> = {}) =>
   fetch(`${hub.url}${path}`, {
@@ -46,7 +41,9 @@ describe("console", () => {
   it("refuses writes without the CSRF token", async () => {
     expect((await post("/console/settings", team.lea.cookie, null, { retention_days: "30" })).status).toBe(403);
     expect((await post("/console/settings", team.lea.cookie, "forged", { retention_days: "30" })).status).toBe(403);
-    expect((await post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), { retention_days: "30" })).status).toBe(204);
+    expect((await post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { retention_days: "30" })).status).toBe(
+      204,
+    );
   });
 
   it("shows the invitation page with a sign-up form, and nothing for a bad link", async () => {
@@ -64,7 +61,7 @@ describe("console", () => {
   });
 
   it("refuses secret patterns that could hang the hub", async () => {
-    const res = await post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), {
+    const res = await post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), {
       retention_days: "90",
       secret_patterns: "(a+)+$",
     });
@@ -74,7 +71,7 @@ describe("console", () => {
   it("offers and stores no strict mode, a setting that did nothing", async () => {
     const html = await (await fetch(`${hub.url}/console/settings`, { headers: { cookie: team.lea.cookie } })).text();
     expect(html).not.toContain('name="strict"');
-    await post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), { retention_days: "90", strict: "on" });
+    await post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { retention_days: "90", strict: "on" });
     const [row] = await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
     expect(row?.settings).not.toHaveProperty("strict");
   });
@@ -82,7 +79,8 @@ describe("console", () => {
   it("saves every setting, and keeps the stored ones a bad or blank field would wipe", async () => {
     const settings = async () =>
       (await hub.db.select({ settings: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId)))[0]?.settings;
-    const save = async (form: Record<string, string>) => post("/console/settings", team.lea.cookie, await csrf(team.lea.cookie), form);
+    const save = async (form: Record<string, string>) =>
+      post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), form);
     expect(
       (await save({ retention_days: "30", memory_accept_by: "admin", memory_accept_via_mcp: "on", slack_channel: "C0123ABC" })).status,
     ).toBe(204);
@@ -117,10 +115,13 @@ describe("console", () => {
 
   it("creates an invitation link and shows a token once", async () => {
     const invite = await (
-      await post("/console/members/invite", team.lea.cookie, await csrf(team.lea.cookie), { email: "zoe@acme.test", role: "member" })
+      await post("/console/members/invite", team.lea.cookie, await csrf(hub.url, team.lea.cookie), {
+        email: "zoe@acme.test",
+        role: "member",
+      })
     ).text();
     expect(invite).toMatch(new RegExp(`${hub.url}/invite/[A-Za-z0-9_-]{32}`));
-    const created = await (await post("/console/tokens", team.sam.cookie, await csrf(team.sam.cookie), { label: "ci" })).text();
+    const created = await (await post("/console/tokens", team.sam.cookie, await csrf(hub.url, team.sam.cookie), { label: "ci" })).text();
     expect(created).toMatch(/ctgh_[A-Za-z0-9_-]{43}/);
   });
 
@@ -179,15 +180,21 @@ describe("kill switch", () => {
     const pending = call(sam, "ask_peer", { to: "@lea", question: "Encore là ?", wait_s: 30, allow_offline: true });
     await new Promise((r) => setTimeout(r, 200));
     const started = Date.now();
-    expect((await post("/console/kill-switch", team.lea.cookie, await csrf(team.lea.cookie), { reason: "incident" })).status).toBe(204);
+    expect((await post("/console/kill-switch", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { reason: "incident" })).status).toBe(
+      204,
+    );
     const r = await call(sam, "send_message", { to: "@lea", kind: "note", body: "x" });
     expect(JSON.parse(r.text).code).toBe("E_KILL_SWITCH");
     expect((await pending).json().status).toBe("pending");
     expect(Date.now() - started).toBeLessThan(5000);
     expect((await call(sam, "inbox_read")).isError).toBe(false);
     expect((await fetch(`${hub.url}/console`, { headers: { cookie: team.lea.cookie } })).status).toBe(200);
-    expect((await post("/console/kill-switch/resume", team.lea.cookie, await csrf(team.lea.cookie), { confirm: "no" })).status).toBe(400);
-    expect((await post("/console/kill-switch/resume", team.lea.cookie, await csrf(team.lea.cookie), { confirm: "yes" })).status).toBe(204);
+    expect(
+      (await post("/console/kill-switch/resume", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { confirm: "no" })).status,
+    ).toBe(400);
+    expect(
+      (await post("/console/kill-switch/resume", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { confirm: "yes" })).status,
+    ).toBe(204);
     expect((await call(sam, "send_message", { to: "@lea", kind: "note", body: "back", allow_offline: true })).isError).toBe(false);
     await sam.close();
   });
