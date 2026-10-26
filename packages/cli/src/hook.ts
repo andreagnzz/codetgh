@@ -407,7 +407,7 @@ async function repoPath(input: Input, state: State) {
     }
   }
   const rel = relative(state.root, join(dir, rest));
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
+  return rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
 }
 
 // PreToolUse on Edit/Write: the hub decides from the team's claims; no answer leaves the permission flow unchanged.
