@@ -67,11 +67,23 @@ export function runHook(
   });
 }
 
+export const systemMessage = (r: Pick<HookRun, "out">) => String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
+
+export const additionalContext = (r: Pick<HookRun, "out">) =>
+  String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext ?? "");
+
 export const hookEnv = (url: string, token: string) => ({
   CLAUDE_PLUGIN_OPTION_CODETGH_URL: url,
   CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN: token,
   CODETGH_STATE_DIR: mkdtempSync(join(tmpdir(), "codetgh-hook-")),
 });
+
+export const hubRest = (url: string, token: string, method: string, path: string, body?: unknown) =>
+  fetch(`${url}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 export async function csrfToken(url: string, cookie: string) {
   const html = await (await fetch(`${url}/console`, { headers: { cookie } })).text();
@@ -108,4 +120,38 @@ export function gitRepo(origin = "git@github.com:acme/webapp.git") {
   execFileSync("git", ["init", "-q", dir]);
   execFileSync("git", ["-C", dir, "remote", "add", "origin", origin]);
   return dir;
+}
+
+export const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Opens a session's SSE stream; ready() waits for the ready event, waitFor(s) for a string, close() aborts and returns everything that arrived.
+export function stream(url: string, token: string, session: string) {
+  const ctl = new AbortController();
+  let text = "";
+  const done = fetch(`${url}/v1/stream?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` }, signal: ctl.signal })
+    .then(async (res) => {
+      for await (const chunk of res.body ?? []) text += new TextDecoder().decode(chunk);
+    })
+    .catch(() => {});
+  return {
+    ready: async () => {
+      for (let i = 0; i < 100 && !text.includes("event: ready"); i++) await new Promise((r) => setTimeout(r, 20));
+    },
+    waitFor: async (s: string) => {
+      for (let i = 0; i < 100 && !text.includes(s); i++) await new Promise((r) => setTimeout(r, 20));
+      return text;
+    },
+    close: async () => {
+      ctl.abort();
+      await done;
+      return text;
+    },
+  };
 }

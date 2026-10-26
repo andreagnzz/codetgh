@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { message } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { daemon, program } from "../packages/cli/src/main.js";
+import { hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -76,31 +77,30 @@ async function sse(token: string, lastEventId: string | null, until: (events: Ar
   const decoder = new TextDecoder();
   const events: Array<{ id: string; data: string }> = [];
   let buf = "";
-  const done = (async () => {
-    while (!until(events)) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
-        const frame = buf.slice(0, i);
-        buf = buf.slice(i + 2);
-        const field = (k: string) => frame.match(new RegExp(`^${k}: ?(.*)$`, "m"))?.[1];
-        if (field("event") === "message") events.push({ id: field("id") ?? "", data: field("data") ?? "" });
-      }
+  while (!until(events)) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
+      const frame = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      const field = (k: string) => frame.match(new RegExp(`^${k}: ?(.*)$`, "m"))?.[1];
+      if (field("event") === "message") events.push({ id: field("id") ?? "", data: field("data") ?? "" });
     }
-    ctl.abort();
-    return events;
-  })();
-  return done;
+  }
+  ctl.abort();
+  return events;
 }
 
 describe("REST send", () => {
   it("sends from the CLI agent and replays an idempotency key once", async () => {
     const send = () =>
-      fetch(`${hub.url}/v1/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-        body: JSON.stringify({ to: "@lea", kind: "note", body: "rest once", idempotency_key: "k-rest-1", allow_offline: true }),
+      hubRest(hub.url, team.sam.token, "POST", "/v1/messages", {
+        to: "@lea",
+        kind: "note",
+        body: "rest once",
+        idempotency_key: "k-rest-1",
+        allow_offline: true,
       });
     const a = await (await send()).json();
     const b = await (await send()).json();

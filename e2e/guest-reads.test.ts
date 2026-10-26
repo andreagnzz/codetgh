@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { membership } from "../apps/hub/src/db/schema.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -72,10 +72,10 @@ it("shows a guest only their own agents on the dashboard", async () => {
   const lea = await mcpClient(hub.url, team.lea.token);
   expect((await call(lea, "status_set", { text: "rotating billing keys quietly" })).isError).toBe(false);
   await lea.close();
-  await fetch(`${hub.url}/v1/agents/session`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ session_id: "sam-g", repo_fingerprint: "b".repeat(64), repo_name: "acme/ledger-secret" }),
+  await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
+    session_id: "sam-g",
+    repo_fingerprint: "b".repeat(64),
+    repo_name: "acme/ledger-secret",
   });
   const html = await (await fetch(`${hub.url}/console`, { headers: { cookie: team.malik.cookie } })).text();
   const presence = html.slice(html.indexOf('id="presence-h"'), html.indexOf('id="todo-h"'));

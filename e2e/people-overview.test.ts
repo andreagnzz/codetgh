@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
 import { expireStaleSessions } from "../apps/hub/src/domain/agents.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -16,13 +16,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const start = async (token: string, session: string) =>
-  String(
-    (
-      (await runHook("session-start", { session_id: session, source: "startup", cwd: repo }, hookEnv(hub.url, token))).out as {
-        systemMessage?: string;
-      } | null
-    )?.systemMessage ?? "",
-  );
+  systemMessage(await runHook("session-start", { session_id: session, source: "startup", cwd: repo }, hookEnv(hub.url, token)));
 
 // Field report (Orma run): every restart made a new agent, and each one was listed as if it were another teammate.
 it("shows a teammate once, with only the sessions still open after the 12 h expiry, in team_overview and /v1/status", async () => {

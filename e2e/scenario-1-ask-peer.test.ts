@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { hookEnv, runHook } from "./helpers.js";
+import { additionalContext, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -27,7 +27,7 @@ it("Sam asks Léa through ask_peer and gets her answer in an envelope (scenario 
   let injected = "";
   for (let i = 0; i < 20 && !injected; i++) {
     const r = await runHook("user-prompt-submit", { session_id: "lea-session", prompt: "continue" }, hookEnv(hub.url, team.lea.token));
-    injected = String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext ?? "");
+    injected = additionalContext(r);
     if (!injected) await new Promise((r) => setTimeout(r, 100));
   }
   const qid = injected.match(/<peer_message id="(msg_[0-9A-Z]{26})" from="Sam"[^>]*kind="question"[^>]*trust="untrusted-peer">/)?.[1];

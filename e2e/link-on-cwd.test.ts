@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -24,7 +24,6 @@ const projectsOf = (origin: string) =>
     .select()
     .from(project)
     .where(eq(project.repoFingerprint, repoFingerprint(origin)));
-const line = (r: Awaited<ReturnType<typeof runHook>>) => String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
 
 it("links a session started outside a repository once it moves into one, and keeps it there", async () => {
   const env = hookEnv(hub.url, team.sam.token);
@@ -34,7 +33,7 @@ it("links a session started outside a repository once it moves into one, and kee
 
   const repo = gitRepo("git@github.com:acme/cwd-link.git");
   const r = await runHook("cwd-changed", { session_id: "sam-home", cwd: repo, old_cwd: start, new_cwd: repo }, env);
-  expect(line(r)).toBe("CodeTgh: this session is now on cwd-link");
+  expect(systemMessage(r)).toBe("CodeTgh: this session is now on cwd-link");
   const [prj] = await projectsOf("git@github.com:acme/cwd-link.git");
   expect((await row("sam-home"))?.projectId).toBe(prj?.id);
 
@@ -52,7 +51,7 @@ it("links a session from a directory added with /add-dir", async () => {
   await runHook("session-start", { session_id: "sam-add-dir", source: "startup", cwd: start }, env);
   const repo = gitRepo("git@github.com:acme/webapp.git");
   const r = await runHook("cwd-changed", { session_id: "sam-add-dir", cwd: start, directory: repo, source: "slash_command" }, env);
-  expect(line(r)).toMatch(/^CodeTgh: this session is now on /);
+  expect(systemMessage(r)).toMatch(/^CodeTgh: this session is now on /);
   expect((await row("sam-add-dir"))?.projectId).not.toBeNull();
 });
 
@@ -74,7 +73,7 @@ it("does not link a guest's session to a repository nobody linked, and says to a
   const repo = gitRepo("git@github.com:client-under-nda/cwd-app.git");
   const r = await runHook("cwd-changed", { session_id: "malik-home", cwd: repo, old_cwd: start, new_cwd: repo }, env);
   await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
-  expect(line(r)).toMatch(/not a team project yet/);
+  expect(systemMessage(r)).toMatch(/not a team project yet/);
   expect(await projectsOf("git@github.com:client-under-nda/cwd-app.git")).toHaveLength(0);
   expect((await row("malik-home"))?.projectId).toBeNull();
 });

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
-import { consolePost, fakeCommand, gitRepo, hookEnv, runHook } from "./helpers.js";
+import { consolePost, fakeCommand, gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -25,10 +25,8 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const start = async (session: string) => {
-  const r = await runHook("session-start", { session_id: session, source: "startup", cwd: repo }, env);
-  return String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
-};
+const start = async (session: string) =>
+  systemMessage(await runHook("session-start", { session_id: session, source: "startup", cwd: repo }, env));
 
 it("tells the person at startup that CodeTgh is on, with the push mode and Claude Code version", async () => {
   const line = await start("sam-status");
@@ -64,7 +62,7 @@ it("treats a push mode the plugin no longer offers (an old channel install) as h
     { session_id: "sam-legacy", source: "startup", cwd: repo },
     { ...env, CLAUDE_PLUGIN_OPTION_PUSH_MODE: "channel" },
   );
-  expect(String((r.out as { systemMessage?: string } | null)?.systemMessage)).toContain("· push hooks ·");
+  expect(systemMessage(r)).toContain("· push hooks ·");
   const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-legacy"));
   expect(row?.pushMode).toBe("hooks");
 });

@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { alert, auditEvent } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { hookEnv, runHook } from "./helpers.js";
+import { additionalContext, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -26,7 +26,7 @@ it("delivers an injection attempt escaped, flagged and reported (scenario 4)", a
 
   const inbox = (await call(sam, "inbox_read")).text;
   const hook = await runHook("user-prompt-submit", { session_id: "sam-s4", prompt: "go" }, hookEnv(hub.url, team.sam.token));
-  const injected = String((hook.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext);
+  const injected = additionalContext(hook);
   for (const out of [inbox, injected]) {
     expect(out.match(/<peer_message /g)).toHaveLength(1);
     expect(out.match(/<\/peer_message>/g)).toHaveLength(1);

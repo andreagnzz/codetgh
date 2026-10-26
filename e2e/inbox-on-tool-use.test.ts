@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { hookEnv, runHook } from "./helpers.js";
+import { additionalContext, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -15,7 +15,7 @@ const busy = (token: string, session: string) => {
   const env = { ...hookEnv(hub.url, token), CODETGH_POLL_MS: "300" };
   return async () => {
     const r = await runHook("inbox", { session_id: session, tool_name: "Bash" }, env);
-    return String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext ?? "");
+    return additionalContext(r);
   };
 };
 async function until(step: () => Promise<string>, want: (s: string) => boolean, ms: number) {

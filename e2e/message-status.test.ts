@@ -1,7 +1,8 @@
 import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { auth, callTool, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { stream } from "./helpers.js";
 
 // message_status: what the hub knows of a message's delivery, for its sender and its recipients only.
 let hub: Hub;
@@ -16,7 +17,10 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const tool = (name: string, args: Record<string, unknown>, token = team.sam.token) => callTool(hub.url, token, name, args);
+const tool = async (name: string, args: Record<string, unknown>, token = team.sam.token) => {
+  const r = await callOnce(hub.url, token, name, args);
+  return { isError: r.isError, out: r.json() };
+};
 const send = (args: Record<string, unknown>) => tool("send_message", { kind: "note", body: "hello", ...args });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,22 +63,15 @@ describe("message_status", () => {
   });
 
   it("counts a session's stream push as delivery", async () => {
-    const ctl = new AbortController();
-    let text = "";
-    const done = fetch(`${hub.url}/v1/stream?session_id=lea-p1`, { headers: auth(team.lea.token), signal: ctl.signal })
-      .then(async (res) => {
-        for await (const chunk of res.body ?? []) text += new TextDecoder().decode(chunk);
-      })
-      .catch(() => {});
-    for (let i = 0; i < 100 && !text.includes("event: ready"); i++) await sleep(20);
+    const s = stream(hub.url, team.lea.token, "lea-p1");
+    await s.ready();
     const sent = await send({ agent: ids["sam-p1"], to: "@lea", body: "streamed" });
     let delivered: string | null = null;
     for (let i = 0; i < 100 && !delivered; i++) {
       delivered = (await status(sent.out.id)).out.recipients[0].delivered_at;
       if (!delivered) await sleep(20);
     }
-    ctl.abort();
-    await done;
+    const text = await s.close();
     expect(text).toContain(sent.out.id);
     expect(delivered).toEqual(expect.any(String));
   });
