@@ -135,9 +135,10 @@ it("does not hand the orchestrator role to a newcomer who takes the handle of a 
   expect((await consolePost(hub.url, team.malik.cookie, "/console/me/erase", { confirm: "erase" })).status).toBeLessThan(400);
   const malik = await join("Malik");
   const nina = await join("Nina");
+  const omar = await join("Omar");
   expect(malik.handle).toBe("malik");
 
-  const stuck = await loop(team.sam, nina);
+  const stuck = await loop(omar, nina);
   const orchestrator = await mcpClient(hub.url, malik.token);
   const r = await call(orchestrator, "send_message", {
     kind: "status",
