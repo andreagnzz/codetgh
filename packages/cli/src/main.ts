@@ -364,7 +364,7 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       await client.launcherReport({ project_id: t.project_id, running: false, error: NOT_LISTED });
       continue;
     }
-    if (run && run.child.exitCode === null) {
+    if (run && run.child.exitCode === null && run.child.signalCode === null) {
       await client.launcherReport({ project_id: t.project_id, running: true });
       continue;
     }
