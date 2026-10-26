@@ -139,6 +139,13 @@ if (argv[0] === "pr" && argv[1] === "edit" && process.env.FAKE_GH_EDIT_FAIL) {
   console.error("GraphQL: Projects (classic) is being deprecated");
   process.exit(1);
 }
+// A PR already open for the branch (an earlier attempt opened it): pr list prints its URL, pr create refuses a second one.
+const open = join(dir, "open-pr");
+if (argv[0] === "pr" && argv[1] === "list" && existsSync(open)) console.log(readFileSync(open, "utf8").trim());
+if (argv[0] === "pr" && argv[1] === "create" && existsSync(open)) {
+  console.error("a pull request for branch already exists");
+  process.exit(1);
+}
 if (process.argv[2] === "pr" && process.argv[3] === "create") {
   const n = existsSync(join(dir, "n")) ? Number(readFileSync(join(dir, "n"), "utf8")) + 1 : 1;
   writeFileSync(join(dir, "n"), String(n));
@@ -409,7 +416,8 @@ describe("codetgh runner", () => {
     expect(git(wt, "log", "-1", "--format=%an <%ae>%n%s")).toBe("CodeTgh runner <runner@codetgh.invalid>\nplain");
     expect(readdirSync(join(fake, "containers"))).toEqual([]);
 
-    const [pr] = lines("gh.jsonl");
+    const [list, pr] = lines("gh.jsonl");
+    expect(list.argv).toEqual(["pr", "list", `--head=codetgh/${slug(parent)}`, "--state=open", "--json=url", "--jq=.[0].url // empty"]);
     expect(pr.argv).toEqual([
       "pr",
       "create",
@@ -485,6 +493,24 @@ describe("codetgh runner", () => {
   it("refuses a routing value that could pass for a flag", () => {
     expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, model: "-x" }] }).success).toBe(false);
     expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, effort: "--dangerously" }] }).success).toBe(false);
+  });
+
+  it("reuses the open PR of the branch when an earlier attempt opened it before the hub heard of it", async () => {
+    const id = await create("lost update");
+    await runner();
+    const first = await row(id);
+    expect(first).toMatchObject({ status: "review" });
+    // The hub never got the update: the task is queued again with no PR, and GitHub has one.
+    await hub.db.update(task).set({ status: "todo", prNumber: null, leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
+    writeFileSync(join(fake, "open-pr"), "https://github.com/acme/webapp/pull/77\n");
+    const creates = lines("gh.jsonl").filter((l) => l.argv[1] === "create").length;
+    try {
+      await runner();
+    } finally {
+      rmSync(join(fake, "open-pr"));
+    }
+    expect(await row(id)).toMatchObject({ status: "review", prNumber: 77 });
+    expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
   });
 
   it("blocks a task whose agent made no commit, and opens no PR", async () => {

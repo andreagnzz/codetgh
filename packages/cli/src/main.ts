@@ -1165,15 +1165,20 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     await update({ status: "in_progress", branch, base_branch: base, ...(note && { note }) });
     if (job.stopped) return;
     if (!(await author(rule("author"), lease.text, `origin/${base}`, taskTitle(lease.text) || task.id))) return;
+    // An earlier attempt may have opened the PR before the hub heard of it, and gh pr create refuses a second one.
+    step = "gh pr list failed";
+    const found = await gh(["pr", "list", `--head=${branch}`, "--state=open", "--json=url", "--jq=.[0].url // empty"]);
     step = "gh pr create failed";
-    const url = await gh([
-      "pr",
-      "create",
-      `--base=${base}`,
-      `--head=${branch}`,
-      `--title=${taskTitle(lease.text) || task.id}`,
-      `--body=Task ${task.id} from CodeTgh`,
-    ]);
+    const url =
+      found ||
+      (await gh([
+        "pr",
+        "create",
+        `--base=${base}`,
+        `--head=${branch}`,
+        `--title=${taskTitle(lease.text) || task.id}`,
+        `--body=Task ${task.id} from CodeTgh`,
+      ]));
     const pr = Number(url.match(/\/pull\/(\d+)/)?.[1]);
     if (!pr) fail("gh pr create printed no pull request URL");
     step = "the hub refused the update";
