@@ -177,7 +177,9 @@ describe("browser sign-in (device authorization)", () => {
     expect(stale.status).toBe(403);
     expect(await stale.text()).toMatch(/Sign in again/);
     expect(await tokens()).toHaveLength(0);
-    const a2a = await staleFor(team.lea.userId, () => consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "stale-partner" }));
+    const a2a = await staleFor(team.lea.userId, () =>
+      consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "stale-partner" }),
+    );
     expect(a2a.status).toBe(403);
     expect(await a2a.text()).toMatch(/Sign in again/);
     expect(await agents()).toHaveLength(0);
