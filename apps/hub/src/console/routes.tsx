@@ -538,16 +538,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .innerJoin(user, eq(user.id, message.fromUserId))
       .where(adminRead ? eq(message.threadId, t.id) : and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
       .orderBy(message.createdAt);
+    // Every refresh of an admin read would be audited as a new opening: that page stays still.
+    const live = adminRead
+      ? {}
+      : {
+          "hx-get": withProject(`/console/threads/${t.id}`, project),
+          "hx-select": "main",
+          "hx-target": "main",
+          "hx-swap": "outerHTML",
+          "hx-trigger": "sse:activity",
+        };
     return page(
       c,
       t.subject ?? `Thread ${t.id}`,
-      <div
-        hx-get={withProject(`/console/threads/${t.id}`, project)}
-        hx-select="main"
-        hx-target="main"
-        hx-swap="outerHTML"
-        hx-trigger="sse:activity"
-      >
+      <div {...live}>
         <p>
           <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
         </p>
