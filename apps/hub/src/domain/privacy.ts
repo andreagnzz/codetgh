@@ -149,6 +149,7 @@ export async function eraseMe(db: Db, p: Principal, confirm: string) {
         assigneeUserId: null,
         assigneeAgentId: null,
         status: sql`case when ${inArray(task.status, OPEN)} then 'todo' else ${task.status} end`,
+        blockedReason: null,
         version: sql`${task.version} + 1`,
         updatedAt: now,
       })

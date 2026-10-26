@@ -263,6 +263,8 @@ export async function runnerUpdate(
       .update(task)
       .set({
         status,
+        // A fixed code from the runner's own note, never its text.
+        blockedReason: status === "blocked" ? blockedCode(patch.note) : null,
         ...(patch.branch && { branch: patch.branch }),
         ...(patch.base_branch && { baseBranch: patch.base_branch }),
         ...(patch.pr_number !== undefined && { prNumber: patch.pr_number }),
@@ -297,6 +299,7 @@ const BLOCKED_REASONS: Array<[RegExp, string]> = [
   [/quarantined/, "quarantined"],
   [/^blocked: /, "runner_error"],
 ];
+const blockedCode = (note = "") => BLOCKED_REASONS.find(([re]) => re.test(note))?.[1] ?? "other";
 const DAY_MS = 24 * 3600_000;
 
 // A project's runner tasks: the open ones, and those done in the last day, which the runner also cleans up after.
@@ -334,7 +337,7 @@ export async function runnerStatus(db: Db, p: Principal, projectId: string) {
         return {
           ...(await runnerView(db, t)),
           ready: !!ready,
-          blocked_reason: t.status === "blocked" ? (BLOCKED_REASONS.find(([re]) => re.test(note))?.[1] ?? "other") : null,
+          blocked_reason: t.status === "blocked" ? blockedCode(note) : null,
           parent: parent?.branch ? { task_id: parent.id, status: parent.status, branch: parent.branch } : null,
         };
       }),
@@ -350,6 +353,7 @@ export async function retryTask(db: Db, p: Principal, taskId: string) {
       .update(task)
       .set({
         status: "todo",
+        blockedReason: null,
         assigneeUserId: null,
         assigneeAgentId: null,
         leaseOwner: null,

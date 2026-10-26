@@ -148,6 +148,13 @@
       "when": 1792783646736,
       "tag": "0020_agent_status_set_at",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792978370924,
+      "tag": "0021_task_verify_blocked",
+      "breakpoints": true
     }
   ]
 }

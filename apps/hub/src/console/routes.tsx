@@ -1782,6 +1782,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             Assignee (@handle or none) <input name="assignee" />
           </label>
           <label>
+            Reason (needed for blocked) <input name="reason" maxlength={200} />
+          </label>
+          <label>
             Note <input name="note" maxlength={500} />
           </label>
           <button type="submit">Save</button>
