@@ -43,14 +43,28 @@ export const ARCHIVE_AFTER_MS = 24 * 3600_000;
 export const archivedThread = () =>
   sql`(${lt(thread.lastMessageAt, new Date(Date.now() - ARCHIVE_AFTER_MS))} and not exists (select 1 from ${receipt} inner join ${message} on ${message.id} = ${receipt.messageId} where ${message.threadId} = ${thread.id} and ${receipt.readAt} is null))`;
 
-async function threadParticipants(tx: Db, threadId: string) {
+// The people who wrote or received in the thread and are still active members: a revoked person gets nothing new.
+async function threadParticipants(tx: Db, teamId: string, threadId: string) {
   const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, threadId));
   const readers = await tx
     .selectDistinct({ userId: receipt.recipientUserId })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
     .where(eq(message.threadId, threadId));
-  return [...new Set([...senders, ...readers].map((r) => r.userId))];
+  const active = await tx
+    .select({ userId: membership.userId })
+    .from(membership)
+    .where(
+      and(
+        eq(membership.teamId, teamId),
+        eq(membership.status, "active"),
+        inArray(
+          membership.userId,
+          [...senders, ...readers].map((r) => r.userId),
+        ),
+      ),
+    );
+  return active.map((r) => r.userId);
 }
 
 // A direct thread, or any thread for a guest, is visible to the people who wrote or received in it, nobody else.
@@ -96,8 +110,12 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       const [r] = await tx
         .select({ userId: agent.userId, id: agent.id })
         .from(agent)
+        .innerJoin(
+          membership,
+          and(eq(membership.teamId, agent.teamId), eq(membership.userId, agent.userId), eq(membership.status, "active")),
+        )
         .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6)), listed()));
-      // One answer for an id that is unknown, in another team, removed or long gone: it says nothing a sender could not list.
+      // One answer for an id that is unknown, in another team, removed, long gone or its owner's membership revoked: it says nothing a sender could not list.
       if (!r) throw new HubError("E_NOT_FOUND", `no agent ${a}`);
       out.push({ userId: r.userId, agentId: r.id });
     } else if (a.startsWith("thread:")) {
@@ -108,7 +126,7 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       if (!t) throw new HubError("E_NOT_FOUND", `no thread ${a}`);
       await assertCanJoin(tx, p, t, `thread ${a}`);
       threadId = t.id;
-      out.push(...(await threadParticipants(tx, t.id)).map((userId) => ({ userId, agentId: null })));
+      out.push(...(await threadParticipants(tx, p.teamId, t.id)).map((userId) => ({ userId, agentId: null })));
     } else {
       throw new HubError("E_INVALID", `unknown address ${a}: use @handle, @team, agent:… or thread:…`);
     }
