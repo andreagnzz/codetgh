@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost, gitRepo, hookEnv, runHook } from "./helpers.js";
+import { additionalContext, consolePost, gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -24,12 +24,11 @@ const projectsOf = (origin: string) =>
     .select()
     .from(project)
     .where(eq(project.repoFingerprint, repoFingerprint(origin)));
-const line = (r: Awaited<ReturnType<typeof runHook>>) => String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
 
 it("links a member's new repository as a team project named after it", async () => {
   const repo = gitRepo("git@github.com:acme/landing-page.git");
   const r = await runHook("session-start", { session_id: "sam-auto", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
-  expect(line(r)).toMatch(/^CodeTgh ✓ landing-page · @sam/);
+  expect(systemMessage(r)).toMatch(/^CodeTgh ✓ landing-page · @sam/);
   const [prj] = await projectsOf("git@github.com:acme/landing-page.git");
   expect(prj?.name).toBe("landing-page");
   const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-auto"));
@@ -98,7 +97,7 @@ it("sends nothing but the fingerprint from an unlinked repository: no branch, no
 it("still works in a linked repository", async () => {
   const repo = gitRepo("git@github.com:acme/webapp.git");
   const r = await runHook("session-start", { session_id: "sam-linked", source: "startup", cwd: repo }, hookEnv(hub.url, team.sam.token));
-  expect(String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext)).toContain("codetgh_context");
+  expect(additionalContext(r)).toContain("codetgh_context");
 });
 
 // Seen on the first session in a new repository: the hub created the project but answered after the hook's budget.
@@ -124,9 +123,9 @@ it("says the repository is being linked, not that the hub is unreachable, when l
   );
   slow.close();
   expect(calls).toBe(2);
-  expect(line(r)).not.toMatch(/unreachable/);
-  expect(line(r)).toMatch(/bet-predict/);
-  expect(line(r)).toMatch(/next session|restart/i);
+  expect(systemMessage(r)).not.toMatch(/unreachable/);
+  expect(systemMessage(r)).toMatch(/bet-predict/);
+  expect(systemMessage(r)).toMatch(/next session|restart/i);
 });
 
 it("delivers again once an admin links the repository and the session resumes", async () => {
@@ -143,7 +142,7 @@ it("delivers again once an admin links the repository and the session resumes", 
   });
   expect(linked.status).toBeLessThan(300);
   const resumed = await runHook("session-start", { session_id: "sam-late", source: "resume", cwd: repo }, env);
-  expect(line(resumed)).toMatch(/^CodeTgh ✓ late-link · @sam/);
+  expect(systemMessage(resumed)).toMatch(/^CodeTgh ✓ late-link · @sam/);
 
   const lea = await mcpClient(hub.url, team.lea.token);
   // Delivery follows the project: Léa writes from a session on it.

@@ -67,6 +67,11 @@ export function runHook(
   });
 }
 
+export const systemMessage = (r: Pick<HookRun, "out">) => String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
+
+export const additionalContext = (r: Pick<HookRun, "out">) =>
+  String((r.out?.hookSpecificOutput as { additionalContext?: string } | undefined)?.additionalContext ?? "");
+
 export const hookEnv = (url: string, token: string) => ({
   CLAUDE_PLUGIN_OPTION_CODETGH_URL: url,
   CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN: token,
