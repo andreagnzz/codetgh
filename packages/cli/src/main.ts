@@ -1169,11 +1169,24 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (job.stopped) return;
     if (!(await author(rule("author"), lease.text, `origin/${base}`, taskTitle(lease.text) || task.id))) return;
     // An earlier attempt may have opened the PR before the hub heard of it, and gh pr create refuses a second one.
+    // --head matches the branch name only: a fork or a PR against another base can use the same name, so adopt a PR
+    // only when it is on the commit just pushed, on this base, in this repository.
+    step = "git rev-parse failed";
+    const pushed = await git(["-C", wt, "rev-parse", "HEAD"]);
     step = "gh pr list failed";
-    const found = await gh(["pr", "list", `--head=${branch}`, "--state=open", "--json=url", "--jq=.[0].url // empty"]);
+    const listed = await gh(["pr", "list", `--head=${branch}`, "--state=open", "--json=url,headRefOid,baseRefName,isCrossRepository"]);
+    let open: Array<Record<string, unknown>>;
+    try {
+      open = JSON.parse(listed);
+      if (!Array.isArray(open)) throw new Error("not a list");
+    } catch {
+      return fail("gh pr list printed no JSON list of pull requests");
+    }
+    const found = open.find((p) => p.isCrossRepository === false && p.baseRefName === base && p.headRefOid === pushed);
+    if (open.length && !found) fail("an open pull request already uses this branch and is not this runner's");
     step = "gh pr create failed";
     const url =
-      found ||
+      (typeof found?.url === "string" && found.url) ||
       (await gh([
         "pr",
         "create",

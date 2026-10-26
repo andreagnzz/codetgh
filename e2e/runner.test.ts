@@ -126,6 +126,7 @@ if (stdin.includes("SLEEP")) {
     dir,
     "gh",
     `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const argv = process.argv.slice(2);
@@ -141,9 +142,16 @@ if (argv[0] === "pr" && argv[1] === "edit" && process.env.FAKE_GH_EDIT_FAIL) {
   console.error("GraphQL: Projects (classic) is being deprecated");
   process.exit(1);
 }
-// A PR already open for the branch (an earlier attempt opened it): pr list prints its URL, pr create refuses a second one.
+// A PR already open for the branch (an earlier attempt opened it): pr list prints it as JSON, pr create refuses a second one.
+// Unless open-pr says otherwise it is the runner's own PR: the worktree's HEAD, on main, from this repository.
 const open = join(dir, "open-pr");
-if (argv[0] === "pr" && argv[1] === "list" && existsSync(open)) console.log(readFileSync(open, "utf8").trim());
+if (argv[0] === "pr" && argv[1] === "list") {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const own = { headRefOid: head, baseRefName: "main", isCrossRepository: false };
+  const fields = argv.find((a) => a.startsWith("--json=")).slice(7).split(",");
+  const prs = existsSync(open) ? [{ ...own, ...JSON.parse(readFileSync(open, "utf8")) }] : [];
+  console.log(JSON.stringify(prs.map((p) => Object.fromEntries(fields.map((f) => [f, p[f]])))));
+}
 if (argv[0] === "pr" && argv[1] === "create" && existsSync(open)) {
   console.error("a pull request for branch already exists");
   process.exit(1);
@@ -419,7 +427,13 @@ describe("codetgh runner", () => {
     expect(readdirSync(join(fake, "containers"))).toEqual([]);
 
     const [list, pr] = lines("gh.jsonl");
-    expect(list.argv).toEqual(["pr", "list", `--head=codetgh/${slug(parent)}`, "--state=open", "--json=url", "--jq=.[0].url // empty"]);
+    expect(list.argv).toEqual([
+      "pr",
+      "list",
+      `--head=codetgh/${slug(parent)}`,
+      "--state=open",
+      "--json=url,headRefOid,baseRefName,isCrossRepository",
+    ]);
     expect(pr.argv).toEqual([
       "pr",
       "create",
@@ -497,23 +511,43 @@ describe("codetgh runner", () => {
     expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, effort: "--dangerously" }] }).success).toBe(false);
   });
 
-  it("reuses the open PR of the branch when an earlier attempt opened it before the hub heard of it", async () => {
-    const id = await create("lost update");
+  // An earlier attempt opened the PR but the hub never heard of it: the task is queued again with no PR, and GitHub has one.
+  async function rerunWithOpenPr(title: string, open: Record<string, unknown>) {
+    const id = await create(title);
     await runner();
-    const first = await row(id);
-    expect(first).toMatchObject({ status: "review" });
-    // The hub never got the update: the task is queued again with no PR, and GitHub has one.
+    expect(await row(id)).toMatchObject({ status: "review" });
     await hub.db.update(task).set({ status: "todo", prNumber: null, leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
-    writeFileSync(join(fake, "open-pr"), "https://github.com/acme/webapp/pull/77\n");
+    writeFileSync(join(fake, "open-pr"), JSON.stringify({ url: "https://github.com/acme/webapp/pull/77", ...open }));
     const creates = lines("gh.jsonl").filter((l) => l.argv[1] === "create").length;
     try {
       await runner();
     } finally {
       rmSync(join(fake, "open-pr"));
     }
+    return { id, creates };
+  }
+
+  it("reuses the open PR of the branch when it is this runner's: same commit, same base, same repository", async () => {
+    const { id, creates } = await rerunWithOpenPr("lost update", {});
     expect(await row(id)).toMatchObject({ status: "review", prNumber: 77 });
     expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
   }, 60_000);
+
+  it.each([
+    ["on another commit", { headRefOid: "0".repeat(40) }],
+    ["from a fork", { isCrossRepository: true }],
+    ["against another base", { baseRefName: "release" }],
+  ])(
+    "blocks the task, adopts nothing and opens no PR when an open PR on the branch's name is %s",
+    async (where, open) => {
+      const { id, creates } = await rerunWithOpenPr(`foreign pr ${where}`, open);
+      const r = await row(id);
+      expect(r).toMatchObject({ status: "blocked", prNumber: null });
+      expect(r?.notes.at(-1)?.text).toContain("an open pull request already uses this branch and is not this runner's");
+      expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
+    },
+    60_000,
+  );
 
   it("finishes a job whose log cannot be written any more", async () => {
     const id = await create("RMLOGS");
