@@ -76,22 +76,19 @@ async function sse(token: string, lastEventId: string | null, until: (events: Ar
   const decoder = new TextDecoder();
   const events: Array<{ id: string; data: string }> = [];
   let buf = "";
-  const done = (async () => {
-    while (!until(events)) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
-        const frame = buf.slice(0, i);
-        buf = buf.slice(i + 2);
-        const field = (k: string) => frame.match(new RegExp(`^${k}: ?(.*)$`, "m"))?.[1];
-        if (field("event") === "message") events.push({ id: field("id") ?? "", data: field("data") ?? "" });
-      }
+  while (!until(events)) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
+      const frame = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      const field = (k: string) => frame.match(new RegExp(`^${k}: ?(.*)$`, "m"))?.[1];
+      if (field("event") === "message") events.push({ id: field("id") ?? "", data: field("data") ?? "" });
     }
-    ctl.abort();
-    return events;
-  })();
-  return done;
+  }
+  ctl.abort();
+  return events;
 }
 
 describe("REST send", () => {
