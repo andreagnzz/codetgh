@@ -1135,7 +1135,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/tokens/:id/revoke", async (c) => {
-    await revokeToken(db, c.get("principal"), c.req.param("id"));
+    const p = c.get("principal");
+    const userId = await revokeToken(db, p, c.req.param("id"));
+    bus.emit("revoked", { teamId: p.teamId, userId });
     return refresh(c);
   });
 
