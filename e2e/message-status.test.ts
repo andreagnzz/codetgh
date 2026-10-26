@@ -1,7 +1,7 @@
 import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { stream } from "./helpers.js";
 
 // message_status: what the hub knows of a message's delivery, for its sender and its recipients only.
@@ -17,7 +17,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
 const tool = async (name: string, args: Record<string, unknown>, token = team.sam.token) => {
   const r = await callOnce(hub.url, token, name, args);
   return { isError: r.isError, out: r.json() };

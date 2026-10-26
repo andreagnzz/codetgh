@@ -30,7 +30,7 @@ const start = async (session: string) =>
 
 it("tells the person at startup that CodeTgh is on, with the push mode and Claude Code version", async () => {
   const line = await start("sam-status");
-  expect(line).toMatch(/^CodeTgh ✓ acme\/webapp · @sam · push rewake · Claude Code 2\.1\.299 · \d+ online · \d+ unread/);
+  expect(line).toMatch(/^CodeTgh ✓ acme\/webapp · @sam · agt_\w{4}…\w{4} · push rewake · Claude Code 2\.1\.299 · \d+ online · \d+ unread/);
   // A new team allows rewake: nothing to warn about.
   expect(line).not.toContain("rewake is off");
 

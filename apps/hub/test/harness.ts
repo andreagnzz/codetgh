@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { serve } from "@hono/node-server";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { eq } from "drizzle-orm";
 import pg from "pg";
 import { pino } from "pino";
 import { ulid } from "ulid";
@@ -13,7 +14,7 @@ import { createApp } from "../src/app.js";
 import { type Auth, createAuth, INVITE_HEADER } from "../src/auth.js";
 import type { Config } from "../src/config.js";
 import { type Db, openDb } from "../src/db/index.js";
-import { project } from "../src/db/schema.js";
+import { membership, project } from "../src/db/schema.js";
 import type { RateLimiter } from "../src/domain/limits.js";
 import { createInvitation, createTeam } from "../src/domain/teams.js";
 import { newId } from "../src/ids.js";
@@ -24,7 +25,7 @@ import { createPersonalToken } from "../src/tokens.js";
 const SECRET = randomBytes(32).toString("base64");
 
 // Real hub on a random port; PGlite in memory, or a fresh database on TEST_DATABASE_URL.
-export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; config?: Partial<Config> } = {}) {
+export async function startHub(opts: { limiter?: RateLimiter; logLines?: string[]; mailer?: Mailer; config?: Partial<Config> } = {}) {
   let app: ReturnType<typeof createApp> | undefined;
   const server = await new Promise<Server>((resolve) => {
     const s = serve({ port: 0, fetch: (req, env) => (app ? app.fetch(req, env) : new Response("starting", { status: 503 })) }, () =>
@@ -69,7 +70,14 @@ export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; c
     loadDataDir: template && !databaseUrl ? new Blob([readFileSync(template)]) : undefined,
   });
   const auth = createAuth(config, db, opts.mailer);
-  app = createApp({ config, db, auth, limiter: opts.limiter, logger: pino({ level: "silent" }), mailer: opts.mailer });
+  app = createApp({
+    config,
+    db,
+    auth,
+    limiter: opts.limiter,
+    logger: opts.logLines ? pino({}, { write: (line: string) => void opts.logLines?.push(line) }) : pino({ level: "silent" }),
+    mailer: opts.mailer,
+  });
   const hub = { url, db, auth, app, bus: app.bus, pglite, config };
 
   async function stop() {
@@ -121,6 +129,10 @@ async function seedTeam(hub: { db: Db; auth: Auth }) {
   return { teamId, ...people };
 }
 
+// A seeded person made a guest, or a member again, as an admin would in the console.
+export const setRole = (hub: Hub, userId: string, role: "member" | "guest") =>
+  hub.db.update(membership).set({ role }).where(eq(membership.userId, userId));
+
 export type Person = { userId: string; name: string; email: string; password: string; token: string; cookie: string; handle: string };
 
 export async function mcpClient(url: string, token: string) {
@@ -162,4 +174,7 @@ export async function callOnce(url: string, token: string, name: string, args: R
   return r;
 }
 
-export const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
+export const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
+
+// The error code of a failed tool call, null when it succeeded.
+export const code = (r: { isError?: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);

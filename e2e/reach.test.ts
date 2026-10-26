@@ -3,7 +3,7 @@ import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, message, project } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 
 // SPEC « Livraison »: a message to people or sessions reaches one of their live sessions, or fails with E_UNREACHABLE.
 let hub: Hub;
@@ -27,7 +27,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
 const tool = async (name: string, args: Record<string, unknown>, token = team.sam.token) => {
   const r = await callOnce(hub.url, token, name, args);
   return { isError: r.isError, out: r.json() };

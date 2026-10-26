@@ -1,6 +1,6 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, stream } from "./helpers.js";
 
 let hub: Hub;
@@ -23,7 +23,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
 const prompt = async (session: string, waitS = 0) => {
   const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=${session}${waitS ? `&wait_s=${waitS}` : ""}`, {
     headers: auth(team.lea.token),
