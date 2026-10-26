@@ -35,6 +35,31 @@ it("emails the invitation link and still shows it", async () => {
   expect(html).toContain("Invitation emailed to zoe@acme.test");
 });
 
+it("still shows the invitation link when the mail server refuses the message", async () => {
+  const send = mailer.send;
+  mailer.send = async () => {
+    throw new Error("smtp down for yana@acme.test");
+  };
+  try {
+    const res = await fetch(`${hub.url}/console/members/invite`, {
+      method: "POST",
+      headers: {
+        cookie: team.lea.cookie,
+        "X-CSRF-Token": await csrf(team.lea.cookie),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ email: "yana@acme.test", role: "member" }).toString(),
+    });
+    const html = await res.text();
+    expect(res.status).toBe(200);
+    expect(html).toMatch(/http\S+\/invite\/\S+/);
+    expect(html).toContain("Send this link to yana@acme.test");
+    expect(html).not.toContain("Invitation emailed to");
+  } finally {
+    mailer.send = send;
+  }
+});
+
 it("offers the magic link on the login page", async () => {
   expect(await (await fetch(`${hub.url}/login`)).text()).toContain('id="magic-link"');
 });

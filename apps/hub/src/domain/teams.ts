@@ -91,15 +91,21 @@ export async function inviteMember(
   if (!/^[^\s@]+@[^\s@]+$/.test(input.email)) throw new HubError("E_INVALID", "invalid email");
   const { token } = await createInvitation(deps.db, { teamId: p.teamId, email: input.email, role, invitedBy: p.user.id, via, days });
   const link = `${deps.publicUrl}/invite/${token}`;
+  let emailed = false;
   if (deps.mailer.enabled) {
-    await deps.mailer.send({
-      to: input.email,
-      subject: `Join ${p.teamName} on CodeTgh`,
-      text: `${p.user.name} invited you to ${p.teamName} on CodeTgh as ${role}.\nAccept within ${days} days:\n${link}`,
-    });
+    try {
+      await deps.mailer.send({
+        to: input.email,
+        subject: `Join ${p.teamName} on CodeTgh`,
+        text: `${p.user.name} invited you to ${p.teamName} on CodeTgh as ${role}.\nAccept within ${days} days:\n${link}`,
+      });
+      emailed = true;
+    } catch {
+      // The invitation is committed and the clear link is only returned here: a mail error can carry the address, so it is not logged.
+    }
   }
   const expires_at = new Date(Date.now() + days * 86_400_000).toISOString();
-  return { link, email: input.email, role, emailed: deps.mailer.enabled, days, expires_at };
+  return { link, email: input.email, role, emailed, days, expires_at };
 }
 
 // An admin cancels invitations not used yet, by id (console) or by email (CLI); their links stop working at once.
