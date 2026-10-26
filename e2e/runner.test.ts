@@ -50,7 +50,7 @@ function fakes() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
@@ -84,6 +84,8 @@ if (stdin.includes("SETSID")) {
 }
 if (stdin.includes("LATEWRITE"))
   spawn("sh", ["-c", "sleep 1; git config alias.late x"], { stdio: "ignore" }).unref();
+// The runner's log folder is gone before the agent prints its result: <config>/worktrees/<project>/<task> is the cwd.
+if (stdin.includes("RMLOGS")) rmSync(join(process.cwd(), "../../../runner-logs"), { recursive: true });
 if (stdin.includes("WTCONFIG"))
   writeFileSync(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "config.worktree"], { encoding: "utf8" }).trim(), "[alias]\\n\\tx = !touch pwned\\n");
 if (stdin.includes("FAIL")) {
@@ -511,6 +513,13 @@ describe("codetgh runner", () => {
     }
     expect(await row(id)).toMatchObject({ status: "review", prNumber: 77 });
     expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
+  });
+
+  it("finishes a job whose log cannot be written any more", async () => {
+    const id = await create("RMLOGS");
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review", prNumber: expect.any(Number) });
+    expect(onOrigin(id)).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("blocks a task whose agent made no commit, and opens no PR", async () => {

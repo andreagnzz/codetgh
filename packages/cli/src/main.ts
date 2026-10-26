@@ -839,7 +839,10 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     let out = "";
     child.stdout?.on("data", (d: Buffer) => {
       out += d;
-      appendFileSync(log, d);
+      // The output still goes to `out` for the verdict: a full disk or a missing folder must not kill the runner.
+      try {
+        appendFileSync(log, d);
+      } catch {}
     });
     child.stdin?.on("error", () => {});
     child.stdin?.end(stdin);
