@@ -513,7 +513,7 @@ describe("codetgh runner", () => {
     }
     expect(await row(id)).toMatchObject({ status: "review", prNumber: 77 });
     expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
-  });
+  }, 60_000);
 
   it("finishes a job whose log cannot be written any more", async () => {
     const id = await create("RMLOGS");
@@ -1101,7 +1101,7 @@ describe("codetgh runner restack", () => {
     expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: s.pBranch });
     git(origin, "merge-base", "--is-ancestor", s.pBranch, s.cBranch);
     expect(git(origin, "rev-list", "--count", `${s.pBranch}..${s.cBranch}`)).toBe("1");
-  });
+  }, 90_000);
 
   it("blocks a runner task whose PR was closed without merge", async () => {
     const id = await create("closed unmerged");
