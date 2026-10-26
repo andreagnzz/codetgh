@@ -310,8 +310,6 @@ function banner(io: Io, what: string) {
 const launched = new Map<string, { child: ChildProcess; lastError: string }>();
 const NOT_LISTED = "not in this machine's launcher list";
 
-// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
-// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
 // finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
 function exec(cmd: string, args: string[], opts: { timeout: number; input?: string; cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -345,6 +343,8 @@ function stopServer(child: ChildProcess) {
   } catch {}
 }
 
+// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
+// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 async function launcherPass(client: CodeTghClient, projects: Record<string, string>, io: Io) {
   const { targets } = await client.launcherTargets();
   for (const t of targets) {
@@ -364,7 +364,7 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       await client.launcherReport({ project_id: t.project_id, running: false, error: NOT_LISTED });
       continue;
     }
-    if (run && run.child.exitCode === null) {
+    if (run && run.child.exitCode === null && run.child.signalCode === null) {
       await client.launcherReport({ project_id: t.project_id, running: true });
       continue;
     }
@@ -839,7 +839,10 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     let out = "";
     child.stdout?.on("data", (d: Buffer) => {
       out += d;
-      appendFileSync(log, d);
+      // The output still goes to `out` for the verdict: a full disk or a missing folder must not kill the runner.
+      try {
+        appendFileSync(log, d);
+      } catch {}
     });
     child.stdin?.on("error", () => {});
     child.stdin?.end(stdin);
@@ -1006,7 +1009,11 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (now !== head) {
       untouched();
       step = "git push failed";
-      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]);
+      // Back on the PR's head if the push fails: a retry restacks from there, not from a worktree that no longer matches origin.
+      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]).catch(async (e) => {
+        await git(["-C", wt, "reset", "--hard", head]).catch(() => {});
+        throw e;
+      });
       untouched();
     }
     writeFileSync(baseFile, `${target}\n`, { mode: 0o600 });
@@ -1161,15 +1168,33 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     await update({ status: "in_progress", branch, base_branch: base, ...(note && { note }) });
     if (job.stopped) return;
     if (!(await author(rule("author"), lease.text, `origin/${base}`, taskTitle(lease.text) || task.id))) return;
+    // An earlier attempt may have opened the PR before the hub heard of it, and gh pr create refuses a second one.
+    // --head matches the branch name only: a fork or a PR against another base can use the same name, so adopt a PR
+    // only when it is on the commit just pushed, on this base, in this repository.
+    step = "git rev-parse failed";
+    const pushed = await git(["-C", wt, "rev-parse", "HEAD"]);
+    step = "gh pr list failed";
+    const listed = await gh(["pr", "list", `--head=${branch}`, "--state=open", "--json=url,headRefOid,baseRefName,isCrossRepository"]);
+    let open: Array<Record<string, unknown>>;
+    try {
+      open = JSON.parse(listed);
+      if (!Array.isArray(open)) throw new Error("not a list");
+    } catch {
+      return fail("gh pr list printed no JSON list of pull requests");
+    }
+    const found = open.find((p) => p.isCrossRepository === false && p.baseRefName === base && p.headRefOid === pushed);
+    if (open.length && !found) fail("an open pull request already uses this branch and is not this runner's");
     step = "gh pr create failed";
-    const url = await gh([
-      "pr",
-      "create",
-      `--base=${base}`,
-      `--head=${branch}`,
-      `--title=${taskTitle(lease.text) || task.id}`,
-      `--body=Task ${task.id} from CodeTgh`,
-    ]);
+    const url =
+      (typeof found?.url === "string" && found.url) ||
+      (await gh([
+        "pr",
+        "create",
+        `--base=${base}`,
+        `--head=${branch}`,
+        `--title=${taskTitle(lease.text) || task.id}`,
+        `--body=Task ${task.id} from CodeTgh`,
+      ]));
     const pr = Number(url.match(/\/pull\/(\d+)/)?.[1]);
     if (!pr) fail("gh pr create printed no pull request URL");
     step = "the hub refused the update";
@@ -1317,7 +1342,6 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
   }
 }
 
-// The token goes to the OS keychain only; the config file holds the hub URL.
 // The token, and through a project's settings.json the plugin itself, travel to this address: plain HTTP only on this machine.
 function hubAddress(raw: string) {
   const url = raw.replace(/\/$/, "");

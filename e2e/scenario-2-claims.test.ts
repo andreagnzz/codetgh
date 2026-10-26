@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { auditEvent, claim } from "../apps/hub/src/db/schema.js";
+import { agent, auditEvent, claim } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, gitRepo, hookEnv, runHook } from "./helpers.js";
 
@@ -100,6 +100,27 @@ it("asks before Sam edits a file Léa claimed, per the team's enforcement level 
   ).toHaveLength(1);
   await leaMcp.close();
   await samMcp.close();
+});
+
+it("checks a file whose name starts with two dots, and leaves a path outside the repository alone", async () => {
+  const lea = hookEnv(hub.url, team.lea.token);
+  const sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "lea-dots", source: "startup", cwd: repo }, lea);
+  await runHook("session-start", { session_id: "sam-dots", source: "startup", cwd: repo }, sam);
+  const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-dots"));
+  const leaMcp = await mcpClient(hub.url, team.lea.token);
+  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["..cache/x.txt"], mode: "exclusive", ttl_s: 1800 });
+  await leaMcp.close();
+
+  const edit = (file_path: string) => ({
+    session_id: "sam-dots",
+    cwd: repo,
+    tool_name: "Write",
+    tool_input: { file_path, content: "a" },
+  });
+  const inside = await runHook("pre-edit", edit(join(repo, "..cache/x.txt")), sam);
+  expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/\.\.cache\/x\.txt.*Léa/s);
+  expect((await runHook("pre-edit", edit(join(repo, "../outside.txt")), sam)).out).toBeNull();
 });
 
 it("reports at the end of a turn a claimed file changed through the shell", async () => {

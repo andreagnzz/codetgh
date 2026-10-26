@@ -73,4 +73,32 @@ describe("@codetgh/sdk", () => {
     expect((err as Error).message).toContain("did not answer");
     expect(Date.now() - started).toBeLessThan(5000);
   });
+
+  it("rejects a 200 answer that is not JSON, instead of returning an empty object", async () => {
+    const portal = createServer((_, res) => res.writeHead(200, { "content-type": "text/html" }).end("<html>"));
+    await new Promise<void>((r) => portal.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(portal.address() as AddressInfo).port}`;
+    const err = await createClient({ url, token: team.sam.token })
+      .status()
+      .catch((e: Error) => e);
+    portal.close();
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("not JSON");
+  });
+
+  it("rejects a 200 answer whose body never ends, instead of returning an empty object", async () => {
+    const stalled = createServer((_, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.flushHeaders();
+    });
+    await new Promise<void>((r) => stalled.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(stalled.address() as AddressInfo).port}`;
+    const err = await createClient({ url, token: team.sam.token, timeoutMs: 300 })
+      .status()
+      .catch((e: Error) => e);
+    stalled.closeAllConnections();
+    stalled.close();
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("did not answer");
+  });
 });
