@@ -20,6 +20,7 @@ import {
   InviteInput,
   KeysQuery,
   LauncherReport,
+  MySessionsQuery,
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
@@ -30,6 +31,7 @@ import {
   RunnerRetryInput,
   RunnerStatusQuery,
   RunnerUpdateInput,
+  SessionActivityInput,
   SessionQuery,
   StatusQuery,
 } from "@codetgh/shared/rest";
@@ -58,8 +60,10 @@ import {
   createProject,
   endSession,
   expireStaleSessions,
+  isLaunch,
   registerSession,
   resolveAgent,
+  setActivity,
   setAgentsPaused,
   setPermissionMode,
   setStatus,
@@ -88,7 +92,7 @@ import {
   sentView,
   unread,
 } from "./domain/messages.js";
-import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
+import { contextPacket, mySessions, statusLine, teamOverview } from "./domain/overview.js";
 import {
   expireLeases,
   leaseTask,
@@ -284,7 +288,7 @@ export function createApp({
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
-      ...(agent && { status_line: await statusLine(db, p, agent) }),
+      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(parsed.data.source)) }),
     });
   });
 
@@ -451,6 +455,10 @@ export function createApp({
     if (!agent || agent.endedAt || p.paused) return c.body(null, 204);
     const mode = PromptQuery.shape.permission_mode.safeParse(c.req.query("permission_mode")).data;
     if (mode && mode !== agent.permissionMode) await setPermissionMode(db, agent.id, mode);
+    // The turn rides on this call: the prompt hook says in_turn, the PostToolUse poll names its tool. Bad values are dropped.
+    const activity = PromptQuery.shape.activity.safeParse(c.req.query("activity")).data;
+    const tool = PromptQuery.shape.tool.safeParse(c.req.query("tool")).data;
+    if (activity || tool) await setActivity(db, p, agent.sessionId, { activity, tool });
     const waitS = Math.min(Math.max(Number(c.req.query("wait_s")) || 0, 0), 55);
     if (waitS && !(p.settings.push_allowed_modes ?? []).includes("rewake"))
       throw new HubError("E_FORBIDDEN", "rewake push is not allowed for this team (console Settings)");
@@ -468,6 +476,14 @@ export function createApp({
     } finally {
       release();
     }
+  });
+
+  // The Stop hook has no call that always runs: it posts the idle state itself. Nothing for a session that is not the caller's.
+  v1.post("/agents/activity", async (c) => {
+    const p = c.get("principal");
+    const { session_id, activity } = await parse(c, SessionActivityInput);
+    if (!p.paused) await setActivity(db, p, session_id, { activity });
+    return c.body(null, 204);
   });
 
   // CLI, daemon and SDK: the named agent, else one stable agent per token, so an outbox replay lands in the same idempotency scope.
@@ -529,6 +545,12 @@ export function createApp({
   v1.post("/invitations", async (c) =>
     c.json(await inviteMember({ db, mailer, publicUrl: config.publicUrl }, c.get("principal"), await parse(c, InviteInput), "rest")),
   );
+
+  v1.get("/me/sessions", async (c) => {
+    const parsed = MySessionsQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await mySessions(db, c.get("principal"), parsed.data.repo_fingerprint));
+  });
 
   v1.post("/me/pause", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), true)));
   v1.post("/me/resume", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), false)));

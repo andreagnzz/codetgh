@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { serve } from "@hono/node-server";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { eq } from "drizzle-orm";
 import pg from "pg";
 import { pino } from "pino";
 import { ulid } from "ulid";
@@ -13,7 +14,7 @@ import { createApp } from "../src/app.js";
 import { type Auth, createAuth, INVITE_HEADER } from "../src/auth.js";
 import type { Config } from "../src/config.js";
 import { type Db, openDb } from "../src/db/index.js";
-import { project } from "../src/db/schema.js";
+import { membership, project } from "../src/db/schema.js";
 import type { RateLimiter } from "../src/domain/limits.js";
 import { createInvitation, createTeam } from "../src/domain/teams.js";
 import { newId } from "../src/ids.js";
@@ -127,6 +128,10 @@ async function seedTeam(hub: { db: Db; auth: Auth }) {
   await hub.db.insert(project).values({ id: newId("prj"), teamId, name: "acme", repoFingerprint: ACME_REPO });
   return { teamId, ...people };
 }
+
+// A seeded person made a guest, or a member again, as an admin would in the console.
+export const setRole = (hub: Hub, userId: string, role: "member" | "guest") =>
+  hub.db.update(membership).set({ role }).where(eq(membership.userId, userId));
 
 export type Person = { userId: string; name: string; email: string; password: string; token: string; cookie: string; handle: string };
 

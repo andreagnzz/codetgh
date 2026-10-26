@@ -33,3 +33,17 @@ it("says the hub is slow, not unreachable, when it does not answer in time", asy
   expect(line(r)).toMatch(/slow/);
   expect(line(r)).toMatch(/next prompt/);
 });
+
+// The hooks that now report the session's activity stay inside their 3 s timeout against a hub that never answers in time:
+// Stop sends its report next to the claims check, the tool poll rides on a call it already makes.
+it("lets the Stop hook and the tool poll finish within 3 s when the hub is slow", async () => {
+  const hub = await slowHub(6000);
+  const env = { ...hookEnv(hub.url, "ctgh_test"), CODETGH_POLL_MS: "0" };
+  const stop = await runHook("stop", { session_id: "slow-stop", prompt: "go" }, env);
+  const poll = await runHook("inbox", { session_id: "slow-poll", tool_name: "Bash" }, env);
+  hub.close();
+  expect(stop.code).toBe(0);
+  expect(stop.ms).toBeLessThan(3000);
+  expect(poll.code).toBe(0);
+  expect(poll.ms).toBeLessThan(3000);
+});
