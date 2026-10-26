@@ -3,12 +3,12 @@ import type { Child } from "hono/jsx";
 import { BrandHead, Logo } from "./brand.js";
 import { type Lang, t } from "./i18n.js";
 
-const Layout = ({ lang, children }: { lang: Lang; children?: Child }) => (
+export const Layout = ({ lang, title = "CodeTgh", children }: { lang: Lang; title?: string; children?: Child }) => (
   <html lang={lang}>
     <head>
       <meta charset="utf-8" />
       <BrandHead />
-      <title>CodeTgh</title>
+      <title>{title}</title>
     </head>
     <body>
       <main class="public">

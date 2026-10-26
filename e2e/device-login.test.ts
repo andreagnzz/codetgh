@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../apps/hub/src/db/auth-schema.js";
-import { auditEvent, membership, personalToken } from "../apps/hub/src/db/schema.js";
+import { agent, auditEvent, membership, personalToken } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { revokeMember } from "../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
@@ -159,6 +159,37 @@ describe("browser sign-in (device authorization)", () => {
     await revokeMember(hub.db, { teamId: team.teamId, membershipId: m?.id ?? "", actorUserId: team.lea.userId, actorRole: "owner" });
     expect((await poll(s.device_code)).status).toBe(403);
     expect(await hub.db.select().from(personalToken).where(eq(personalToken.label, "revoked-laptop"))).toHaveLength(0);
+  });
+
+  it("a token or an A2A agent needs a fresh sign-in too: an older session creates neither", async () => {
+    const tokens = () => hub.db.select().from(personalToken).where(eq(personalToken.label, "stale-ci"));
+    const agents = () => hub.db.select().from(agent).where(eq(agent.label, "stale-partner"));
+    const staleFor = async (userId: string, run: () => Promise<Response>) => {
+      await hub.db
+        .update(session)
+        .set({ createdAt: new Date(Date.now() - 11 * 60_000) })
+        .where(eq(session.userId, userId));
+      const res = await run();
+      await hub.db.update(session).set({ createdAt: new Date() }).where(eq(session.userId, userId));
+      return res;
+    };
+    const stale = await staleFor(team.sam.userId, () => consolePost(hub.url, team.sam.cookie, "/console/tokens", { label: "stale-ci" }));
+    expect(stale.status).toBe(403);
+    expect(await stale.text()).toMatch(/Sign in again/);
+    expect(await tokens()).toHaveLength(0);
+    const a2a = await staleFor(team.lea.userId, () =>
+      consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "stale-partner" }),
+    );
+    expect(a2a.status).toBe(403);
+    expect(await a2a.text()).toMatch(/Sign in again/);
+    expect(await agents()).toHaveLength(0);
+
+    const fresh = await consolePost(hub.url, team.sam.cookie, "/console/tokens", { label: "stale-ci" });
+    expect(fresh.status).toBe(200);
+    expect(await fresh.text()).toMatch(/ctgh_/);
+    expect(await tokens()).toHaveLength(1);
+    expect((await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "stale-partner" })).status).toBe(200);
+    expect(await agents()).toHaveLength(1);
   });
 
   it("an approval needs the console's CSRF token", async () => {

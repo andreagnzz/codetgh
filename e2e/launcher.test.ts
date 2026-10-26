@@ -95,6 +95,32 @@ describe("Remote Control launcher", () => {
     expect(await projectsPage()).toContain("Remote Control stopped");
   });
 
+  // Windows has no signals: a killed process there exits with a code.
+  it.skipIf(process.platform === "win32")("starts a server again when the one it launched was killed by a signal", async () => {
+    const fake = fakeClaude();
+    const repoDir = mkdtempSync(join(tmpdir(), "codetgh-launch-repo-"));
+    const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
+    writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
+    await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
+    await launcher(config);
+    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    const first = Number(readFileSync(join(fake, "pid"), "utf8"));
+    process.kill(first, "SIGKILL");
+    for (let i = 0; i < 50 && alive(first); i++) await sleep(50);
+    expect(alive(first)).toBe(false);
+
+    await launcher(config);
+    let second = first;
+    for (let i = 0; i < 50 && second === first; i++) {
+      await sleep(50);
+      second = Number(readFileSync(join(fake, "pid"), "utf8"));
+    }
+    expect(second).not.toBe(first);
+    expect(alive(second)).toBe(true);
+    expect(await projectsPage()).toContain("Remote Control running");
+    process.kill(second, "SIGKILL");
+  });
+
   it("refuses a project that is not in its local list, and says so in the console", async () => {
     await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
     const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");

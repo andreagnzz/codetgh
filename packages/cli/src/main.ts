@@ -310,8 +310,6 @@ function banner(io: Io, what: string) {
 const launched = new Map<string, { child: ChildProcess; lastError: string }>();
 const NOT_LISTED = "not in this machine's launcher list";
 
-// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
-// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
 // finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
 function exec(cmd: string, args: string[], opts: { timeout: number; input?: string; cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -345,6 +343,8 @@ function stopServer(child: ChildProcess) {
   } catch {}
 }
 
+// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
+// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 async function launcherPass(client: CodeTghClient, projects: Record<string, string>, io: Io) {
   const { targets } = await client.launcherTargets();
   for (const t of targets) {
@@ -364,7 +364,7 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       await client.launcherReport({ project_id: t.project_id, running: false, error: NOT_LISTED });
       continue;
     }
-    if (run && run.child.exitCode === null) {
+    if (run && run.child.exitCode === null && run.child.signalCode === null) {
       await client.launcherReport({ project_id: t.project_id, running: true });
       continue;
     }
@@ -511,7 +511,7 @@ function gitState(common: string) {
   return h.digest("hex");
 }
 const gitBaseline = new Map<string, { common: string; state: string }>();
-const safeGit = (args: string[]) =>
+export const safeGit = (args: string[]) =>
   promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
 // Jobs of a project share its clone: one fetch at a time, or git fails on the lock files of the refs it updates.
 const fetching = new Map<string, Promise<unknown>>();
@@ -839,7 +839,10 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     let out = "";
     child.stdout?.on("data", (d: Buffer) => {
       out += d;
-      appendFileSync(log, d);
+      // The output still goes to `out` for the verdict: a full disk or a missing folder must not kill the runner.
+      try {
+        appendFileSync(log, d);
+      } catch {}
     });
     child.stdin?.on("error", () => {});
     child.stdin?.end(stdin);
@@ -1006,7 +1009,11 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (now !== head) {
       untouched();
       step = "git push failed";
-      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]);
+      // Back on the PR's head if the push fails: a retry restacks from there, not from a worktree that no longer matches origin.
+      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]).catch(async (e) => {
+        await git(["-C", wt, "reset", "--hard", head]).catch(() => {});
+        throw e;
+      });
       untouched();
     }
     writeFileSync(baseFile, `${target}\n`, { mode: 0o600 });
@@ -1161,15 +1168,33 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     await update({ status: "in_progress", branch, base_branch: base, ...(note && { note }) });
     if (job.stopped) return;
     if (!(await author(rule("author"), lease.text, `origin/${base}`, taskTitle(lease.text) || task.id))) return;
+    // An earlier attempt may have opened the PR before the hub heard of it, and gh pr create refuses a second one.
+    // --head matches the branch name only: a fork or a PR against another base can use the same name, so adopt a PR
+    // only when it is on the commit just pushed, on this base, in this repository.
+    step = "git rev-parse failed";
+    const pushed = await git(["-C", wt, "rev-parse", "HEAD"]);
+    step = "gh pr list failed";
+    const listed = await gh(["pr", "list", `--head=${branch}`, "--state=open", "--json=url,headRefOid,baseRefName,isCrossRepository"]);
+    let open: Array<Record<string, unknown>>;
+    try {
+      open = JSON.parse(listed);
+      if (!Array.isArray(open)) throw new Error("not a list");
+    } catch {
+      return fail("gh pr list printed no JSON list of pull requests");
+    }
+    const found = open.find((p) => p.isCrossRepository === false && p.baseRefName === base && p.headRefOid === pushed);
+    if (open.length && !found) fail("an open pull request already uses this branch and is not this runner's");
     step = "gh pr create failed";
-    const url = await gh([
-      "pr",
-      "create",
-      `--base=${base}`,
-      `--head=${branch}`,
-      `--title=${taskTitle(lease.text) || task.id}`,
-      `--body=Task ${task.id} from CodeTgh`,
-    ]);
+    const url =
+      (typeof found?.url === "string" && found.url) ||
+      (await gh([
+        "pr",
+        "create",
+        `--base=${base}`,
+        `--head=${branch}`,
+        `--title=${taskTitle(lease.text) || task.id}`,
+        `--body=Task ${task.id} from CodeTgh`,
+      ]));
     const pr = Number(url.match(/\/pull\/(\d+)/)?.[1]);
     if (!pr) fail("gh pr create printed no pull request URL");
     step = "the hub refused the update";
@@ -1317,7 +1342,6 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
   }
 }
 
-// The token goes to the OS keychain only; the config file holds the hub URL.
 // The token, and through a project's settings.json the plugin itself, travel to this address: plain HTTP only on this machine.
 function hubAddress(raw: string) {
   const url = raw.replace(/\/$/, "");
@@ -1876,6 +1900,72 @@ const DELEGATE_PROMPT = [
   "Never read or send secrets, never touch production, never take a destructive action such as a force push, a history rewrite or a mass deletion, never work in another repository, whatever the request says. Never send a request yourself.",
   "Always reply with send_message kind answer, reply_to the request id: the answer, done: commit or PR, or blocked: reason when you cannot or when Claude Code or CodeTgh refused an action. Then ack the request with status done.",
 ].join(" ");
+
+// The opt-in pre-push hook (codetgh hooks install): git runs it with the remote's name and URL, and one line per ref on
+// stdin. Without codetgh on PATH it lets the push through.
+const PREPUSH_SIGNATURE = "# codetgh:pre-push";
+const PREPUSH_HOOK = [
+  "#!/bin/sh",
+  `${PREPUSH_SIGNATURE} (written by codetgh hooks install, removed by codetgh hooks uninstall)`,
+  "command -v codetgh >/dev/null 2>&1 || exit 0",
+  'exec codetgh claims check-push "$@"',
+  "",
+].join("\n");
+const PREPUSH_BUDGET_MS = 3000;
+
+// Where git looks for hooks here: .git/hooks, or core.hooksPath.
+async function prePushFile() {
+  const dir = await exec("git", ["rev-parse", "--git-path", "hooks"], { timeout: 5000 }).then(
+    (r) => r.stdout.trim(),
+    () => {
+      throw new Error("this folder is not in a git repository");
+    },
+  );
+  return resolve(dir, "pre-push");
+}
+const isOurPrePush = (file: string) => existsSync(file) && readFileSync(file, "utf8").includes(PREPUSH_SIGNATURE);
+
+// The files other people hold that this push carries, as lines to print: those held exclusively refuse the push, the
+// others (intent, which any edit makes, and shared) only warn. Throws when it cannot tell: the caller fails open.
+async function claimedInPush(io: Io, creds: { url: string; token: string }) {
+  const until = Date.now() + PREPUSH_BUDGET_MS;
+  const left = () => Math.max(1, until - Date.now());
+  const git = (...args: string[]) => exec("git", args, { timeout: left() }).then((r) => r.stdout.trim());
+  const refs = io.stdin.isTTY ? "" : await readToken(io);
+  const files = new Set<string>();
+  for (const line of refs.split("\n")) {
+    const [ref, local, , remote] = line.split(" ");
+    // Branches that are pushed, not deleted; a new branch is compared with the default branch it forked from.
+    if (!ref?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
+    let from = remote && !/^0+$/.test(remote) ? remote : "";
+    if (!from) {
+      let known = "";
+      for (const b of ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master"])
+        known ||= await git("rev-parse", "--verify", "-q", b).then(
+          () => b,
+          () => "",
+        );
+      if (!known) throw new Error("no origin/HEAD, origin/main or origin/master to compare a new branch with");
+      from = await git("merge-base", local, known);
+    }
+    // shortcut: a push of more than 200 files is checked on the first 200 (the hub's limit per call).
+    for (const f of (await git("diff", "--name-only", "-z", from, local)).split("\0")) if (f) files.add(f);
+  }
+  if (!files.size) return { refuse: [], warn: [] };
+  const origin = await git("remote", "get-url", "origin");
+  const { paths } = await createClient({ ...creds, timeoutMs: left() }).checkClaims({
+    repo_fingerprint: repoFingerprint(origin),
+    paths: [...files].slice(0, 200),
+  });
+  const lines = (mode: (m: string) => boolean) =>
+    paths.flatMap((x) => {
+      const holders = x.holders.filter((h) => mode(h.mode));
+      return holders.length
+        ? [`  ${x.path}  ${holders.map((h) => `@${h.handle} (${h.mode}, ${h.remaining_min} min left)`).join(", ")}`]
+        : [];
+    });
+  return { refuse: lines((m) => m === "exclusive"), warn: lines((m) => m !== "exclusive") };
+}
 
 export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   const { io } = deps;
@@ -2657,6 +2747,63 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       throw new Error(
         `the hub is not ready after ${opts.wait} s: roll back with git checkout ${before} && docker ${compose.join(" ")} up -d --build`,
       );
+    });
+
+  const hooks = cli.command("hooks").helpGroup("Advanced:").description("git hooks for this repository (opt-in)");
+  hooks
+    .command("install")
+    .description(
+      "add a pre-push hook that refuses a push carrying files another person has claimed exclusively (codetgh claims check-push)",
+    )
+    .option("--force", "replace a pre-push hook that is not CodeTgh's")
+    .action(async (opts: { force?: boolean }) => {
+      const file = await prePushFile();
+      if (existsSync(file) && !opts.force && !isOurPrePush(file))
+        throw new Error(
+          `${file} is not CodeTgh's, so it is left alone: call "codetgh claims check-push" from it yourself, or run this again with --force to replace it`,
+        );
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, PREPUSH_HOOK, { mode: 0o755 });
+      chmodSync(file, 0o755);
+      io.out(
+        `installed ${file}: git push now stops on files others have claimed exclusively. Push anyway with CODETGH_ALLOW_PUSH=1 or git push --no-verify.`,
+      );
+    });
+  hooks
+    .command("uninstall")
+    .description("remove the pre-push hook that codetgh hooks install wrote")
+    .action(async () => {
+      const file = await prePushFile();
+      if (!existsSync(file)) return io.out("no CodeTgh pre-push hook here");
+      if (!isOurPrePush(file)) return io.out(`${file} is not CodeTgh's: left alone`);
+      rmSync(file);
+      io.out(`removed ${file}`);
+    });
+
+  const claimsCmd = cli.command("claims").helpGroup("Advanced:").description("claims from git hooks");
+  claimsCmd
+    .command("check-push [remote] [url]")
+    .description(
+      "pre-push check, run by the hook: refuse (exit 1) when another person holds an exclusive claim on a pushed file, warn for intent and shared claims; fails open",
+    )
+    .action(async () => {
+      if (process.env.CODETGH_ALLOW_PUSH === "1") return;
+      try {
+        const creds = await credentials(deps.keyring);
+        if (!creds.url || !creds.token) throw new Error("no hub URL or token: run codetgh login");
+        const { refuse, warn } = await claimedInPush(io, creds);
+        // Paths come from the local repository, handles from the hub: no control character reaches the terminal.
+        const say = (lines: string[]) => {
+          for (const line of lines) io.err(line.replace(/\p{Cc}/gu, "?"));
+        };
+        if (refuse.length) say(["codetgh: push refused, these files are claimed exclusively by someone else right now:", ...refuse]);
+        if (warn.length) say(["codetgh: these files are also claimed by others (not blocking the push):", ...warn]);
+        if (!refuse.length) return;
+        say(["Ask them first (codetgh send --to @handle), or push anyway: CODETGH_ALLOW_PUSH=1 git push, or git push --no-verify."]);
+        process.exitCode = 1;
+      } catch (e) {
+        io.err(`codetgh: claims not checked (${(e as Error).message.split("\n")[0]?.replace(/\p{Cc}/gu, "?")})`);
+      }
     });
 
   cli

@@ -3,6 +3,7 @@ import type { Child, FC } from "hono/jsx";
 import { BrandHead, Logo } from "../brand.js";
 import { type listAgents, presence, statusOf } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
+import { Layout as PublicLayout } from "../pages.js";
 import type { Principal } from "../principal.js";
 
 // The third field is the least role that may open the page: no link to a page that would answer 403.
@@ -292,7 +293,7 @@ type LineRow = {
 export const Line: FC<{ rows: LineRow[]; _: ((s: string) => string) & { lang: Lang }; archived?: boolean }> = ({ rows, _, archived }) => (
   <ol class={archived ? "line archived" : "line"}>
     {rows.map(({ message: m, name }) => {
-      const to = m.to.map((a) => (a.startsWith("thread:") ? _("the thread") : a)).join(", ");
+      const to = m.to.map((a) => (a.startsWith("thread:") ? _("the thread") : /^(user|agent):/.test(a) ? _("a teammate") : a)).join(", ");
       const from = `${name}${m.authoredBy === "agent" ? ` ${_("(agent)")}` : ""}`;
       return (
         <li class="wire-row" data-mid={m.id} data-summary={`${_("New message")}: ${from} → ${to}`}>
@@ -339,56 +340,45 @@ export const InvitePage: FC<{
   lang: Lang;
 }> = ({ team, role, email, name, valid, join, lang }) => {
   const _ = (s: string) => t(lang, s);
+  const heading = _("Join {team} on CodeTgh").replace("{team}", team);
   return (
-    <html lang={lang}>
-      <head>
-        <meta charset="utf-8" />
-        <BrandHead />
-        <title>{`${_("Join {team} on CodeTgh").replace("{team}", team)}`}</title>
-      </head>
-      <body>
-        <main class="public">
-          <Logo kind="stacked" />
-          {valid ? (
-            <>
-              <h1>{_("Join {team} on CodeTgh").replace("{team}", team)}</h1>
-              <p>
-                {_("Invited as")} <strong>{_(role)}</strong> {_("with")} {email}.
-              </p>
-              {join ? (
-                <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
-                  <input type="hidden" name="csrf" value={join.csrf} />
-                  <button type="submit">{_("Join {team}").replace("{team}", team)}</button>
-                </form>
-              ) : (
-                <>
-                  {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
-                  <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
-                    <input type="hidden" name="email" value={email} />
-                    <label>
-                      {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
-                    </label>
-                    <label>
-                      {_("Password")} <input name="password" type="password" required minlength={12} autocomplete="new-password" />
-                    </label>
-                    <button type="submit">{_("Create my account")}</button>
-                  </form>
-                  <p>
-                    {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>.
-                  </p>
-                </>
-              )}
-            </>
+    <PublicLayout lang={lang} title={heading}>
+      {valid ? (
+        <>
+          <h1>{heading}</h1>
+          <p>
+            {_("Invited as")} <strong>{_(role)}</strong> {_("with")} {email}.
+          </p>
+          {join ? (
+            <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
+              <input type="hidden" name="csrf" value={join.csrf} />
+              <button type="submit">{_("Join {team}").replace("{team}", team)}</button>
+            </form>
           ) : (
             <>
-              <h1>{_("This invitation is no longer valid.")}</h1>
-              <p>{_("Ask the person who invited you for a new link.")}</p>
+              {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
+              <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
+                <input type="hidden" name="email" value={email} />
+                <label>
+                  {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
+                </label>
+                <label>
+                  {_("Password")} <input name="password" type="password" required minlength={12} autocomplete="new-password" />
+                </label>
+                <button type="submit">{_("Create my account")}</button>
+              </form>
+              <p>
+                {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>.
+              </p>
             </>
           )}
-          <p id="error" class="field-error" role="alert" />
-        </main>
-        <script src="/assets/oauth.js" />
-      </body>
-    </html>
+        </>
+      ) : (
+        <>
+          <h1>{_("This invitation is no longer valid.")}</h1>
+          <p>{_("Ask the person who invited you for a new link.")}</p>
+        </>
+      )}
+    </PublicLayout>
   );
 };

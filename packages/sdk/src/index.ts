@@ -46,7 +46,13 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
       throw e.name === "TimeoutError" ? new Error(`the hub at ${base} did not answer within ${timeoutMs / 1000} s`) : e;
     });
     if (res.status === 204 || res.status === 304) return null;
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch((e: Error) => {
+      if (res.ok)
+        throw e.name === "TimeoutError"
+          ? new Error(`the hub at ${base} did not answer within ${timeoutMs / 1000} s`)
+          : new Error(`the hub at ${base} sent an answer that is not JSON`);
+      return {};
+    });
     if (!res.ok) {
       const retry = Number(res.headers.get("retry-after")) || undefined;
       throw new CodeTghError(data.code ?? "E_INVALID", data.message ?? `HTTP ${res.status}`, res.status, retry);

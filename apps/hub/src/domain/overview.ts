@@ -183,7 +183,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     paused: p.paused,
     agents_paused: p.agentsPaused,
     people: [...byPerson, ...offline].flatMap(person),
-    ...(!opts.compact && { claims: await liveClaims(db, p, me, { projectId, limit: opts.limit }) }),
+    ...(!opts.compact && { claims: await liveClaims(db, p, { projectId, limit: opts.limit }) }),
     unread: unread.byKind,
     blocking_message_ids: unread.blocking,
     trust: TRUST,
