@@ -4,6 +4,9 @@
 // itself, an alias, a file written then run). It narrows what a request can do, it does not isolate: run delegate
 // sessions in a devcontainer or a dedicated clone.
 
+// The plugin hook has 3 s and fails open, and a long command makes the regexes below backtrack past it: refuse it unchecked.
+const MAX_COMMAND_LENGTH = 8192;
+
 // Glob characters (*?[]) count as part of a name, so cat *.pem and cat .env* are seen; names match in any case.
 const EDGE = String.raw`(?:^|[\s=:<>/(~*?\]])`;
 const END = String.raw`(?=$|[\s;|&)<>/])`;
@@ -35,6 +38,8 @@ const normalize = (command: string) =>
     .replace(/\$\{?HOME\}?/g, "~");
 
 export function delegateBlock(command: string): string | null {
+  if (command.length > MAX_COMMAND_LENGTH)
+    return `it is too long to check (over ${MAX_COMMAND_LENGTH} characters): write files with the Edit tool, run shorter commands`;
   if (DYNAMIC.some((r) => r.test(command)))
     return "it builds the command at run time (dynamic: eval, sh -c with variables, decoded or substituted text)";
   const plain = normalize(command);

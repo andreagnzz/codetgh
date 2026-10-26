@@ -814,10 +814,11 @@ Côté hub :
 Côté session :
 - `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.
 - `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`. Elles comparent la commande telle qu'écrite : `cat .env` ou `git push origin +main` leur échappent.
-- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) trois sortes de commandes. Il tourne sans réseau, en moins de 3 s.
+- Le hook PreToolUse du plugin sur Bash, dans une session déléguée seulement, bloque (code 2, avec la raison) quatre sortes de commandes. Il tourne sans réseau, en moins de 3 s.
   - Celles qui nomment l'un de ces chemins.
   - Celles qui forcent un push : `--force`, `-f`, `--force-with-lease`, `+refspec`.
   - Celles qui construisent leur commande à l'exécution : `eval`, `sh -c` avec une variable, `base64 -d |`, une substitution par `printf`.
+  - Celles de plus de 8192 caractères, refusées sans être lues : le hook échoue en mode ouvert à 3 s et une longue commande fait ralentir les expressions régulières au-delà. Les fichiers longs passent par l'outil Edit.
   - Il retire d'abord guillemets, `$'…'` et échappements, et remplace `${HOME}`, `$HOME` par `~`.
   - Il joint les suites de ligne (`\` puis retour à la ligne), compare les chemins sans tenir compte de la casse, avec les jokers (`*.pem`, `.env*`), et lit aussi chaque `\` devant un caractère de chemin comme un séparateur Windows (`C:\proj\.env`) : il bloque si l'une des deux lectures nomme un secret.
 - C'est une liste de blocage au mieux, qui ne peut pas être complète : un script qui ouvre lui-même le fichier, un alias ou un fichier écrit puis lancé lui échappent. D'où la recommandation d'un devcontainer ou d'un clone dédié.
