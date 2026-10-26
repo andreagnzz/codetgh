@@ -161,3 +161,6 @@ export async function call(client: Client, name: string, args: Record<string, un
   const text = r.content[0]?.text ?? "";
   return { text, isError: Boolean(r.isError), json: () => JSON.parse(text.split("\n\n")[0] ?? "null") };
 }
+
+// The error code of a failed tool call, null when it succeeded.
+export const code = (r: { isError?: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);

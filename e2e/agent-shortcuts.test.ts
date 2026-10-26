@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { team as teamTable } from "../apps/hub/src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -16,8 +16,6 @@ beforeAll(async () => {
     await startSession(hub.url, p.token, s, { repo: ACME_REPO });
 });
 afterAll(() => hub.stop());
-
-const code = (r: { isError?: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);
 
 it("never lets an agent accept its own person's memory proposal", async () => {
   await hub.db
