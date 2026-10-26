@@ -679,6 +679,15 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   return { ...result.row, reach: result.reach };
 }
 
+// What the REST and MCP sends answer with.
+export const sentView = (m: Awaited<ReturnType<typeof sendMessage>>) => ({
+  id: m.id,
+  thread: m.threadId,
+  hop: m.hop,
+  sent_at: m.createdAt.toISOString(),
+  reach: m.reach,
+});
+
 // Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
 export async function purgeMessages(db: Db) {
   for (const t of await db.select({ id: team.id, settings: team.settings }).from(team)) {

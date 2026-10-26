@@ -85,6 +85,7 @@ import {
   purgeMessages,
   receivedSince,
   sendMessage,
+  sentView,
   unread,
 } from "./domain/messages.js";
 import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
@@ -484,13 +485,7 @@ export function createApp({
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
     const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
-    return c.json({
-      id: m.id,
-      thread: m.threadId,
-      hop: m.hop,
-      sent_at: m.createdAt.toISOString(),
-      reach: m.reach,
-    });
+    return c.json(sentView(m));
   });
 
   v1.post("/inbox", async (c) => {

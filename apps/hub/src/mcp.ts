@@ -38,6 +38,7 @@ import {
   messageStatus,
   renderInbox,
   sendMessage,
+  sentView,
   threadView,
   unread,
 } from "./domain/messages.js";
@@ -139,13 +140,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
             "encrypted messages are sent with codetgh send --encrypt, which scans the text before sealing it",
           );
         const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, { ...input, agent });
-        return {
-          id: m.id,
-          thread: m.threadId,
-          hop: m.hop,
-          sent_at: m.createdAt.toISOString(),
-          reach: m.reach,
-        };
+        return sentView(m);
       }),
   );
 
