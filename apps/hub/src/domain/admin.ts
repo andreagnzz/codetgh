@@ -13,13 +13,24 @@ const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/;
 export const RESERVED_HANDLE = /^(bridge|a2a)-/;
 
 // The hub's own members are known by their agent's kind (an external A2A agent, a bridge), not by a handle.
-export async function requireHumanMember(db: Db, teamId: string, userId: string) {
-  const [system] = await db
+const hasAgentOfKind = async (db: Db, teamId: string, userId: string, kinds: string[]) => {
+  const [row] = await db
     .select({ id: agent.id })
     .from(agent)
-    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), inArray(agent.kind, ["a2a", "bridge"])))
+    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), inArray(agent.kind, kinds)))
     .limit(1);
-  if (system) throw new HubError("E_FORBIDDEN", "a system member (a2a-, bridge-) keeps its handle and role");
+  return Boolean(row);
+};
+
+export async function requireHumanMember(db: Db, teamId: string, userId: string) {
+  if (await hasAgentOfKind(db, teamId, userId, ["a2a", "bridge"]))
+    throw new HubError("E_FORBIDDEN", "a system member (a2a-, bridge-) keeps its handle and role");
+}
+
+// An a2a member stays revocable: that is how an admin cuts an external agent whose token leaked.
+export async function requireNotBridge(db: Db, teamId: string, userId: string) {
+  if (await hasAgentOfKind(db, teamId, userId, ["bridge"]))
+    throw new HubError("E_FORBIDDEN", "the GitHub or Slack bridge member cannot be revoked: its webhook would stop working");
 }
 
 export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";

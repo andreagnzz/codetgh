@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { invitation, membership, team as teamTable, user } from "../apps/hub/src/db/schema.js";
+import { agent, invitation, membership, team as teamTable, user } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -111,6 +111,25 @@ describe("members", () => {
       .from(membership)
       .where(eq(membership.id, bridge?.id ?? ""));
     expect(after?.status).toBe("active");
+  });
+
+  it("revokes an a2a member, so an admin can cut an external agent whose token leaked", async () => {
+    const created = await (await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Leaky bot" })).text();
+    const token = created.match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const [bot] = await hub.db.select().from(agent).where(eq(agent.label, "Leaky bot"));
+    const [m] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.userId, bot?.userId ?? ""));
+    const send = () => fetch(`${hub.url}/a2a`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: "{}" });
+    expect((await send()).status).not.toBe(401);
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${m?.id}/revoke`)).status).toBe(204);
+    expect((await send()).status).toBe(401);
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, m?.id ?? ""));
+    expect(after?.status).toBe("revoked");
   });
 
   it("lets anyone change their own display name", async () => {

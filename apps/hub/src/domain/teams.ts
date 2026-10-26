@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember } from "./admin.js";
+import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -330,7 +330,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .from(membership)
       .where(and(eq(membership.id, input.membershipId), eq(membership.teamId, input.teamId)));
     if (!m || m.status !== "active") throw new HubError("E_NOT_FOUND", "member not found");
-    await requireHumanMember(tx, input.teamId, m.userId);
+    await requireNotBridge(tx, input.teamId, m.userId);
     if (m.role === "owner" && input.actorRole !== "owner") throw new HubError("E_FORBIDDEN", "an admin cannot revoke an owner");
     if (m.userId === input.actorUserId) throw new HubError("E_FORBIDDEN", "you cannot revoke yourself");
     const now = new Date();
