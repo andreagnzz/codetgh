@@ -162,5 +162,15 @@ export async function call(client: Client, name: string, args: Record<string, un
   return { text, isError: Boolean(r.isError), json: () => JSON.parse(text.split("\n\n")[0] ?? "null") };
 }
 
+// One tool call on its own connection.
+export async function callTool(url: string, token: string, name: string, args: Record<string, unknown>) {
+  const client = await mcpClient(url, token);
+  const r = await call(client, name, args);
+  await client.close();
+  return { isError: r.isError, out: r.json() };
+}
+
+export const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
+
 // The error code of a failed tool call, null when it succeeded.
 export const code = (r: { isError?: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);
