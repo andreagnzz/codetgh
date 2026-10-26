@@ -148,6 +148,7 @@ export const PUSH_MODES = ["hooks", "rewake", "channel"] as const;
 export const PermissionMode = z.string().regex(/^[A-Za-z]{1,40}$/);
 
 // What the hooks report of a turn: a state (UserPromptSubmit, Stop) and the name of the tool just used (PostToolUse), never its input.
+// The hub reduces the name to a closed vocabulary before it stores it.
 export const ACTIVITY_REPORTS = ["in_turn", "idle"] as const;
 export const ToolName = z.string().regex(/^[A-Za-z0-9_.:-]{1,80}$/);
 

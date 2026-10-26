@@ -276,8 +276,21 @@ export async function touchSession(db: Db, p: Principal, sessionId: string, usag
   return rows.length > 0;
 }
 
+// last_tool is a closed vocabulary: Claude Code's built-in tool names (code.claude.com/docs/en/tools-reference; MultiEdit and
+// Task are the older names of Edit and Agent), and three words for the rest. A tool's own name is chosen by whoever wrote its
+// MCP server, so it never reaches the database or another person's Claude, whatever the client sends.
+const BUILT_IN_TOOLS = new Set(
+  `Agent Artifact AskUserQuestion Bash CronCreate CronDelete CronList Edit EndConversation EnterPlanMode EnterWorktree ExitPlanMode
+  ExitWorktree Glob Grep ListAgents ListMcpResourcesTool LSP Monitor MultiEdit NotebookEdit PowerShell PushNotification Read
+  ReadMcpResourceTool RemoteTrigger ReportFindings ScheduleWakeup SendFeedback SendMessage SendUserFile ShareOnboardingGuide Skill
+  SubagentHandback Task TaskCreate TaskGet TaskList TaskOutput TaskStop TaskUpdate TodoWrite ToolSearch WaitForMcpServers WebFetch
+  WebSearch Workflow Write`.split(/\s+/),
+);
+const toolClass = (name: string) =>
+  BUILT_IN_TOOLS.has(name) ? name : name.startsWith("mcp__plugin_codetgh_") ? "codetgh" : name.startsWith("mcp__") ? "mcp" : "other";
+
 // The hooks' report of a turn, for the caller's own live session only, like touchSession. Not audited: presence-like
-// bookkeeping, a state and a tool name. A tool in use means a turn is running, so a wake-up that has no prompt hook still
+// bookkeeping, a state and a tool class. A tool in use means a turn is running, so a wake-up that has no prompt hook still
 // reads in_turn; a turn already running keeps its start.
 export async function setActivity(db: Db, p: Principal, sessionId: string, report: { activity?: "in_turn" | "idle"; tool?: string }) {
   const mine = and(
@@ -290,7 +303,10 @@ export async function setActivity(db: Db, p: Principal, sessionId: string, repor
   const now = new Date();
   if (report.activity) await db.update(agent).set({ activity: report.activity, activityAt: now }).where(mine);
   if (report.tool) {
-    await db.update(agent).set({ lastTool: report.tool, lastToolAt: now }).where(mine);
+    await db
+      .update(agent)
+      .set({ lastTool: toolClass(report.tool), lastToolAt: now })
+      .where(mine);
     await db
       .update(agent)
       .set({ activity: "in_turn", activityAt: now })
