@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { repoFingerprint } from "@codetgh/shared/repo";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { membership } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 
@@ -131,5 +133,19 @@ describe("codetgh claims check-push against a hub", () => {
     expect(r.out).toContain("src/edited.ts");
     expect(r.out).toContain("@lea (intent");
     expect(r.out).not.toContain("refused");
+  });
+
+  it("never blocks a push because the hub refuses it: a guest gets one warning line and exit 0", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const agent = (await startSession(hub.url, team.lea.token, "lea-push-5", { repo: repoFingerprint(ORIGIN) })).agent_id;
+    await call(lea, "claim", { agent, scope: ["src/guest.ts"] });
+    const refs = branch(["src/guest.ts"]);
+    expect((await checkPush(team.sam.token, refs)).code).toBe(1);
+    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+    const r = await checkPush(team.sam.token, refs);
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("codetgh: claims not checked (guests see only their own threads)");
+    await lea.close();
   });
 });

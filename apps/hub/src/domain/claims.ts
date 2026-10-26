@@ -285,6 +285,12 @@ export async function createClaims(
   };
 }
 
+// What checkPaths answers when nothing is claimed or edited on these paths, key for key. It is also the answer for a
+// repository the team has not linked, so the two cannot be told apart.
+export const noClaims = (paths: string[]): Awaited<ReturnType<typeof checkPaths>>["result"] => ({
+  paths: paths.map((path) => ({ path, holders: [], recent: [] })),
+});
+
 export async function checkPaths(db: Db, p: Principal, projectId: string | null, paths: string[]) {
   requireMember(p);
   const others = await othersLive(db, p, projectId);
@@ -294,7 +300,6 @@ export async function checkPaths(db: Db, p: Principal, projectId: string | null,
     result: {
       paths: holders.map(({ path, holders: hs }, i) => ({
         path,
-        recent: recent[i] ?? [],
         holders: hs.map((h) => ({
           claim_id: h.id,
           handle: h.handle,
@@ -302,6 +307,7 @@ export async function checkPaths(db: Db, p: Principal, projectId: string | null,
           mode: h.mode,
           remaining_min: minutesLeft(h),
         })),
+        recent: recent[i] ?? [],
       })),
     },
     // Reasons are a peer's words: only in envelopes, for the claim_check tool.

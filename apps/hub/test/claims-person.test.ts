@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { claim } from "../src/db/schema.js";
+import { claim, membership } from "../src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
@@ -25,9 +25,11 @@ const post = async (path: string, token: string, body: unknown) => {
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  const text = await res.text();
   return {
     status: res.status,
-    body: res.status === 200 ? ((await res.json()) as { decision?: string; reason?: string; paths?: Check["paths"] }) : null,
+    text,
+    body: res.status === 200 ? (JSON.parse(text) as { decision?: string; reason?: string; paths?: Check["paths"] }) : null,
   };
 };
 type Check = { paths: Array<{ path: string; holders: Array<{ handle: string; mode: string }>; recent: string[] }> };
@@ -66,10 +68,38 @@ describe("claims belong to a person, not to a session", () => {
     expect((asSam.body as Check).paths.map((p) => p.holders.length > 0)).toEqual([true, false]);
     const asLea = await post("check", team.lea.token, { repo_fingerprint: ACME_REPO, paths: ["app/main.ts"] });
     expect((asLea.body as Check).paths[0]?.holders).toEqual([]);
-    // A repository the hub does not know has no claims.
-    const unknown = await post("check", team.sam.token, { repo_fingerprint: "b".repeat(64), paths: ["app/main.ts"] });
-    expect(unknown.body).toEqual({ paths: [] });
     expect((await post("check", team.sam.token, { paths: ["a"] })).status).toBe(400);
+  });
+
+  it("answers a repository the team has not linked, or a session with no project, as it answers a linked one with no claims", async () => {
+    const paths = ["zz/none-a.ts", "zz/none-b.ts"];
+    const linked = await post("check", team.sam.token, { repo_fingerprint: ACME_REPO, paths });
+    const unlinked = await post("check", team.sam.token, { repo_fingerprint: "b".repeat(64), paths });
+    const noSession = await post("check", team.sam.token, { session_id: "no-such-session", paths });
+    expect(JSON.parse(linked.text)).toEqual({ paths: paths.map((path) => ({ path, holders: [], recent: [] })) });
+    // Same bytes, so a member cannot tell which repositories the team has linked.
+    expect(unlinked.status).toBe(200);
+    expect(unlinked.text).toBe(linked.text);
+    expect(noSession.text).toBe(linked.text);
+  });
+
+  it("refuses a guest on both ways of asking, and tells them nothing of the claims", async () => {
+    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+    const byRepo = await post("check", team.sam.token, { repo_fingerprint: ACME_REPO, paths: ["app/main.ts"] });
+    const bySession = await post("check", team.sam.token, { session_id: "sam-one", paths: ["app/main.ts"] });
+    // Nor does a guest learn which repositories are linked.
+    const unlinked = await post("check", team.sam.token, { repo_fingerprint: "b".repeat(64), paths: ["app/main.ts"] });
+    const noSession = await post("check", team.sam.token, { session_id: "no-such-session", paths: ["app/main.ts"] });
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    for (const r of [byRepo, bySession, unlinked, noSession]) {
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.text)).toMatchObject({ code: "E_FORBIDDEN", message: "guests see only their own threads" });
+      expect(r.text).not.toMatch(/lea|app\/main|clm_|holders/);
+    }
+    // Léa's exclusive claim on that file is live: a member still sees it.
+    expect(
+      ((await post("check", team.sam.token, { repo_fingerprint: ACME_REPO, paths: ["app/main.ts"] })).body as Check).paths[0]?.holders,
+    ).not.toEqual([]);
   });
 });
 
