@@ -288,13 +288,16 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   const authoredBy = author.agent ? "agent" : "human";
   const fromAgentId = author.agent?.id ?? null;
 
-  if (input.idempotency_key && fromAgentId) {
+  const findDuplicate = async () => {
+    if (!input.idempotency_key || !fromAgentId) return undefined;
     const [dup] = await db
       .select()
       .from(message)
       .where(and(eq(message.fromAgentId, fromAgentId), eq(message.idempotencyKey, input.idempotency_key)));
-    if (dup) return { ...dup, reach: undefined };
-  }
+    return dup;
+  };
+  const sent = await findDuplicate();
+  if (sent) return { ...sent, reach: undefined };
   if (authoredBy === "agent" && p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (authoredBy === "agent" && p.agentsPaused)
     throw new HubError("E_FORBIDDEN", "you paused your agents' sending: run codetgh resume to send again");
@@ -353,7 +356,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   // "encrypted" is the hub's own flag: readers learn it could not check this text itself.
   const flags = input.encrypted ? [...new Set([...input.encrypted.flags, "encrypted"])] : textFlags(text);
 
-  const result = await db.transaction(async (tx) => {
+  const stored = db.transaction(async (tx) => {
     let parent: typeof message.$inferSelect | undefined;
     if (input.reply_to) {
       [parent] = await tx
@@ -638,6 +641,13 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       reach: reached?.reach,
     };
   });
+  const result = await stored.catch(async (e: unknown) => {
+    // A retry that read "no such message" while the first send was still writing hits the unique index: the first one won.
+    const won = (e as { cause?: { code?: string } }).cause?.code === "23505" ? await findDuplicate() : undefined;
+    if (!won) throw e;
+    return { duplicate: won };
+  });
+  if ("duplicate" in result) return { ...result.duplicate, reach: undefined };
 
   if (result.muted) {
     bus.emit("attention", { teamId: p.teamId });
