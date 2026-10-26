@@ -103,7 +103,8 @@ describe("Remote Control launcher", () => {
     expect(await projectsPage()).toContain("Remote Control stopped");
   });
 
-  it("starts a server again when the one it launched was killed by a signal", async () => {
+  // Windows has no signals: a killed process there exits with a code.
+  it.skipIf(process.platform === "win32")("starts a server again when the one it launched was killed by a signal", async () => {
     const fake = fakeClaude();
     const repoDir = mkdtempSync(join(tmpdir(), "codetgh-launch-repo-"));
     const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
