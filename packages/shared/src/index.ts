@@ -225,7 +225,17 @@ export const ClaimReleaseInput = z
   .refine((r) => r.claim_ids || r.all_mine, { message: "claim_ids or all_mine is required" });
 
 export const PreEditInput = z.object({ session_id: z.string().min(1).max(200), path: repoPath });
-export const ClaimsCheckRestInput = z.object({ session_id: z.string().min(1).max(200), paths: z.array(repoPath).max(200) });
+// A session, or a repository by its fingerprint (the pre-push hook has no session).
+export const ClaimsCheckRestInput = z
+  .object({
+    session_id: z.string().min(1).max(200).optional(),
+    repo_fingerprint: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    paths: z.array(repoPath).max(200),
+  })
+  .refine((i) => i.session_id || i.repo_fingerprint, { message: "session_id or repo_fingerprint is required" });
 
 export const TASK_STATUSES = ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];

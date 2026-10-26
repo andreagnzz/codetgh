@@ -53,6 +53,8 @@ export const ClaimsCheckOutput = z.object({
       holders: z.array(
         z.object({ claim_id: z.string(), handle: z.string(), name: z.string(), mode: z.string(), remaining_min: z.number() }),
       ),
+      // Other people's edits of the last 30 minutes under a claim no longer live, as sentences built from hub values.
+      recent: z.array(z.string()),
     }),
   ),
 });
@@ -354,7 +356,7 @@ export const REST_ROUTES = {
   claimsCheck: {
     method: "POST",
     path: "/v1/claims/check",
-    summary: "Who holds these paths",
+    summary: "Who holds these paths, from a session or from a repository's fingerprint (other people only)",
     body: ClaimsCheckRestInput,
     output: ClaimsCheckOutput,
   },

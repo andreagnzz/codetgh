@@ -269,14 +269,15 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "claim_check",
     {
-      description: "Who holds which of these repository paths, in which mode, for how long and why.",
+      description:
+        "Who holds which of these repository paths, in which mode, for how long and why: other people's claims only, never your own sessions'. recent: what other people edited there in the last 30 minutes, under a claim since released or expired (a warning, not a lock).",
       inputSchema: ClaimCheckInput,
       annotations: READ,
       _meta: ALWAYS,
     },
     async ({ agent, paths }) =>
       run(async () => {
-        const { result, reasons } = await checkPaths(db, p, await me(agent), paths);
+        const { result, reasons } = await checkPaths(db, p, (await me(agent)).projectId, paths);
         return [
           JSON.stringify({
             ...result,

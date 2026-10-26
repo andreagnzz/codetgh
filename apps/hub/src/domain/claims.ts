@@ -1,6 +1,6 @@
 import { escapeAttr, renderPeerMessage, textFlags } from "@codetgh/guard";
 import type { ClaimMode } from "@codetgh/shared";
-import { and, asc, count, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import picomatch from "picomatch";
 import type { Db } from "../db/index.js";
 import { claim, membership, user } from "../db/schema.js";
@@ -84,8 +84,9 @@ async function lock(tx: Db, teamId: string) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`claims:${teamId}`}, 0))`);
 }
 
-// Live claims of other agents in the same project, plus team-wide task/resource claims.
-async function othersLive(tx: Db, p: Principal, a: Agent) {
+// Live claims of other people in the same project, plus team-wide task/resource claims. Claims belong to a person: two
+// sessions of the same person, and the subagents that work under a session, never conflict with each other.
+async function othersLive(tx: Db, p: Principal, projectId: string | null) {
   return tx
     .select({ claim, name: user.name, handle: membership.handle })
     .from(claim)
@@ -94,13 +95,52 @@ async function othersLive(tx: Db, p: Principal, a: Agent) {
     .where(
       and(
         eq(claim.teamId, p.teamId),
-        ne(claim.holderAgentId, a.id),
+        ne(claim.holderUserId, p.user.id),
         isNull(claim.releasedAt),
         gt(claim.expiresAt, new Date()),
-        a.projectId ? or(eq(claim.projectId, a.projectId), isNull(claim.projectId)) : isNull(claim.projectId),
+        projectId ? or(eq(claim.projectId, projectId), isNull(claim.projectId)) : isNull(claim.projectId),
       ),
     )
     .then((rows) => rows.map((r): Holder => ({ ...r.claim, name: r.name, handle: r.handle })));
+}
+
+const RECENT_MS = 30 * 60_000;
+
+// Claim rows stay after release or expiry, and every edit renews one: its expiry minus its ttl is the last time the
+// holder touched the path. For each path, what other people did in the last 30 minutes under a claim that is no longer live.
+async function recentEdits(tx: Db, p: Principal, projectId: string | null, paths: string[]) {
+  const now = Date.now();
+  const since = now - RECENT_MS;
+  const rows = await tx
+    .select({ claim, handle: membership.handle })
+    .from(claim)
+    .innerJoin(membership, and(eq(membership.userId, claim.holderUserId), eq(membership.teamId, claim.teamId)))
+    .where(
+      and(
+        eq(claim.teamId, p.teamId),
+        ne(claim.holderUserId, p.user.id),
+        inArray(claim.scopeType, ["path", "glob"]),
+        gt(claim.expiresAt, new Date(since)),
+        or(isNotNull(claim.releasedAt), lte(claim.expiresAt, new Date(now))),
+        projectId ? or(eq(claim.projectId, projectId), isNull(claim.projectId)) : isNull(claim.projectId),
+      ),
+    )
+    .orderBy(desc(claim.expiresAt))
+    .limit(200);
+  return paths.map((path) => {
+    const last = new Map<string, { at: number; released: boolean }>();
+    for (const { claim: c, handle } of rows) {
+      const at = c.expiresAt.getTime() - c.ttlS * 1000;
+      if (covers(c, path) && at > since && at > (last.get(handle)?.at ?? 0)) last.set(handle, { at, released: c.releasedAt !== null });
+    }
+    return [...last]
+      .sort((x, y) => y[1].at - x[1].at)
+      .slice(0, 3)
+      .map(
+        ([handle, { at, released }]) =>
+          `@${handle} edited this path ${Math.max(1, Math.round((now - at) / 60_000))} min ago (claim ${released ? "released" : "expired"})`,
+      );
+  });
 }
 
 // team_overview: live claims of the team (or of the agent's project), the agent's own included. No reasons: they are peer text.
@@ -165,7 +205,7 @@ export async function createClaims(
       .where(and(eq(claim.teamId, p.teamId), eq(claim.holderUserId, p.user.id), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())));
     if ((held?.n ?? 0) + scopes.length > MAX_LIVE_CLAIMS)
       throw new HubError("E_TOO_LARGE", `more than ${MAX_LIVE_CLAIMS} live claims: release some with claim_release`);
-    const others = await othersLive(tx, p, a);
+    const others = await othersLive(tx, p, a.projectId);
     const warnings: string[] = [];
     const notify: Holder[] = [];
     for (const s of scopes) {
@@ -245,14 +285,16 @@ export async function createClaims(
   };
 }
 
-export async function checkPaths(db: Db, p: Principal, a: Agent, paths: string[]) {
+export async function checkPaths(db: Db, p: Principal, projectId: string | null, paths: string[]) {
   requireMember(p);
-  const others = await othersLive(db, p, a);
+  const others = await othersLive(db, p, projectId);
+  const recent = await recentEdits(db, p, projectId, paths);
   const holders = paths.map((path) => ({ path, holders: others.filter((h) => covers(h, path)) }));
   return {
     result: {
-      paths: holders.map(({ path, holders: hs }) => ({
+      paths: holders.map(({ path, holders: hs }, i) => ({
         path,
+        recent: recent[i] ?? [],
         holders: hs.map((h) => ({
           claim_id: h.id,
           handle: h.handle,
@@ -293,7 +335,7 @@ export async function preEdit(db: Db, p: Principal, a: Agent, path: string): Pro
   const decision = p.settings.claims_enforcement === "warn" || p.settings.claims_enforcement === "off" ? "warn" : "ask";
   return db.transaction(async (tx) => {
     await lock(tx, p.teamId);
-    const others = (await othersLive(tx, p, a)).filter((h) => covers(h, path));
+    const others = (await othersLive(tx, p, a.projectId)).filter((h) => covers(h, path));
     const conflicts = others.filter((h) => compat("intent", h.mode) === "conflict");
     if (conflicts.length) {
       const reason = `${path} is claimed by ${conflicts.map((h) => describe(h, decision === "ask")).join("; ")}. Wait, or write to them (send_message to ${conflicts.map((h) => `@${h.handle}`).join(", ")})?`;
@@ -337,9 +379,13 @@ export async function preEdit(db: Db, p: Principal, a: Agent, path: string): Pro
       });
     }
     const intents = others.filter((h) => h.mode === "intent");
-    return intents.length
-      ? { decision: "warn", reason: `${path} is also being edited by ${intents.map((h) => describe(h)).join("; ")}.` }
-      : null;
+    // The first edit of the path by this session only: the later ones have heard it.
+    const [recent] = covering.length ? [] : await recentEdits(tx, p, a.projectId, [path]);
+    const warnings = [
+      ...(intents.length ? [`${path} is also being edited by ${intents.map((h) => describe(h)).join("; ")}.`] : []),
+      ...(recent?.length ? [`${path}: ${recent.join("; ")}.`] : []),
+    ];
+    return warnings.length ? { decision: "warn", reason: warnings.join(" ") } : null;
   });
 }
 

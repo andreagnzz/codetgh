@@ -362,11 +362,19 @@ export function createApp({
     return decision ? c.json(decision) : c.body(null, 204);
   });
 
+  // By session (the Stop hook), or by repository (the pre-push hook has no session): none for a repository the team has not linked.
   v1.post("/claims/check", async (c) => {
     const p = c.get("principal");
     const input = await parse(c, ClaimsCheckRestInput);
-    const agent = await agentBySession(db, p, input.session_id);
-    return c.json(agent ? (await checkPaths(db, p, agent, input.paths)).result : { paths: [] });
+    const projectId = input.repo_fingerprint
+      ? (
+          await db
+            .select({ id: project.id })
+            .from(project)
+            .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)))
+        )[0]?.id
+      : (await agentBySession(db, p, input.session_id ?? ""))?.projectId;
+    return c.json(projectId === undefined ? { paths: [] } : (await checkPaths(db, p, projectId, input.paths)).result);
   });
 
   // Envelopes for the prompt hook and the rewake waiter, with an ETag over the unread seqs.
