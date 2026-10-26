@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { project } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
-import { consolePost, fakeCommand } from "./helpers.js";
+import { alive, consolePost, fakeCommand } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -61,14 +61,6 @@ async function launcher(config: string) {
   delete process.env.CODETGH_TOKEN;
   return out.join("\n");
 }
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 describe("Remote Control launcher", () => {
   it("lets only the owner switch a project's server on, and only the owner's token read the targets", async () => {

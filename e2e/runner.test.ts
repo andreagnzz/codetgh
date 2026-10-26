@@ -26,7 +26,7 @@ import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program, runnerOwner, runnerTiming, stopRunner } from "../packages/cli/src/main.js";
-import { consolePost, fakeCommand, hookEnv, runHook } from "./helpers.js";
+import { alive, consolePost, fakeCommand, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -353,14 +353,6 @@ function mergeOnOrigin(branch: string) {
   git(work, "merge", "-q", "--no-ff", "-m", `Merge ${branch}`, `origin/${branch}`);
   git(work, "push", "-q", "origin", "main");
 }
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 async function waitForPid() {
   for (let i = 0; i < 200 && !existsSync(join(fake, "pid")); i++) await sleep(25);
   return Number(readFileSync(join(fake, "pid"), "utf8"));

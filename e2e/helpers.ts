@@ -109,3 +109,12 @@ export function gitRepo(origin = "git@github.com:acme/webapp.git") {
   execFileSync("git", ["-C", dir, "remote", "add", "origin", origin]);
   return dir;
 }
+
+export const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
