@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { auditEvent, memoryItem, task } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, code, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -13,18 +13,16 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 type Out = { hookSpecificOutput?: { additionalContext?: string } } | null;
-const json = (r: { text: string }) => JSON.parse(r.text.split("\n\n")[0] ?? "null");
-const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 
 it("hands a task over with its whole context, ahead of everything else (scenario 3)", async () => {
   const repo = gitRepo();
   await runHook("session-start", { session_id: "lea-s3", source: "startup", cwd: repo }, hookEnv(hub.url, team.lea.token));
   const lea = await mcpClient(hub.url, team.lea.token);
-  const t = json(await call(lea, "task_create", { title: "Contrat /users", paths: ["api/users.ts"] }));
+  const t = (await call(lea, "task_create", { title: "Contrat /users", paths: ["api/users.ts"] })).json();
   await call(lea, "task_claim", { task_id: t.id, expected_version: 1 });
-  const decision = json(
-    await call(lea, "memory_propose", { kind: "decision", title: "Dates en ISO 8601 UTC", body: "Toutes les dates d'API." }),
-  );
+  const decision = (
+    await call(lea, "memory_propose", { kind: "decision", title: "Dates en ISO 8601 UTC", body: "Toutes les dates d'API." })
+  ).json();
   await hub.db
     .update(memoryItem)
     .set({ status: "accepted", decidedByUser: team.lea.userId, decidedVia: "console" })
@@ -55,7 +53,7 @@ it("hands a task over with its whole context, ahead of everything else (scenario
   expect(code(await call(lea, "handoff", { ...capsule, decisions: [`mit_${"0".repeat(26)}`] }))).toBe("E_INVALID");
   const sent = await call(lea, "handoff", capsule);
   expect(sent.isError).toBe(false);
-  const handoffId = json(sent).id;
+  const handoffId = sent.json().id;
 
   // Sam's session starts: the packet leads with the handoff, without any of its text.
   const sam = hookEnv(hub.url, team.sam.token);
@@ -99,7 +97,7 @@ it("hands a task over with its whole context, ahead of everything else (scenario
 it("refuses to hand over someone else's task, and plain send_message cannot fake a handoff", async () => {
   const sam = await mcpClient(hub.url, team.sam.token);
   const malik = await mcpClient(hub.url, team.malik.token);
-  const t = json(await call(sam, "task_create", { title: "Tâche de Sam" }));
+  const t = (await call(sam, "task_create", { title: "Tâche de Sam" })).json();
   const stolen = await call(malik, "handoff", { to: "@malik", task_id: t.id, summary: "je la prends" });
   expect(code(stolen)).toBe("E_FORBIDDEN");
   const [unchanged] = await hub.db.select().from(task).where(eq(task.id, t.id));

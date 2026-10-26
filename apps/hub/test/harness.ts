@@ -154,3 +154,5 @@ export async function call(client: Client, name: string, args: Record<string, un
   const text = r.content[0]?.text ?? "";
   return { text, isError: Boolean(r.isError), json: () => JSON.parse(text.split("\n\n")[0] ?? "null") };
 }
+
+export const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
