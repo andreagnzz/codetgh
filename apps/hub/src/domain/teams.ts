@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { ROLES, type Role } from "@codetgh/shared";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, invitation, membership, oauthAccessToken, oauthRefreshToken, personalToken, session, team, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -145,7 +145,7 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
   if (RESERVED_HANDLE.test(handle)) throw new HubError("E_INVALID", "handles starting with bridge- or a2a- are reserved");
   await db.transaction(async (tx) => {
     const [m] = await tx
-      .select({ userId: membership.userId })
+      .select({ userId: membership.userId, handle: membership.handle })
       .from(membership)
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)));
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
@@ -161,6 +161,11 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)))
       .returning({ id: membership.id });
     if (!rows.length) throw new HubError("E_NOT_FOUND", "member not found");
+    // The orchestrator is stored as a handle: it follows its member instead of staying on a name someone else can take.
+    await tx
+      .update(team)
+      .set({ settings: sql`jsonb_set(${team.settings}, '{loop_orchestrator}', to_jsonb(${handle}::text))` })
+      .where(and(eq(team.id, p.teamId), sql`${team.settings}->>'loop_orchestrator' = ${m.handle}`));
     await appendAudit(tx, {
       teamId: p.teamId,
       actorType: "user",

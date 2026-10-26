@@ -63,6 +63,18 @@ describe("members", () => {
     expect(after?.handle).toBe("samuel");
   });
 
+  it("moves the loop orchestrator setting along when its member gets a new handle", async () => {
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { loop_orchestrator: "malik" } })
+      .where(eq(teamTable.id, team.teamId));
+    const [malik] = await hub.db.select().from(membership).where(eq(membership.userId, team.malik.userId));
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${malik?.id}/handle`, { handle: "malika" })).status).toBe(204);
+    const [t] = await hub.db.select({ s: teamTable.settings }).from(teamTable).where(eq(teamTable.id, team.teamId));
+    expect(t?.s.loop_orchestrator).toBe("malika");
+    await hub.db.update(teamTable).set({ settings: {} }).where(eq(teamTable.id, team.teamId));
+  });
+
   it("refuses to revoke a bridge member, so the GitHub webhook keeps working", async () => {
     const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
     const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";

@@ -19,6 +19,7 @@ import {
   session,
   slackLink,
   task,
+  team,
   thread,
   threadKey,
   user,
@@ -121,6 +122,11 @@ export async function eraseMe(db: Db, p: Principal, confirm: string) {
       if (!other) throw new HubError("E_FORBIDDEN", "you are the only owner: make someone else owner first");
     }
     const now = new Date();
+    // The freed handle can go to a newcomer: the loop orchestrator setting must not follow it.
+    await tx
+      .update(team)
+      .set({ settings: sql`${team.settings} - 'loop_orchestrator'` })
+      .where(and(eq(team.id, p.teamId), sql`${team.settings}->>'loop_orchestrator' = ${p.handle}`));
     const [m] = await tx
       .update(membership)
       .set({ status: "revoked", revokedAt: now, revokedBy: me, handle: sql`'former-' || right(${membership.id}, 8)` })

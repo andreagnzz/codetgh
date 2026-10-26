@@ -1,6 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { alert, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { INVITE_HEADER } from "../apps/hub/src/auth.js";
+import { alert, membership, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { createInvitation } from "../apps/hub/src/domain/teams.js";
+import { createPersonalToken } from "../apps/hub/src/tokens.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -108,4 +111,41 @@ it("lets the team's orchestrator judge a loop, reopen it once, and leaves the se
   expect(
     code(await call(malik, "send_message", { kind: "status", reply_to: again.id, body: "Again.", loop_verdict: { reopen: false } })),
   ).toBe("E_INVALID");
+});
+
+async function join(name: string) {
+  const email = `${name.toLowerCase()}2@acme.test`;
+  const invite = await createInvitation(hub.db, { teamId: team.teamId, email, role: "member", invitedBy: null, via: "system" });
+  const { user } = await hub.auth.api.signUpEmail({
+    body: { name, email, password: `${name.toLowerCase()}-password-123` },
+    headers: new Headers({ [INVITE_HEADER]: invite.token }),
+  });
+  const { token } = await createPersonalToken(hub.db, { userId: user.id, teamId: team.teamId, label: `${name} laptop` });
+  const [m] = await hub.db.select().from(membership).where(eq(membership.userId, user.id));
+  await startSession(hub.url, token, `${name.toLowerCase()}-loop`, { repo: ACME_REPO });
+  return { ...team.sam, userId: user.id, token, handle: m?.handle ?? "" };
+}
+
+it("does not hand the orchestrator role to a newcomer who takes the handle of a member who left", async () => {
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+    retention_days: "90",
+    secret_patterns: "",
+    loop_orchestrator: "malik",
+  });
+  expect((await consolePost(hub.url, team.malik.cookie, "/console/me/erase", { confirm: "erase" })).status).toBeLessThan(400);
+  const malik = await join("Malik");
+  const nina = await join("Nina");
+  expect(malik.handle).toBe("malik");
+
+  const stuck = await loop(team.sam, nina);
+  const orchestrator = await mcpClient(hub.url, malik.token);
+  const r = await call(orchestrator, "send_message", {
+    kind: "status",
+    reply_to: stuck.id,
+    body: "Mine now.",
+    loop_verdict: { reopen: true },
+  });
+  expect(code(r), r.text).toBe("E_FORBIDDEN");
+  const [t] = await hub.db.select().from(thread).where(eq(thread.id, stuck.thread));
+  expect(t?.mutedAt).not.toBeNull();
 });
