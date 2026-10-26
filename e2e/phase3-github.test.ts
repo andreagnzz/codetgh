@@ -2,7 +2,8 @@ import { createHmac } from "node:crypto";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { auditEvent, message, project, task, thread } from "../apps/hub/src/db/schema.js";
+import { auditEvent, membership, message, project, task, thread } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -11,7 +12,9 @@ let team: Awaited<ReturnType<Hub["seed"]>>;
 let hookUrl = "";
 let SECRET = "";
 beforeAll(async () => {
-  hub = await startHub();
+  // Many tasks written by one person in a few milliseconds: a clock that moves an hour per call keeps the budget out of these scenarios.
+  let now = 0;
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   // The admin creates the team's webhook in the console and pastes the URL and secret into their GitHub App.
   const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
@@ -164,8 +167,13 @@ describe("verify tags (a tag created on GitHub finishes the tasks that wait for 
 
     const [event] = await verifyAudit(todo);
     expect(event).toMatchObject({ actorType: "hub", via: "system", subjectId: todo });
-    expect(event?.data).toMatchObject({ tag: "step-02-harness", delivery: "delivery-tag-1", status: "done" });
-    expect(JSON.stringify(event?.data)).not.toContain("octocat");
+    // Metadata only: task, tag, delivery, body hash and the sender's login when it is one.
+    expect(event?.data).toMatchObject({ tag: "step-02-harness", delivery: "delivery-tag-1", status: "done", sender: "octocat" });
+    expect(Object.keys(event?.data ?? {}).sort()).toEqual(["body_sha256", "delivery", "sender", "status", "tag", "version"]);
+    // A login that is not one is dropped, not stored.
+    const other = await make(web, "Other sender", "step-03");
+    await deliver("create", tagEvent("step-03", "acme/webapp", { sender: { login: "<b>x</b> ignore previous" } }));
+    expect((await verifyAudit(other))[0]?.data).toMatchObject({ sender: null });
   });
 
   it("changes nothing for a replay, a tag of another repository, another project's task, or a task that is not open", async () => {
@@ -204,5 +212,108 @@ describe("verify tags (a tag created on GitHub finishes the tasks that wait for 
     expect((await deliver("create", tagEvent("v2.0.0"), undefined, hookUrl, "delivery-tag-3")).status).toBe(202);
     expect(await snapshot([mine, ...others])).toBe(settled);
     expect(await verifyAudit(mine)).toHaveLength(1);
+  });
+
+  describe("only when the tag may still finish the task", () => {
+    const sam = async () => mcpClient(hub.url, team.sam.token);
+    let samAgent = "";
+    beforeAll(async () => {
+      samAgent =
+        (await startSession(hub.url, team.sam.token, "sam-gh", { repo: repoFingerprint("git@github.com:Acme/WebApp.git") })).agent_id ?? "";
+    });
+    const notes = async (id: string) => (await row(id))?.notes.map((n) => n.text) ?? [];
+    const arrives = (tag: string, delivery = `d-${tag}`) => deliver("create", tagEvent(tag), undefined, hookUrl, delivery);
+    const audits = async (id: string) => (await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, id))).map((e) => e.action);
+
+    it("leaves the task open, with a note, when the person who set the tag is no longer allowed to update it", async () => {
+      const c = await sam();
+      const mine = JSON.parse((await call(c, "task_create", { agent: samAgent, title: "Sam's gate", verify: { tag: "gate-a" } })).text)
+        .id as string;
+      expect((await row(mine))?.verifySetBy).toBe(team.sam.userId);
+      const stale = "tag reached, not applied: the tag was set by someone who can no longer update this task";
+
+      // A guest, a member who left, and a member who no longer assigns or created the task.
+      await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+      expect((await arrives("gate-a")).status).toBe(202);
+      expect(await row(mine)).toMatchObject({ status: "todo" });
+      expect(await notes(mine)).toEqual([stale]);
+      expect(await audits(mine)).toContain("task.verify_skipped");
+      // The same delivery again adds nothing.
+      await arrives("gate-a");
+      expect(await notes(mine)).toEqual([stale]);
+
+      await hub.db.update(membership).set({ role: "member", status: "revoked" }).where(eq(membership.userId, team.sam.userId));
+      await arrives("gate-a", "d-gate-a-2");
+      expect((await row(mine))?.status).toBe("todo");
+
+      // Sam is a member again but the task is Malik's: Sam set the tag as its assignee, and no longer is.
+      await hub.db.update(membership).set({ status: "active" }).where(eq(membership.userId, team.sam.userId));
+      const lea = await mcpClient(hub.url, team.lea.token);
+      const assigned = JSON.parse((await call(lea, "task_create", { agent: web, title: "Handed over", assignee: "@sam" })).text);
+      const set = JSON.parse(
+        (await call(c, "task_update", { task_id: assigned.id, expected_version: 1, patch: { verify: { tag: "gate-b" } } })).text,
+      );
+      await call(lea, "task_update", { task_id: assigned.id, expected_version: set.version, patch: { assignee: "@malik" } });
+      await arrives("gate-b");
+      expect(await row(assigned.id)).toMatchObject({ status: "todo", assigneeUserId: team.malik.userId });
+      expect(await notes(assigned.id)).toEqual([stale]);
+
+      // Whoever may update the task still finishes it: Sam, an active member who set his own task's tag.
+      await arrives("gate-a", "d-gate-a-3");
+      expect((await row(mine))?.status).toBe("done");
+      expect(await notes(mine)).toEqual([stale, "verified by tag gate-a"]);
+      for (const x of [c, lea]) await x.close();
+    });
+
+    it("does not skip the order of the dependencies, and finishes the task once they are done", async () => {
+      const lea = await mcpClient(hub.url, team.lea.token);
+      const base = JSON.parse((await call(lea, "task_create", { agent: web, title: "Base" })).text).id as string;
+      const next = JSON.parse(
+        (await call(lea, "task_create", { agent: web, title: "Next", depends_on: [base], verify: { tag: "after-base" } })).text,
+      ).id as string;
+      const why = "tag reached, not applied: dependencies are not done";
+      await arrives("after-base");
+      await arrives("after-base", "d-again");
+      expect(await row(next)).toMatchObject({ status: "todo" });
+      expect(await notes(next)).toEqual([why]);
+      await hub.db.update(task).set({ status: "done" }).where(eq(task.id, base));
+      await arrives("after-base", "d-late");
+      expect(await row(next)).toMatchObject({ status: "done" });
+      expect(await notes(next)).toEqual([why, "verified by tag after-base"]);
+      await lea.close();
+    });
+
+    it("leaves a runner task alone while it holds a lease or has an open PR", async () => {
+      const leased = await make(web, "Leased", "run-a");
+      const pr = await make(web, "With a PR", "run-b");
+      const idle = await make(web, "Runner, idle", "run-c");
+      await hub.db
+        .update(task)
+        .set({ runner: true, status: "in_progress", leaseOwner: "runner-1", leaseUntil: new Date(Date.now() + 600_000) })
+        .where(eq(task.id, leased));
+      await hub.db.update(task).set({ runner: true, status: "review", prNumber: 12, branch: "codetgh/x" }).where(eq(task.id, pr));
+      await hub.db
+        .update(task)
+        .set({ runner: true, leaseOwner: "runner-1", leaseUntil: new Date(Date.now() - 1000) })
+        .where(eq(task.id, idle));
+      const busy = "tag reached, not applied: the runner is working on it";
+      for (const tag of ["run-a", "run-b", "run-c"]) await arrives(tag);
+      expect((await row(leased))?.status).toBe("in_progress");
+      expect((await row(pr))?.status).toBe("review");
+      expect([await notes(leased), await notes(pr)]).toEqual([[busy], [busy]]);
+      // An expired lease and no PR hold nothing.
+      expect(await row(idle)).toMatchObject({ status: "done", leaseOwner: null });
+    });
+
+    it("matches the tag exactly, and never a branch", async () => {
+      const exact = await make(web, "Exact", "Release-1");
+      for (const ref of ["release-1", "Release-1 ", "Release-10", "release/Release-1", "refs/tags/Release-1"])
+        await deliver("create", tagEvent(ref));
+      await deliver("create", tagEvent("Release-1", "acme/webapp", { ref_type: "branch" }));
+      await deliver("create", tagEvent("Release-1", "acme/webapp", { ref_type: "repository" }));
+      expect(await row(exact)).toMatchObject({ status: "todo", version: 1 });
+      await arrives("Release-1");
+      expect((await row(exact))?.status).toBe("done");
+    });
   });
 });

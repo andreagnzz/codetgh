@@ -19,13 +19,14 @@ const json = (r: { text: string }) => JSON.parse(r.text.split("\n\n")[0] ?? "nul
 const row = async (id: string) => (await hub.db.select().from(task).where(eq(task.id, id)))[0];
 
 type Client = Awaited<ReturnType<typeof mcpClient>>;
-const update = (c: Client, id: string, version: number, patch: Record<string, unknown>) =>
-  call(c, "task_update", { task_id: id, expected_version: version, patch });
-// A task in progress, assigned to its creator.
-async function started(c: Client, title: string, extra: Record<string, unknown> = {}) {
-  const t = json(await call(c, "task_create", { title, ...extra }));
-  const claimed = json(await call(c, "task_claim", { task_id: t.id, expected_version: t.version }));
-  return json(await update(c, t.id, claimed.version, { status: "in_progress" }));
+const update = (c: Client, id: string, version: number, patch: Record<string, unknown>, agentId?: string) =>
+  call(c, "task_update", { task_id: id, expected_version: version, patch, ...(agentId && { agent: agentId }) });
+// A task in progress, assigned to its creator; with a session's agent, it belongs to that session's project.
+async function started(c: Client, title: string, agentId?: string, extra: Record<string, unknown> = {}) {
+  const as = agentId ? { agent: agentId } : {};
+  const t = json(await call(c, "task_create", { title, ...as, ...extra }));
+  const claimed = json(await call(c, "task_claim", { task_id: t.id, expected_version: t.version, ...as }));
+  return json(await update(c, t.id, claimed.version, { status: "in_progress" }, agentId));
 }
 
 describe("verify tag", () => {
@@ -33,7 +34,7 @@ describe("verify tag", () => {
     const sam = await mcpClient(hub.url, team.sam.token);
     const t = json(await call(sam, "task_create", { title: "Répétition v11", verify: { tag: "step-02-harness" } }));
     expect(t.verify).toEqual({ tag: "step-02-harness" });
-    expect((await row(t.id))?.verifyTag).toBe("step-02-harness");
+    expect(await row(t.id)).toMatchObject({ verifyTag: "step-02-harness", verifySetBy: team.sam.userId });
     const listed = json(await call(sam, "task_list", { project: "all" })).tasks.find((x: { id: string }) => x.id === t.id);
     expect(listed.verify).toEqual({ tag: "step-02-harness" });
     expect(json(await call(sam, "task_get", { task_id: t.id })).verify).toEqual({ tag: "step-02-harness" });
@@ -42,7 +43,7 @@ describe("verify tag", () => {
     expect(moved).toMatchObject({ verify: { tag: "release/1.2.0" }, version: 2 });
     const cleared = json(await update(sam, t.id, 2, { verify: "none" }));
     expect(cleared.verify).toBeUndefined();
-    expect((await row(t.id))?.verifyTag).toBeNull();
+    expect(await row(t.id)).toMatchObject({ verifyTag: null, verifySetBy: null });
     expect(json(await call(sam, "task_create", { title: "No tag" })).verify).toBeUndefined();
     await sam.close();
   });
@@ -93,6 +94,8 @@ describe("verify tag", () => {
     expect(json(await update(malik, t.id, assigned.version, { verify: { tag: "v2" } })).verify).toEqual({ tag: "v2" });
     expect(json(await update(sam, t.id, assigned.version + 1, { verify: { tag: "v3" } })).verify).toEqual({ tag: "v3" });
     expect(json(await update(lea, t.id, assigned.version + 2, { verify: { tag: "v4" } })).verify).toEqual({ tag: "v4" });
+    // The hub keeps who set the tag, to check at the tag's arrival that they still could.
+    expect(await row(t.id)).toMatchObject({ verifyTag: "v4", verifySetBy: team.lea.userId });
     for (const c of [sam, malik, lea]) await c.close();
   });
 });
@@ -181,30 +184,60 @@ describe("dependencies are checked at in_progress and done", () => {
     await lea.close();
     await sam.close();
   });
+
+  it("does not let the creator or the assignee override it, whatever else they may change", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const base = json(await call(malik, "task_create", { title: "Base" }));
+    // Created by Malik, assigned to Sam: each holds every update right but this one.
+    const next = json(await call(malik, "task_create", { title: "Next", depends_on: [base.id], assignee: "@sam" }));
+    await hub.db.update(task).set({ status: "claimed" }).where(eq(task.id, next.id));
+    for (const who of [malik, sam]) {
+      expect(code(await update(who, next.id, next.version, { status: "in_progress", override_deps: true }))).toBe("E_FORBIDDEN");
+      expect(code(await update(who, next.id, next.version, { status: "in_progress" }))).toBe("E_INVALID");
+    }
+    expect((await row(next.id))?.status).toBe("claimed");
+    for (const c of [malik, sam]) await c.close();
+  });
 });
 
 describe("taking over a teammate's task", () => {
-  const setupLive = async (who: keyof typeof team & ("sam" | "malik" | "lea"), session: string) =>
-    (await startSession(hub.url, team[who].token, session, { repo: ACME_REPO })).agent_id ?? "";
+  let n = 0;
+  const live = async (who: "sam" | "malik" | "lea", repo = ACME_REPO) =>
+    (await startSession(hub.url, team[who].token, `${who}-take-${++n}`, { repo })).agent_id ?? "";
   const letEnd = (userId: string) => hub.db.update(agent).set({ endedAt: new Date() }).where(eq(agent.userId, userId));
+  // Sam's task in progress on the project, then Sam leaves: nobody of his is online.
+  async function abandoned(title: string) {
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const session = await live("sam");
+    const t = await started(sam, title, session);
+    await letEnd(team.sam.userId);
+    await sam.close();
+    return t;
+  }
 
-  it("is refused for a live teammate without a note, allowed with one, and keeps status and notes", async () => {
-    const samSession = await setupLive("sam", "sam-take-live");
-    await setupLive("malik", "malik-take");
+  it("lets the creator take over a live teammate's task with a note, and keeps its status and notes", async () => {
+    const samSession = await live("sam");
+    const malikSession = await live("malik");
     const sam = await mcpClient(hub.url, team.sam.token);
     const malik = await mcpClient(hub.url, team.malik.token);
-    const t = await started(sam, "Migration des dates");
-    await update(sam, t.id, t.version, { note: "first note" });
+    // Created by Malik, assigned to Sam, who is working on it.
+    const made = json(await call(malik, "task_create", { agent: malikSession, title: "Migration des dates", assignee: "@sam" }));
+    const claimed = json(await call(sam, "task_claim", { agent: samSession, task_id: made.id, expected_version: made.version }));
+    const t = json(await update(sam, made.id, claimed.version, { status: "in_progress" }, samSession));
+    await update(sam, t.id, t.version, { note: "first note" }, samSession);
     const before = (await row(t.id))?.version ?? 0;
 
-    const refused = await update(malik, t.id, before, { assignee: "@me" });
+    const refused = await update(malik, t.id, before, { assignee: "@me" }, malikSession);
     expect(code(refused)).toBe("E_FORBIDDEN");
     expect(refused.text).toContain("takeover_note");
-    expect((await update(malik, t.id, before, { assignee: "@me", takeover_note: "" })).isError).toBe(true);
-    expect((await update(malik, t.id, before, { assignee: "@me", takeover_note: "x".repeat(501) })).isError).toBe(true);
+    expect((await update(malik, t.id, before, { assignee: "@me", takeover_note: "" }, malikSession)).isError).toBe(true);
+    expect((await update(malik, t.id, before, { assignee: "@me", takeover_note: "x".repeat(501) }, malikSession)).isError).toBe(true);
     expect((await row(t.id))?.assigneeUserId).toBe(team.sam.userId);
 
-    const taken = json(await update(malik, t.id, before, { assignee: "@me", takeover_note: "Sam is out, I carry on with the migration" }));
+    const taken = json(
+      await update(malik, t.id, before, { assignee: "@me", takeover_note: "Sam is out, I carry on with the migration" }, malikSession),
+    );
     expect(taken).toMatchObject({ assignee: "malik", status: "in_progress", version: before + 1 });
     const stored = await row(t.id);
     expect(stored?.notes.map((n) => n.text)).toEqual(["first note", "taken over by @malik: Sam is out, I carry on with the migration"]);
@@ -218,25 +251,36 @@ describe("taking over a teammate's task", () => {
     for (const c of [sam, malik]) await c.close();
   });
 
-  it("accepts the member's own handle as well as @me", async () => {
-    await setupLive("sam", "sam-take-handle");
+  it("lets an admin take over a live teammate's task, with a note too", async () => {
+    const samSession = await live("sam");
     const sam = await mcpClient(hub.url, team.sam.token);
-    const malik = await mcpClient(hub.url, team.malik.token);
-    const t = await started(sam, "By handle");
-    const taken = json(await update(malik, t.id, t.version, { assignee: "@malik", takeover_note: "mine now" }));
-    expect(taken.assignee).toBe("malik");
-    for (const c of [sam, malik]) await c.close();
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const t = await started(sam, "Admin takes over", samSession);
+    expect(code(await update(lea, t.id, t.version, { assignee: "@me" }))).toBe("E_FORBIDDEN");
+    expect(json(await update(lea, t.id, t.version, { assignee: "@me", takeover_note: "Priority change" })).assignee).toBe("lea");
+    for (const c of [sam, lea]) await c.close();
   });
 
-  it("is allowed without a note when the teammate has no live session, and tells them", async () => {
+  it("refuses a plain member while the assignee has a live session on the project, note or not", async () => {
+    const samSession = await live("sam");
     const sam = await mcpClient(hub.url, team.sam.token);
     const malik = await mcpClient(hub.url, team.malik.token);
-    const t = await started(sam, "Abandoned");
+    const t = await started(sam, "Not yours", samSession);
+    for (const patch of [
+      { assignee: "@me" },
+      { assignee: "@malik", takeover_note: "let me" },
+      { assignee: "@me", takeover_note: "let me" },
+    ]) {
+      const r = await update(malik, t.id, t.version, patch);
+      expect(code(r)).toBe("E_FORBIDDEN");
+    }
+    expect((await row(t.id))?.assigneeUserId).toBe(team.sam.userId);
+    // The same request goes through once Sam has no session left, and the note is then optional.
     await letEnd(team.sam.userId);
     const taken = json(await update(malik, t.id, t.version, { assignee: "@me" }));
     expect(taken).toMatchObject({ assignee: "malik", status: "in_progress" });
     expect((await row(t.id))?.notes.map((n) => n.text)).toEqual(["taken over by @malik"]);
-    // Nobody to read it now: it waits in their console inbox.
+    // Nobody to read it now: the note to Sam waits in his console inbox.
     const told = (await hub.db.select().from(message).where(eq(message.fromUserId, team.malik.userId))).find((m) => m.body.includes(t.id));
     expect(told).toMatchObject({ kind: "note", to: ["@sam"], body: `@malik took over task ${t.id}.` });
     const [got] = await hub.db
@@ -247,36 +291,90 @@ describe("taking over a teammate's task", () => {
     for (const c of [sam, malik]) await c.close();
   });
 
-  it("only takes over claimed or in_progress tasks, and only the assignee change", async () => {
-    const sam = await mcpClient(hub.url, team.sam.token);
+  it("counts a live session on the task's project, or any session when the task has no project", async () => {
     const malik = await mcpClient(hub.url, team.malik.token);
-    const t = await started(sam, "Narrow");
-    const reviewed = json(await update(sam, t.id, t.version, { status: "review" }));
-    const open = await started(sam, "Narrow too");
-    await letEnd(team.sam.userId);
-    expect(code(await update(malik, t.id, reviewed.version, { assignee: "@me", takeover_note: "now" }))).toBe("E_FORBIDDEN");
-    expect(code(await update(malik, open.id, open.version, { assignee: "@me", status: "done" }))).toBe("E_FORBIDDEN");
-    expect(code(await update(malik, open.id, open.version, { assignee: "@lea", takeover_note: "give it to Lea" }))).toBe("E_FORBIDDEN");
-    expect((await row(open.id))?.assigneeUserId).toBe(team.sam.userId);
-    for (const c of [sam, malik]) await c.close();
+    const onProject = await abandoned("Sam works elsewhere now");
+    const noProject = await abandoned("Without a project");
+    await hub.db.update(task).set({ projectId: null }).where(eq(task.id, noProject.id));
+    // Sam is back, live on another repository only.
+    await live("sam", "c".repeat(64));
+    expect(code(await update(malik, noProject.id, noProject.version, { assignee: "@me" }))).toBe("E_FORBIDDEN");
+    expect(json(await update(malik, onProject.id, onProject.version, { assignee: "@me" })).assignee).toBe("malik");
+    await malik.close();
+  });
+
+  it("does not take over a runner task, a leased task, or the task of an owner or an admin", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const runner = await abandoned("Runner");
+    const leased = await abandoned("Leased");
+    await hub.db.update(task).set({ runner: true }).where(eq(task.id, runner.id));
+    await hub.db
+      .update(task)
+      .set({ leaseOwner: "runner-1", leaseUntil: new Date(Date.now() + 600_000) })
+      .where(eq(task.id, leased.id));
+    // The owner's own task, in progress with no session of hers.
+    const leaSession = await live("lea");
+    const owners = await started(lea, "Owner's task", leaSession);
+    await letEnd(team.lea.userId);
+    for (const t of [runner, leased]) {
+      expect(code(await update(malik, t.id, t.version, { assignee: "@me" }))).toBe("E_FORBIDDEN");
+      expect(code(await update(lea, t.id, t.version, { assignee: "@me", takeover_note: "now" }))).toBe("E_FORBIDDEN");
+      expect((await row(t.id))?.assigneeUserId).toBe(team.sam.userId);
+    }
+    expect(code(await update(malik, owners.id, owners.version, { assignee: "@me" }))).toBe("E_FORBIDDEN");
+    expect((await row(owners.id))?.assigneeUserId).toBe(team.lea.userId);
+    // An expired lease holds nothing.
+    await hub.db
+      .update(task)
+      .set({ leaseUntil: new Date(Date.now() - 1000), runner: false })
+      .where(eq(task.id, leased.id));
+    expect(json(await update(malik, leased.id, leased.version, { assignee: "@me" })).assignee).toBe("malik");
+    for (const c of [malik, lea]) await c.close();
+  });
+
+  it("allows nothing but the takeover in a takeover request", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const t = await abandoned("Only the takeover");
+    for (const extra of [
+      { verify: { tag: "v9" } },
+      { verify: "none" },
+      { status: "blocked", reason: "mine" },
+      { status: "done" },
+      { override_deps: true },
+      { note: "more" },
+    ]) {
+      expect(code(await update(malik, t.id, t.version, { assignee: "@me", ...extra }))).toBe("E_FORBIDDEN");
+    }
+    expect(await row(t.id)).toMatchObject({
+      assigneeUserId: team.sam.userId,
+      status: "in_progress",
+      version: t.version,
+      verifyTag: null,
+      blockedReason: null,
+    });
+    await malik.close();
+  });
+
+  it("accepts the member's own handle as well as @me", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const t = await abandoned("By handle");
+    expect(json(await update(malik, t.id, t.version, { assignee: "@malik" })).assignee).toBe("malik");
+    await malik.close();
   });
 
   it("is refused to guests and to a quarantined agent", async () => {
-    const sam = await mcpClient(hub.url, team.sam.token);
     const malik = await mcpClient(hub.url, team.malik.token);
-    const t = await started(sam, "Guarded");
-    await letEnd(team.sam.userId);
+    const t = await abandoned("Guarded");
     await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
-    expect(code(await update(malik, t.id, t.version, { assignee: "@me", takeover_note: "let me" }))).toBe("E_FORBIDDEN");
+    expect(code(await update(malik, t.id, t.version, { assignee: "@me" }))).toBe("E_FORBIDDEN");
     await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
 
-    const id = await setupLive("malik", "malik-quarantined");
+    const id = await live("malik");
     await hub.db.update(agent).set({ trustLevel: "quarantined" }).where(eq(agent.id, id));
-    expect(
-      code(await call(malik, "task_update", { agent: id, task_id: t.id, expected_version: t.version, patch: { assignee: "@me" } })),
-    ).toBe("E_FORBIDDEN");
+    expect(code(await update(malik, t.id, t.version, { assignee: "@me" }, id))).toBe("E_FORBIDDEN");
     expect((await row(t.id))?.assigneeUserId).toBe(team.sam.userId);
     await hub.db.update(agent).set({ trustLevel: "trusted" }).where(eq(agent.id, id));
-    for (const c of [sam, malik]) await c.close();
+    await malik.close();
   });
 });

@@ -91,7 +91,7 @@ export async function exportMyData(db: Db, p: Principal) {
     tasks: await db
       .select()
       .from(task)
-      .where(and(eq(task.teamId, p.teamId), or(eq(task.assigneeUserId, me), eq(task.createdByUser, me)))),
+      .where(and(eq(task.teamId, p.teamId), or(eq(task.assigneeUserId, me), eq(task.createdByUser, me), eq(task.verifySetBy, me)))),
     memory: await db
       .select()
       .from(memoryItem)
@@ -143,13 +143,19 @@ export async function eraseMe(db: Db, p: Principal, confirm: string) {
         notes: sql`(select coalesce(jsonb_agg(case when n->>'user_id' = ${me} then n || '{"text":"[erased]"}'::jsonb else n end), '[]'::jsonb) from jsonb_array_elements(${task.notes}) n)`,
       })
       .where(sql`${task.notes} @> ${JSON.stringify([{ user_id: me }])}::jsonb`);
+    // A blocked reason and a verify tag are typed by a person and carry no author: they go with the tasks the person
+    // created or was assigned, and with the tags they set.
+    await tx
+      .update(task)
+      .set({ blockedReason: null, verifyTag: null, verifySetBy: null })
+      .where(or(eq(task.createdByUser, me), eq(task.assigneeUserId, me)));
+    await tx.update(task).set({ verifyTag: null, verifySetBy: null }).where(eq(task.verifySetBy, me));
     await tx
       .update(task)
       .set({
         assigneeUserId: null,
         assigneeAgentId: null,
         status: sql`case when ${inArray(task.status, OPEN)} then 'todo' else ${task.status} end`,
-        blockedReason: null,
         version: sql`${task.version} + 1`,
         updatedAt: now,
       })

@@ -1,5 +1,5 @@
 {
-  "id": "6af332bf-a6dd-441f-a061-bdf20a6d690a",
+  "id": "d14ef935-104f-4643-8762-ea18a7a2e2a2",
   "prevId": "3c1467fc-5f3d-466c-a031-bc2528694cb3",
   "version": "7",
   "dialect": "postgresql",
@@ -2496,6 +2496,12 @@
         },
         "verify_tag": {
           "name": "verify_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verify_set_by": {
+          "name": "verify_set_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false

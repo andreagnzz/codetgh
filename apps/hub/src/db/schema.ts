@@ -387,6 +387,8 @@ export const task = pgTable(
     prEventAt: timestamp("pr_event_at"),
     // The git tag whose creation on GitHub finishes the task, and why a blocked task is blocked (a teammate's words, or a hub code).
     verifyTag: text("verify_tag"),
+    // Who set the tag: when it arrives, the task is finished only if they could still update the task.
+    verifySetBy: text("verify_set_by"),
     blockedReason: text("blocked_reason"),
     attempts: integer("attempts").notNull().default(0),
     leaseOwner: text("lease_owner"),

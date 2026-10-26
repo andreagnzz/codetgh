@@ -129,6 +129,7 @@ export async function createTask(
         dependsOn: input.depends_on,
         assigneeUserId: assignee?.userId ?? null,
         verifyTag: typeof input.verify === "object" ? input.verify.tag : null,
+        verifySetBy: typeof input.verify === "object" ? p.user.id : null,
         createdByUser: p.user.id,
         createdByAgent: a?.id ?? null,
         runner: input.runner ?? false,
@@ -187,13 +188,13 @@ export async function claimTask(db: Db, p: Principal, a: Agent, input: { task_id
   });
 }
 
-// Any session of the person that is online or idle: the presence rule of team_overview.
-async function hasLiveSession(db: Db, teamId: string, userId: string) {
+// A session of the person that is online or idle (the presence rule of team_overview), on the task's project if it has one.
+async function hasLiveSession(db: Db, teamId: string, userId: string, projectId: string | null) {
   const rows = await db
     .select()
     .from(agent)
     .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), listed()));
-  return rows.some((a) => isSessionAgent(a) && presence(a) !== "offline");
+  return rows.some((a) => isSessionAgent(a) && presence(a) !== "offline" && (!projectId || a.projectId === projectId));
 }
 
 type Patch = {
@@ -228,17 +229,34 @@ export async function updateTask(
   const admin = isAdmin(p);
   const toMe = patch.assignee === "@me" || patch.assignee === `@${p.handle}`;
   // A claimed or in_progress task of a teammate: taking it over keeps its status and its notes.
-  const former = current.assigneeUserId && current.assigneeUserId !== p.user.id ? current.assigneeUserId : null;
-  const takeover = toMe && !!former && (current.status === "claimed" || current.status === "in_progress");
-  if (!(current.assigneeUserId === p.user.id || current.createdByUser === p.user.id || admin)) {
-    const onlyTakeover = Object.entries(patch).every(([k, v]) => v === undefined || k === "assignee" || k === "takeover_note");
-    if (!takeover || !onlyTakeover)
-      throw new HubError(
-        "E_FORBIDDEN",
-        "only the assignee, the creator or an admin can change this task: to take over a teammate's claimed or in_progress task, set assignee @me",
-      );
-    if (!patch.takeover_note && former && (await hasLiveSession(db, p.teamId, former)))
-      throw new HubError("E_FORBIDDEN", "the assignee has a live session: pass takeover_note (1-500 characters) to take the task over");
+  const former =
+    toMe && (current.status === "claimed" || current.status === "in_progress") && current.assigneeUserId !== p.user.id
+      ? current.assigneeUserId
+      : null;
+  const takeover = former !== null;
+  const privileged = current.assigneeUserId === p.user.id || current.createdByUser === p.user.id || admin;
+  const forbidden = (why: string) => new HubError("E_FORBIDDEN", why);
+  // Anyone else may only take over, and nothing else rides along in that request.
+  if (!privileged && !(takeover && Object.entries(patch).every(([k, v]) => v === undefined || k === "assignee" || k === "takeover_note")))
+    throw forbidden(
+      "only the assignee, the creator or an admin can change this task: to take over a teammate's claimed or in_progress task, set assignee @me",
+    );
+  const [was] = former
+    ? await db
+        .select({ handle: membership.handle, role: membership.role })
+        .from(membership)
+        .where(and(eq(membership.userId, former), eq(membership.teamId, p.teamId)))
+    : [];
+  if (former) {
+    if (current.runner || (current.leaseUntil && current.leaseUntil > new Date()))
+      throw forbidden("a runner task, or a task a runner holds, cannot be taken over");
+    const live = await hasLiveSession(db, p.teamId, former, current.projectId);
+    if (live && !patch.takeover_note)
+      throw forbidden("the assignee has a live session: pass takeover_note (1-500 characters) to take the task over");
+    // A plain member waits for the assignee to be gone; the creator or an admin may act with a note.
+    if (!privileged && live) throw forbidden("the assignee has a live session: only the task's creator or an admin can take it over");
+    if (!privileged && (was?.role === "owner" || was?.role === "admin"))
+      throw forbidden("the assignee is an owner or an admin: ask them, or an admin, to hand it over");
   }
   if (patch.takeover_note && !takeover)
     throw new HubError("E_INVALID", "takeover_note goes with assignee @me on a teammate's claimed or in_progress task");
@@ -278,7 +296,10 @@ export async function updateTask(
       .update(task)
       .set({
         ...(patch.status && { status: patch.status, blockedReason: patch.status === "blocked" ? (reason ?? null) : null }),
-        ...(patch.verify && { verifyTag: patch.verify === "none" ? null : patch.verify.tag }),
+        ...(patch.verify && {
+          verifyTag: patch.verify === "none" ? null : patch.verify.tag,
+          verifySetBy: patch.verify === "none" ? null : p.user.id,
+        }),
         ...((patch.assignee || toTodo) && { assigneeUserId: assignee?.userId ?? null, assigneeAgentId: null }),
         ...(notes.length && {
           notes: sql`(${task.notes} || ${JSON.stringify(notes.map((text) => ({ at, user_id: p.user.id, agent_id: a?.id ?? null, text })))}::jsonb)`,
@@ -304,21 +325,16 @@ export async function updateTask(
     });
     return row;
   });
-  if (takeover && former) {
-    const [was] = await db
-      .select({ handle: membership.handle })
-      .from(membership)
-      .where(and(eq(membership.userId, former), eq(membership.teamId, p.teamId)));
+  if (takeover && was) {
     // Same internal send as the shared-claim note: it waits in their console inbox when no session would read it.
-    if (was)
-      await sendMessage(deps, author, {
-        to: `@${was.handle}`,
-        kind: "note",
-        body: `@${p.handle} took over task ${row.id}${patch.takeover_note ? `: ${patch.takeover_note}` : "."}`,
-        priority: "normal",
-        refs: [],
-        allow_offline: true,
-      }).catch(() => {});
+    await sendMessage(deps, author, {
+      to: `@${was.handle}`,
+      kind: "note",
+      body: `@${p.handle} took over task ${row.id}${patch.takeover_note ? `: ${patch.takeover_note}` : "."}`,
+      priority: "normal",
+      refs: [],
+      allow_offline: true,
+    }).catch(() => {});
   }
   return view(db, row);
 }

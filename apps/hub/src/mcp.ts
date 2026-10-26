@@ -356,7 +356,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     "task_update",
     {
       description:
-        "Change a task's status or assignee, or add a note. Pass the version you read (E_VERSION_CONFLICT otherwise). Status blocked needs reason (1-200 characters). in_progress and done need the depends_on tasks done (an owner or admin may pass override_deps). assignee @me on a teammate's claimed or in_progress task takes it over: status and notes stay, they are told; takeover_note (1-500 characters) is required while they have a live session. verify {tag} or none sets or clears the tag that finishes the task.",
+        "Change a task's status or assignee, or add a note. Pass the version you read (E_VERSION_CONFLICT otherwise). Status blocked needs reason (1-200 characters). in_progress and done need the depends_on tasks done (an owner or admin may pass override_deps). assignee @me on a teammate's claimed or in_progress task takes it over: status and notes stay, they are told. A plain member may only when the teammate has no live session on the task's project; while they have one, only the task's creator or an admin may, and takeover_note (1-500 characters) is required. Never a runner task. verify {tag} or none sets or clears the tag that finishes the task.",
       inputSchema: TaskUpdateInput,
       annotations: WRITE,
     },
