@@ -1042,6 +1042,32 @@ describe("codetgh runner restack", () => {
     expect(await row(s.child)).toMatchObject({ status: "review", reviewRound: 0 });
   });
 
+  it("puts the worktree back on the PR's head when the push after a rebase fails, so a retry restacks", async () => {
+    const s = await stack("pushfail");
+    pushToOrigin(s.pBranch, "extra.txt", "more\n");
+    const before = onOrigin(s.child);
+    const hook = join(origin, "hooks/pre-receive");
+    writeFileSync(hook, `#!/bin/sh\nwhile read old new ref; do [ "$ref" = "refs/heads/${s.cBranch}" ] && exit 1; done\nexit 0\n`, {
+      mode: 0o755,
+    });
+    try {
+      await runner();
+    } finally {
+      rmSync(hook);
+    }
+    expect(await row(s.child)).toMatchObject({ status: "blocked", leaseOwner: null });
+    expect(onOrigin(s.child)).toBe(before);
+    expect(git(worktree(s.child), "rev-parse", "HEAD")).toBe(before);
+    expect(git(worktree(s.child), "status", "--porcelain")).toBe("");
+
+    await cli(["run", "retry", s.child]);
+    await runner();
+    await runner();
+    expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: s.pBranch });
+    git(origin, "merge-base", "--is-ancestor", s.pBranch, s.cBranch);
+    expect(git(origin, "rev-list", "--count", `${s.pBranch}..${s.cBranch}`)).toBe("1");
+  });
+
   it("blocks a runner task whose PR was closed without merge", async () => {
     const id = await create("closed unmerged");
     await runner();

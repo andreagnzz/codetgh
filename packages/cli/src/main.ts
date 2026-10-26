@@ -1006,7 +1006,11 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     if (now !== head) {
       untouched();
       step = "git push failed";
-      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]);
+      // Back on the PR's head if the push fails: a retry restacks from there, not from a worktree that no longer matches origin.
+      await git(["-C", wt, "push", "--no-verify", `--force-with-lease=${branch}:${head}`, "origin", branch]).catch(async (e) => {
+        await git(["-C", wt, "reset", "--hard", head]).catch(() => {});
+        throw e;
+      });
       untouched();
     }
     writeFileSync(baseFile, `${target}\n`, { mode: 0o600 });
