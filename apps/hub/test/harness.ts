@@ -24,7 +24,7 @@ import { createPersonalToken } from "../src/tokens.js";
 const SECRET = randomBytes(32).toString("base64");
 
 // Real hub on a random port; PGlite in memory, or a fresh database on TEST_DATABASE_URL.
-export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; config?: Partial<Config> } = {}) {
+export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; config?: Partial<Config>; logs?: string[] } = {}) {
   let app: ReturnType<typeof createApp> | undefined;
   const server = await new Promise<Server>((resolve) => {
     const s = serve({ port: 0, fetch: (req, env) => (app ? app.fetch(req, env) : new Response("starting", { status: 503 })) }, () =>
@@ -69,7 +69,14 @@ export async function startHub(opts: { limiter?: RateLimiter; mailer?: Mailer; c
     loadDataDir: template && !databaseUrl ? new Blob([readFileSync(template)]) : undefined,
   });
   const auth = createAuth(config, db, opts.mailer);
-  app = createApp({ config, db, auth, limiter: opts.limiter, logger: pino({ level: "silent" }), mailer: opts.mailer });
+  app = createApp({
+    config,
+    db,
+    auth,
+    limiter: opts.limiter,
+    logger: opts.logs ? pino({ level: "info" }, { write: (line: string) => void opts.logs?.push(line) }) : pino({ level: "silent" }),
+    mailer: opts.mailer,
+  });
   const hub = { url, db, auth, app, bus: app.bus, pglite, config };
 
   async function stop() {
