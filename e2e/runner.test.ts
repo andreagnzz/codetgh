@@ -76,12 +76,12 @@ if (process.argv[3].includes("VERDICT")) {
   console.log(JSON.stringify({ type: "result", is_error: false, result: review }));
   process.exit(0);
 }
-// Leaves a process behind that rewrites the shared git config after the agent exits.
 // Leaves a process in its own session, out of the agent's process group, that writes to the shared git config.
 if (stdin.includes("SETSID")) {
   const config = join(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim(), "config");
   spawn("setsid", ["sh", "-c", 'sleep 1; echo "# x" >> "$0"', config], { stdio: "ignore", detached: true }).unref();
 }
+// Leaves a process behind that rewrites the shared git config after the agent exits.
 if (stdin.includes("LATEWRITE"))
   spawn("sh", ["-c", "sleep 1; git config alias.late x"], { stdio: "ignore" }).unref();
 // The runner's log folder is gone before the agent prints its result: <config>/worktrees/<project>/<task> is the cwd.

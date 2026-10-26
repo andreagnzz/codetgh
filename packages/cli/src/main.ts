@@ -310,8 +310,6 @@ function banner(io: Io, what: string) {
 const launched = new Map<string, { child: ChildProcess; lastError: string }>();
 const NOT_LISTED = "not in this machine's launcher list";
 
-// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
-// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 // On Windows npm installs claude as claude.cmd, which only runs through cmd.exe: cross-spawn (imported as spawn)
 // finds it and escapes every argument for cmd.exe. Same contract as promisify(execFile), stdout included on failure.
 function exec(cmd: string, args: string[], opts: { timeout: number; input?: string; cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -345,6 +343,8 @@ function stopServer(child: ChildProcess) {
   } catch {}
 }
 
+// One reconciliation pass. The hub only says which projects should be on; the folder comes from the local config and the
+// command is fixed, so a compromised hub can switch a listed project on or off and nothing else.
 async function launcherPass(client: CodeTghClient, projects: Record<string, string>, io: Io) {
   const { targets } = await client.launcherTargets();
   for (const t of targets) {
@@ -1329,7 +1329,6 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
   }
 }
 
-// The token goes to the OS keychain only; the config file holds the hub URL.
 // The token, and through a project's settings.json the plugin itself, travel to this address: plain HTTP only on this machine.
 function hubAddress(raw: string) {
   const url = raw.replace(/\/$/, "");
