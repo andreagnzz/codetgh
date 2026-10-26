@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -10,8 +10,6 @@ beforeAll(async () => {
   await startSession(hub.url, team.malik.token, "malik-wq", { repo: ACME_REPO });
 });
 afterAll(() => hub.stop());
-
-const code = (r: { isError: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);
 
 it("rate-limits a person's writes the way it limits their messages", async () => {
   const sam = await mcpClient(hub.url, team.sam.token);

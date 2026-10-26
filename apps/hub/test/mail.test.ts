@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { consolePost } from "../../../e2e/helpers.js";
 import { membership } from "../src/db/schema.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { createMailer, type Mailer } from "../src/mailer.js";
@@ -17,15 +18,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 it("emails the invitation link and still shows it", async () => {
-  const res = await fetch(`${hub.url}/console/members/invite`, {
-    method: "POST",
-    headers: {
-      cookie: team.lea.cookie,
-      "X-CSRF-Token": await csrf(hub.url, team.lea.cookie),
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ email: "zoe@acme.test", role: "member" }).toString(),
-  });
+  const res = await consolePost(hub.url, team.lea.cookie, "/console/members/invite", { email: "zoe@acme.test", role: "member" });
   const html = await res.text();
   const mail = mailer.outbox.find((m) => m.to === "zoe@acme.test");
   const link = mail?.text.match(/http\S+\/invite\/\S+/)?.[0];

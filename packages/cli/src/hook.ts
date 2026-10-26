@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { ClientRequest as ClientRequestType, IncomingMessage, RequestOptions } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -46,6 +46,8 @@ type State = {
   tried?: string;
   // The hub's agent for this session: MCP calls carry no session, so the pre-tool-use hook names it.
   agent?: string;
+  // The git root the session started in, for codetgh doctor (root is only known once a file is edited).
+  startRoot?: string;
 };
 
 const config = () => ({
@@ -54,8 +56,10 @@ const config = () => ({
 });
 
 // Private to the user, never the shared /tmp: on a shared machine another user could plant a session's state there.
+const stateDir = () => process.env.CODETGH_STATE_DIR || join(process.env.XDG_RUNTIME_DIR || join(homedir(), ".cache"), "codetgh");
+
 function statePath(sessionId: string) {
-  const dir = process.env.CODETGH_STATE_DIR || join(process.env.XDG_RUNTIME_DIR || join(homedir(), ".cache"), "codetgh");
+  const dir = stateDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return join(dir, `codetgh-${createHash("sha256").update(sessionId).digest("hex").slice(0, 16)}.json`);
 }
@@ -65,6 +69,27 @@ export function loadState(sessionId: string): State {
     return JSON.parse(readFileSync(statePath(sessionId), "utf8"));
   } catch {
     return {};
+  }
+}
+
+// codetgh doctor, read only: the sessions that started in this git root and wrote their state within `withinMs`, newest first.
+export function recentStates(root: string, withinMs: number) {
+  const dir = stateDir();
+  try {
+    return readdirSync(dir)
+      .filter((f) => /^codetgh-[0-9a-f]{16}\.json$/.test(f))
+      .flatMap((f) => {
+        try {
+          const ageMs = Date.now() - statSync(join(dir, f)).mtimeMs;
+          const state = JSON.parse(readFileSync(join(dir, f), "utf8")) as State;
+          return ageMs < withinMs && (state.startRoot ?? state.root) === root ? [{ ...state, ageMs }] : [];
+        } catch {
+          return [];
+        }
+      })
+      .sort((a, b) => a.ageMs - b.ageMs);
+  } catch {
+    return [];
   }
 }
 
@@ -233,7 +258,7 @@ async function register(
 async function sessionStart(input: Input) {
   const { url, token } = config();
   if (!url || !token) return warnOnce(input, "CodeTgh: hub URL or token not configured; working without CodeTgh.");
-  const [repo, version] = await Promise.all([
+  const [repo, version, top] = await Promise.all([
     repoAt(input.cwd),
     // Hooks get no Claude Code version: ask the CLI (about 30 ms). On Windows npm installs claude.cmd, which only runs
     // through a shell; the arguments are fixed, so nothing can be injected.
@@ -241,7 +266,16 @@ async function sessionStart(input: Input) {
       (r) => r.stdout.match(/^\d+\.\d+\.\d+/)?.[0],
       () => undefined,
     ),
+    git(input.cwd, ["rev-parse", "--show-toplevel"]),
   ]);
+  // Saved before the hub is asked, so codetgh doctor can tell a session that started here and failed to register.
+  if (input.session_id && top) {
+    let startRoot = top;
+    try {
+      startRoot = realpathSync.native(top);
+    } catch {}
+    saveState(input.session_id, { startRoot });
+  }
   try {
     const registered = await register(input, repo, START_BUDGET_MS, version);
     if ("status" in registered) return warnOnce(input, `CodeTgh: hub answered ${registered.status}; working without CodeTgh.`);
@@ -262,9 +296,10 @@ async function sessionStart(input: Input) {
         // Linked since an earlier start of this session: the other hooks must stop returning early.
         unlinked: false,
       });
-    // The person sees one line saying CodeTgh is on, with its push mode and version, when a session starts or resumes.
+    // The person sees one line saying CodeTgh is on: with its push mode and version when a session starts or resumes, short
+    // after /clear and compaction (the hub chooses by the source).
     const shown =
-      body.status_line && (input.source === "startup" || input.source === "resume")
+      body.status_line && ["startup", "resume", "clear", "compact"].includes(input.source ?? "")
         ? { systemMessage: body.status_line.replace(/\p{Cc}/gu, "") }
         : {};
     return {
@@ -314,7 +349,7 @@ async function userPromptSubmit(input: Input) {
   const mode = input.permission_mode && input.permission_mode !== state.mode ? input.permission_mode : undefined;
   try {
     const res = await hub(
-      `/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}${mode ? `&permission_mode=${encodeURIComponent(mode)}` : ""}`,
+      `/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}&activity=in_turn${mode ? `&permission_mode=${encodeURIComponent(mode)}` : ""}`,
       { timeoutMs: left(PROMPT_BUDGET_MS), headers: state.etag ? { "If-None-Match": state.etag } : {} },
     );
     if (mode && res.status < 500) saveState(input.session_id, { mode });
@@ -407,7 +442,7 @@ async function repoPath(input: Input, state: State) {
     }
   }
   const rel = relative(state.root, join(dir, rest));
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
+  return rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel.split(sep).join("/") : null;
 }
 
 // PreToolUse on Edit/Write: the hub decides from the team's claims; no answer leaves the permission flow unchanged.
@@ -452,8 +487,25 @@ async function postEdit(input: Input) {
   return null;
 }
 
-// Stop: files changed outside the editor tools (shell) that someone else claimed, reported once per file.
+// Stop: the turn is over (idle, posted beside the git check, so the hook costs no more than its slowest call), and files
+// changed outside the editor tools (shell) that someone else claimed.
 async function stop(input: Input) {
+  const { url, token } = config();
+  if (!url || !token || !input.session_id || loadState(input.session_id).unlinked) return null;
+  const [, report] = await Promise.all([
+    hub("/v1/agents/activity", {
+      method: "POST",
+      timeoutMs: Math.min(1500, left(BUDGET_MS)),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: input.session_id, activity: "idle" }),
+    }).catch(() => null),
+    shellEdits(input),
+  ]);
+  return report;
+}
+
+// The shell check of Stop: each file reported once.
+async function shellEdits(input: Input) {
   const { url, token } = config();
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
@@ -522,7 +574,9 @@ async function inbox(input: Input) {
   if (state.unlinked || Date.now() - (state.polledAt ?? 0) < POLL_MS) return null;
   saveState(input.session_id, { polledAt: Date.now() });
   try {
-    const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}`, {
+    // The tool's name rides on the call: the hub keeps the last one a poll saw (not every call), never its input.
+    const tool = input.tool_name ? `&tool=${encodeURIComponent(input.tool_name)}` : "";
+    const res = await hub(`/v1/inbox/prompt?session_id=${encodeURIComponent(input.session_id)}${tool}`, {
       timeoutMs: 2000,
       headers: state.etag ? { "If-None-Match": state.etag } : {},
     });

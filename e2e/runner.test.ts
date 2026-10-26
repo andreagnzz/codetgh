@@ -50,7 +50,7 @@ function fakes() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
@@ -76,14 +76,16 @@ if (process.argv[3].includes("VERDICT")) {
   console.log(JSON.stringify({ type: "result", is_error: false, result: review }));
   process.exit(0);
 }
-// Leaves a process behind that rewrites the shared git config after the agent exits.
 // Leaves a process in its own session, out of the agent's process group, that writes to the shared git config.
 if (stdin.includes("SETSID")) {
   const config = join(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim(), "config");
   spawn("setsid", ["sh", "-c", 'sleep 1; echo "# x" >> "$0"', config], { stdio: "ignore", detached: true }).unref();
 }
+// Leaves a process behind that rewrites the shared git config after the agent exits.
 if (stdin.includes("LATEWRITE"))
   spawn("sh", ["-c", "sleep 1; git config alias.late x"], { stdio: "ignore" }).unref();
+// The runner's log folder is gone before the agent prints its result: <config>/worktrees/<project>/<task> is the cwd.
+if (stdin.includes("RMLOGS")) rmSync(join(process.cwd(), "../../../runner-logs"), { recursive: true });
 if (stdin.includes("WTCONFIG"))
   writeFileSync(execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "config.worktree"], { encoding: "utf8" }).trim(), "[alias]\\n\\tx = !touch pwned\\n");
 if (stdin.includes("FAIL")) {
@@ -124,6 +126,7 @@ if (stdin.includes("SLEEP")) {
     dir,
     "gh",
     `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 const argv = process.argv.slice(2);
@@ -137,6 +140,20 @@ if (argv[1] === "review" && (argv.includes("--approve") || argv.includes("--requ
 // gh pr edit fails on some repositories (a deprecated Projects classic query): the runner falls back to the REST API.
 if (argv[0] === "pr" && argv[1] === "edit" && process.env.FAKE_GH_EDIT_FAIL) {
   console.error("GraphQL: Projects (classic) is being deprecated");
+  process.exit(1);
+}
+// A PR already open for the branch (an earlier attempt opened it): pr list prints it as JSON, pr create refuses a second one.
+// Unless open-pr says otherwise it is the runner's own PR: the worktree's HEAD, on main, from this repository.
+const open = join(dir, "open-pr");
+if (argv[0] === "pr" && argv[1] === "list") {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const own = { headRefOid: head, baseRefName: "main", isCrossRepository: false };
+  const fields = argv.find((a) => a.startsWith("--json=")).slice(7).split(",");
+  const prs = existsSync(open) ? [{ ...own, ...JSON.parse(readFileSync(open, "utf8")) }] : [];
+  console.log(JSON.stringify(prs.map((p) => Object.fromEntries(fields.map((f) => [f, p[f]])))));
+}
+if (argv[0] === "pr" && argv[1] === "create" && existsSync(open)) {
+  console.error("a pull request for branch already exists");
   process.exit(1);
 }
 if (process.argv[2] === "pr" && process.argv[3] === "create") {
@@ -409,7 +426,14 @@ describe("codetgh runner", () => {
     expect(git(wt, "log", "-1", "--format=%an <%ae>%n%s")).toBe("CodeTgh runner <runner@codetgh.invalid>\nplain");
     expect(readdirSync(join(fake, "containers"))).toEqual([]);
 
-    const [pr] = lines("gh.jsonl");
+    const [list, pr] = lines("gh.jsonl");
+    expect(list.argv).toEqual([
+      "pr",
+      "list",
+      `--head=codetgh/${slug(parent)}`,
+      "--state=open",
+      "--json=url,headRefOid,baseRefName,isCrossRepository",
+    ]);
     expect(pr.argv).toEqual([
       "pr",
       "create",
@@ -485,6 +509,51 @@ describe("codetgh runner", () => {
   it("refuses a routing value that could pass for a flag", () => {
     expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, model: "-x" }] }).success).toBe(false);
     expect(RoutingRules.safeParse({ rules: [{ match: { role: "author" }, effort: "--dangerously" }] }).success).toBe(false);
+  });
+
+  // An earlier attempt opened the PR but the hub never heard of it: the task is queued again with no PR, and GitHub has one.
+  async function rerunWithOpenPr(title: string, open: Record<string, unknown>) {
+    const id = await create(title);
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review" });
+    await hub.db.update(task).set({ status: "todo", prNumber: null, leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
+    writeFileSync(join(fake, "open-pr"), JSON.stringify({ url: "https://github.com/acme/webapp/pull/77", ...open }));
+    const creates = lines("gh.jsonl").filter((l) => l.argv[1] === "create").length;
+    try {
+      await runner();
+    } finally {
+      rmSync(join(fake, "open-pr"));
+    }
+    return { id, creates };
+  }
+
+  it("reuses the open PR of the branch when it is this runner's: same commit, same base, same repository", async () => {
+    const { id, creates } = await rerunWithOpenPr("lost update", {});
+    expect(await row(id)).toMatchObject({ status: "review", prNumber: 77 });
+    expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
+  }, 60_000);
+
+  it.each([
+    ["on another commit", { headRefOid: "0".repeat(40) }],
+    ["from a fork", { isCrossRepository: true }],
+    ["against another base", { baseRefName: "release" }],
+  ])(
+    "blocks the task, adopts nothing and opens no PR when an open PR on the branch's name is %s",
+    async (where, open) => {
+      const { id, creates } = await rerunWithOpenPr(`foreign pr ${where}`, open);
+      const r = await row(id);
+      expect(r).toMatchObject({ status: "blocked", prNumber: null });
+      expect(r?.notes.at(-1)?.text).toContain("an open pull request already uses this branch and is not this runner's");
+      expect(lines("gh.jsonl").filter((l) => l.argv[1] === "create")).toHaveLength(creates);
+    },
+    60_000,
+  );
+
+  it("finishes a job whose log cannot be written any more", async () => {
+    const id = await create("RMLOGS");
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review", prNumber: expect.any(Number) });
+    expect(onOrigin(id)).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("blocks a task whose agent made no commit, and opens no PR", async () => {
@@ -1041,6 +1110,32 @@ describe("codetgh runner restack", () => {
     await runner();
     expect(await row(s.child)).toMatchObject({ status: "review", reviewRound: 0 });
   });
+
+  it("puts the worktree back on the PR's head when the push after a rebase fails, so a retry restacks", async () => {
+    const s = await stack("pushfail");
+    pushToOrigin(s.pBranch, "extra.txt", "more\n");
+    const before = onOrigin(s.child);
+    const hook = join(origin, "hooks/pre-receive");
+    writeFileSync(hook, `#!/bin/sh\nwhile read old new ref; do [ "$ref" = "refs/heads/${s.cBranch}" ] && exit 1; done\nexit 0\n`, {
+      mode: 0o755,
+    });
+    try {
+      await runner();
+    } finally {
+      rmSync(hook);
+    }
+    expect(await row(s.child)).toMatchObject({ status: "blocked", leaseOwner: null });
+    expect(onOrigin(s.child)).toBe(before);
+    expect(git(worktree(s.child), "rev-parse", "HEAD")).toBe(before);
+    expect(git(worktree(s.child), "status", "--porcelain")).toBe("");
+
+    await cli(["run", "retry", s.child]);
+    await runner();
+    await runner();
+    expect(await row(s.child)).toMatchObject({ status: "review", baseBranch: s.pBranch });
+    git(origin, "merge-base", "--is-ancestor", s.pBranch, s.cBranch);
+    expect(git(origin, "rev-list", "--count", `${s.pBranch}..${s.cBranch}`)).toBe("1");
+  }, 90_000);
 
   it("blocks a runner task whose PR was closed without merge", async () => {
     const id = await create("closed unmerged");

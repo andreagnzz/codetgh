@@ -147,6 +147,11 @@ export const PUSH_MODES = ["hooks", "rewake", "channel"] as const;
 // added later still registers.
 export const PermissionMode = z.string().regex(/^[A-Za-z]{1,40}$/);
 
+// What the hooks report of a turn: a state (UserPromptSubmit, Stop) and the name of the tool just used (PostToolUse), never its input.
+// The hub reduces the name to a closed vocabulary before it stores it.
+export const ACTIVITY_REPORTS = ["in_turn", "idle"] as const;
+export const ToolName = z.string().regex(/^[A-Za-z0-9_.:-]{1,80}$/);
+
 export const AgentSessionInput = z.object({
   session_id: z.string().min(1).max(200),
   source: z.string().max(40).optional(),
@@ -225,7 +230,17 @@ export const ClaimReleaseInput = z
   .refine((r) => r.claim_ids || r.all_mine, { message: "claim_ids or all_mine is required" });
 
 export const PreEditInput = z.object({ session_id: z.string().min(1).max(200), path: repoPath });
-export const ClaimsCheckRestInput = z.object({ session_id: z.string().min(1).max(200), paths: z.array(repoPath).max(200) });
+// A session, or a repository by its fingerprint (the pre-push hook has no session).
+export const ClaimsCheckRestInput = z
+  .object({
+    session_id: z.string().min(1).max(200).optional(),
+    repo_fingerprint: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    paths: z.array(repoPath).max(200),
+  })
+  .refine((i) => i.session_id || i.repo_fingerprint, { message: "session_id or repo_fingerprint is required" });
 
 export const TASK_STATUSES = ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -243,6 +258,18 @@ export const TaskListInput = z.object({
 
 export const TaskGetInput = z.object({ agent: agentId.optional(), task_id: taskId });
 
+// The tag that finishes a task when it is created on GitHub: a git tag name, in the characters a tag is written with.
+const tagName = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[A-Za-z0-9._/+-]+$/, "a tag name: letters, digits and . _ / + -")
+  .refine(
+    (t) => !t.includes("..") && !t.includes("//") && !/^[-/]|[/.]$|\.lock$|\/\./.test(t) && !t.startsWith("."),
+    "not a git tag name: no .., no leading - or /, no trailing / or ., no .lock, no component starting with .",
+  );
+const taskVerify = z.union([z.object({ tag: tagName }), z.literal("none")]);
+
 export const TaskCreateInput = z.object({
   agent: agentId.optional(),
   title: z.string().min(1).max(200),
@@ -250,6 +277,7 @@ export const TaskCreateInput = z.object({
   paths: z.array(peerPath).max(50).default([]),
   depends_on: z.array(taskId).max(20).default([]),
   assignee: handle.optional(),
+  verify: taskVerify.optional(),
   // For the owner's runner (codetgh runner); only an owner or an admin sets it.
   runner: z.boolean().default(false),
 });
@@ -265,8 +293,15 @@ export const TaskUpdateInput = z.object({
       status: z.enum(TASK_STATUSES).optional(),
       assignee: z.union([handle, z.literal("none")]).optional(),
       note: z.string().min(1).max(500).optional(),
+      verify: taskVerify.optional(),
+      // Required with status blocked.
+      reason: z.string().min(1).max(200).optional(),
+      // With assignee @me on a teammate's task; required when they have a live session.
+      takeover_note: z.string().min(1).max(500).optional(),
+      // An owner or an admin moves a task past dependencies that are not done.
+      override_deps: z.boolean().optional(),
     })
-    .refine((p) => p.status || p.assignee || p.note, { message: "patch needs status, assignee or note" }),
+    .refine((p) => p.status || p.assignee || p.note || p.verify, { message: "patch needs status, assignee, note or verify" }),
 });
 
 export const MEMORY_KINDS = ["decision", "contract", "convention", "note"] as const;
@@ -334,3 +369,6 @@ export const WhoamiSchema = z.object({
   push_allowed_modes: z.array(z.enum(PUSH_MODES)),
 });
 export type Whoami = z.infer<typeof WhoamiSchema>;
+
+// agt_01M5…ABCD: the ends of an agent id, to match a startup line with team_overview.
+export const shortAgentId = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;

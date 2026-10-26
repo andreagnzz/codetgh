@@ -152,8 +152,22 @@
     {
       "idx": 21,
       "version": "7",
-      "when": 1792982968966,
-      "tag": "0021_receipt_message_index",
+      "when": 1792978152311,
+      "tag": "0021_agent_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793012193404,
+      "tag": "0022_task_verify_blocked",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793015005644,
+      "tag": "0023_receipt_message_index",
       "breakpoints": true
     }
   ]

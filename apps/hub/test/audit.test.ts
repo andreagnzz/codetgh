@@ -1,9 +1,10 @@
 import { auditKeyFromSeed, eventHash, signCheckpoint, verifyAudit } from "@codetgh/shared/audit";
 import { and, asc, desc, eq, gt, gte } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { consolePost } from "../../../e2e/helpers.js";
 import { alert, auditCheckpoint, auditEvent, team as teamTable } from "../src/db/schema.js";
 import { appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../src/domain/audit.js";
-import { csrf, type Hub, startHub } from "./harness.js";
+import { type Hub, startHub } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -205,10 +206,7 @@ describe("checkpoint anchor", () => {
 
 describe("console", () => {
   it("lets an admin verify the chain and download a signed export", async () => {
-    const verify = await fetch(`${hub.url}/console/audit/verify`, {
-      method: "POST",
-      headers: { cookie: team.lea.cookie, "X-CSRF-Token": await csrf(hub.url, team.lea.cookie) },
-    });
+    const verify = await consolePost(hub.url, team.lea.cookie, "/console/audit/verify");
     expect(await verify.text()).toContain("Chain intact");
     const res = await fetch(`${hub.url}/console/audit/export`, { headers: { cookie: team.lea.cookie } });
     expect(res.headers.get("content-disposition")).toContain("attachment");

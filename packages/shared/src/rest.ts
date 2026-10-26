@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import { z } from "zod";
 import {
   ACK_STATUSES,
+  ACTIVITY_REPORTS,
   AckInput,
   AgentSessionInput,
   ClaimsCheckRestInput,
@@ -14,6 +15,7 @@ import {
   SendMessageInput,
   StatusSetInput,
   TASK_STATUSES,
+  ToolName,
   taskId,
   WhoamiSchema,
 } from "./index.js";
@@ -24,11 +26,23 @@ export const SessionQuery = z.object({ session_id: z.string().min(1).max(200).op
 const percent = z.coerce.number().int().min(0).max(100).optional();
 const epoch = z.coerce.number().int().min(0).max(4_102_444_800).optional();
 export const StatusQuery = SessionQuery.extend({ five_hour: percent, five_hour_reset: epoch, seven_day: percent, seven_day_reset: epoch });
-// permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes.
+// permission_mode: the prompt hook reports a mode change (shift+tab) on the call it already makes. activity and tool ride
+// the same way (the prompt hook says in_turn, the PostToolUse poll names its tool); a value that does not validate is dropped.
 export const PromptQuery = z.object({
   session_id: z.string().max(200),
   wait_s: z.coerce.number().int().min(0).max(55).optional(),
   permission_mode: PermissionMode.optional(),
+  activity: z.enum(ACTIVITY_REPORTS).optional(),
+  tool: ToolName.optional(),
+});
+export const SessionActivityInput = z.object({ session_id: z.string().min(1).max(200), activity: z.enum(ACTIVITY_REPORTS) });
+// What team_overview and the doctor show of a session: since_s is the age of the report (null: the session never reported);
+// last_tool only while the turn that used it runs.
+export const ActivityOutput = z.object({
+  state: z.enum(["in_turn", "idle", "unknown"]),
+  since_s: z.number().nullable(),
+  last_tool: z.string().optional(),
+  last_tool_age_s: z.number().optional(),
 });
 
 export const ErrorBody = z.object({ code: z.enum(ERROR_CODES), message: z.string() });
@@ -53,6 +67,8 @@ export const ClaimsCheckOutput = z.object({
       holders: z.array(
         z.object({ claim_id: z.string(), handle: z.string(), name: z.string(), mode: z.string(), remaining_min: z.number() }),
       ),
+      // Other people's edits of the last 30 minutes under a claim no longer live, as sentences built from hub values.
+      recent: z.array(z.string()),
     }),
   ),
 });
@@ -162,6 +178,7 @@ export const StatusOutput = z.object({
           label_untrusted: z.string(),
           flags: z.array(z.string()),
           presence: z.enum(["online", "idle"]),
+          activity: ActivityOutput,
           last_seen: z.string(),
           platform: z.string().nullable(),
           delegate_for: z.array(z.string()).nullable(),
@@ -177,6 +194,30 @@ export const StatusOutput = z.object({
   trust: z.string(),
 });
 export const PauseOutput = z.object({ agents_paused: z.boolean() });
+export const MySessionsQuery = z.object({
+  repo_fingerprint: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+// codetgh doctor: the caller's own sessions, and what a repository's fingerprint is for the hub (null without one). Hub ids
+// and presence; the project names are teammates' words.
+export const MySessions = z.object({
+  sessions: z.array(
+    z.object({
+      agent: z.string(),
+      project_id: z.string().nullable(),
+      project_untrusted: z.string(),
+      presence: z.enum(["online", "idle", "offline"]),
+      activity: ActivityOutput,
+      last_seen: z.string(),
+    }),
+  ),
+  repo: z
+    .object({ linked: z.boolean(), project_id: z.string().nullable(), project_untrusted: z.string(), auto_link: z.boolean() })
+    .nullable(),
+  trust: z.string(),
+});
 export const LauncherTargets = z.object({
   targets: z.array(z.object({ project_id: z.string(), project_name: z.string(), desired: z.boolean() })),
 });
@@ -343,6 +384,13 @@ export const REST_ROUTES = {
     output: SessionStarted,
   },
   sessionEnd: { method: "POST", path: "/v1/agents/session/end", summary: "End an agent session", body: SessionEndInput, empty: [204] },
+  sessionActivity: {
+    method: "POST",
+    path: "/v1/agents/activity",
+    summary: "Report that your session is in a turn or idle, as the Stop hook does (204 also for a session that is not yours or not live)",
+    body: SessionActivityInput,
+    empty: [204],
+  },
   preEdit: {
     method: "POST",
     path: "/v1/claims/pre-edit",
@@ -354,14 +402,14 @@ export const REST_ROUTES = {
   claimsCheck: {
     method: "POST",
     path: "/v1/claims/check",
-    summary: "Who holds these paths",
+    summary: "Who holds these paths, from a session or from a repository's fingerprint (other people only)",
     body: ClaimsCheckRestInput,
     output: ClaimsCheckOutput,
   },
   prompt: {
     method: "GET",
     path: "/v1/inbox/prompt",
-    summary: "Unread envelopes for the prompt hook; wait_s holds the request (rewake push)",
+    summary: "Unread envelopes for the prompt hook; wait_s holds the request (rewake push); activity and tool report the session's turn",
     query: PromptQuery,
     output: PromptOutput,
     empty: [204, 304],
@@ -526,6 +574,14 @@ export const REST_ROUTES = {
     summary: "Publish what your agent is on, as status_set does (agent: one of your sessions' agents, from whoami)",
     body: StatusSetInput,
     empty: [204],
+  },
+  mySessions: {
+    method: "GET",
+    path: "/v1/me/sessions",
+    summary:
+      "Read only, for codetgh doctor, members only (403 for a guest): your own sessions (project, presence, activity) and, for a repository fingerprint, its project and whether auto-link applies",
+    query: MySessionsQuery,
+    output: MySessions,
   },
   pause: {
     method: "POST",

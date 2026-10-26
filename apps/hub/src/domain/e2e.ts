@@ -5,6 +5,7 @@ import { memberKey, membership, message, threadKey } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { appendAudit } from "./audit.js";
+import { sentOrReceivedBy } from "./messages.js";
 
 // The hub only relays public keys and wrapped thread keys; it never holds anything that opens a body.
 export async function publishKey(db: Db, p: Principal, publicKey: string) {
@@ -62,9 +63,9 @@ export async function threadKeyForMessage(db: Db, p: Principal, messageId: strin
   const [m] = await db
     .select({ threadId: message.threadId, body: message.body })
     .from(message)
-    .where(and(eq(message.id, messageId), eq(message.teamId, p.teamId)));
+    .where(and(eq(message.id, messageId), eq(message.teamId, p.teamId), sentOrReceivedBy(db, p)));
   const wrapped = m && (await wrappedKeys(db, p, [m.threadId])).get(m.threadId);
-  // Same answer for an unknown message and a thread you hold no key for.
+  // Same answer for an unknown message, one you neither sent nor received, and a thread you hold no key for.
   if (!m || !wrapped) throw new HubError("E_NOT_FOUND", "no key of yours for this message's thread");
   return { thread: m.threadId, wrapped, ciphertext: m.body };
 }

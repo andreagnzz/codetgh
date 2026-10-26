@@ -13,7 +13,7 @@ it("groups the commands: what members use every day first, then admin, then adva
       .map((l) => l.trim().split(/\s/)[0]);
   expect(group("Everyday:")).toEqual(["setup", "doctor", "start", "status", "send", "inbox", "upgrade"]);
   expect(group("Admin:").sort()).toEqual(["audit", "backup", "invite", "launcher", "project", "run", "runner", "update"]);
-  expect(group("Advanced:").sort()).toEqual(["daemon", "help", "keys", "login", "logout", "outbox", "pause", "resume"]);
+  expect(group("Advanced:").sort()).toEqual(["claims", "daemon", "help", "hooks", "keys", "login", "logout", "outbox", "pause", "resume"]);
   expect(help.indexOf("Everyday:")).toBeLessThan(help.indexOf("Admin:"));
   expect(help.indexOf("Admin:")).toBeLessThan(help.indexOf("Advanced:"));
   expect(help).not.toMatch(/^\s+hook\b/m);

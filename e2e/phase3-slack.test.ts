@@ -31,7 +31,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => fake.listen(0, resolve));
   hub = await startHub({
-    logs: logged,
+    logLines: logged,
     config: {
       slackBotToken: "xoxb-test",
       slackSigningSecret: SIGNING,

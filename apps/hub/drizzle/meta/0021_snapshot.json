@@ -1,5 +1,5 @@
 {
-  "id": "ff3137fa-fff7-40e3-9114-0809390cae59",
+  "id": "241ac75f-57f9-4aa9-b33c-7c93d943d85c",
   "prevId": "3c1467fc-5f3d-466c-a031-bc2528694cb3",
   "version": "7",
   "dialect": "postgresql",
@@ -213,6 +213,30 @@
         "permission_mode": {
           "name": "permission_mode",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activity": {
+          "name": "activity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activity_at": {
+          "name": "activity_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_tool": {
+          "name": "last_tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_tool_at": {
+          "name": "last_tool_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -2111,21 +2135,6 @@
             },
             {
               "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "receipt_message_idx": {
-          "name": "receipt_message_idx",
-          "columns": [
-            {
-              "expression": "message_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
