@@ -1,7 +1,7 @@
 import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callTool, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 
 // message_status: what the hub knows of a message's delivery, for its sender and its recipients only.
 let hub: Hub;
@@ -16,13 +16,7 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
-const tool = async (name: string, args: Record<string, unknown>, token = team.sam.token) => {
-  const c = await mcpClient(hub.url, token);
-  const r = await call(c, name, args);
-  await c.close();
-  return { isError: r.isError, out: r.json() };
-};
+const tool = (name: string, args: Record<string, unknown>, token = team.sam.token) => callTool(hub.url, token, name, args);
 const send = (args: Record<string, unknown>) => tool("send_message", { kind: "note", body: "hello", ...args });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

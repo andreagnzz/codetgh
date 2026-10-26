@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { auditEvent, memoryItem, task } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, code, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -14,7 +14,6 @@ afterAll(() => hub.stop());
 
 type Out = { hookSpecificOutput?: { additionalContext?: string } } | null;
 const json = (r: { text: string }) => JSON.parse(r.text.split("\n\n")[0] ?? "null");
-const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 
 it("hands a task over with its whole context, ahead of everything else (scenario 3)", async () => {
   const repo = gitRepo();

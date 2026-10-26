@@ -5,7 +5,7 @@ import { agent, membership } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { createTeam } from "../apps/hub/src/domain/teams.js";
 import { newId } from "../apps/hub/src/ids.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { callTool, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 
 // What E_UNREACHABLE and reach may tell: what team_overview shows the same member, nothing from another team, nothing to a guest.
 let hub: Hub;
@@ -38,12 +38,8 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const send = async (args: Record<string, unknown>, token = team.sam.token) => {
-  const c = await mcpClient(hub.url, token);
-  const r = await call(c, "send_message", { kind: "note", body: "hello", ...args });
-  await c.close();
-  return { isError: r.isError, out: r.json() };
-};
+const send = (args: Record<string, unknown>, token = team.sam.token) =>
+  callTool(hub.url, token, "send_message", { kind: "note", body: "hello", ...args });
 const samSends = (args: Record<string, unknown>) => send({ agent: ids["sam-p1"], ...args });
 
 describe("what the error shows", () => {

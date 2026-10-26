@@ -99,6 +99,12 @@ it("pages alerts and memory with an Older link, and counts the claims it cuts", 
   expect(await get("/console/claims")).toContain("Showing 200 of 210");
 });
 
+it("counts every open alert on the dashboard and lists five of them", async () => {
+  const html = await get("/console");
+  expect(html).toContain("Review alerts (55)");
+  expect(html.split('class="excerpt"')).toHaveLength(6);
+});
+
 it("shows a guest their own agents on the dashboard however many the team runs", async () => {
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
   const html = await get("/console", team.sam.cookie);
