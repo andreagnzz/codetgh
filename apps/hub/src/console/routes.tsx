@@ -383,7 +383,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 ) : (
                   <form hx-post="/console/kill-switch" hx-swap="none">
                     <label>
-                      {_("Reason")} <input name="reason" required maxlength={500} />
+                      {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
                     </label>
                     <button type="submit">{_("Stop agent traffic")}</button>
                   </form>
@@ -576,7 +576,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         />
         <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
           <label>
-            Reply as a human <textarea name="body" required maxlength={8000} rows={3} />
+            Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
           </label>
           <button type="submit">Send</button>
         </form>
