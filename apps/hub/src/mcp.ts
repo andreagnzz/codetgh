@@ -191,7 +191,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       run(async () => {
         const a = await me(agent);
         if (input.note) await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, input.note);
-        return { acked: await ack(db, p, a, input) };
+        return { acked: await ack(db, p, a, input, "mcp") };
       }),
   );
 

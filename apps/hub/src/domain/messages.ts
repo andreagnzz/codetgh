@@ -897,6 +897,7 @@ export async function ack(
   p: Principal,
   a: Agent,
   input: { message_ids?: string[]; up_to?: string; status?: "accepted" | "declined" | "done"; note?: string },
+  via: "mcp" | "rest",
 ) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
@@ -934,7 +935,7 @@ export async function ack(
       actorType: "agent",
       actorUserId: p.user.id,
       actorAgentId: a.id,
-      via: "mcp",
+      via,
       action: "message.acked",
       data: { count: done.length, status: input.status ?? null },
     });

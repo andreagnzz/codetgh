@@ -622,7 +622,7 @@ export function createApp({
     const { agent: agentArg, ...input } = await parse(c, AckInput);
     const a = await restAgent(p, agentArg);
     if (input.note) await assertNoSecrets(deps, { p, agent: a, via: "rest" }, input.note);
-    return c.json({ acked: await ack(db, p, a, input) });
+    return c.json({ acked: await ack(db, p, a, input, "rest") });
   });
 
   // Token SSE for the daemon: message ids only; the event id is the receipt seq, so a reconnect resumes with Last-Event-ID.
