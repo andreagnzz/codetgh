@@ -20,6 +20,7 @@ import {
   InviteInput,
   KeysQuery,
   LauncherReport,
+  MySessionsQuery,
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
@@ -30,6 +31,7 @@ import {
   RunnerRetryInput,
   RunnerStatusQuery,
   RunnerUpdateInput,
+  SessionActivityInput,
   SessionQuery,
   StatusQuery,
 } from "@codetgh/shared/rest";
@@ -58,8 +60,10 @@ import {
   createProject,
   endSession,
   expireStaleSessions,
+  isLaunch,
   registerSession,
   resolveAgent,
+  setActivity,
   setAgentsPaused,
   setPermissionMode,
   setStatus,
@@ -85,9 +89,10 @@ import {
   purgeMessages,
   receivedSince,
   sendMessage,
+  sentView,
   unread,
 } from "./domain/messages.js";
-import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
+import { contextPacket, mySessions, statusLine, teamOverview } from "./domain/overview.js";
 import {
   expireLeases,
   leaseTask,
@@ -170,7 +175,11 @@ export function createApp({
   // The audit key never touches the database: its own seed, or one derived from the hub secret.
   const auditKey = auditKeyFromSeed(config.auditKey ? Buffer.from(config.auditKey, "base64") : deriveAuditSeed(config.secret));
   const signHeads = async () => {
-    for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    try {
+      for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    } catch (e) {
+      logger.error({ err: (e as Error).name }, "checkpoint failed");
+    }
   };
   const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
   checkpointTimer.unref();
@@ -279,7 +288,7 @@ export function createApp({
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
-      ...(agent && { status_line: await statusLine(db, p, agent) }),
+      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(parsed.data.source)) }),
     });
   });
 
@@ -446,6 +455,10 @@ export function createApp({
     if (!agent || agent.endedAt || p.paused) return c.body(null, 204);
     const mode = PromptQuery.shape.permission_mode.safeParse(c.req.query("permission_mode")).data;
     if (mode && mode !== agent.permissionMode) await setPermissionMode(db, agent.id, mode);
+    // The turn rides on this call: the prompt hook says in_turn, the PostToolUse poll names its tool. Bad values are dropped.
+    const activity = PromptQuery.shape.activity.safeParse(c.req.query("activity")).data;
+    const tool = PromptQuery.shape.tool.safeParse(c.req.query("tool")).data;
+    if (activity || tool) await setActivity(db, p, agent.sessionId, { activity, tool });
     const waitS = Math.min(Math.max(Number(c.req.query("wait_s")) || 0, 0), 55);
     if (waitS && !(p.settings.push_allowed_modes ?? []).includes("rewake"))
       throw new HubError("E_FORBIDDEN", "rewake push is not allowed for this team (console Settings)");
@@ -465,6 +478,14 @@ export function createApp({
     }
   });
 
+  // The Stop hook has no call that always runs: it posts the idle state itself. Nothing for a session that is not the caller's.
+  v1.post("/agents/activity", async (c) => {
+    const p = c.get("principal");
+    const { session_id, activity } = await parse(c, SessionActivityInput);
+    if (!p.paused) await setActivity(db, p, session_id, { activity });
+    return c.body(null, 204);
+  });
+
   // CLI, daemon and SDK: the named agent, else one stable agent per token, so an outbox replay lands in the same idempotency scope.
   const restAgent = async (p: Principal, agentArg: string | undefined) => {
     if (agentArg) return resolveAgent(db, p, agentArg, "rest");
@@ -480,13 +501,7 @@ export function createApp({
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
     const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
-    return c.json({
-      id: m.id,
-      thread: m.threadId,
-      hop: m.hop,
-      sent_at: m.createdAt.toISOString(),
-      reach: m.reach,
-    });
+    return c.json(sentView(m));
   });
 
   v1.post("/inbox", async (c) => {
@@ -530,6 +545,12 @@ export function createApp({
   v1.post("/invitations", async (c) =>
     c.json(await inviteMember({ db, mailer, publicUrl: config.publicUrl }, c.get("principal"), await parse(c, InviteInput), "rest")),
   );
+
+  v1.get("/me/sessions", async (c) => {
+    const parsed = MySessionsQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await mySessions(db, c.get("principal"), parsed.data.repo_fingerprint));
+  });
 
   v1.post("/me/pause", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), true)));
   v1.post("/me/resume", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), false)));
@@ -603,8 +624,9 @@ export function createApp({
   });
 
   v1.get("/keys", async (c) => {
-    const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });
-    return c.json(await publicKeys(db, c.get("principal"), handles.split(",").filter(Boolean).slice(0, 20)));
+    const parsed = KeysQuery.safeParse({ handles: c.req.query("handles") ?? "" });
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await publicKeys(db, c.get("principal"), parsed.data.handles.split(",").filter(Boolean).slice(0, 20)));
   });
 
   v1.get("/messages/:message_id/thread-key", async (c) =>
@@ -617,7 +639,7 @@ export function createApp({
     const { agent: agentArg, ...input } = await parse(c, AckInput);
     const a = await restAgent(p, agentArg);
     if (input.note) await assertNoSecrets(deps, { p, agent: a, via: "rest" }, input.note);
-    return c.json({ acked: await ack(db, p, a, input) });
+    return c.json({ acked: await ack(db, p, a, input, "rest") });
   });
 
   // Token SSE for the daemon: message ids only; the event id is the receipt seq, so a reconnect resumes with Last-Event-ID.
@@ -748,7 +770,7 @@ export function createApp({
     }
     // Slack wants an answer within 3 s: acknowledge, then relay.
     if (payload.type === "event_callback" && payload.event)
-      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.message }, "slack event not relayed"));
+      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.name }, "slack event not relayed"));
     return c.body(null, 200);
   });
   app.post("/bridges/slack/commands", bodyLimit({ maxSize: 64 * 1024 }), async (c) => {

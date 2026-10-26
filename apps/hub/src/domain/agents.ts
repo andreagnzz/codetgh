@@ -22,6 +22,27 @@ export function presence(a: Pick<Agent, "lastSeenAt" | "endedAt">, now = Date.no
   return age < 90_000 ? ("online" as const) : age < LIVE_MS ? ("idle" as const) : ("offline" as const);
 }
 
+// A turn is believed for this long without a tool call, unless the session is heard from (online): a session killed without
+// its Stop hook stays in_turn in the database until the 12 h expiry, and reads as unknown from here on.
+const TURN_UNSEEN_MS = 900_000;
+
+export function activityOf(
+  a: Pick<Agent, "activity" | "activityAt" | "lastTool" | "lastToolAt" | "lastSeenAt" | "endedAt">,
+  now = Date.now(),
+) {
+  const secs = (d: Date) => Math.max(0, Math.round((now - d.getTime()) / 1000));
+  if (!a.activity || !a.activityAt) return { state: "unknown" as const, since_s: null };
+  const lastSign = Math.max(a.activityAt.getTime(), a.lastToolAt?.getTime() ?? 0);
+  if (a.activity === "in_turn" && presence(a, now) !== "online" && now - lastSign > TURN_UNSEEN_MS)
+    return { state: "unknown" as const, since_s: secs(a.activityAt) };
+  // The tool belongs to the running turn: one older than the turn's start is the previous turn's.
+  const tool =
+    a.activity === "in_turn" && a.lastTool && a.lastToolAt && a.lastToolAt >= a.activityAt
+      ? { last_tool: a.lastTool, last_tool_age_s: secs(a.lastToolAt) }
+      : {};
+  return { state: a.activity, since_s: secs(a.activityAt), ...tool };
+}
+
 export const oneLine = (s: string, max = 60) => s.replace(/\s+/g, " ").slice(0, max);
 
 // The one rule for a status, in the console and in team_overview: the last status_set until another replaces it, even
@@ -44,6 +65,9 @@ async function personTrust(db: Db, p: Principal) {
 export async function canAutoLink(db: Db, p: Principal) {
   return p.role !== "guest" && p.settings.auto_link_projects !== false && (await personTrust(db, p)) === "trusted";
 }
+
+// claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
+export const isLaunch = (source?: string) => !source || source === "startup" || source === "resume";
 
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
@@ -85,8 +109,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
     // Refused, not dropped: a delegate opt-in must say exactly whom it trusts.
     if (accept.length !== asked.length)
       throw new HubError("E_INVALID", "--accept-requests-from takes active members of your team other than you, not guests");
-    // claude starting or resuming, as codetgh start does; /clear, compaction or a cd re-register the same session.
-    const launched = !input.source || input.source === "startup" || input.source === "resume";
+    const launched = isLaunch(input.source);
     const values = {
       kind: input.kind,
       label,
@@ -251,6 +274,44 @@ export async function touchSession(db: Db, p: Principal, sessionId: string, usag
       })
       .where(eq(membership.id, p.membershipId));
   return rows.length > 0;
+}
+
+// last_tool is a closed vocabulary: Claude Code's built-in tool names (code.claude.com/docs/en/tools-reference; MultiEdit and
+// Task are the older names of Edit and Agent), and three words for the rest. A tool's own name is chosen by whoever wrote its
+// MCP server, so it never reaches the database or another person's Claude, whatever the client sends.
+const BUILT_IN_TOOLS = new Set(
+  `Agent Artifact AskUserQuestion Bash CronCreate CronDelete CronList Edit EndConversation EnterPlanMode EnterWorktree ExitPlanMode
+  ExitWorktree Glob Grep ListAgents ListMcpResourcesTool LSP Monitor MultiEdit NotebookEdit PowerShell PushNotification Read
+  ReadMcpResourceTool RemoteTrigger ReportFindings ScheduleWakeup SendFeedback SendMessage SendUserFile ShareOnboardingGuide Skill
+  SubagentHandback Task TaskCreate TaskGet TaskList TaskOutput TaskStop TaskUpdate TodoWrite ToolSearch WaitForMcpServers WebFetch
+  WebSearch Workflow Write`.split(/\s+/),
+);
+const toolClass = (name: string) =>
+  BUILT_IN_TOOLS.has(name) ? name : name.startsWith("mcp__plugin_codetgh_") ? "codetgh" : name.startsWith("mcp__") ? "mcp" : "other";
+
+// The hooks' report of a turn, for the caller's own live session only, like touchSession. Not audited: presence-like
+// bookkeeping, a state and a tool class. A tool in use means a turn is running, so a wake-up that has no prompt hook still
+// reads in_turn; a turn already running keeps its start.
+export async function setActivity(db: Db, p: Principal, sessionId: string, report: { activity?: "in_turn" | "idle"; tool?: string }) {
+  const mine = and(
+    eq(agent.teamId, p.teamId),
+    eq(agent.userId, p.user.id),
+    eq(agent.sessionId, sessionId),
+    isNull(agent.endedAt),
+    isNull(agent.removedAt),
+  );
+  const now = new Date();
+  if (report.activity) await db.update(agent).set({ activity: report.activity, activityAt: now }).where(mine);
+  if (report.tool) {
+    await db
+      .update(agent)
+      .set({ lastTool: toolClass(report.tool), lastToolAt: now })
+      .where(mine);
+    await db
+      .update(agent)
+      .set({ activity: "in_turn", activityAt: now })
+      .where(and(mine, or(isNull(agent.activity), ne(agent.activity, "in_turn"))));
+  }
 }
 
 export async function agentBySession(db: Db, p: Principal, sessionId: string) {

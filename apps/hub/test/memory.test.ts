@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
 import { agent, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -12,7 +12,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 const json = (r: { text: string }) => JSON.parse(r.text.split("\n\n")[0] ?? "null");
 
 const decide = (cookie: string, id: string, decision: "accept" | "reject", note = "") =>
