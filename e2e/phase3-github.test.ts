@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message, project, thread } from "../apps/hub/src/db/schema.js";
+import { auditEvent, message, project, task, thread } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -116,5 +116,93 @@ describe("GitHub bridge (phase 3)", () => {
     expect((await deliver("pull_request", { ...pr("opened"), repository: { full_name: "acme/other", html_url: "" } })).status).toBe(202);
     expect((await deliver("ping", { zen: "hi" })).status).toBe(202);
     expect((await hub.db.select().from(message)).length).toBe(before);
+  });
+});
+
+describe("verify tags (a tag created on GitHub finishes the tasks that wait for it)", () => {
+  const tagEvent = (ref: string, repo = "acme/webapp", extra: Record<string, unknown> = {}) => ({
+    ref,
+    ref_type: "tag",
+    master_branch: "main",
+    repository: { full_name: repo, html_url: `https://github.com/${repo}` },
+    sender: { login: "octocat" },
+    ...extra,
+  });
+  const row = async (id: string) => (await hub.db.select().from(task).where(eq(task.id, id)))[0];
+  const verifyAudit = async (id: string) =>
+    (await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, id))).filter((e) => e.action === "task.verified_by_tag");
+  let web = "";
+  let billing = "";
+  let lea: Awaited<ReturnType<typeof mcpClient>>;
+  beforeAll(async () => {
+    web =
+      (await startSession(hub.url, team.lea.token, "lea-gh", { repo: repoFingerprint("git@github.com:Acme/WebApp.git") })).agent_id ?? "";
+    billing =
+      (await startSession(hub.url, team.lea.token, "lea-bill", { repo: repoFingerprint("git@github.com:acme/billing.git") })).agent_id ??
+      "";
+    lea = await mcpClient(hub.url, team.lea.token);
+  });
+  afterAll(() => lea.close());
+  const make = async (agent: string, title: string, tag: string) =>
+    JSON.parse((await call(lea, "task_create", { agent, title, verify: { tag } })).text).id as string;
+
+  it("moves each matching task to done, as the hub, with a note and an audit of metadata only", async () => {
+    const todo = await make(web, "Répétition v11", "step-02-harness");
+    const blocked = await make(web, "Blocked one", "step-02-harness");
+    await hub.db
+      .update(task)
+      .set({ status: "blocked", blockedReason: "waiting", assigneeUserId: team.sam.userId })
+      .where(eq(task.id, blocked));
+    const before = await row(todo);
+
+    expect((await deliver("create", tagEvent("step-02-harness"), undefined, hookUrl, "delivery-tag-1")).status).toBe(202);
+    const done = await row(todo);
+    expect(done).toMatchObject({ status: "done", version: (before?.version ?? 0) + 1, leaseOwner: null });
+    expect(done?.notes.at(-1)?.text).toBe("verified by tag step-02-harness");
+    const moved = await row(blocked);
+    expect(moved).toMatchObject({ status: "done", blockedReason: null, assigneeUserId: team.sam.userId });
+
+    const [event] = await verifyAudit(todo);
+    expect(event).toMatchObject({ actorType: "hub", via: "system", subjectId: todo });
+    expect(event?.data).toMatchObject({ tag: "step-02-harness", delivery: "delivery-tag-1", status: "done" });
+    expect(JSON.stringify(event?.data)).not.toContain("octocat");
+  });
+
+  it("changes nothing for a replay, a tag of another repository, another project's task, or a task that is not open", async () => {
+    const mine = await make(web, "Waits for v2", "v2.0.0");
+    const finished = await make(web, "Already done", "v2.0.0");
+    const cancelled = await make(web, "Cancelled", "v2.0.0");
+    const loose = await make(web, "No project", "v2.0.0");
+    await hub.db.update(task).set({ status: "done" }).where(eq(task.id, finished));
+    await hub.db.update(task).set({ status: "cancelled" }).where(eq(task.id, cancelled));
+    await hub.db.update(task).set({ projectId: null }).where(eq(task.id, loose));
+    const snapshot = async (ids: string[]) => JSON.stringify(await Promise.all(ids.map(row)));
+    const untouched = await snapshot([mine, finished, cancelled, loose]);
+
+    // The tag is made in acme/billing, another known project, or in a repository nobody linked.
+    expect((await deliver("create", tagEvent("v2.0.0", "acme/billing"))).status).toBe(202);
+    expect((await deliver("create", tagEvent("v2.0.0", "acme/unknown"))).status).toBe(202);
+    // A branch with the same name, another tag, a forged signature, no repository.
+    expect((await deliver("create", tagEvent("v2.0.0", "acme/webapp", { ref_type: "branch" }))).status).toBe(202);
+    expect((await deliver("create", tagEvent("v2.0.1"))).status).toBe(202);
+    expect((await deliver("create", tagEvent("v2.0.0"), "sha256=00")).status).toBe(401);
+    expect((await deliver("create", { ...tagEvent("v2.0.0"), repository: undefined })).status).toBe(202);
+    expect(await snapshot([mine, finished, cancelled, loose])).toBe(untouched);
+
+    // The other project's task waits for the same tag name: only a tag of its own repository counts.
+    const theirs = await make(billing, "Billing waits for v2", "v2.0.0");
+    const others = [theirs, finished, cancelled, loose];
+    const before = await snapshot(others);
+    expect((await deliver("create", tagEvent("v2.0.0"), undefined, hookUrl, "delivery-tag-2")).status).toBe(202);
+    expect((await row(mine))?.status).toBe("done");
+    expect(await snapshot(others)).toBe(before);
+    expect((await row(theirs))?.status).toBe("todo");
+
+    // The same delivery again, or the same body under another delivery id: nothing moves, nothing is written.
+    const settled = await snapshot([mine, ...others]);
+    expect((await deliver("create", tagEvent("v2.0.0"), undefined, hookUrl, "delivery-tag-2")).status).toBe(202);
+    expect((await deliver("create", tagEvent("v2.0.0"), undefined, hookUrl, "delivery-tag-3")).status).toBe(202);
+    expect(await snapshot([mine, ...others])).toBe(settled);
+    expect(await verifyAudit(mine)).toHaveLength(1);
   });
 });
