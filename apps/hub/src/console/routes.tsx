@@ -1476,9 +1476,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       memoryAcceptViaMcp: f.memory_accept_via_mcp === "on",
       slackChannel: f.slack_channel || undefined,
       loopOrchestrator: f.loop_orchestrator?.replace(/^@/, "") || undefined,
-      claimsEnforcement: (CLAIM_ENFORCEMENT as readonly string[]).includes(f.claims_enforcement ?? "")
-        ? (f.claims_enforcement as "ask")
-        : undefined,
+      claimsEnforcement: CLAIM_ENFORCEMENT.find((l) => l === f.claims_enforcement),
     });
     return refresh(c);
   });
