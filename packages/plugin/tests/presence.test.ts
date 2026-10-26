@@ -308,6 +308,40 @@ test(
   },
 );
 
+// The team's status text and note after the first poll at 100 %, for the given plan windows.
+async function limitTexts($: Engine, on: On, windows: SessionRateLimit[]) {
+  const s = stubs(
+    on,
+    (e) => {
+      if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+      if (e.method === "POST") return ok("{}");
+      return ok(body({}));
+    },
+    () => windows,
+  );
+  await start($);
+  await s.clock.advance(1);
+  return s.requests.filter((r) => r.method === "POST").map((r) => JSON.parse(r.body ?? "{}"));
+}
+
+test(
+  "usage limit: names the window that lasts longest and the date of its reset",
+  { options: { ...OPTIONS, push_mode: "rewake" } },
+  async ($, on) => {
+    const [status, note] = await limitTexts($, on, [
+      { kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T02:00:00.000Z" },
+      { kind: "seven_day", percentUsed: 100, resetsAt: "1970-01-04T14:30:00.000Z" },
+    ]);
+    expect(status.text).toBe("Hit the Claude usage limit, back around 01-04 14:30 UTC");
+    expect(note.body).toContain("back around 01-04 14:30 UTC");
+  },
+);
+
+test("usage limit: gives the date when the reset is days away", { options: { ...OPTIONS, push_mode: "rewake" } }, async ($, on) => {
+  const [status] = await limitTexts($, on, [{ kind: "seven_day", percentUsed: 100, resetsAt: "1970-01-04T14:30:00.000Z" }]);
+  expect(status.text).toBe("Hit the Claude usage limit, back around 01-04 14:30 UTC");
+});
+
 test(
   "usage limit: a failed usage reading leaves the limit as it was, and tells the team nothing",
   { options: { ...OPTIONS, push_mode: "rewake" } },
