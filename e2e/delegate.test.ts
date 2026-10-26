@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { call, callOnce, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { consolePost, hookEnv, runHook } from "./helpers.js";
+import { consolePost, hookEnv, hubRest, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -16,10 +16,11 @@ const ids: Record<string, string> = {};
 
 // The session-start hook's registration, with the list codetgh start --accept-requests-from passes on.
 const register = async (token: string, session: string, repo: string, accept?: string[]) => {
-  const res = await fetch(`${hub.url}/v1/agents/session`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ session_id: session, source: "startup", repo_fingerprint: repo, accept_requests_from: accept }),
+  const res = await hubRest(hub.url, token, "POST", "/v1/agents/session", {
+    session_id: session,
+    source: "startup",
+    repo_fingerprint: repo,
+    accept_requests_from: accept,
   });
   return ((await res.json()) as { agent_id: string }).agent_id;
 };
@@ -138,10 +139,11 @@ describe("delegation does not chain or outlive its opt-in", () => {
 
     // No other path sets the attribute: send_message and REST ignore a delegate field.
     await call(client, "send_message", { agent: sam, to: `agent:${malik}`, kind: "request", body: "via send_message", delegate: malik });
-    await fetch(`${hub.url}/v1/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ to: `agent:${malik}`, kind: "request", body: "via rest", delegate: malik }),
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/messages", {
+      to: `agent:${malik}`,
+      kind: "request",
+      body: "via rest",
+      delegate: malik,
     });
     await client.close();
     const seen = await prompt(team.malik.token, "malik-chain");
@@ -152,17 +154,13 @@ describe("delegation does not chain or outlive its opt-in", () => {
 
   it("is no delegate after a resume without the option", async () => {
     await register(team.sam.token, "sam-resume", P1, ["@lea"]);
-    await fetch(`${hub.url}/v1/agents/session`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ session_id: "sam-resume", source: "compact", repo_fingerprint: P1 }),
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
+      session_id: "sam-resume",
+      source: "compact",
+      repo_fingerprint: P1,
     });
     // The chain test's delegate ends, so only sam-resume could take the request.
-    await fetch(`${hub.url}/v1/agents/session/end`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ session_id: "sam-chain" }),
-    });
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session/end", { session_id: "sam-chain" });
     const r = await request(team.lea.token, ids.lea ?? "", "after a plain compact");
     expect(r.text).toContain("E_NO_DELEGATE");
   });
@@ -170,11 +168,7 @@ describe("delegation does not chain or outlive its opt-in", () => {
   it("is no delegate after the session ends, even if it starts again with the same id and no option", async () => {
     await register(team.sam.token, "sam-end", P1, ["@lea"]);
     expect((await request(team.lea.token, ids.lea ?? "", "while live")).isError).toBe(false);
-    await fetch(`${hub.url}/v1/agents/session/end`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ session_id: "sam-end" }),
-    });
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session/end", { session_id: "sam-end" });
     const [row] = await hub.db.select().from(agent).where(eq(agent.sessionId, "sam-end"));
     expect(row?.acceptRequestsFrom).toBeNull();
     await register(team.sam.token, "sam-end", P1);
@@ -214,10 +208,11 @@ describe("delegation stays on the project it was granted for", () => {
 
   it("ends when the session moves into another repository, even with the option still in its environment", async () => {
     await register(team.sam.token, "sam-cd", P1, ["@lea"]);
-    await fetch(`${hub.url}/v1/agents/session`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ session_id: "sam-cd", source: "cwd-changed", repo_fingerprint: P2, accept_requests_from: ["@lea"] }),
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
+      session_id: "sam-cd",
+      source: "cwd-changed",
+      repo_fingerprint: P2,
+      accept_requests_from: ["@lea"],
     });
     expect(await delegate("sam-cd")).toBeNull();
     expect((await request(team.lea.token, ids.leaP2 ?? "", "billing task")).text).toContain("E_NO_DELEGATE");
@@ -234,11 +229,7 @@ describe("delegation stays on the project it was granted for", () => {
 
 describe("only a member's own launch turns a session into a delegate", () => {
   const raw = (token: string, body: Record<string, unknown>) =>
-    fetch(`${hub.url}/v1/agents/session`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ source: "startup", repo_fingerprint: P1, ...body }),
-    });
+    hubRest(hub.url, token, "POST", "/v1/agents/session", { source: "startup", repo_fingerprint: P1, ...body });
   const row = async (userId: string, session: string) =>
     (await hub.db.select().from(agent).where(eq(agent.sessionId, session))).find((a) => a.userId === userId);
   const asRole = async (userId: string, role: "guest" | "member") =>

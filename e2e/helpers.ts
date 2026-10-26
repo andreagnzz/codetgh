@@ -78,6 +78,13 @@ export const hookEnv = (url: string, token: string) => ({
   CODETGH_STATE_DIR: mkdtempSync(join(tmpdir(), "codetgh-hook-")),
 });
 
+export const hubRest = (url: string, token: string, method: string, path: string, body?: unknown) =>
+  fetch(`${url}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
 export async function csrfToken(url: string, cookie: string) {
   const html = await (await fetch(`${url}/console`, { headers: { cookie } })).text();
   const m = html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;|"X-CSRF-Token":"([^"]+)"/);

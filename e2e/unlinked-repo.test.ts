@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { additionalContext, consolePost, gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
+import { additionalContext, consolePost, gitRepo, hookEnv, hubRest, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -135,10 +135,9 @@ it("delivers again once an admin links the repository and the session resumes", 
   const start = await runHook("session-start", { session_id: "sam-late", source: "startup", cwd: repo }, env);
   expect(start.out).toEqual({ systemMessage: ASK_ADMIN });
 
-  const linked = await fetch(`${hub.url}/v1/projects`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ name: "late-link", repo_fingerprint: repoFingerprint(origin) }),
+  const linked = await hubRest(hub.url, team.lea.token, "POST", "/v1/projects", {
+    name: "late-link",
+    repo_fingerprint: repoFingerprint(origin),
   });
   expect(linked.status).toBeLessThan(300);
   const resumed = await runHook("session-start", { session_id: "sam-late", source: "resume", cwd: repo }, env);
