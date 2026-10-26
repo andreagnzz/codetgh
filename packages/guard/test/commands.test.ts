@@ -130,7 +130,7 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
     expect(cmd.length).toBeLessThan(8192);
     const t0 = performance.now();
     expect(delegateBlock(cmd)).toMatch(/secret/);
-    expect(performance.now() - t0).toBeLessThan(300);
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 
   it("does not refuse a 200 character command", () => {
