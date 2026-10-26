@@ -71,7 +71,7 @@ You talk to your Claude in plain words; it calls the CodeTgh tools.
 | Let agents code it while you sleep | `/codetgh:split --run spec.md`, with the [runner](#runner) on; review and merge the PRs |
 | See what the runner does | `codetgh run status`: ready, in progress, in review (PR and round), blocked (reason), done |
 | Retry a blocked runner task | `codetgh run retry <task>`, on the runner's machine, once you have looked at why it blocked |
-| See who is where | "Who is online and on what?", `codetgh status`, or the console filtered by project |
+| See who is where | "Who is online and on what?", `codetgh status`, or the console filtered by project; `team_overview` also says whether each session is in a turn (with its last tool) or idle |
 | Avoid editing the same file | Automatic: Claude claims what it edits and warns or asks before touching someone else's |
 | Hit your Claude limit | Automatic: a handoff at 90 %, your teammates told at 100 % and again when you are back |
 | Keep a decision | "Propose to team memory: …"; a person accepts it in the console, then every session reads it |
@@ -143,7 +143,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | --- | --- |
 | `codetgh setup` | Guided install for an admin or a teammate |
 | `codetgh start` | Launch Claude Code here with CodeTgh on, for this session only; `--accept-requests-from` makes it a delegate session |
-| `codetgh doctor` | Health check: hub, token, plugin, hooks, Claude Code version |
+| `codetgh doctor` | Health check: hub, token, plugin, hooks, Claude Code version, and a read-only "Sessions" section that says why a session of this folder is missing (not started with `codetgh start`, repository not linked, other project) |
 | `codetgh status` | Who is online, your unread messages, current file claims |
 | `codetgh send` / `inbox` | Send a message, read yours |
 | `codetgh upgrade` | Update the CLI and the Claude Code plugin from your hub |

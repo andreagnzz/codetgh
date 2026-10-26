@@ -1,5 +1,5 @@
 {
-  "id": "d14ef935-104f-4643-8762-ea18a7a2e2a2",
+  "id": "241ac75f-57f9-4aa9-b33c-7c93d943d85c",
   "prevId": "3c1467fc-5f3d-466c-a031-bc2528694cb3",
   "version": "7",
   "dialect": "postgresql",
@@ -213,6 +213,30 @@
         "permission_mode": {
           "name": "permission_mode",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activity": {
+          "name": "activity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activity_at": {
+          "name": "activity_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_tool": {
+          "name": "last_tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_tool_at": {
+          "name": "last_tool_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -880,27 +904,6 @@
           ],
           "isUnique": false,
           "where": "\"claim\".\"released_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "claim_recent_idx": {
-          "name": "claim_recent_idx",
-          "columns": [
-            {
-              "expression": "team_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2491,24 +2494,6 @@
         "pr_event_at": {
           "name": "pr_event_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verify_tag": {
-          "name": "verify_tag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verify_set_by": {
-          "name": "verify_set_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "blocked_reason": {
-          "name": "blocked_reason",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
