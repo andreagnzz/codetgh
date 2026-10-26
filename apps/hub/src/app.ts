@@ -170,7 +170,11 @@ export function createApp({
   // The audit key never touches the database: its own seed, or one derived from the hub secret.
   const auditKey = auditKeyFromSeed(config.auditKey ? Buffer.from(config.auditKey, "base64") : deriveAuditSeed(config.secret));
   const signHeads = async () => {
-    for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    try {
+      for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    } catch (e) {
+      logger.error({ err: (e as Error).name }, "checkpoint failed");
+    }
   };
   const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
   checkpointTimer.unref();
