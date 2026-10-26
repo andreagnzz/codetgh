@@ -429,7 +429,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   // stays between them, admins excepted.
   async function recentLine(p: Principal) {
     const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
-    return db
+    const rows = await db
       .select({ message, name: user.name })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
@@ -437,6 +437,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine), isAdmin(p) ? undefined : sentOrReceivedBy(db, p)))
       .orderBy(desc(message.createdAt))
       .limit(40);
+    // An answer sent without `to` is stored as user:<id> or agent:<id>: the line shows the person's handle.
+    const ids = (prefix: string) =>
+      [...new Set(rows.flatMap((r) => r.message.to).filter((a) => a.startsWith(prefix)))].map((a) => a.slice(prefix.length));
+    const users = ids("user:");
+    const agents = ids("agent:");
+    const handles = new Map<string, string>();
+    if (users.length)
+      for (const r of await db
+        .select({ id: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), inArray(membership.userId, users))))
+        handles.set(`user:${r.id}`, `@${r.handle}`);
+    if (agents.length)
+      for (const r of await db
+        .select({ id: agent.id, handle: membership.handle })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(and(eq(agent.teamId, p.teamId), inArray(agent.id, agents))))
+        handles.set(`agent:${r.id}`, `@${r.handle}`);
+    return rows.map((r) => ({ ...r, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
   }
 
   consoleApp.get("/threads", async (c) => {

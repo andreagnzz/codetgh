@@ -72,3 +72,20 @@ it("keeps a reply addressed to one person off the other members' activity line",
   await lea.close();
   await sam.close();
 });
+
+it("names the recipient of an answer on the activity line instead of its internal address", async () => {
+  await startSession(hub.url, team.lea.token, "lea-who");
+  await startSession(hub.url, team.sam.token, "sam-who");
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const sam = await mcpClient(hub.url, team.sam.token);
+  await call(lea, "send_message", { to: "@sam", kind: "question", body: "Where is staging?", allow_offline: true });
+  const [q] = await hub.db.select().from(message).where(eq(message.body, "Where is staging?"));
+  await call(sam, "send_message", { reply_to: q?.id, kind: "answer", body: "On the usual box." });
+  const [a] = await hub.db.select().from(message).where(eq(message.body, "On the usual box."));
+
+  const html = await dashboard(team.lea.cookie);
+  expect(html).toContain(`data-mid="${a?.id}" data-summary="New message: Sam (agent) → @lea"`);
+  expect(html).not.toMatch(/agent:agt_|user:usr_/);
+  await lea.close();
+  await sam.close();
+});

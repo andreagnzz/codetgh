@@ -122,6 +122,7 @@ const FR: Record<string, string> = {
   "(agent)": "(agent)",
   "New message": "Nouveau message",
   "the thread": "le fil",
+  "a teammate": "un coéquipier",
   to: "à",
   // Kinds
   question: "question",

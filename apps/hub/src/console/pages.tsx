@@ -292,7 +292,7 @@ type LineRow = {
 export const Line: FC<{ rows: LineRow[]; _: ((s: string) => string) & { lang: Lang }; archived?: boolean }> = ({ rows, _, archived }) => (
   <ol class={archived ? "line archived" : "line"}>
     {rows.map(({ message: m, name }) => {
-      const to = m.to.map((a) => (a.startsWith("thread:") ? _("the thread") : a)).join(", ");
+      const to = m.to.map((a) => (a.startsWith("thread:") ? _("the thread") : /^(user|agent):/.test(a) ? _("a teammate") : a)).join(", ");
       const from = `${name}${m.authoredBy === "agent" ? ` ${_("(agent)")}` : ""}`;
       return (
         <li class="wire-row" data-mid={m.id} data-summary={`${_("New message")}: ${from} → ${to}`}>
