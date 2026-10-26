@@ -607,8 +607,9 @@ export function createApp({
   });
 
   v1.get("/keys", async (c) => {
-    const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });
-    return c.json(await publicKeys(db, c.get("principal"), handles.split(",").filter(Boolean).slice(0, 20)));
+    const parsed = KeysQuery.safeParse({ handles: c.req.query("handles") ?? "" });
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await publicKeys(db, c.get("principal"), parsed.data.handles.split(",").filter(Boolean).slice(0, 20)));
   });
 
   v1.get("/messages/:message_id/thread-key", async (c) =>

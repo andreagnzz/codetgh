@@ -46,3 +46,10 @@ it("hands a thread's key and ciphertext only for messages the caller sent or rec
   expect((await threadKey(team.lea.token, privateReply)).status).toBe(200);
   expect((await threadKey(team.sam.token, privateReply)).status).toBe(200);
 });
+
+it("answers a bad keys query with 400, not 500", async () => {
+  const tooLong = await api(team.lea.token, `/keys?handles=${"a".repeat(501)}`);
+  expect(tooLong.status).toBe(400);
+  expect(((await tooLong.json()) as { code: string }).code).toBe("E_INVALID");
+  expect((await api(team.lea.token, "/keys?handles=@lea,@sam")).status).toBe(200);
+});
