@@ -192,6 +192,30 @@ export const StatusOutput = z.object({
   trust: z.string(),
 });
 export const PauseOutput = z.object({ agents_paused: z.boolean() });
+export const MySessionsQuery = z.object({
+  repo_fingerprint: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+// codetgh doctor: the caller's own sessions, and what a repository's fingerprint is for the hub (null without one). Hub ids
+// and presence; the project names are teammates' words.
+export const MySessions = z.object({
+  sessions: z.array(
+    z.object({
+      agent: z.string(),
+      project_id: z.string().nullable(),
+      project_untrusted: z.string(),
+      presence: z.enum(["online", "idle", "offline"]),
+      activity: ActivityOutput,
+      last_seen: z.string(),
+    }),
+  ),
+  repo: z
+    .object({ linked: z.boolean(), project_id: z.string().nullable(), project_untrusted: z.string(), auto_link: z.boolean() })
+    .nullable(),
+  trust: z.string(),
+});
 export const LauncherTargets = z.object({
   targets: z.array(z.object({ project_id: z.string(), project_name: z.string(), desired: z.boolean() })),
 });
@@ -548,6 +572,14 @@ export const REST_ROUTES = {
     summary: "Publish what your agent is on, as status_set does (agent: one of your sessions' agents, from whoami)",
     body: StatusSetInput,
     empty: [204],
+  },
+  mySessions: {
+    method: "GET",
+    path: "/v1/me/sessions",
+    summary:
+      "Read only, for codetgh doctor: your own sessions (project, presence, activity) and, for a repository fingerprint, its project and whether auto-link applies",
+    query: MySessionsQuery,
+    output: MySessions,
   },
   pause: {
     method: "POST",

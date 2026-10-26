@@ -619,6 +619,8 @@ La place de marché est un dépôt GitHub avec un fichier .claude-plugin/marketp
 
 La matrice d'essais de la phase 0 croise MCP_SDK_GENERATION (v1, v2) et MCP_PROTOCOL_NEGOTIATION (auto, legacy) avec macOS, Linux et Windows.
 
+codetgh doctor, section « Sessions » (lecture seule : il n'enregistre rien et ne lie aucun dépôt ; un invité peut l'utiliser). Il lit GET /v1/me/sessions, réservée au jeton personnel de l'appelant, qui donne ses propres agents de session (projet, présence, activité, dernière vue) et, pour l'empreinte de l'origine git du dossier, si un projet est lié, lequel, et si le lien automatique s'appliquerait ; il y joint l'état local des hooks (CODETGH_STATE_DIR) des sessions démarrées dans la racine git du dossier depuis moins de 24 h (`unlinked`, `projectless`, `agent`, âge) ; SessionStart garde pour cela cette racine (`startRoot`) dans l'état local, avant d'interroger le hub. Il conclut par une ligne, en `warn` sans changer le code de sortie : aucune session enregistrée depuis ce dossier (Claude n'a pas été lancé avec `codetgh start`, ou le plugin n'est pas actif dans la session), dépôt non lié (le lien automatique est coupé), session sur un autre projet, « le hub connaît N sessions de vous, aucune de ce dossier », ou `ok all good: <agent>, <projet>, <présence>, <activité>`.
+
 ## claude.ai et autres clients
 
 claude.ai appelle le hub depuis le cloud d'Anthropic et dispose des mêmes outils que Claude Code, mais sans hooks : la lecture y est à la demande, jamais automatique.

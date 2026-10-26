@@ -20,6 +20,7 @@ import {
   InviteInput,
   KeysQuery,
   LauncherReport,
+  MySessionsQuery,
   PromptQuery,
   PublishKeyInput,
   RevokeInvitationsInput,
@@ -90,7 +91,7 @@ import {
   sendMessage,
   unread,
 } from "./domain/messages.js";
-import { contextPacket, statusLine, teamOverview } from "./domain/overview.js";
+import { contextPacket, mySessions, statusLine, teamOverview } from "./domain/overview.js";
 import {
   expireLeases,
   leaseTask,
@@ -545,6 +546,12 @@ export function createApp({
   v1.post("/invitations", async (c) =>
     c.json(await inviteMember({ db, mailer, publicUrl: config.publicUrl }, c.get("principal"), await parse(c, InviteInput), "rest")),
   );
+
+  v1.get("/me/sessions", async (c) => {
+    const parsed = MySessionsQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await mySessions(db, c.get("principal"), parsed.data.repo_fingerprint));
+  });
 
   v1.post("/me/pause", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), true)));
   v1.post("/me/resume", async (c) => c.json(await setAgentsPaused(db, c.get("principal"), false)));

@@ -5,7 +5,7 @@ import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, task, user } from "../db/schema.js";
 import type { Principal } from "../principal.js";
 import { isSessionAgent, requireMember } from "./admin.js";
-import { type Agent, activityOf, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
+import { type Agent, activityOf, canAutoLink, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
 import { liveClaims } from "./claims.js";
 import { packetDecisions } from "./memory.js";
 import { visibleTo } from "./messages.js";
@@ -186,6 +186,34 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     ...(!opts.compact && { claims: await liveClaims(db, p, me, { projectId, limit: opts.limit }) }),
     unread: unread.byKind,
     blocking_message_ids: unread.blocking,
+    trust: TRUST,
+  };
+}
+
+// codetgh doctor: the caller's own sessions as the hub sees them, and what a repository's fingerprint is for the hub.
+// Read only: nothing is registered, linked or touched.
+export async function mySessions(db: Db, p: Principal, fingerprint?: string) {
+  const rows = await listAgents(db, p.teamId, { userId: p.user.id, limit: 20 });
+  const [prj] = fingerprint
+    ? await db
+        .select({ id: project.id, name: project.name })
+        .from(project)
+        .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, fingerprint)))
+    : [];
+  return {
+    sessions: rows
+      .filter((r) => isSessionAgent(r.agent))
+      .map((r) => ({
+        agent: r.agent.id,
+        project_id: r.agent.projectId,
+        project_untrusted: free(r.project),
+        presence: presence(r.agent),
+        activity: activityOf(r.agent),
+        last_seen: r.agent.lastSeenAt.toISOString(),
+      })),
+    repo: fingerprint
+      ? { linked: Boolean(prj), project_id: prj?.id ?? null, project_untrusted: free(prj?.name), auto_link: await canAutoLink(db, p) }
+      : null,
     trust: TRUST,
   };
 }
