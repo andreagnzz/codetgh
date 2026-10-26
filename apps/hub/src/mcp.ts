@@ -33,6 +33,7 @@ import {
   assertNoSecrets,
   envelope,
   findAnswer,
+  type InboxItem,
   type MessagingDeps,
   messageStatus,
   renderInbox,
@@ -214,15 +215,15 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           { to: delegate ? `agent:${delegate}` : to, kind, body: question, refs, priority, delegate, allow_offline },
         );
         const waitS = wait_s ?? (delegate ? 0 : 45);
-        const answered = (item: Awaited<ReturnType<typeof findAnswer>>) =>
-          item && {
+        // JSON header with ids only, then the answer in its envelope.
+        const answered = (item: InboxItem) =>
+          `${JSON.stringify({
             status: "answered",
             question_id: q.id,
             answer: { message_id: item.message.id, sent_at: item.message.createdAt.toISOString() },
-            envelope: envelope(item),
-          };
+          })}\n\n${envelope(item)}`;
         const first = await findAnswer(db, p, a, q.id);
-        if (first) return answeredText(answered(first));
+        if (first) return answered(first);
         await new Promise<void>((resolve) => {
           const done = () => {
             clearTimeout(timer);
@@ -240,7 +241,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           bus.on("revoked", onRevoked);
         });
         const later = await findAnswer(db, p, a, q.id);
-        if (later) return answeredText(answered(later));
+        if (later) return answered(later);
         return {
           status: "pending",
           question_id: q.id,
@@ -472,11 +473,4 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     ),
   );
   return server;
-}
-
-// JSON header with ids only, then the answer in its envelope.
-function answeredText(r: { status: string; question_id: string; answer: object; envelope: string } | null) {
-  if (!r) return "";
-  const { envelope: env, ...header } = r;
-  return `${JSON.stringify(header)}\n\n${env}`;
 }
