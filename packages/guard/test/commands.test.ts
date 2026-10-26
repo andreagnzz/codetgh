@@ -115,8 +115,8 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
 
   // Super-linear on a 100 kB input (20 s and 1.7 s measured): over the cap the command is refused without being scanned.
   const backtracking = {
-    "a glob run of .env": (size: number) => ("*.env".repeat(Math.floor(size / 5)) + "@; cat ~/.ssh/id").slice(-size),
-    "a run of base64 -d": (size: number) => ("base64 -d ".repeat(Math.floor(size / 10)) + "; cat .env").slice(-size),
+    "a glob run of .env": (size: number) => `${"*.env".repeat(Math.floor(size / 5))}@; cat ~/.ssh/id`.slice(-size),
+    "a run of base64 -d": (size: number) => `${"base64 -d ".repeat(Math.floor(size / 10))}; cat .env`.slice(-size),
   };
 
   it.each(Object.entries(backtracking))("refuses %s over 8192 characters without scanning it", (_, build) => {
