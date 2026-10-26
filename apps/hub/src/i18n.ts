@@ -254,4 +254,4 @@ const FR: Record<string, string> = {
   "Ask the person who invited you for a new link.": "Demande un nouveau lien à la personne qui t'a invité.",
 };
 
-export const t = (lang: Lang, s: string) => (lang === "fr" ? (FR[s] ?? s) : s);
+export const t = (lang: Lang, s: string) => (lang === "fr" && Object.hasOwn(FR, s) ? (FR[s] ?? s) : s);
