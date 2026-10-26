@@ -98,6 +98,17 @@ describe("delegateBlock: Bash commands a delegate session never runs", () => {
     },
   );
 
+  // The hook has 3 s and fails open, so a long command must not make a regex backtrack.
+  it.each([`bash -c '${"a".repeat(100000)}'; cat .env`, `${"$(".repeat(50000)}; cat .env`])(
+    "answers a very long command quickly",
+    (cmd) => {
+      const t0 = performance.now();
+      expect(delegateBlock(cmd)).toMatch(/secret/);
+      expect(performance.now() - t0).toBeLessThan(500);
+    },
+    60000,
+  );
+
   it("lets ordinary files with similar names run", () => {
     for (const cmd of [
       "jq .key package.json",

@@ -20,8 +20,8 @@ const FORCE_ARG = /^(?:-[a-zA-Z]*f[a-zA-Z]*|--force\S*|\+\S+)$/;
 const DYNAMIC = [
   /(?:^|[\s;&|(`])eval(?=\s|$)/,
   /\bbase64\s+(?:-d|-D|--decode)\b[^|]*\|/,
-  /(?:\$\(|`)[^)`]*\b(?:printf|xxd|base64|rev|tr|od)\b/,
-  /\b(?:ba|z|da|k)?sh\s+(?:-\w+\s+)*-c\s+\S*[^\n]*[$`]/,
+  /(?:\$\(|`)(?:(?!\$\()[^)`])*\b(?:printf|xxd|base64|rev|tr|od)\b/,
+  /\b(?:ba|z|da|k)?sh\s+(?:-\w+\s+)*-c\s+[^\n$`]*[$`]/,
 ];
 
 // What the shell would see once it removed quoting: line continuations, $'…' and "…" quotes, backslash escapes,
