@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { alert, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -13,8 +13,6 @@ beforeAll(async () => {
   for (const m of [team.lea, team.sam, team.malik]) await startSession(hub.url, m.token, `${m.handle}-loop`, { repo: ACME_REPO });
 });
 afterAll(() => hub.stop());
-
-const code = (r: { isError: boolean; text: string }) => (r.isError ? JSON.parse(r.text).code : null);
 
 type Member = (typeof team)["sam"];
 // Two members' agents reply to each other until the hub mutes the thread; returns the last message.

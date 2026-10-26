@@ -89,6 +89,7 @@ import {
   purgeMessages,
   receivedSince,
   sendMessage,
+  sentView,
   unread,
 } from "./domain/messages.js";
 import { contextPacket, mySessions, statusLine, teamOverview } from "./domain/overview.js";
@@ -174,7 +175,11 @@ export function createApp({
   // The audit key never touches the database: its own seed, or one derived from the hub secret.
   const auditKey = auditKeyFromSeed(config.auditKey ? Buffer.from(config.auditKey, "base64") : deriveAuditSeed(config.secret));
   const signHeads = async () => {
-    for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    try {
+      for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+    } catch (e) {
+      logger.error({ err: (e as Error).name }, "checkpoint failed");
+    }
   };
   const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
   checkpointTimer.unref();
@@ -496,13 +501,7 @@ export function createApp({
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
     const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
-    return c.json({
-      id: m.id,
-      thread: m.threadId,
-      hop: m.hop,
-      sent_at: m.createdAt.toISOString(),
-      reach: m.reach,
-    });
+    return c.json(sentView(m));
   });
 
   v1.post("/inbox", async (c) => {
@@ -625,8 +624,9 @@ export function createApp({
   });
 
   v1.get("/keys", async (c) => {
-    const { handles } = KeysQuery.parse({ handles: c.req.query("handles") ?? "" });
-    return c.json(await publicKeys(db, c.get("principal"), handles.split(",").filter(Boolean).slice(0, 20)));
+    const parsed = KeysQuery.safeParse({ handles: c.req.query("handles") ?? "" });
+    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid query");
+    return c.json(await publicKeys(db, c.get("principal"), parsed.data.handles.split(",").filter(Boolean).slice(0, 20)));
   });
 
   v1.get("/messages/:message_id/thread-key", async (c) =>
@@ -639,7 +639,7 @@ export function createApp({
     const { agent: agentArg, ...input } = await parse(c, AckInput);
     const a = await restAgent(p, agentArg);
     if (input.note) await assertNoSecrets(deps, { p, agent: a, via: "rest" }, input.note);
-    return c.json({ acked: await ack(db, p, a, input) });
+    return c.json({ acked: await ack(db, p, a, input, "rest") });
   });
 
   // Token SSE for the daemon: message ids only; the event id is the receipt seq, so a reconnect resumes with Last-Event-ID.
@@ -770,7 +770,7 @@ export function createApp({
     }
     // Slack wants an answer within 3 s: acknowledge, then relay.
     if (payload.type === "event_callback" && payload.event)
-      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.message }, "slack event not relayed"));
+      void handleSlackEvent(deps, config, payload.event).catch((e: Error) => logger.warn({ err: e.name }, "slack event not relayed"));
     return c.body(null, 200);
   });
   app.post("/bridges/slack/commands", bodyLimit({ maxSize: 64 * 1024 }), async (c) => {

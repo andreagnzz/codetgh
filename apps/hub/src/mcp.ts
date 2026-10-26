@@ -33,10 +33,12 @@ import {
   assertNoSecrets,
   envelope,
   findAnswer,
+  type InboxItem,
   type MessagingDeps,
   messageStatus,
   renderInbox,
   sendMessage,
+  sentView,
   threadView,
   unread,
 } from "./domain/messages.js";
@@ -138,13 +140,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
             "encrypted messages are sent with codetgh send --encrypt, which scans the text before sealing it",
           );
         const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, { ...input, agent });
-        return {
-          id: m.id,
-          thread: m.threadId,
-          hop: m.hop,
-          sent_at: m.createdAt.toISOString(),
-          reach: m.reach,
-        };
+        return sentView(m);
       }),
   );
 
@@ -191,7 +187,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
       run(async () => {
         const a = await me(agent);
         if (input.note) await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, input.note);
-        return { acked: await ack(db, p, a, input) };
+        return { acked: await ack(db, p, a, input, "mcp") };
       }),
   );
 
@@ -214,32 +210,33 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           { to: delegate ? `agent:${delegate}` : to, kind, body: question, refs, priority, delegate, allow_offline },
         );
         const waitS = wait_s ?? (delegate ? 0 : 45);
-        const answered = (item: Awaited<ReturnType<typeof findAnswer>>) =>
-          item && {
+        // JSON header with ids only, then the answer in its envelope.
+        const answered = (item: InboxItem) =>
+          `${JSON.stringify({
             status: "answered",
             question_id: q.id,
             answer: { message_id: item.message.id, sent_at: item.message.createdAt.toISOString() },
-            envelope: envelope(item),
-          };
+          })}\n\n${envelope(item)}`;
         const first = await findAnswer(db, p, a, q.id);
-        if (first) return answeredText(answered(first));
+        if (first) return answered(first);
         await new Promise<void>((resolve) => {
           const done = () => {
             clearTimeout(timer);
             bus.off("message", onMessage);
-            bus.off("kill", onStop);
-            bus.off("revoked", onStop);
+            bus.off("kill", onKill);
+            bus.off("revoked", onRevoked);
             resolve();
           };
           const onMessage = (e: { replyTo: string | null; kind: string }) => e.replyTo === q.id && e.kind === "answer" && done();
-          const onStop = (e: { teamId: string }) => e.teamId === p.teamId && done();
+          const onKill = (e: { teamId: string }) => e.teamId === p.teamId && done();
+          const onRevoked = (e: { userId: string }) => e.userId === p.user.id && done();
           const timer = setTimeout(done, Math.min(waitS, ASK_MAX_WAIT_S) * 1000);
           bus.on("message", onMessage);
-          bus.on("kill", onStop);
-          bus.on("revoked", onStop);
+          bus.on("kill", onKill);
+          bus.on("revoked", onRevoked);
         });
         const later = await findAnswer(db, p, a, q.id);
-        if (later) return answeredText(answered(later));
+        if (later) return answered(later);
         return {
           status: "pending",
           question_id: q.id,
@@ -471,11 +468,4 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
     ),
   );
   return server;
-}
-
-// JSON header with ids only, then the answer in its envelope.
-function answeredText(r: { status: string; question_id: string; answer: object; envelope: string } | null) {
-  if (!r) return "";
-  const { envelope: env, ...header } = r;
-  return `${JSON.stringify(header)}\n\n${env}`;
 }
