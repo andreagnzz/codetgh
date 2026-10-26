@@ -1,10 +1,11 @@
 import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { shortAgentId } from "@codetgh/shared";
 import { and, count, eq, gt, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, task, user } from "../db/schema.js";
 import type { Principal } from "../principal.js";
 import { isSessionAgent, requireMember } from "./admin.js";
-import { type Agent, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
+import { type Agent, activityOf, canAutoLink, LIVE_MS, listAgents, presence, statusOf } from "./agents.js";
 import { liveClaims } from "./claims.js";
 import { packetDecisions } from "./memory.js";
 import { visibleTo } from "./messages.js";
@@ -168,6 +169,7 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
           label_untrusted: free(r.agent.label),
           flags: flagsOf(r.project, r.agent.label),
           presence: presence(r.agent),
+          activity: activityOf(r.agent),
           last_seen: r.agent.lastSeenAt.toISOString(),
           platform: r.agent.platform,
           delegate_for: r.agent.acceptRequestsFrom?.map((id) => (ppl.get(id) ? `@${ppl.get(id)?.handle}` : "?")) ?? null,
@@ -184,6 +186,36 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     ...(!opts.compact && { claims: await liveClaims(db, p, me, { projectId, limit: opts.limit }) }),
     unread: unread.byKind,
     blocking_message_ids: unread.blocking,
+    trust: TRUST,
+  };
+}
+
+// codetgh doctor: the caller's own sessions as the hub sees them, and what a repository's fingerprint is for the hub.
+// Read only: nothing is registered, linked or touched. Members only, like team_overview: a guest who can fingerprint a
+// repository would otherwise learn whether it is a team project, and its name.
+export async function mySessions(db: Db, p: Principal, fingerprint?: string) {
+  requireMember(p);
+  const rows = await listAgents(db, p.teamId, { userId: p.user.id, limit: 20 });
+  const [prj] = fingerprint
+    ? await db
+        .select({ id: project.id, name: project.name })
+        .from(project)
+        .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, fingerprint)))
+    : [];
+  return {
+    sessions: rows
+      .filter((r) => isSessionAgent(r.agent))
+      .map((r) => ({
+        agent: r.agent.id,
+        project_id: r.agent.projectId,
+        project_untrusted: free(r.project),
+        presence: presence(r.agent),
+        activity: activityOf(r.agent),
+        last_seen: r.agent.lastSeenAt.toISOString(),
+      })),
+    repo: fingerprint
+      ? { linked: Boolean(prj), project_id: prj?.id ?? null, project_untrusted: free(prj?.name), auto_link: await canAutoLink(db, p) }
+      : null,
     trust: TRUST,
   };
 }
@@ -264,9 +296,12 @@ const versionNumber = (v: string) =>
     .map(Number)
     .reduce((a, n) => a * 1000 + n, 0);
 
-// One line for the person at session start: hub data only, so no teammate's words reach it.
-export async function statusLine(db: Db, p: Principal, me: Agent) {
+// One line for the person at session start: hub data only, so no teammate's words reach it. short: after /clear or
+// compaction, only who and where, with the agent id to match team_overview.
+export async function statusLine(db: Db, p: Principal, me: Agent, short = false) {
   const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
+  const who = [`CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`, `@${p.handle}`, shortAgentId(me.id)];
+  if (short) return who.join(" · ");
   // Teammates with a live session; a guest sees no team presence, only their own unread count.
   const online =
     p.role === "guest"
@@ -275,8 +310,7 @@ export async function statusLine(db: Db, p: Principal, me: Agent) {
   const unread = Object.values((await unreadSummary(db, p, me)).byKind).reduce((s, n) => s + n, 0);
   const mode = me.pushMode ?? "hooks";
   const parts = [
-    `CodeTgh ✓ ${(prj?.name ?? "no project").replace(/\p{Cc}/gu, "")}`,
-    `@${p.handle}`,
+    ...who,
     `push ${mode}`,
     ...(me.permissionMode === "bypassPermissions" ? ["bypass"] : []),
     ...(me.clientVersion ? [`Claude Code ${me.clientVersion}`] : []),
