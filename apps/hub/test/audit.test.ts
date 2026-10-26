@@ -1,7 +1,7 @@
 import { auditKeyFromSeed, eventHash, signCheckpoint, verifyAudit } from "@codetgh/shared/audit";
 import { and, asc, desc, eq, gt, gte } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { alert, auditCheckpoint, auditEvent } from "../src/db/schema.js";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { alert, auditCheckpoint, auditEvent, team as teamTable } from "../src/db/schema.js";
 import { appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../src/domain/audit.js";
 import { type Hub, startHub } from "./harness.js";
 
@@ -224,5 +224,33 @@ describe("console", () => {
 
   it("keeps the export from members", async () => {
     expect((await fetch(`${hub.url}/console/audit/export`, { headers: { cookie: team.sam.cookie } })).status).toBe(403);
+  });
+});
+
+describe("checkpoint timer", () => {
+  it("survives a database that fails when the checkpoint tick fires", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const rejected = vi.fn();
+    process.on("unhandledRejection", rejected);
+    const fresh = await startHub();
+    const real = fresh.db.select.bind(fresh.db) as (fields: object) => { from: (table: unknown) => unknown };
+    const select = vi.spyOn(fresh.db, "select").mockImplementation(((fields: object) => {
+      const query = real(fields);
+      const from = query.from.bind(query);
+      query.from = (table) => (table === teamTable ? Promise.reject(new Error("connection terminated")) : from(table));
+      return query;
+    }) as unknown as typeof fresh.db.select);
+    try {
+      vi.advanceTimersByTime(10 * 60_000);
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      select.mockRestore();
+      expect(rejected).not.toHaveBeenCalled();
+      expect((await fetch(`${fresh.url}/readyz`)).status).toBe(200);
+    } finally {
+      process.off("unhandledRejection", rejected);
+      vi.useRealTimers();
+      await fresh.stop();
+    }
   });
 });

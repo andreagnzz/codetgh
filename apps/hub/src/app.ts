@@ -172,7 +172,10 @@ export function createApp({
   const signHeads = async () => {
     for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
   };
-  const checkpointTimer = setInterval(signHeads, CHECKPOINT_EVERY_MS);
+  const checkpointTimer = setInterval(
+    () => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")),
+    CHECKPOINT_EVERY_MS,
+  );
   checkpointTimer.unref();
   const purgeTimer = setInterval(
     () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),
