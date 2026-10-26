@@ -191,8 +191,10 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
 }
 
 // codetgh doctor: the caller's own sessions as the hub sees them, and what a repository's fingerprint is for the hub.
-// Read only: nothing is registered, linked or touched.
+// Read only: nothing is registered, linked or touched. Members only, like team_overview: a guest who can fingerprint a
+// repository would otherwise learn whether it is a team project, and its name.
 export async function mySessions(db: Db, p: Principal, fingerprint?: string) {
+  requireMember(p);
   const rows = await listAgents(db, p.teamId, { userId: p.user.id, limit: 20 });
   const [prj] = fingerprint
     ? await db

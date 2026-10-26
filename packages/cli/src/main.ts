@@ -1767,6 +1767,7 @@ async function doctorSessions(io: Io, url: string, token: string) {
   }).catch(() => null);
   const hub = MySessions.safeParse(await res?.json().catch(() => null)).data;
   io.out("\nSessions");
+  if (res?.status === 403) return io.out("info the hub shows no sessions to a guest");
   if (!hub) return io.out("info the hub did not answer the sessions question (an older hub?)");
   const warn = (label: string, fix: string) => io.out(`warn ${label}\n     → ${fix}`);
   const live = hub.sessions.filter((x) => x.presence !== "offline");

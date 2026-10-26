@@ -577,7 +577,7 @@ export const REST_ROUTES = {
     method: "GET",
     path: "/v1/me/sessions",
     summary:
-      "Read only, for codetgh doctor: your own sessions (project, presence, activity) and, for a repository fingerprint, its project and whether auto-link applies",
+      "Read only, for codetgh doctor, members only (403 for a guest): your own sessions (project, presence, activity) and, for a repository fingerprint, its project and whether auto-link applies",
     query: MySessionsQuery,
     output: MySessions,
   },

@@ -77,13 +77,16 @@ it("says what a repository fingerprint would do, linked or not, without register
   expect((await mine(team.sam.token, "?repo_fingerprint=nope")).status).toBe(400);
 });
 
-it("is open to a guest for their own sessions, with auto-link off", async () => {
+// team_overview refuses a guest (an external A2A agent is one): this route must not tell them more, such as whether a
+// repository they can fingerprint is a team project, and its name.
+it("refuses a guest, even with the fingerprint of a linked project, and names no project", async () => {
   await startSession(hub.url, team.malik.token, "malik-a", { repo: ACME_REPO });
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
-  const fp = repoFingerprint("git@github.com:acme/never-seen.git");
-  const { status, body } = await mine(team.malik.token, `?repo_fingerprint=${fp}`);
+  const linked = await get(team.malik.token, `/v1/me/sessions?repo_fingerprint=${ACME_REPO}`);
+  const plain = await get(team.malik.token, "/v1/me/sessions");
   await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
-  expect(status).toBe(200);
-  expect(body.sessions).toHaveLength(1);
-  expect(body.repo).toMatchObject({ linked: false, auto_link: false });
+  for (const res of [linked, plain]) expect(res.status).toBe(403);
+  const body = await linked.text();
+  expect(JSON.parse(body)).toEqual({ code: "E_FORBIDDEN", message: "guests see only their own threads" });
+  expect(body).not.toContain("acme");
 });

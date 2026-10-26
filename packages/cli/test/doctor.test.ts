@@ -7,7 +7,7 @@ import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { agent, project, team as teamTable } from "../../../apps/hub/src/db/schema.js";
-import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
+import { type Hub, setRole, startHub } from "../../../apps/hub/test/harness.js";
 import { consolePost, fakeCommand, gitRepo, hookEnv, runHook } from "../../../e2e/helpers.js";
 import { type Keyring, program } from "../src/main.js";
 
@@ -302,5 +302,15 @@ it("says the repository is not linked when an admin turned auto-link off, and li
   expect(section).toMatch(/→ .*codetgh project new/);
   expect(section).toContain("info local: no agent, unlinked");
   expect(await projectCount()).toBe(before);
+  expect(code).toBe(0);
+});
+
+it("says in one line that the hub shows no sessions to a guest, and names no project", async () => {
+  await setRole(hub, team.malik.userId, "guest");
+  const { out, code } = await doctorIn(gitRepo(), team.malik.token, mkdtempSync(join(tmpdir(), "codetgh-doctor-state-")));
+  await setRole(hub, team.malik.userId, "member");
+  const section = sessionsOf(out);
+  expect(section.trim()).toBe("info the hub shows no sessions to a guest");
+  expect(section).not.toContain("acme");
   expect(code).toBe(0);
 });
