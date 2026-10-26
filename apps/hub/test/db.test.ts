@@ -12,3 +12,13 @@ it("runs every database session in UTC", async () => {
   expect(res.rows[0]?.tz).toBe("UTC");
   await close();
 });
+
+// receipt.message_id is a cascading foreign key: without an index, deleting a message scans every receipt.
+it("indexes the column that receipts reference their message by", async () => {
+  const { db, close } = await openDb({ dataDir: mkdtempSync(join(tmpdir(), "codetgh-db-")) });
+  const res = (await db.execute(sql`select indexdef from pg_indexes where tablename = 'receipt'`)) as unknown as {
+    rows: Array<{ indexdef: string }>;
+  };
+  expect(res.rows.some((r) => /\(message_id[,)]/.test(r.indexdef))).toBe(true);
+  await close();
+});

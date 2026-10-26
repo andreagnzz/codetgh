@@ -274,7 +274,7 @@ export const receipt = pgTable(
     ackStatus: text("ack_status"),
     ackNote: text("ack_note"),
   },
-  (t) => [index("receipt_recipient_idx").on(t.recipientUserId, t.readAt, t.seq)],
+  (t) => [index("receipt_recipient_idx").on(t.recipientUserId, t.readAt, t.seq), index("receipt_message_idx").on(t.messageId)],
 );
 
 export const alert = pgTable(
