@@ -31,6 +31,7 @@ import {
 } from "../db/schema.js";
 import { createExternalAgent } from "../domain/a2a.js";
 import {
+  byUser,
   changeRole,
   isAdmin,
   isSessionAgent,
@@ -243,8 +244,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     shown < total && (
       <p class="meta">{tr(c)("Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
     );
-  // ?before= of the Older link: rows created before that time.
-  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt) => {
+  // ?before= of the Older link: rows created or last updated before that time.
+  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt | typeof thread.lastMessageAt) => {
     const before = c.req.query("before");
     return before && !Number.isNaN(Date.parse(before)) ? lt(col, new Date(before)) : undefined;
   };
@@ -282,14 +283,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           .from(memoryItem)
           .where(and(eq(memoryItem.teamId, p.teamId), eq(memoryItem.status, "proposed")))
       : [];
-    const alerts = isAdmin(p)
-      ? await db
-          .select()
-          .from(alert)
-          .where(and(eq(alert.teamId, p.teamId), eq(alert.status, "open")))
-          .orderBy(desc(alert.createdAt))
-          .limit(20)
-      : [];
+    const openAlerts = and(eq(alert.teamId, p.teamId), eq(alert.status, "open"));
+    const alerts = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(5) : [];
+    const [alertCount] = isAdmin(p) ? await db.select({ n: count() }).from(alert).where(openAlerts) : [];
+    const nAlerts = alertCount?.n ?? 0;
     const line = await recentLine(p);
     const dayAgo = Date.now() - 86_400_000;
     const recent = line.filter((r) => r.message.createdAt.getTime() >= dayAgo);
@@ -334,7 +331,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           </section>
           <section aria-labelledby="todo-h">
             <h2 id="todo-h">{_("To handle")}</h2>
-            {toValidate.length === 0 && alerts.length === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
+            {toValidate.length === 0 && nAlerts === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
             <ul class="todo">
               {toValidate.length > 0 && (
                 <li>
@@ -346,16 +343,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   </a>
                 </li>
               )}
-              {alerts.slice(0, 5).map((a) => (
+              {alerts.map((a) => (
                 <li>
                   <Pill tone="danger">{_(a.kind)}</Pill> <span class="excerpt">{a.excerpt.slice(0, 120)}</span>{" "}
                   <When at={a.createdAt} lang={_.lang} />
                 </li>
               ))}
-              {alerts.length > 0 && (
+              {nAlerts > 0 && (
                 <li>
                   <a href="/console/alerts">
-                    {_("Review alerts")} ({alerts.length})
+                    {_("Review alerts")} ({nAlerts})
                   </a>
                 </li>
               )}
@@ -383,7 +380,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 ) : (
                   <form hx-post="/console/kill-switch" hx-swap="none">
                     <label>
-                      {_("Reason")} <input name="reason" required maxlength={500} />
+                      {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
                     </label>
                     <button type="submit">{_("Stop agent traffic")}</button>
                   </form>
@@ -425,27 +422,47 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   const visibleThreads = (p: Principal, mine: string[]) =>
     isAdmin(p) ? undefined : or(p.role === "guest" ? undefined : eq(thread.kind, "team"), inArray(thread.id, mine));
 
-  // The activity line: who wrote to whom, never what. Same visibility as the thread list.
+  // The activity line: who wrote to whom, never what. Same visibility as the thread page: a reply addressed to one person
+  // stays between them, admins excepted.
   async function recentLine(p: Principal) {
     const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
-    return db
+    const rows = await db
       .select({ message, name: user.name })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
-      .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine)))
+      .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine), isAdmin(p) ? undefined : sentOrReceivedBy(db, p)))
       .orderBy(desc(message.createdAt))
       .limit(40);
+    // An answer sent without `to` is stored as user:<id> or agent:<id>: the line shows the person's handle.
+    const ids = (prefix: string) =>
+      [...new Set(rows.flatMap((r) => r.message.to).filter((a) => a.startsWith(prefix)))].map((a) => a.slice(prefix.length));
+    const users = ids("user:");
+    const agents = ids("agent:");
+    const handles = new Map<string, string>();
+    if (users.length)
+      for (const r of await db
+        .select({ id: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), inArray(membership.userId, users))))
+        handles.set(`user:${r.id}`, `@${r.handle}`);
+    if (agents.length)
+      for (const r of await db
+        .select({ id: agent.id, handle: membership.handle })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(and(eq(agent.teamId, p.teamId), inArray(agent.id, agents))))
+        handles.set(`agent:${r.id}`, `@${r.handle}`);
+    return rows.map((r) => ({ ...r, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
   }
 
   consoleApp.get("/threads", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
     const mine = (await participantThreads(p)).map((r) => r.id);
-    const before = c.req.query("before");
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
-    const rows = await db
+    const found = await db
       .select()
       .from(thread)
       .where(
@@ -454,11 +471,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           visibleThreads(p, mine),
           onProject(thread.projectId, f),
           archived ? archivedThread() : not(archivedThread()),
-          before && !Number.isNaN(Date.parse(before)) ? lt(thread.lastMessageAt, new Date(before)) : undefined,
+          olderThan(c, thread.lastMessageAt),
         ),
       )
       .orderBy(desc(thread.lastMessageAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     const table = (of: typeof rows) => (
       <Table
@@ -489,7 +507,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {table(g.rows)}
               </section>
             ))}
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a
             href={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
           >
@@ -514,16 +532,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const adminRead = t.kind === "direct" && !participant;
     if (adminRead) {
       requireAdmin(p);
-      await db.transaction((tx) =>
-        appendAudit(tx, {
-          teamId: p.teamId,
-          actorType: "user",
-          actorUserId: p.user.id,
-          via: "console",
-          action: "thread.read_by_admin",
-          subjectId: t.id,
-        }),
-      );
+      await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
     }
     return { t, adminRead };
   };
@@ -538,21 +547,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .innerJoin(user, eq(user.id, message.fromUserId))
       .where(adminRead ? eq(message.threadId, t.id) : and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
       .orderBy(message.createdAt);
+    const state = t.mutedAt ? (t.mutedReason === "human" ? "muted by a person" : "muted (loop guard)") : "open";
+    // Every refresh of an admin read would be audited as a new opening: that page stays still.
+    const live = adminRead
+      ? {}
+      : {
+          "hx-get": withProject(`/console/threads/${t.id}`, project),
+          "hx-select": "main",
+          "hx-target": "main",
+          "hx-swap": "outerHTML",
+          "hx-trigger": "sse:activity",
+        };
     return page(
       c,
       t.subject ?? `Thread ${t.id}`,
-      <div
-        hx-get={withProject(`/console/threads/${t.id}`, project)}
-        hx-select="main"
-        hx-target="main"
-        hx-swap="outerHTML"
-        hx-trigger="sse:activity"
-      >
+      <div {...live}>
         <p>
           <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
         </p>
         <p>
-          {t.kind} thread · {t.mutedAt ? "muted (loop guard)" : "open"} · agent streak {t.agentStreak}
+          {t.kind} thread · {state} · agent streak {t.agentStreak}
         </p>
         <Table
           head={["From", "Kind", "Message", "Sent"]}
@@ -572,7 +586,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         />
         <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
           <label>
-            Reply as a human <textarea name="body" required maxlength={8000} rows={3} />
+            Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
           </label>
           <button type="submit">Send</button>
         </form>
@@ -607,14 +621,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .update(thread)
         .set(mute ? { mutedAt: new Date(), mutedReason: "human" } : { mutedAt: null, mutedReason: null, agentStreak: 0 })
         .where(eq(thread.id, t.id));
-      await appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: mute ? "thread.muted" : "thread.reopened",
-        subjectId: t.id,
-      });
+      await appendAudit(tx, { ...byUser(p), action: mute ? "thread.muted" : "thread.reopened", subjectId: t.id });
     });
     return refresh(c);
   });
@@ -623,13 +630,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const _ = tr(c);
     requireAdmin(p);
-    const rows = await db
+    const found = await db
       .select({ alert, name: user.name })
       .from(alert)
       .leftJoin(user, eq(user.id, alert.userId))
       .where(and(eq(alert.teamId, p.teamId), olderThan(c, alert.createdAt)))
       .orderBy(desc(alert.createdAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -659,7 +667,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             ),
           ])}
         />
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a href={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`}>{_("Older")}</a>
         )}
       </>,
@@ -884,6 +892,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/agents/a2a", async (c) => {
+    requireFresh(c);
     const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "");
     c.header("Cache-Control", "no-store");
     return c.html(
@@ -1040,19 +1049,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/tokens", async (c) => {
+    // A 90-day token outlives the session: same gate as the device approval.
+    requireFresh(c);
     const p = c.get("principal");
     const label = ((await form(c)).label ?? "").slice(0, 60) || "token";
     const { id, token } = await createPersonalToken(db, { userId: p.user.id, teamId: p.teamId, label });
-    await db.transaction((tx) =>
-      appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: "token.created",
-        subjectId: id,
-      }),
-    );
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "token.created", subjectId: id }));
     c.header("Cache-Control", "no-store");
     return c.html(
       <Result>
@@ -1116,15 +1118,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { code, keys } = await deviceInput(c);
     const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
     await db.transaction((tx) =>
-      appendAudit(tx, {
-        teamId: p.teamId,
-        actorType: "user",
-        actorUserId: p.user.id,
-        via: "console",
-        action: "device.approved",
-        subjectId: entry.id,
-        data: { label: entry.label },
-      }),
+      appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
     return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
   });
@@ -1280,12 +1274,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     requireAdmin(p);
     const before = Number(c.req.query("before")) || undefined;
-    const rows = await db
+    const found = await db
       .select()
       .from(auditEvent)
       .where(and(eq(auditEvent.teamId, p.teamId), before ? lt(auditEvent.seq, before) : undefined))
       .orderBy(desc(auditEvent.seq))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -1311,7 +1306,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        {rows.length === PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
+        {found.length > PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
       </>,
     );
   });
@@ -1334,9 +1329,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireAdmin(p);
     await writeCheckpoint(db, p.teamId, auditKey);
     const { events, checkpoints } = await exportAudit(db, p.teamId);
-    await db.transaction((tx) =>
-      appendAudit(tx, { teamId: p.teamId, actorType: "user", actorUserId: p.user.id, via: "console", action: "audit.exported" }),
-    );
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "audit.exported" }));
     c.header("Content-Disposition", `attachment; filename="codetgh-audit-${p.teamId}.json"`);
     return c.json({
       team_id: p.teamId,
@@ -1484,9 +1477,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       memoryAcceptViaMcp: f.memory_accept_via_mcp === "on",
       slackChannel: f.slack_channel || undefined,
       loopOrchestrator: f.loop_orchestrator?.replace(/^@/, "") || undefined,
-      claimsEnforcement: (CLAIM_ENFORCEMENT as readonly string[]).includes(f.claims_enforcement ?? "")
-        ? (f.claims_enforcement as "ask")
-        : undefined,
+      claimsEnforcement: CLAIM_ENFORCEMENT.find((l) => l === f.claims_enforcement),
     });
     return refresh(c);
   });
@@ -1495,7 +1486,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const status = c.req.query("status") ?? "proposed";
     if (!["proposed", "accepted", "superseded", "rejected", "all"].includes(status)) throw new HubError("E_INVALID", "unknown status");
-    const rows = await db
+    const found = await db
       .select({ item: memoryItem, name: user.name })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
@@ -1507,7 +1498,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         ),
       )
       .orderBy(desc(memoryItem.createdAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -1531,7 +1523,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a href={`/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`}>{tr(c)("Older")}</a>
         )}
       </>,
