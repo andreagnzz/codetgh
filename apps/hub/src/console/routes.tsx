@@ -462,7 +462,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const before = c.req.query("before");
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
-    const rows = await db
+    const found = await db
       .select()
       .from(thread)
       .where(
@@ -475,7 +475,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         ),
       )
       .orderBy(desc(thread.lastMessageAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     const table = (of: typeof rows) => (
       <Table
@@ -506,7 +507,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {table(g.rows)}
               </section>
             ))}
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a
             href={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
           >
@@ -644,13 +645,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const _ = tr(c);
     requireAdmin(p);
-    const rows = await db
+    const found = await db
       .select({ alert, name: user.name })
       .from(alert)
       .leftJoin(user, eq(user.id, alert.userId))
       .where(and(eq(alert.teamId, p.teamId), olderThan(c, alert.createdAt)))
       .orderBy(desc(alert.createdAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -680,7 +682,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             ),
           ])}
         />
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a href={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`}>{_("Older")}</a>
         )}
       </>,
@@ -1302,12 +1304,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     requireAdmin(p);
     const before = Number(c.req.query("before")) || undefined;
-    const rows = await db
+    const found = await db
       .select()
       .from(auditEvent)
       .where(and(eq(auditEvent.teamId, p.teamId), before ? lt(auditEvent.seq, before) : undefined))
       .orderBy(desc(auditEvent.seq))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -1333,7 +1336,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        {rows.length === PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
+        {found.length > PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
       </>,
     );
   });
@@ -1517,7 +1520,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     const status = c.req.query("status") ?? "proposed";
     if (!["proposed", "accepted", "superseded", "rejected", "all"].includes(status)) throw new HubError("E_INVALID", "unknown status");
-    const rows = await db
+    const found = await db
       .select({ item: memoryItem, name: user.name })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
@@ -1529,7 +1532,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         ),
       )
       .orderBy(desc(memoryItem.createdAt))
-      .limit(PAGE);
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
     return page(
       c,
@@ -1553,7 +1557,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        {rows.length === PAGE && last && (
+        {found.length > PAGE && last && (
           <a href={`/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`}>{tr(c)("Older")}</a>
         )}
       </>,
