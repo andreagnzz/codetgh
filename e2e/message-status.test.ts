@@ -2,6 +2,7 @@ import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codet
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { stream } from "./helpers.js";
 
 // message_status: what the hub knows of a message's delivery, for its sender and its recipients only.
 let hub: Hub;
@@ -65,22 +66,15 @@ describe("message_status", () => {
   });
 
   it("counts a session's stream push as delivery", async () => {
-    const ctl = new AbortController();
-    let text = "";
-    const done = fetch(`${hub.url}/v1/stream?session_id=lea-p1`, { headers: auth(team.lea.token), signal: ctl.signal })
-      .then(async (res) => {
-        for await (const chunk of res.body ?? []) text += new TextDecoder().decode(chunk);
-      })
-      .catch(() => {});
-    for (let i = 0; i < 100 && !text.includes("event: ready"); i++) await sleep(20);
+    const s = stream(hub.url, team.lea.token, "lea-p1");
+    await s.ready();
     const sent = await send({ agent: ids["sam-p1"], to: "@lea", body: "streamed" });
     let delivered: string | null = null;
     for (let i = 0; i < 100 && !delivered; i++) {
       delivered = (await status(sent.out.id)).out.recipients[0].delivered_at;
       if (!delivered) await sleep(20);
     }
-    ctl.abort();
-    await done;
+    const text = await s.close();
     expect(text).toContain(sent.out.id);
     expect(delivered).toEqual(expect.any(String));
   });

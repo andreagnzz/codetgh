@@ -118,3 +118,28 @@ export const alive = (pid: number) => {
     return false;
   }
 };
+
+// Opens a session's SSE stream; ready() waits for the ready event, waitFor(s) for a string, close() aborts and returns everything that arrived.
+export function stream(url: string, token: string, session: string) {
+  const ctl = new AbortController();
+  let text = "";
+  const done = fetch(`${url}/v1/stream?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` }, signal: ctl.signal })
+    .then(async (res) => {
+      for await (const chunk of res.body ?? []) text += new TextDecoder().decode(chunk);
+    })
+    .catch(() => {});
+  return {
+    ready: async () => {
+      for (let i = 0; i < 100 && !text.includes("event: ready"); i++) await new Promise((r) => setTimeout(r, 20));
+    },
+    waitFor: async (s: string) => {
+      for (let i = 0; i < 100 && !text.includes(s); i++) await new Promise((r) => setTimeout(r, 20));
+      return text;
+    },
+    close: async () => {
+      ctl.abort();
+      await done;
+      return text;
+    },
+  };
+}
