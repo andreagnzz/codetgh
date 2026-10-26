@@ -227,16 +227,17 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           const done = () => {
             clearTimeout(timer);
             bus.off("message", onMessage);
-            bus.off("kill", onStop);
-            bus.off("revoked", onStop);
+            bus.off("kill", onKill);
+            bus.off("revoked", onRevoked);
             resolve();
           };
           const onMessage = (e: { replyTo: string | null; kind: string }) => e.replyTo === q.id && e.kind === "answer" && done();
-          const onStop = (e: { teamId: string }) => e.teamId === p.teamId && done();
+          const onKill = (e: { teamId: string }) => e.teamId === p.teamId && done();
+          const onRevoked = (e: { userId: string }) => e.userId === p.user.id && done();
           const timer = setTimeout(done, Math.min(waitS, ASK_MAX_WAIT_S) * 1000);
           bus.on("message", onMessage);
-          bus.on("kill", onStop);
-          bus.on("revoked", onStop);
+          bus.on("kill", onKill);
+          bus.on("revoked", onRevoked);
         });
         const later = await findAnswer(db, p, a, q.id);
         if (later) return answeredText(answered(later));
