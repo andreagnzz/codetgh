@@ -189,6 +189,12 @@ export const agent = pgTable(
     platform: text("platform"),
     // Claude Code's permission mode, kept current by the prompt hook.
     permissionMode: text("permission_mode"),
+    // What the hooks reported: in a turn since activity_at (UserPromptSubmit) or idle (Stop), and the name of the tool the
+    // latest PostToolUse poll saw. Names and states only, never a tool's input.
+    activity: text("activity", { enum: ["in_turn", "idle"] }),
+    activityAt: timestamp("activity_at"),
+    lastTool: text("last_tool"),
+    lastToolAt: timestamp("last_tool_at"),
     // codetgh start --accept-requests-from: user ids whose requests this session does; null when it is not a delegate.
     acceptRequestsFrom: text("accept_requests_from").array(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

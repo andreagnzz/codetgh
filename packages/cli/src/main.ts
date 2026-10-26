@@ -26,15 +26,15 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { type CodeTghClient, CodeTghError, createClient } from "@codetgh/sdk";
-import { SendMessageInput } from "@codetgh/shared";
+import { SendMessageInput, shortAgentId } from "@codetgh/shared";
 import { type AuditRecord, type Checkpoint, verifyAudit } from "@codetgh/shared/audit";
 import { newKeyPair, newThreadKey, openBody, publicKeyOf, sealBody, unwrapKey, wrapKey } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { DeviceStartOutput, DeviceTokenOutput, REVIEW_ROUNDS, RoutingRules, RunnerConfig } from "@codetgh/shared/rest";
+import { DeviceStartOutput, DeviceTokenOutput, MySessions, REVIEW_ROUNDS, RoutingRules, RunnerConfig } from "@codetgh/shared/rest";
 import { Command } from "commander";
 import spawn from "cross-spawn";
 import plugin from "../../plugin/.claude-plugin/plugin.json" with { type: "json" };
-import { runHook } from "./hook.js";
+import { recentStates, runHook } from "./hook.js";
 
 export type Keyring = { get(url: string): string | null; set(url: string, token: string): void; delete(url: string): void };
 type Io = { out: (s: string) => void; err: (s: string) => void; stdin: NodeJS.ReadableStream & { isTTY?: boolean } };
@@ -1604,6 +1604,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   };
   // The push modes the team allows, from whoami; null when the hub could not be asked.
   let allowedModes: string[] | null = null;
+  let tokenOk = false;
   const run = (cmd: string, args: string[], timeout: number) =>
     exec(cmd, args, { timeout }).then(
       (r) => r.stdout,
@@ -1642,6 +1643,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     if (health?.ok && token) {
       const who = await whoami(url, token).catch(() => null);
       allowedModes = who?.push_allowed_modes ?? null;
+      tokenOk = who !== null;
       check(
         who !== null,
         who ? `token: ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}` : "token refused by the hub",
@@ -1761,7 +1763,89 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   }
   const origin = await run("git", ["remote", "get-url", "origin"], 1000);
   io.out(origin ? "ok   git origin detected (project linking)" : "info no git origin here: agents will not be linked to a project");
+  if (tokenOk) await doctorSessions(io, url, token);
   if (failed) process.exitCode = 1;
+}
+
+const span = (s: number) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`);
+const activityText = (a: { state: string; since_s: number | null; last_tool?: string; last_tool_age_s?: number }) =>
+  a.state === "in_turn"
+    ? `in turn for ${span(a.since_s ?? 0)}${a.last_tool ? ` (last: ${a.last_tool} ${span(a.last_tool_age_s ?? 0)} ago)` : ""}`
+    : a.state === "idle"
+      ? `idle for ${span(a.since_s ?? 0)}`
+      : "activity unknown";
+
+// The "Sessions" section of codetgh doctor. Read only: it puts the hub's view of this person's sessions and of this folder's
+// repository next to the state the hooks kept here, and says in one line why a session may be missing. It registers and links nothing.
+async function doctorSessions(io: Io, url: string, token: string) {
+  const git = (args: string[]) =>
+    exec("git", args, { timeout: 1000 }).then(
+      (r) => r.stdout.trim(),
+      () => "",
+    );
+  const [origin, top] = await Promise.all([git(["remote", "get-url", "origin"]), git(["rev-parse", "--show-toplevel"])]);
+  const fingerprint = origin ? repoFingerprint(origin) : undefined;
+  const res = await fetch(`${url}/v1/me/sessions${fingerprint ? `?repo_fingerprint=${fingerprint}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => null);
+  const hub = MySessions.safeParse(await res?.json().catch(() => null)).data;
+  io.out("\nSessions");
+  if (res?.status === 403) return io.out("info the hub shows no sessions to a guest");
+  if (!hub) return io.out("info the hub did not answer the sessions question (an older hub?)");
+  const warn = (label: string, fix: string) => io.out(`warn ${label}\n     → ${fix}`);
+  const live = hub.sessions.filter((x) => x.presence !== "offline");
+  if (!live.length) io.out("info hub: no live session of yours");
+  for (const x of live.slice(0, 5))
+    io.out(
+      `info hub session ${shortAgentId(x.agent)} · ${x.project_untrusted || "no project"} · ${x.presence} · ${activityText(x.activity)}`,
+    );
+  const repo = hub.repo;
+  io.out(
+    !repo
+      ? "info folder: no git origin, so no project"
+      : repo.linked
+        ? `info folder: repository linked to the project ${repo.project_untrusted}`
+        : `info folder: repository not linked to a project (${repo.auto_link ? "a session started here would link it" : "auto-link is off"})`,
+  );
+  const root = (() => {
+    try {
+      return realpathSync.native(top);
+    } catch {
+      return top;
+    }
+  })();
+  const here = root ? recentStates(root, 24 * 3_600_000) : [];
+  if (!here.length) io.out("info local: no session state for this folder in the last 24 h");
+  for (const st of here.slice(0, 3))
+    io.out(
+      `info local: ${st.agent ? shortAgentId(st.agent) : "no agent"}${st.unlinked ? ", unlinked" : ""}${st.projectless ? ", projectless" : ""} (last hook ${span(Math.round(st.ageMs / 1000))} ago)`,
+    );
+  const mine = here.flatMap((st) => live.filter((x) => x.agent === st.agent))[0];
+  if (mine && repo?.linked && mine.project_id !== repo.project_id)
+    warn(
+      `your session is on another project: ${mine.project_untrusted || "none"}`,
+      `this folder is linked to ${repo.project_untrusted}: restart Claude from this folder, or attach the session to a project in the console (Agents)`,
+    );
+  else if (mine)
+    io.out(
+      `ok   all good: ${shortAgentId(mine.agent)}, ${mine.project_untrusted || "no project"}, ${mine.presence}, ${activityText(mine.activity)}`,
+    );
+  else if (repo && !repo.linked && !repo.auto_link)
+    warn(
+      "this folder's repository is not linked to a project (admin: auto-link is off)",
+      "ask an admin to link it: codetgh project new <name> (run in the repository), or to turn auto-link on in the console Settings",
+    );
+  else if (live.length)
+    warn(
+      `the hub knows ${live.length} session${live.length > 1 ? "s" : ""} of yours, none from this folder`,
+      `they are on ${[...new Set(live.map((x) => x.project_untrusted || "no project"))].slice(0, 3).join(", ")}: start Claude from this folder with codetgh start`,
+    );
+  else
+    warn(
+      "no session registered from this folder in the last 15 min: Claude was not started with `codetgh start`, or the plugin is not enabled in this session",
+      "launch Claude from this folder with codetgh start; if you did, check that the plugin is on with claude plugin list",
+    );
 }
 
 // Deny rules hold in every permission mode (docs/FACTS.md), but they match commands as written: a cheap first layer, not

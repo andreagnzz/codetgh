@@ -3,7 +3,7 @@ import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, message, project } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { auth, callTool, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 
 // SPEC « Livraison »: a message to people or sessions reaches one of their live sessions, or fails with E_UNREACHABLE.
 let hub: Hub;
@@ -27,13 +27,7 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const auth = (token: string) => ({ Authorization: `Bearer ${token}`, "content-type": "application/json" });
-const tool = async (name: string, args: Record<string, unknown>, token = team.sam.token) => {
-  const c = await mcpClient(hub.url, token);
-  const r = await call(c, name, args);
-  await c.close();
-  return { isError: r.isError, out: r.json() };
-};
+const tool = (name: string, args: Record<string, unknown>, token = team.sam.token) => callTool(hub.url, token, name, args);
 const send = (args: Record<string, unknown>, token = team.sam.token) =>
   tool("send_message", { kind: "note", body: "hello", ...args }, token);
 const stored = async () => (await hub.db.select({ n: count() }).from(message))[0]?.n ?? 0;

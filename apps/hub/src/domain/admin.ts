@@ -33,7 +33,7 @@ export function requireMember(p: Principal) {
   if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests see only their own threads");
 }
 
-const byUser = (p: Principal) => ({ teamId: p.teamId, actorType: "user" as const, actorUserId: p.user.id, via: "console" as const });
+export const byUser = (p: Principal) => ({ teamId: p.teamId, actorType: "user" as const, actorUserId: p.user.id, via: "console" as const });
 
 export async function setKillSwitch(db: Db, p: Principal, reason: string) {
   requireAdmin(p);
@@ -240,7 +240,7 @@ export async function setAgentProject(db: Db, p: Principal, agentId: string, pro
 }
 
 export async function revokeToken(db: Db, p: Principal, tokenId: string) {
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const [t] = await tx
       .select()
       .from(personalToken)
@@ -249,6 +249,7 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
     if (t.userId !== p.user.id) requireAdmin(p);
     await tx.update(personalToken).set({ revokedAt: new Date() }).where(eq(personalToken.id, t.id));
     await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: t.id });
+    return t.userId;
   });
 }
 

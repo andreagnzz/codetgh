@@ -43,14 +43,28 @@ export const ARCHIVE_AFTER_MS = 24 * 3600_000;
 export const archivedThread = () =>
   sql`(${lt(thread.lastMessageAt, new Date(Date.now() - ARCHIVE_AFTER_MS))} and not exists (select 1 from ${receipt} inner join ${message} on ${message.id} = ${receipt.messageId} where ${message.threadId} = ${thread.id} and ${receipt.readAt} is null))`;
 
-async function threadParticipants(tx: Db, threadId: string) {
+// The people who wrote or received in the thread and are still active members: a revoked person gets nothing new.
+async function threadParticipants(tx: Db, teamId: string, threadId: string) {
   const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, threadId));
   const readers = await tx
     .selectDistinct({ userId: receipt.recipientUserId })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
     .where(eq(message.threadId, threadId));
-  return [...new Set([...senders, ...readers].map((r) => r.userId))];
+  const active = await tx
+    .select({ userId: membership.userId })
+    .from(membership)
+    .where(
+      and(
+        eq(membership.teamId, teamId),
+        eq(membership.status, "active"),
+        inArray(
+          membership.userId,
+          [...senders, ...readers].map((r) => r.userId),
+        ),
+      ),
+    );
+  return active.map((r) => r.userId);
 }
 
 // A direct thread, or any thread for a guest, is visible to the people who wrote or received in it, nobody else.
@@ -96,8 +110,12 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       const [r] = await tx
         .select({ userId: agent.userId, id: agent.id })
         .from(agent)
+        .innerJoin(
+          membership,
+          and(eq(membership.teamId, agent.teamId), eq(membership.userId, agent.userId), eq(membership.status, "active")),
+        )
         .where(and(eq(agent.teamId, p.teamId), eq(agent.id, a.slice(6)), listed()));
-      // One answer for an id that is unknown, in another team, removed or long gone: it says nothing a sender could not list.
+      // One answer for an id that is unknown, in another team, removed, long gone or its owner's membership revoked: it says nothing a sender could not list.
       if (!r) throw new HubError("E_NOT_FOUND", `no agent ${a}`);
       out.push({ userId: r.userId, agentId: r.id });
     } else if (a.startsWith("thread:")) {
@@ -108,7 +126,7 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       if (!t) throw new HubError("E_NOT_FOUND", `no thread ${a}`);
       await assertCanJoin(tx, p, t, `thread ${a}`);
       threadId = t.id;
-      out.push(...(await threadParticipants(tx, t.id)).map((userId) => ({ userId, agentId: null })));
+      out.push(...(await threadParticipants(tx, p.teamId, t.id)).map((userId) => ({ userId, agentId: null })));
     } else {
       throw new HubError("E_INVALID", `unknown address ${a}: use @handle, @team, agent:… or thread:…`);
     }
@@ -270,13 +288,16 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   const authoredBy = author.agent ? "agent" : "human";
   const fromAgentId = author.agent?.id ?? null;
 
-  if (input.idempotency_key && fromAgentId) {
+  const findDuplicate = async () => {
+    if (!input.idempotency_key || !fromAgentId) return undefined;
     const [dup] = await db
       .select()
       .from(message)
       .where(and(eq(message.fromAgentId, fromAgentId), eq(message.idempotencyKey, input.idempotency_key)));
-    if (dup) return { ...dup, reach: undefined };
-  }
+    return dup;
+  };
+  const sent = await findDuplicate();
+  if (sent) return { ...sent, reach: undefined };
   if (authoredBy === "agent" && p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (authoredBy === "agent" && p.agentsPaused)
     throw new HubError("E_FORBIDDEN", "you paused your agents' sending: run codetgh resume to send again");
@@ -335,7 +356,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   // "encrypted" is the hub's own flag: readers learn it could not check this text itself.
   const flags = input.encrypted ? [...new Set([...input.encrypted.flags, "encrypted"])] : textFlags(text);
 
-  const result = await db.transaction(async (tx) => {
+  const stored = db.transaction(async (tx) => {
     let parent: typeof message.$inferSelect | undefined;
     if (input.reply_to) {
       [parent] = await tx
@@ -620,6 +641,13 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       reach: reached?.reach,
     };
   });
+  const result = await stored.catch(async (e: unknown) => {
+    // A retry that read "no such message" while the first send was still writing hits the unique index: the first one won.
+    const won = (e as { cause?: { code?: string } }).cause?.code === "23505" ? await findDuplicate() : undefined;
+    if (!won) throw e;
+    return { duplicate: won };
+  });
+  if ("duplicate" in result) return { ...result.duplicate, reach: undefined };
 
   if (result.muted) {
     bus.emit("attention", { teamId: p.teamId });
@@ -650,6 +678,15 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   });
   return { ...result.row, reach: result.reach };
 }
+
+// What the REST and MCP sends answer with.
+export const sentView = (m: Awaited<ReturnType<typeof sendMessage>>) => ({
+  id: m.id,
+  thread: m.threadId,
+  hop: m.hop,
+  sent_at: m.createdAt.toISOString(),
+  reach: m.reach,
+});
 
 // Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
 export async function purgeMessages(db: Db) {
@@ -869,6 +906,7 @@ export async function ack(
   p: Principal,
   a: Agent,
   input: { message_ids?: string[]; up_to?: string; status?: "accepted" | "declined" | "done"; note?: string },
+  via: "mcp" | "rest",
 ) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
@@ -906,7 +944,7 @@ export async function ack(
       actorType: "agent",
       actorUserId: p.user.id,
       actorAgentId: a.id,
-      via: "mcp",
+      via,
       action: "message.acked",
       data: { count: done.length, status: input.status ?? null },
     });
