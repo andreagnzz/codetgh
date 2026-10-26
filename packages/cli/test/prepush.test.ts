@@ -110,7 +110,7 @@ describe("codetgh claims check-push", () => {
   });
 
   it("looks at what the push adds to a branch the remote already has, not at the whole branch", async () => {
-    await fakeHub({ "old.ts": [{ handle: "lea", mode: "exclusive" }], "new.ts": [{ handle: "sam", mode: "intent" }] });
+    await fakeHub({ "old.ts": [{ handle: "lea", mode: "exclusive" }], "new.ts": [{ handle: "sam", mode: "exclusive" }] });
     git(repo, "checkout", "-q", "-b", "feature");
     writeFileSync(join(repo, "old.ts"), "old\n");
     git(repo, "add", ".");
@@ -127,10 +127,45 @@ describe("codetgh claims check-push", () => {
     expect(r.out).not.toContain("old.ts");
   });
 
-  it("lets a push through when nothing it carries is claimed, or the claim is only a shared one", async () => {
-    await fakeHub({ "docs/a.md": [{ handle: "lea", mode: "shared" }] });
-    const refs = feature(["docs/a.md", "docs/b.md"]);
+  it("refuses only for an exclusive claim: an intent or a shared one prints a warning and the push goes on", async () => {
+    await fakeHub({
+      "docs/a.md": [{ handle: "lea", mode: "intent" }],
+      "docs/b.md": [{ handle: "sam", mode: "shared" }],
+    });
+    const refs = feature(["docs/a.md", "docs/b.md", "docs/c.md"]);
     const r = await cli(["claims", "check-push"], refs);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("not blocking");
+    expect(r.out).toContain("docs/a.md");
+    expect(r.out).toContain("@lea (intent");
+    expect(r.out).toContain("docs/b.md");
+    expect(r.out).toContain("@sam (shared");
+    expect(r.out).not.toContain("docs/c.md");
+    expect(r.out).not.toContain("refused");
+  });
+
+  it("refuses for the exclusive claim of a file and still warns about the others", async () => {
+    await fakeHub({
+      "src/api.ts": [
+        { handle: "lea", mode: "exclusive" },
+        { handle: "sam", mode: "intent" },
+      ],
+      "src/web.ts": [{ handle: "sam", mode: "intent" }],
+    });
+    const r = await cli(["claims", "check-push"], feature(["src/api.ts", "src/web.ts"]));
+    expect(r.code).toBe(1);
+    const [refusal, warning] = r.out.split("not blocking");
+    expect(refusal).toContain("refused");
+    expect(refusal).toContain("@lea (exclusive");
+    expect(refusal).not.toContain("@sam");
+    expect(warning).toContain("src/api.ts");
+    expect(warning).toContain("src/web.ts");
+    expect(warning).toContain("@sam (intent");
+  });
+
+  it("says nothing when nothing the push carries is claimed", async () => {
+    await fakeHub({});
+    const r = await cli(["claims", "check-push"], feature(["docs/a.md"]));
     expect(r.code).toBe(0);
     expect(r.out).toBe("");
   });

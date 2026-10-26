@@ -114,4 +114,22 @@ describe("codetgh claims check-push against a hub", () => {
     expect(down.out).toMatch(/^codetgh: claims not checked/);
     await lea.close();
   });
+
+  it("only warns for an intent claim, which any edit makes, and for a shared one", async () => {
+    const fingerprint = repoFingerprint(ORIGIN);
+    await startSession(hub.url, team.lea.token, "lea-push-4", { repo: fingerprint });
+    // Léa edits a file: the pre-edit hook puts a short intent claim on it.
+    await fetch(`${hub.url}/v1/claims/pre-edit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${team.lea.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "lea-push-4", path: "src/edited.ts" }),
+    });
+    const refs = branch(["src/edited.ts"]);
+    const r = await checkPush(team.sam.token, refs);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("not blocking");
+    expect(r.out).toContain("src/edited.ts");
+    expect(r.out).toContain("@lea (intent");
+    expect(r.out).not.toContain("refused");
+  });
 });

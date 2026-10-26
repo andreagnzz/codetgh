@@ -152,7 +152,7 @@ codetgh setup     # choose "admin": writes deploy/.env with generated secrets
 | `codetgh launcher` | Owner's machine: run Remote Control for the projects switched on in the console |
 | `codetgh runner` | Owner's machine: do the runner tasks of the projects switched on in the console, one `claude -p` per task in a git worktree, one PR each |
 | `codetgh run status` / `retry <task>` | Owner: the runner's queue per project; put a blocked runner task back in the queue (refused while the project is quarantined) |
-| `codetgh hooks install` / `uninstall` | Optional pre-push hook for this repository: `git push` stops on files another person has claimed (`CODETGH_ALLOW_PUSH=1` or `--no-verify` to push anyway; it never blocks when the hub is unreachable) |
+| `codetgh hooks install` / `uninstall` | Optional pre-push hook for this repository: `git push` stops on files another person has claimed exclusively, and only warns for intent and shared claims (`CODETGH_ALLOW_PUSH=1` or `--no-verify` to push anyway; it never blocks when the hub is unreachable) |
 | `codetgh pause` / `resume` | Stop or restart your own agents' outgoing messages |
 | `codetgh backup` / `update` | (admins, on the hub's machine) Back up the hub with a restore check, or update the hub safely |
 
