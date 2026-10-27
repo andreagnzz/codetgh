@@ -20,7 +20,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { RoutingRules } from "@codetgh/shared/rest";
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
@@ -50,7 +50,7 @@ function fakes() {
   fakeCommand(
     dir,
     "claude",
-    `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
@@ -100,6 +100,36 @@ if (stdin.includes("WORKFLOW")) {
 }
 if (stdin.includes("SYMLINK")) symlinkSync("/etc/passwd", "passwd");
 if (stdin.includes("GITFILE")) appendFileSync(".git", "\\n");
+// A nested repository whose clean filter runs a command (a marker file in this folder) when git looks inside it.
+// NESTEDEMB: a new one, in a folder named node_modules. NESTEDSUB: the submodule's commit, cloned into its folder.
+for (const [token, where] of [["NESTEDEMB", "node_modules/emb"], ["NESTEDSUB", "sub"]]) {
+  if (!stdin.includes(token)) continue;
+  const g = (...a) => execFileSync("git", ["-C", where, "-c", "user.name=agent", "-c", "user.email=agent@example.com", ...a], { stdio: "ignore" });
+  if (!existsSync(join(where, ".git"))) {
+    if (token === "NESTEDSUB") execFileSync("git", ["clone", "-q", readFileSync(join(dir, "sub-src"), "utf8"), where], { stdio: "ignore" });
+    else {
+      mkdirSync(where, { recursive: true });
+      g("init", "-q");
+      writeFileSync(join(where, "f"), "q\\n");
+      g("add", "f");
+      g("commit", "-q", "-m", "e");
+    }
+  }
+  g("config", "filter.x.clean", "touch " + join(dir, "PWNED") + "; cat");
+  appendFileSync(join(where, ".git/info/attributes"), "* filter=x\\n");
+  // A stat that differs from the nested index: git reads the file again, through the filter.
+  const old = new Date(Date.now() - 60_000);
+  utimesSync(join(where, "f"), old, old);
+}
+// What an agent in a real project leaves: folders named like tools' own, and files whose names start with .git.
+if (stdin.includes("PLAINTREE")) {
+  mkdirSync("node_modules/pkg", { recursive: true });
+  writeFileSync("node_modules/pkg/index.js", "x\\n");
+  mkdirSync(".github", { recursive: true });
+  writeFileSync(".github/CODEOWNERS", "* @acme\\n");
+  writeFileSync(".gitignore", "*.log\\n");
+  writeFileSync(".gitkeep", "");
+}
 // A detached child that would outlive the agent: its pid goes to orphan-pid.
 if (stdin.includes("ORPHAN")) {
   const orphan = spawn("setsid", ["sleep", "300"], { stdio: "ignore" });
@@ -651,8 +681,67 @@ describe("codetgh runner", () => {
         expect(t?.notes.at(-1)?.text).toMatch(title === "GITFILE" ? /changed the worktree's .git/ : /a path the runner does not commit/);
         expect(onOrigin(id)).toBe("");
         expect(git(worktree(id), "rev-list", "--count", "origin/main..HEAD")).toBe("0");
+        // Nothing the guard refused stays staged for the next attempt.
+        expect(git(worktree(id), "diff", "--cached", "--name-only")).toBe("");
       },
     );
+
+  // The clean filter of a nested repository runs on the host, as the runner user, when git looks inside it: the marker
+  // is a file the filter would make, in a folder of the test's own.
+  describe("with a nested git repository in the worktree", () => {
+    const marker = () => join(fake, "PWNED");
+    beforeEach(() => rmSync(marker(), { force: true }));
+
+    it("runs no filter of a repository cloned over a submodule's folder, and blocks the task", async () => {
+      const src = join(root, "subsrc");
+      execFileSync("git", ["init", "-q", "-b", "main", src]);
+      writeFileSync(join(src, "f"), "s\n");
+      git(src, "add", ".");
+      git(src, "commit", "-q", "-m", "Sub");
+      writeFileSync(join(fake, "sub-src"), src);
+      const seed = join(root, "seed-sub");
+      const bare = join(root, "origin-sub.git");
+      execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
+      execFileSync("git", ["init", "-q", "-b", "main", seed]);
+      git(seed, "-c", "protocol.file.allow=always", "submodule", "add", "-q", src, "sub");
+      git(seed, "commit", "-q", "-m", "Add the submodule");
+      git(seed, "push", "-q", bare, "main");
+      const withSub = join(root, "clone-sub");
+      execFileSync("git", ["clone", "-q", bare, withSub]);
+
+      const id = await create("NESTEDSUB submodule");
+      await runner({ projects: { [projectId]: withSub } });
+      expect(existsSync(marker())).toBe(false);
+      const t = await row(id);
+      expect(t?.status).toBe("blocked");
+      expect(t?.notes.at(-1)?.text).toContain("blocked: the agent left a nested git repository in the worktree");
+      expect(() => git(bare, "rev-parse", "--verify", "-q", `codetgh/${slug(id)}`)).toThrow();
+    });
+
+    it("runs no filter of a new repository, not on the first attempt and not on the retry, and keeps the index clean", async () => {
+      const id = await create("NESTEDEMB embedded");
+      for (const attempt of [1, 2]) {
+        if (attempt === 2) await cli(["run", "retry", id]);
+        await runner();
+        expect(existsSync(marker())).toBe(false);
+        const t = await row(id);
+        expect(t?.status).toBe("blocked");
+        expect(t?.notes.at(-1)?.text).toContain("blocked: the agent left a nested git repository in the worktree");
+        expect(git(worktree(id), "diff", "--cached", "--name-only")).toBe("");
+        expect(onOrigin(id)).toBe("");
+      }
+    });
+
+    it("commits and pushes a tree with folders and files named like tools' own", async () => {
+      const id = await create("PLAINTREE ordinary");
+      await runner();
+      expect(existsSync(marker())).toBe(false);
+      expect(await row(id)).toMatchObject({ status: "review" });
+      const files = git(worktree(id), "ls-tree", "-r", "--name-only", "HEAD").split("\n");
+      expect(files).toEqual(expect.arrayContaining(["node_modules/pkg/index.js", ".github/CODEOWNERS", ".gitignore", ".gitkeep"]));
+      expect(onOrigin(id)).toMatch(/^[0-9a-f]{40}$/);
+    });
+  });
 
   it.skipIf(process.platform === "win32")("passes bypassPermissions only when runner.json asks for it", async () => {
     await create("bypass");
@@ -1097,6 +1186,20 @@ describe("codetgh runner restack", () => {
     await cli(["run", "retry", s.child]);
     await runner();
     expect(await row(s.child)).toMatchObject({ status: "review", reviewRound: 0 });
+  });
+
+  it("restacks nothing and blocks the child when its worktree holds a nested git repository", async () => {
+    const s = await stack("nested");
+    pushToOrigin(s.pBranch, "extra.txt", "more\n");
+    const before = onOrigin(s.child);
+    mkdirSync(join(worktree(s.child), "emb"));
+    git(join(worktree(s.child), "emb"), "init", "-q");
+    await runner();
+    const c = await row(s.child);
+    expect(c).toMatchObject({ status: "blocked", leaseOwner: null });
+    expect(c?.notes.at(-1)?.text).toContain("blocked: the agent left a nested git repository in the worktree");
+    expect(onOrigin(s.child)).toBe(before);
+    expect(git(worktree(s.child), "rev-parse", "HEAD")).toBe(before);
   });
 
   it("puts the worktree back on the PR's head when the push after a rebase fails, so a retry restacks", async () => {

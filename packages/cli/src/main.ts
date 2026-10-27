@@ -511,6 +511,19 @@ function gitState(common: string) {
   return h.digest("hex");
 }
 const gitBaseline = new Map<string, { common: string; state: string }>();
+// The first `.git` below the root of a worktree, a folder or a file, relative to it; symlinks are not followed. A
+// repository nested by an agent has a config of its own, where git reads a clean filter and runs it on this machine when
+// it looks inside (add -A, status). Every folder is walked, whatever its name: an agent can call one node_modules.
+function nestedGit(root: string) {
+  const todo = [root];
+  for (let dir = todo.pop(); dir !== undefined; dir = todo.pop())
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name.toLowerCase() === ".git") {
+        if (dir !== root) return relative(root, join(dir, e.name));
+      } else if (e.isDirectory()) todo.push(join(dir, e.name));
+    }
+  return null;
+}
 export const safeGit = (args: string[]) =>
   promisify(execFile)("git", args, { timeout: 120_000, env: safeGitEnv(), maxBuffer: 64 << 20 }).then((r) => r.stdout.trim());
 // Jobs of a project share its clone: one fetch at a time, or git fails on the lock files of the refs it updates.
@@ -889,11 +902,23 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     };
     return renderPeerMessage(meta, null, text);
   };
+  // isolation docker: before any git call reads a tree an agent wrote. An error while reading it refuses the tree too.
+  const noNested = () => {
+    const was = step;
+    step = "the worktree could not be searched for a nested git repository";
+    const hit = nestedGit(wt);
+    if (hit) {
+      appendFileSync(log, `\ncodetgh runner: refused nested git repository ${JSON.stringify(hit)}\n`, { mode: 0o600 });
+      fail("the agent left a nested git repository in the worktree");
+    }
+    step = was;
+  };
   // isolation docker: what the agent left in the worktree, committed by the runner once no path is one it must not touch.
   const commit = async (gitfile: string, message: string) => {
     const dotgit = join(wt, ".git");
     if (!lstatSync(dotgit).isFile() || readFileSync(dotgit, "utf8") !== gitfile) fail("the agent changed the worktree's .git");
     untouched();
+    noNested();
     step = "git add failed";
     await git(["-C", wt, "add", "-A"]);
     step = "git diff failed";
@@ -912,6 +937,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       }
       if (bad) {
         appendFileSync(log, `\ncodetgh runner: refused path ${JSON.stringify(path)}\n`);
+        // Nothing refused stays staged for the next attempt, which reuses this worktree and its index.
+        await git(["-C", wt, "reset", "-q"]).catch(() => {});
         fail(
           "the agent changed a path the runner does not commit: .git, .github/workflows, .codetgh, .claude or a symlink out of the worktree",
         );
@@ -972,6 +999,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
     step = "git rev-parse failed";
     const head = await git(["-C", wt, "rev-parse", "HEAD"]);
     if (head !== (await git(["-C", dir, "rev-parse", `origin/${branch}`]))) fail("the worktree is not at the head of the PR");
+    // An earlier agent's job may have left one there, in a job that ended before the runner could commit.
+    if (boxed) noNested();
     const old = existsSync(baseFile)
       ? readFileSync(baseFile, "utf8").trim()
       : await git(["-C", wt, "merge-base", "HEAD", `origin/${parent.branch}`]);
