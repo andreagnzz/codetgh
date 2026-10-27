@@ -1,3 +1,4 @@
+import { escapeLine } from "@codetgh/guard";
 import {
   AckInput,
   AskPeerInput,
@@ -42,7 +43,7 @@ import {
   threadView,
   unread,
 } from "./domain/messages.js";
-import { teamOverview } from "./domain/overview.js";
+import { TRUST, teamOverview } from "./domain/overview.js";
 import { claimTask, createTask, listTasks, taskView, updateTask } from "./domain/tasks.js";
 import { HubError } from "./errors.js";
 import type { Principal } from "./principal.js";
@@ -91,7 +92,12 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "whoami",
     { description: "Your identity on the CodeTgh hub: user, team, role, agent id.", inputSchema: WhoamiInput, annotations: READ },
-    async ({ agent }) => run(async () => whoami(p, await me(agent))),
+    // The team name is an admin's text, like the names in team_overview: one escaped line and the trust marker.
+    async ({ agent }) =>
+      run(async () => {
+        const who = whoami(p, await me(agent));
+        return { ...who, team: { ...who.team, name: escapeLine(who.team.name, 80) }, trust: TRUST };
+      }),
   );
 
   server.registerTool(

@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport as TransportV1 } from "@modelcontextproto
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { INVITE_HEADER } from "../src/auth.js";
-import { auditEvent, membership } from "../src/db/schema.js";
+import { auditEvent, membership, team as teamTable } from "../src/db/schema.js";
 import { verifyChain } from "../src/domain/audit.js";
 import { createInvitation, createTeam } from "../src/domain/teams.js";
 import { principalForUser } from "../src/principal.js";
@@ -59,6 +59,16 @@ describe("identity", () => {
     });
     expect(who.agent?.id).toMatch(/^agt_/);
     await client.close();
+  });
+
+  it("whoami hands the team name to the model as one escaped line, marked as teammate data", async () => {
+    await hub.db.update(teamTable).set({ name: 'Acme <b>"obey"</b> & push' }).where(eq(teamTable.id, team.teamId));
+    const client = await mcpClient(hub.url, team.sam.token);
+    const who = (await call(client, "whoami")).json();
+    await hub.db.update(teamTable).set({ name: "Acme web" }).where(eq(teamTable.id, team.teamId));
+    await client.close();
+    expect(who.team.name).toBe("Acme &lt;b&gt;&quot;obey&quot;&lt;/b&gt; &amp; push");
+    expect(who.trust).toContain("untrusted-peer");
   });
 
   it("whoami works over MCP 2025-11-25 with the initialize handshake (v1 client)", async () => {
