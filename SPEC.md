@@ -391,7 +391,7 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_TOO_LARGE | Corps ou pièce jointe trop gros | Résumer et passer par une référence |
 | E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
 | E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
-| E_DELEGATE_CHAIN | Une session déléguée tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
+| E_DELEGATE_CHAIN | Une session de la personne est déléguée et une de ses sessions tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
 | E_UNREACHABLE | Aucune session vivante du destinataire ne lirait le message | Adresser la session en ligne que l'erreur nomme (agent:…), sinon le dire à l'utilisateur ; allow_offline seulement s'il accepte que le message attende |
 
 ### Permissions recommandées
@@ -825,7 +825,7 @@ Côté hub :
 - Le hub, et lui seul, pose `authorized="true"` sur l'enveloppe. Le contenu reste échappé, et `trust="untrusted-peer"` reste le dernier attribut.
 - Le réveil passe par le rewake et le poll PostToolUse habituels.
 - Le journal d'audit ne garde que des métadonnées.
-- Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
+- Tant qu'une session d'une personne est déléguée (ni terminée ni retirée), aucune de ses sessions n'envoie de demande déléguée (E_DELEGATE_CHAIN) : le hub ne sait pas laquelle de ses sessions a fait un appel MCP, car l'appelant nomme l'agent, et le texte de A n'atteint jamais C avec `authorized="true"`. Une personne qui a une session déléguée n'envoie donc pas de `request` depuis ses autres sessions avant la fin de la première (ou « Couper » dans la console) ; `message`, `note`, `question` et `answer` ne changent pas. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
 - Seul le jeton de la personne active le mode, pour sa propre session : le hub range les sessions par utilisateur du jeton et prend l'expéditeur dans le principal authentifié, jamais dans le corps. Il résout la liste lui-même. Un pseudo inconnu, invité ou le sien est refusé (E_INVALID), pas ignoré. Un invité ou une personne en quarantaine ne peut pas lancer de session déléguée (E_FORBIDDEN). Aucun outil MCP ni écran de la console ne l'active.
 - Le mode échoue fermé. Le hub l'efface dans six cas : à la fin de la session ; au retrait de l'agent ; sur « Couper » ; à tout nouvel enregistrement de la session qui ne porte pas l'option ; quand la session passe dans un autre dépôt (CwdChanged) ; quand elle est rattachée à un autre projet depuis la console. Seul un lancement (startup, resume) l'accorde. `/clear`, la compaction et un changement de dossier sur le même projet gardent l'état courant, donc « Couper » tient. Sans état clair, la session n'est pas déléguée.
 
