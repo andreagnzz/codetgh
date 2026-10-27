@@ -81,9 +81,10 @@ function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "sc
 }
 
 const minutesLeft = (c: Claim) => Math.max(0, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000));
-// The reason is a peer's words: only the permission prompt (ask) carries it, inside a peer envelope.
+// The holder is named by handle only: a display name is a peer's words, and this text reaches the model outside any envelope.
+// The reason is a peer's words too: only the permission prompt (ask) carries it, inside a peer envelope.
 const describe = (h: Holder, withReason = false) =>
-  `${escapeAttr(h.name, 40)} (${h.mode}, ${minutesLeft(h)} min left)${
+  `@${h.handle} (${h.mode}, ${minutesLeft(h)} min left)${
     withReason && h.reason
       ? `, reason:\n${renderPeerMessage(
           {
@@ -240,8 +241,8 @@ export async function createClaims(
       for (const h of others.filter((o) => overlaps(s, o))) {
         const verdict = compat(input.mode, h.mode);
         if (verdict === "conflict")
-          throw new HubError("E_CLAIM_CONFLICT", `${s.scope} is held by @${h.handle} ${describe(h)}. Write to them or work elsewhere.`);
-        if (verdict === "warn") warnings.push(`${s.scope}: @${h.handle} intends to edit it ${describe(h)}`);
+          throw new HubError("E_CLAIM_CONFLICT", `${s.scope} is held by ${describe(h)}. Write to them or work elsewhere.`);
+        if (verdict === "warn") warnings.push(`${s.scope}: ${describe(h)} intends to edit it`);
         if (verdict === "notify" && !h.notifiedAgents.includes(a.id)) notify.push(h);
       }
     }
@@ -331,7 +332,6 @@ export async function checkPaths(db: Db, p: Principal, projectId: string | null,
         holders: hs.map((h) => ({
           claim_id: h.id,
           handle: h.handle,
-          name: escapeAttr(h.name, 40),
           mode: h.mode,
           remaining_min: minutesLeft(h),
         })),

@@ -64,9 +64,7 @@ export const ClaimsCheckOutput = z.object({
   paths: z.array(
     z.object({
       path: z.string(),
-      holders: z.array(
-        z.object({ claim_id: z.string(), handle: z.string(), name: z.string(), mode: z.string(), remaining_min: z.number() }),
-      ),
+      holders: z.array(z.object({ claim_id: z.string(), handle: z.string(), mode: z.string(), remaining_min: z.number() })),
       // Other people's edits of the last 30 minutes under a claim no longer live, as sentences built from hub values.
       recent: z.array(z.string()),
     }),

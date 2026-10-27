@@ -50,7 +50,7 @@ it("asks before Sam edits a file Léa claimed, per the team's enforcement level 
   const reason = (ask.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "";
   expect((ask.out as Out)?.hookSpecificOutput?.permissionDecision).toBe("ask");
   expect(reason).toMatch(/api\/users\.ts/);
-  expect(reason).toMatch(/Léa/);
+  expect(reason).toMatch(/@lea/);
   expect(reason).toMatch(/exclusive/);
   expect(reason).toMatch(/refonte du contrat \/users/);
   const minutes = Number(reason.match(/(\d+) min/)?.[1]);
@@ -60,7 +60,7 @@ it("asks before Sam edits a file Léa claimed, per the team's enforcement level 
   expect(ask.ms).toBeLessThan(3000);
 
   const levels = [
-    ["warn", (o: Out) => expect(o?.hookSpecificOutput).toMatchObject({ additionalContext: expect.stringMatching(/Léa.*exclusive/s) })],
+    ["warn", (o: Out) => expect(o?.hookSpecificOutput).toMatchObject({ additionalContext: expect.stringMatching(/@lea.*exclusive/s) })],
     ["ask", (o: Out) => expect(o?.hookSpecificOutput).toMatchObject({ permissionDecision: "ask" })],
   ] as const;
   for (const [level, check] of levels) {
@@ -119,7 +119,7 @@ it("checks a file whose name starts with two dots, and leaves a path outside the
     tool_input: { file_path, content: "a" },
   });
   const inside = await runHook("pre-edit", edit(join(repo, "..cache/x.txt")), sam);
-  expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/\.\.cache\/x\.txt.*Léa/s);
+  expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/\.\.cache\/x\.txt.*@lea/s);
   expect((await runHook("pre-edit", edit(join(repo, "../outside.txt")), sam)).out).toBeNull();
 });
 
@@ -129,7 +129,7 @@ it("reports at the end of a turn a claimed file changed through the shell", asyn
   mkdirSync(join(repo, "api"), { recursive: true });
   writeFileSync(join(repo, "api/users.ts"), "export const changed = true;\n");
   const stop = await runHook("stop", { session_id: "sam-shell", cwd: repo }, sam);
-  expect((stop.out as Out)?.systemMessage).toMatch(/api\/users\.ts.*Léa/s);
+  expect((stop.out as Out)?.systemMessage).toMatch(/api\/users\.ts.*@lea/s);
   // Once per file and claim per session.
   expect((await runHook("stop", { session_id: "sam-shell", cwd: repo }, sam)).out).toBeNull();
 });
