@@ -82,3 +82,7 @@ Not done: `whoami` with a real throwaway token. Creating one needs the owner's a
 
 - `whoami` with a real throwaway token.
 - Monitoring: nothing alerts when the hub goes down.
+
+## Follow-up
+
+- 2026-10-27: the root crontab line above runs `deploy/backup.sh` from a checkout that an unprivileged user owns, so that user's processes could rewrite what root runs. [DEPLOY.md](../DEPLOY.md#nightly-job) now runs the job from a root-owned copy of `deploy/`. This report stays as it was on 2026-10-14.
