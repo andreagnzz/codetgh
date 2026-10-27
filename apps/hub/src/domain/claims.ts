@@ -42,9 +42,32 @@ const coversProject = (scope: string) => {
   return glob === "*" || (picomatch.scan(glob).base === "" && glob.includes("**"));
 };
 
+// picomatch turns a glob into a backtracking regex that runs on the hub's event loop, in every teammate's edit hook.
+// Measured on a 300-char path: 3 wildcards stay under 0.2 s, 4 take 6 s, and each brace group multiplies the work
+// (12 groups of {*,*}: minutes). So: 3 wildcards at most, 3 brace groups, no nesting, 8 alternatives in all.
+export const globTooComplex = (scope: string) =>
+  (scope.match(/\*+/g)?.length ?? 0) > 3 ||
+  (scope.match(/\{/g)?.length ?? 0) > 3 ||
+  /\{[^}]*\{/.test(scope) ||
+  (scope.match(/,/g)?.length ?? 0) > 8;
+
+const matchers = new Map<string, ((path: string) => boolean) | null>();
+// A stored scope over the limits (claimed before they existed, or written straight to the table) matches nothing: it
+// blocks nobody, which is the safe side for a claim that is advisory (the permission prompt stays), whereas matching
+// it could stall every teammate, and reading it as a prefix would block the whole project. It ends with its ttl.
+function matcher(scope: string) {
+  let m = matchers.get(scope);
+  if (m === undefined) {
+    m = globTooComplex(scope) ? null : picomatch(scope, { dot: true });
+    if (matchers.size >= 500) matchers.clear();
+    matchers.set(scope, m);
+  }
+  return m;
+}
+
 function covers(c: Pick<Claim, "scopeType" | "scope">, path: string) {
   if (c.scopeType === "path") return c.scope === path;
-  return c.scopeType === "glob" && picomatch(c.scope, { dot: true })(path);
+  return c.scopeType === "glob" && (matcher(c.scope)?.(path) ?? false);
 }
 
 function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "scopeType" | "scope">) {
@@ -188,6 +211,11 @@ export async function createClaims(
     if ((s.scopeType === "path" || s.scopeType === "glob") && !a.projectId)
       throw new HubError("E_INVALID", "no project for this agent: start the session inside a git repository");
     if (isExcluded(s.scope)) throw new HubError("E_INVALID", `${s.scope} cannot be claimed (secrets and .git are excluded)`);
+    if (s.scopeType === "glob" && globTooComplex(s.scope))
+      throw new HubError(
+        "E_INVALID",
+        `${s.scope} is too complex: at most 3 wildcards (* or **), 3 brace groups, no nested braces, 8 commas`,
+      );
     if (s.scopeType === "glob" && coversProject(s.scope))
       throw new HubError(
         "E_INVALID",
