@@ -64,19 +64,57 @@ From the checkout (or `--dir <path>`), it runs, in order:
 
 If the pull or the backup fails, no container is touched. If the new hub is not ready, it prints the rollback command with the previous commit. Docker needs your user in the `docker` group, or run `sudo $(which codetgh) update`: under sudo, git still runs as you (your GitHub keys) and the checkout must be yours.
 
+**Whom root trusts.** `sudo codetgh update` and `sudo codetgh backup` run `deploy/backup.sh` and `deploy/restore-test.sh` as root, and `update` then applies `deploy/compose.yaml` with `docker compose … up -d --build`. They trust the checkout's owner by design: `trusted()` in `packages/cli/src/main.ts` accepts the checkout, `deploy/`, `compose.yaml` and the two scripts when they belong to root or to the sudo caller (`SUDO_UID`), and refuses only a world-writable one (a group-writable one passes). It keeps other users out, not the caller. So any process running as you can edit those files, and root runs them at your next `sudo codetgh update`. With full `sudo` or the `docker` group, you are root already; with a `sudo` rule limited to this command, it is a way from your user to root.
+
+To make root run root-owned files only, keep the checkout root-owned (for example `/opt/codetgh`, cloned with `sudo`) and run `codetgh update` from a real root shell (a root login or `su -`, where `SUDO_UID` is unset): under `sudo` git runs as you and cannot write a root-owned checkout. What changes:
+- you update from a root session, and git runs with root's credentials (enough for the public HTTPS clone; a private fork needs a deploy key in root's home);
+- you no longer pull or edit in that checkout as yourself: work in another clone;
+- the cron line can point at the checkout's `deploy/backup.sh`, so the nightly job's copy (below) is not needed.
+
+Residual risk: root still runs whatever `git pull` brings, so the repository you pull from becomes the trust anchor. The `codetgh` binary is a file too: under your home (for example `~/.npm-global/bin/codetgh`), `sudo $(which codetgh)` runs a file you can rewrite, so install it root-owned for this. `trusted()` is unchanged: this is a documented limit.
+
 Migrations run when the hub starts. Each one stays compatible with the previous hub version, so rolling back means checking out the previous commit and running `up -d --build` again.
 
 ## Backup
 
 - `codetgh backup` runs `deploy/backup.sh`, then `deploy/restore-test.sh` on the new dump, and fails if it does not restore.
 - `deploy/backup.sh` writes `deploy/backups/codetgh-<date>.dump` (`pg_dump -Fc`, mode 0600) and deletes dumps older than 7 days.
-- It runs every night at 03:17 from a crontab that can run `docker`: root's (`sudo crontab -e`), or a user in the `docker` group. The line is `17 3 * * * cd <repo> && deploy/backup.sh >> deploy/backups/backup.log 2>&1`. Run that exact command once by hand to check it writes a dump.
-- Copy `deploy/backups/` off the machine from time to time; a backup kept on the same disk does not survive the disk.
+- It runs every night at 03:17 from root's crontab, from a root-owned copy of `deploy/` and not from your checkout (below).
+- Copy the backups off the machine from time to time (`/opt/codetgh-deploy/deploy/backups/` for the nightly job, `deploy/backups/` for `codetgh backup`); a backup kept on the same disk does not survive the disk.
+
+### Nightly job
+
+**Threat.** The job needs Docker, so it runs as root (a user in the `docker` group is root-equivalent, see the runner setup). Run from your checkout, root would execute files that the checkout's owner can rewrite. Any process of that Unix user (a Claude Code session in bypass mode steered by a prompt injection, an npm lifecycle script, a runner with `"isolation": "none"`) could append a command to `deploy/backup.sh`, which root runs at 03:17, or edit the `deploy/compose.yaml` it loads. `deploy/backups/` is theirs too: root writes the dumps through names they can pre-create, symlinks included. Nothing checks the owner on the cron path. In a root-owned directory, only root changes what runs. It matters when that user is outside the `docker` group and has no unrestricted `sudo`, as in this setup; with either, it is already root.
+
+Setup, once, from the checkout (`deploy/.env` exists after `codetgh setup`):
+1. **Copy.** Keep the `deploy/` layout: the scripts do `cd "$(dirname "$0")/.."` and read `deploy/compose.yaml`, `deploy/.env` and `deploy/backups/` from there, so they run unchanged. Compose names its project in the file (`name: codetgh`), so the copy reaches the same `db` container, and the scripts only `exec` into it: no Dockerfile or source is needed.
+   ```
+   sudo install -d -m 0755 -o root -g root /opt/codetgh-deploy /opt/codetgh-deploy/deploy
+   sudo install -d -m 0700 -o root -g root /opt/codetgh-deploy/deploy/backups
+   sudo install -m 0755 -o root -g root deploy/backup.sh deploy/restore-test.sh /opt/codetgh-deploy/deploy/
+   sudo install -m 0644 -o root -g root deploy/compose.yaml /opt/codetgh-deploy/deploy/
+   sudo install -m 0600 -o root -g root deploy/.env /opt/codetgh-deploy/deploy/
+   ```
+2. **Check it** before the crontab: both must work from the copy, and if one does not, leave the crontab alone.
+   ```
+   sudo /opt/codetgh-deploy/deploy/backup.sh          # prints the dump's path
+   sudo /opt/codetgh-deploy/deploy/restore-test.sh    # ends with "restore OK"
+   ```
+3. **Crontab.** In `sudo crontab -e`, replace any older `cd <repo> && deploy/backup.sh` line with:
+   ```
+   17 3 * * * /opt/codetgh-deploy/deploy/backup.sh >> /opt/codetgh-deploy/deploy/backups/backup.log 2>&1
+   ```
+
+`codetgh update` does not refresh the copy, on purpose. After an update, read what changed, then run the matching `install` line again for each file that did (and for `deploy/.env` after you edit it):
+```
+for f in backup.sh restore-test.sh compose.yaml; do diff -u /opt/codetgh-deploy/deploy/$f deploy/$f; done
+```
+Reading the diff is the point: this step turns files your user can write into files root runs.
 
 ## Restore
 
 - **Check that a dump restores**, without touching the live database: `deploy/restore-test.sh [dump]`. It loads the dump into a scratch database and compares row counts.
-- **Replace the live database with a dump**, while the hub is stopped:
+- **Replace the live database with a dump**, while the hub is stopped. A dump of the nightly job is in `/opt/codetgh-deploy/deploy/backups/` and readable by root only: run these lines in a root shell, from the checkout, with that full path.
   ```
   docker compose -f deploy/compose.yaml --env-file deploy/.env stop hub
   docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db dropdb -U codetgh codetgh
