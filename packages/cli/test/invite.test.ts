@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { createInvitation } from "../../../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
 import { type Keyring, program } from "../src/main.js";
 
@@ -43,6 +44,25 @@ it("gives an admin a 7-day invitation link that opens the sign-up page", async (
 it("invites with a role, but only an owner invites owners", async () => {
   expect(await cli(team.lea.token, ["invite", "omar@acme.test", "--role", "guest"])).toContain("as guest");
   await expect(cli(team.lea.token, ["invite", "x@acme.test", "--role", "boss"])).rejects.toThrow(/member, admin, guest or owner/);
+});
+
+it("sends admin and owner invitations to the console, and revokes only member and guest ones", async () => {
+  const refusal = (args: string[]) =>
+    cli(team.lea.token, args).then(
+      () => "",
+      (e: Error) => e.message,
+    );
+  await createInvitation(hub.db, { teamId: team.teamId, email: "pending@acme.test", role: "admin", invitedBy: null, via: "system" });
+  // The hub's message is the whole answer: asking an admin to run the same command would send the person in a circle.
+  for (const args of [
+    ["invite", "adm@acme.test", "--role", "admin"],
+    ["invite", "own@acme.test", "--role", "owner"],
+    ["invite", "pending@acme.test", "--revoke"],
+  ]) {
+    const message = await refusal(args);
+    expect(message).toMatch(/in the console, not with a token$/);
+    expect(message).not.toContain("ask an admin");
+  }
 });
 
 it("tells a member to ask an admin, and checks the address", async () => {

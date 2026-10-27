@@ -150,7 +150,7 @@ Les flèches partent des clients vers le hub, jamais l'inverse. Aucun poste n'é
 | Flux | Étapes |
 | --- | --- |
 | Question et réponse (scénario 1) | Le Claude de Sam appelle ask_peer → le hub stocke le message et prévient les agents de Léa → au prochain tour de Léa, le hook l'injecte → son Claude répond avec send_message → le hub débloque l'attente de Sam, qui dure 60 s au plus |
-| Réservation (scénario 2) | Le Claude de Sam prépare une édition → le hook PreToolUse interroge le hub (claim_check) → en cas de conflit, Claude Code demande confirmation avec le nom du détenteur → Sam attend ou écrit une demande |
+| Réservation (scénario 2) | Le Claude de Sam prépare une édition → le hook PreToolUse interroge le hub (claim_check) → en cas de conflit, Claude Code demande confirmation avec le @pseudo du détenteur → Sam attend ou écrit une demande |
 | Relais (scénario 3) | Le Claude de Léa appelle handoff → le hub crée la capsule et prévient Sam → au démarrage de la session de Sam, le paquet de contexte signale le relais en tête, et la capsule arrive dans l'enveloppe avec son premier prompt |
 | Poussée (phase 2) | Le hub publie sur le flux SSE → le démon de Léa le reçoit → il dépose le message dans la session selon le mode choisi (voir « Intégration Claude Code ») |
 
@@ -214,7 +214,7 @@ Priorités : low, normal, high, blocking. Une priorité blocking signale que l'�
 
 ### Réservations (claims)
 
-Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob (src/api/**), une tâche ou une ressource nommée. Les chemins sont relatifs à la racine du dépôt, avec des /, sensibles à la casse. La durée par défaut est de 30 minutes (ttl_s 1800, maximum 4 h), renouvelée à chaque édition.
+Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob (src/api/**), une tâche ou une ressource nommée. Les chemins sont relatifs à la racine du dépôt, avec des /, sensibles à la casse. La durée par défaut est de 30 minutes (ttl_s 1800, maximum 4 h), renouvelée à chaque édition. Un glob est borné, parce que le hub l'évalue à chaque édition de chaque coéquipier : 2 jokers (`*` ou `**`), accolades et virgules ensemble 6 au plus, pas d'accolades imbriquées ; au-delà, E_INVALID. Un claim déjà stocké au-delà de ces bornes ne correspond à aucun chemin.
 
 | Mode | Sens | Posé par |
 | --- | --- | --- |
@@ -232,7 +232,7 @@ Le réglage claims.enforcement choisit la réaction à un conflit : warn (l'agen
 
 Une réservation appartient à une personne, pas à une session : deux sessions d'une même personne ne se gênent pas, et seule la réservation d'une autre personne compte comme conflit (claim, PreToolUse, claim_check, vérification des fichiers modifiés par le shell du hook Stop). Les sous-agents d'une session posent leurs réservations sous l'agent de la session parente : le hook PreToolUse envoie l'identifiant de session et ignore agent_id. Dans team_overview, `claims[].mine` vaut vrai pour toute réservation de la personne qui appelle, quelle que soit sa session, et le paquet de contexte de démarrage ne liste que les réservations des autres.
 
-Les lignes de réservation restent après une libération ou une expiration. claim_check (champ `recent` de chaque chemin) et PreToolUse (au premier passage d'une session sur le fichier) ajoutent donc, pour les 30 dernières minutes, une ligne comme « @alex edited this path 12 min ago (claim released) » (ou « claim expired ») : la dernière édition d'une autre personne, datée par l'expiration de sa réservation moins sa durée, que chaque édition renouvelle. C'est un avertissement, jamais un blocage ; les réservations de la personne elle-même ne comptent pas.
+Le détenteur d'une réservation est désigné par son @pseudo seul (conflit de claim, avertissements, claim_check, PreToolUse) : le nom affiché est un texte de pair, et ces messages n'ont pas d'enveloppe. Les lignes de réservation restent après une libération ou une expiration. claim_check (champ `recent` de chaque chemin) et PreToolUse (au premier passage d'une session sur le fichier) ajoutent donc, pour les 30 dernières minutes, une ligne comme « @alex edited this path 12 min ago (claim released) » (ou « claim expired ») : la dernière édition d'une autre personne, datée par l'expiration de sa réservation moins sa durée, que chaque édition renouvelle. C'est un avertissement, jamais un blocage ; les réservations de la personne elle-même ne comptent pas.
 
 Hook pre-push, optionnel. `codetgh hooks install` écrit `.git/hooks/pre-push` (ou dans le dossier de `core.hooksPath`), un script `#!/bin/sh` qui porte la signature `# codetgh:pre-push` et appelle `codetgh claims check-push` avec l'entrée standard de git ; il ne remplace jamais un pre-push sans cette signature, sauf avec `--force`, et `codetgh hooks uninstall` ne retire que le sien. `codetgh claims check-push` lit les lignes `<ref locale> <sha local> <ref distante> <sha distant>`, liste pour chaque branche poussée les fichiers modifiés (`git diff --name-only <sha distant> <sha local>` ; pour une nouvelle branche, depuis le merge-base avec origin/HEAD, origin/main ou origin/master), demande au hub lesquels une autre personne réserve (POST /v1/claims/check avec l'empreinte du dépôt, mêmes règles que claim_check : refusé à un invité, E_FORBIDDEN, et la réponse pour un dépôt que l'équipe n'a pas lié est identique à celle d'un dépôt lié sans réservation, pour qu'un membre ne puisse pas sonder les dépôts liés) et affiche ceux qu'elle réserve. Seule une réservation exclusive d'une autre personne refuse le push (code de sortie 1) ; une réservation intent, que le hook PreToolUse pose à chaque édition, et une réservation shared s'affichent comme un avertissement (« not blocking ») et le push continue. `CODETGH_ALLOW_PUSH=1` ou `git push --no-verify` passent. Le contrôle échoue en mode ouvert : hub injoignable, pas de jeton, délai de 3 s dépassé ou erreur donnent le code 0 et une seule ligne d'avertissement. Le runner ignore les hooks du dépôt dans ses appels git (`core.hooksPath` à /dev/null) : le hook ne le touche pas.
 
@@ -391,7 +391,7 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_TOO_LARGE | Corps ou pièce jointe trop gros | Résumer et passer par une référence |
 | E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
 | E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
-| E_DELEGATE_CHAIN | Une session déléguée tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
+| E_DELEGATE_CHAIN | Une session de la personne est déléguée et une de ses sessions tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
 | E_UNREACHABLE | Aucune session vivante du destinataire ne lirait le message | Adresser la session en ligne que l'erreur nomme (agent:…), sinon le dire à l'utilisateur ; allow_offline seulement s'il accepte que le message attende |
 
 ### Permissions recommandées
@@ -786,7 +786,7 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Hub indiscret ou compromis | Accès à la base | Chiffrement au repos ; journal chaîné avec points de contrôle signés ; hébergement dans l'UE en option ; chiffrement de bout en bout facultatif des corps de messages en phase 3 |
 | Exfiltration par références ou pièces jointes | Un chemin sensible partagé par erreur | Liste d'exclusion de chemins (.env*, *.pem, .git/) ; le hub ne lit jamais de fichier ; 5 pièces jointes de 256 Ko au plus |
 | Déni de service | Inondation de messages | Limites de débit par agent et par équipe, tailles maximales, quotas |
-| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration), détection d'usage anormal (nouvel appareil, rafale) |
+| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), détection d'usage anormal (nouvel appareil, rafale) |
 | Chaîne d'approvisionnement | Dépendance ou plugin piégé | Versions épinglées, provenance npm, inventaire logiciel, contrôle des licences ; hooks minimaux, sans eval et sans autre hôte que le hub |
 
 ### Enveloppe des messages de pairs
@@ -825,7 +825,7 @@ Côté hub :
 - Le hub, et lui seul, pose `authorized="true"` sur l'enveloppe. Le contenu reste échappé, et `trust="untrusted-peer"` reste le dernier attribut.
 - Le réveil passe par le rewake et le poll PostToolUse habituels.
 - Le journal d'audit ne garde que des métadonnées.
-- Une session déléguée ne peut pas envoyer de demande (E_DELEGATE_CHAIN) : le texte de A n'atteint jamais C avec `authorized="true"`. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
+- Tant qu'une session d'une personne est déléguée (ni terminée ni retirée), aucune de ses sessions n'envoie de demande déléguée (E_DELEGATE_CHAIN) : le hub ne sait pas laquelle de ses sessions a fait un appel MCP, car l'appelant nomme l'agent, et le texte de A n'atteint jamais C avec `authorized="true"`. Une personne qui a une session déléguée n'envoie donc pas de `request` depuis ses autres sessions avant la fin de la première (ou « Couper » dans la console) ; `message`, `note`, `question` et `answer` ne changent pas. Seul `ask_peer` peut poser l'attribut ; `send_message`, REST, `handoff` et les ponts ne le peuvent pas.
 - Seul le jeton de la personne active le mode, pour sa propre session : le hub range les sessions par utilisateur du jeton et prend l'expéditeur dans le principal authentifié, jamais dans le corps. Il résout la liste lui-même. Un pseudo inconnu, invité ou le sien est refusé (E_INVALID), pas ignoré. Un invité ou une personne en quarantaine ne peut pas lancer de session déléguée (E_FORBIDDEN). Aucun outil MCP ni écran de la console ne l'active.
 - Le mode échoue fermé. Le hub l'efface dans six cas : à la fin de la session ; au retrait de l'agent ; sur « Couper » ; à tout nouvel enregistrement de la session qui ne porte pas l'option ; quand la session passe dans un autre dépôt (CwdChanged) ; quand elle est rattachée à un autre projet depuis la console. Seul un lancement (startup, resume) l'accorde. `/clear`, la compaction et un changement de dossier sur le même projet gardent l'état courant, donc « Couper » tient. Sans état clair, la session n'est pas déléguée.
 
@@ -952,7 +952,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | --- | --- |
 | Rendu | Hono JSX côté serveur et htmx 2 pour les échanges partiels ; aucun framework client, aucune étape de build du front |
 | Temps réel | Flux SSE par équipe, filtré selon le rôle ; reprise par Last-Event-ID après une coupure |
-| Mêmes droits que l'API | La console appelle les mêmes services que l'API, avec la session de la personne : elle n'a aucun passe-droit. Les actions réservées aux humains (membres, rôles, réglages, interrupteur, audit, acceptation de la mémoire, jetons) n'acceptent que cette session, jamais un jeton personnel |
+| Mêmes droits que l'API | La console appelle les mêmes services que l'API, avec la session de la personne : elle n'a aucun passe-droit. Les actions réservées aux humains (membres, rôles, réglages, interrupteur, audit, acceptation de la mémoire, jetons) n'acceptent que cette session, jamais un jeton personnel, à une exception : un jeton d'administrateur invite (POST /v1/invitations) et révoque l'invitation d'un membre ou d'un invité, jamais d'un admin ou d'un owner (E_FORBIDDEN, la console seule le fait), et pas pendant l'interrupteur (E_KILL_SWITCH) |
 | Langues et accès | Français et anglais ; navigation au clavier ; contrastes conformes aux recommandations WCAG AA |
 | Listes | Pagination par curseur partout, 50 éléments par page |
 
@@ -1107,7 +1107,7 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | Chemin | Rôle | Accès |
 | --- | --- | --- |
 | /mcp | Point d'accès MCP (Streamable HTTP, révisions 2026-07-28 et 2025-11-25) | Jeton ou OAuth |
-| /v1/* | API REST de la console, du CLI et des hooks (un jeton personnel n'ouvre que les routes de portée agent) ; description dans /v1/openapi.json | Jeton ou session |
+| /v1/* | API REST de la console, du CLI et des hooks (un jeton personnel n'ouvre que les routes de portée agent, plus l'invitation d'un membre ou d'un invité) ; description dans /v1/openapi.json | Jeton ou session |
 | /v1/stream | Flux SSE du démon et de la console | Jeton ou session |
 | /v1/device/start, /v1/device/token | Connexion du CLI dans le navigateur (flux d'appareil) | Public, limité par adresse |
 | /console/device | Saisie du code et approbation d'une connexion du CLI | Session |

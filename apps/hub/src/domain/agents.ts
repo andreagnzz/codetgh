@@ -441,11 +441,33 @@ export async function listAgents(
     .limit(opts.limit ?? 50);
 }
 
+// A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy). The hub cannot
+// tell which of a person's sessions made an MCP call (the caller names the agent), so while any live session of theirs
+// is a delegate, none of them sends a request.
+export async function requireNoDelegate(db: Db, p: Principal) {
+  const [live] = await db
+    .select({ id: agent.id })
+    .from(agent)
+    .where(
+      and(
+        eq(agent.teamId, p.teamId),
+        eq(agent.userId, p.user.id),
+        isNotNull(agent.acceptRequestsFrom),
+        isNull(agent.endedAt),
+        isNull(agent.removedAt),
+      ),
+    )
+    .limit(1);
+  if (live)
+    throw new HubError(
+      "E_DELEGATE_CHAIN",
+      "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
+    );
+}
+
 // The live delegate session of `handle` on the sender's project that accepts this sender's requests.
 export async function delegateFor(db: Db, p: Principal, from: Agent, handle: string) {
-  // A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy).
-  if (from.acceptRequestsFrom)
-    throw new HubError("E_DELEGATE_CHAIN", "a delegate session cannot send requests: reply to your requester, or ask a question instead");
+  await requireNoDelegate(db, p);
   const [row] = from.projectId
     ? await db
         .select({ id: agent.id })

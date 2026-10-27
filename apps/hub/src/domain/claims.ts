@@ -42,9 +42,32 @@ const coversProject = (scope: string) => {
   return glob === "*" || (picomatch.scan(glob).base === "" && glob.includes("**"));
 };
 
-function covers(c: Pick<Claim, "scopeType" | "scope">, path: string) {
+// picomatch turns a glob into a backtracking regex that runs on the hub's event loop, in every teammate's edit hook, once
+// per live claim. Measured with picomatch 4.0.7 on a 300-char path of "a": with 2 runs of stars the worst accepted
+// scope takes 4 ms whatever the braces, with 3 it takes 80 to 340 ms, with 4 seconds. Braces multiply that, so a group
+// and each comma weigh 1 together (6 at most), and braces never nest. The parentheses and | of extglobs (@(a|a) is
+// exponential) are refused here too: PATH_CHARS (packages/shared) keeps them out of new scopes, and this keeps them out
+// of the matcher for a scope stored by other means. Re-measure (apps/hub/test/claims-glob.test.ts) before widening any of it.
+export const globTooComplex = (scope: string) =>
+  (scope.match(/\*+/g)?.length ?? 0) > 2 || (scope.match(/[{,]/g)?.length ?? 0) > 6 || /\{[^}]*\{|[()|]/.test(scope);
+
+const matchers = new Map<string, ((path: string) => boolean) | null>();
+// A stored scope over the limits (claimed before they existed, or written straight to the table) matches nothing: it
+// blocks nobody, which is the safe side for a claim that is advisory (the permission prompt stays), whereas matching
+// it could stall every teammate, and reading it as a prefix would block the whole project. It ends with its ttl.
+function matcher(scope: string) {
+  let m = matchers.get(scope);
+  if (m === undefined) {
+    m = globTooComplex(scope) ? null : picomatch(scope, { dot: true });
+    if (matchers.size >= 500) matchers.clear();
+    matchers.set(scope, m);
+  }
+  return m;
+}
+
+export function covers(c: Pick<Claim, "scopeType" | "scope">, path: string) {
   if (c.scopeType === "path") return c.scope === path;
-  return c.scopeType === "glob" && picomatch(c.scope, { dot: true })(path);
+  return c.scopeType === "glob" && (matcher(c.scope)?.(path) ?? false);
 }
 
 function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "scopeType" | "scope">) {
@@ -58,9 +81,10 @@ function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "sc
 }
 
 const minutesLeft = (c: Claim) => Math.max(0, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000));
-// The reason is a peer's words: only the permission prompt (ask) carries it, inside a peer envelope.
+// The holder is named by handle only: a display name is a peer's words, and this text reaches the model outside any envelope.
+// The reason is a peer's words too: only the permission prompt (ask) carries it, inside a peer envelope.
 const describe = (h: Holder, withReason = false) =>
-  `${escapeAttr(h.name, 40)} (${h.mode}, ${minutesLeft(h)} min left)${
+  `@${h.handle} (${h.mode}, ${minutesLeft(h)} min left)${
     withReason && h.reason
       ? `, reason:\n${renderPeerMessage(
           {
@@ -188,6 +212,11 @@ export async function createClaims(
     if ((s.scopeType === "path" || s.scopeType === "glob") && !a.projectId)
       throw new HubError("E_INVALID", "no project for this agent: start the session inside a git repository");
     if (isExcluded(s.scope)) throw new HubError("E_INVALID", `${s.scope} cannot be claimed (secrets and .git are excluded)`);
+    if (s.scopeType === "glob" && globTooComplex(s.scope))
+      throw new HubError(
+        "E_INVALID",
+        `${s.scope} is too complex: at most 2 wildcards (* or **), braces and commas totalling 6, no nested braces`,
+      );
     if (s.scopeType === "glob" && coversProject(s.scope))
       throw new HubError(
         "E_INVALID",
@@ -212,8 +241,8 @@ export async function createClaims(
       for (const h of others.filter((o) => overlaps(s, o))) {
         const verdict = compat(input.mode, h.mode);
         if (verdict === "conflict")
-          throw new HubError("E_CLAIM_CONFLICT", `${s.scope} is held by @${h.handle} ${describe(h)}. Write to them or work elsewhere.`);
-        if (verdict === "warn") warnings.push(`${s.scope}: @${h.handle} intends to edit it ${describe(h)}`);
+          throw new HubError("E_CLAIM_CONFLICT", `${s.scope} is held by ${describe(h)}. Write to them or work elsewhere.`);
+        if (verdict === "warn") warnings.push(`${s.scope}: ${describe(h)} intends to edit it`);
         if (verdict === "notify" && !h.notifiedAgents.includes(a.id)) notify.push(h);
       }
     }
@@ -303,7 +332,6 @@ export async function checkPaths(db: Db, p: Principal, projectId: string | null,
         holders: hs.map((h) => ({
           claim_id: h.id,
           handle: h.handle,
-          name: escapeAttr(h.name, 40),
           mode: h.mode,
           remaining_min: minutesLeft(h),
         })),

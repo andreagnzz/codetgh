@@ -93,5 +93,5 @@ it("still blocks secrets in bypass, and warns on a claim conflict", async () => 
     )
   ).out as Out;
   expect(edit?.hookSpecificOutput?.permissionDecision).toBeUndefined();
-  expect(edit?.hookSpecificOutput?.additionalContext).toMatch(/^CodeTgh: .*Léa/s);
+  expect(edit?.hookSpecificOutput?.additionalContext).toMatch(/^CodeTgh: .*@lea/s);
 });

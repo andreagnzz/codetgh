@@ -9,7 +9,7 @@ import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
 import { isSessionAgent } from "./admin.js";
-import { type Agent, listed, presence } from "./agents.js";
+import { type Agent, listed, presence, requireNoDelegate } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import type { Bus } from "./bus.js";
 import type { RateLimiter } from "./limits.js";
@@ -390,7 +390,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     if (input.delegate) {
       // Locked, so two requests at once cannot both pass the cap, nor one slip past « Couper ».
       const [d] = await tx.select().from(agent).where(eq(agent.id, input.delegate)).for("update");
-      if (author.agent?.acceptRequestsFrom) throw new HubError("E_DELEGATE_CHAIN", "a delegate session cannot send requests");
+      await requireNoDelegate(tx, p);
       if (!d?.acceptRequestsFrom?.includes(p.user.id) || d.endedAt || d.removedAt)
         throw new HubError("E_NO_DELEGATE", "this session no longer accepts your requests: ask a question instead");
       const [open] = await tx

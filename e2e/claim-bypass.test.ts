@@ -44,5 +44,5 @@ it("turns ask into a warning for a session in bypassPermissions, where nobody ca
   expect(((await edit("default")).out as Out)?.hookSpecificOutput?.permissionDecision).toBe("ask");
   const bypass = (await edit("bypassPermissions")).out as Out;
   expect(bypass?.hookSpecificOutput?.permissionDecision).toBeUndefined();
-  expect(bypass?.hookSpecificOutput?.additionalContext).toMatch(/^CodeTgh: .*Léa/s);
+  expect(bypass?.hookSpecificOutput?.additionalContext).toMatch(/^CodeTgh: .*@lea/s);
 });

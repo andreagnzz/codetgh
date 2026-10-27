@@ -533,7 +533,7 @@ async function shellEdits(input: Input) {
     });
     if (!res.ok) return null;
     const { paths } = (await res.json()) as {
-      paths: Array<{ path: string; holders: Array<{ claim_id: string; name: string; mode: string }> }>;
+      paths: Array<{ path: string; holders: Array<{ claim_id: string; handle: string; mode: string }> }>;
     };
     const fresh = paths
       .flatMap((p) => p.holders.map((h) => ({ ...h, path: p.path })))
@@ -544,7 +544,7 @@ async function shellEdits(input: Input) {
       reported: [...(latest.reported ?? []), ...fresh.map((h) => `${h.path}:${h.claim_id}`)].slice(-500),
     });
     return {
-      systemMessage: `CodeTgh: changed outside the editor tools, but claimed by someone else: ${fresh.map((h) => `${h.path} (${h.name}, ${h.mode})`).join("; ")}.`,
+      systemMessage: `CodeTgh: changed outside the editor tools, but claimed by someone else: ${fresh.map((h) => `${h.path} (@${h.handle}, ${h.mode})`).join("; ")}.`,
     };
   } catch {
     return null;

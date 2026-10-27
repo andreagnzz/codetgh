@@ -56,7 +56,7 @@ describe("claims", () => {
 
     const conflict = await call(sam, "claim", { scope: ["api/users.ts"] });
     expect(code(conflict)).toBe("E_CLAIM_CONFLICT");
-    expect(conflict.text).toContain("lea");
+    expect(conflict.text).toContain("held by @lea (exclusive");
 
     const checked = await call(sam, "claim_check", { paths: ["api/users.ts", "api/free.ts"] });
     const check = checked.json();
@@ -74,7 +74,7 @@ describe("claims", () => {
   it("answers the edit hook: ask on someone else's exclusive claim, by default", async () => {
     const r = await preEdit(team.sam.token, "sam-claims", "api/users.ts");
     expect(r.body?.decision).toBe("ask");
-    expect(r.body?.reason).toMatch(/api\/users\.ts.*Léa.*exclusive/s);
+    expect(r.body?.reason).toContain("api/users.ts is claimed by @lea (exclusive");
     expect(r.body?.reason).toContain("refonte du contrat /users");
     expect(await active(sessions.sam ?? "")).toHaveLength(0);
   });
@@ -129,7 +129,7 @@ describe("claims", () => {
     expect(await onFile()).toHaveLength(1);
     const other = await preEdit(team.sam.token, "sam-claims", "lib/date.ts");
     expect(other.body?.decision).toBe("warn");
-    expect(other.body?.reason).toContain("Malik");
+    expect(other.body?.reason).toContain("being edited by @malik (intent");
   });
 
   it("refuses excluded paths, oversized TTLs and claims outside a project", async () => {

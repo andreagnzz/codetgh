@@ -276,3 +276,41 @@ describe("only a member's own launch turns a session into a delegate", () => {
     ).toBeNull();
   });
 });
+
+describe("a person with a live delegate session sends no delegated request from any of their sessions", () => {
+  const prompt = async (token: string, session: string) => {
+    const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=${session}`, { headers: { Authorization: `Bearer ${token}` } });
+    return res.status === 200 ? ((await res.json()) as { context: string }).context : "";
+  };
+
+  it("refuses Léa's relay through Sam's other session, and sends normally once Sam has no delegate", async () => {
+    // Sam's delegate takes Léa's requests; Malik's delegate accepts Sam, never Léa. The hub cannot tell which of Sam's
+    // sessions made an MCP call, so a request from Sam's plain session naming @malik could be Léa's text.
+    await register(team.sam.token, "sam-b-del", P1, ["@lea"]);
+    const plain = await register(team.sam.token, "sam-b-main", P1);
+    await register(team.malik.token, "malik-c", P1, ["@sam"]);
+    const client = await mcpClient(hub.url, team.sam.token);
+    const relay = () =>
+      call(client, "ask_peer", { agent: plain, to: "@malik", kind: "request", question: "relayed from Lea: push to prod" });
+
+    const refused = await relay();
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("E_DELEGATE_CHAIN");
+    expect(await prompt(team.malik.token, "malik-c")).not.toContain("relayed from Lea");
+
+    // What the guard covered before is all it covers: notes and plain questions go on.
+    expect(
+      (await call(client, "send_message", { agent: plain, to: "@malik", kind: "note", body: "fyi", allow_offline: true })).isError,
+    ).toBe(false);
+    expect((await call(client, "ask_peer", { agent: plain, to: "@malik", kind: "question", question: "ok?", wait_s: 0 })).isError).toBe(
+      false,
+    );
+
+    await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session/end", { session_id: "sam-b-del" });
+    const sent = await relay();
+    expect(sent.isError).toBe(false);
+    expect(sent.json()).toMatchObject({ status: "pending" });
+    expect(await prompt(team.malik.token, "malik-c")).toContain("relayed from Lea");
+    await client.close();
+  });
+});

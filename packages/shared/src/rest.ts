@@ -64,9 +64,7 @@ export const ClaimsCheckOutput = z.object({
   paths: z.array(
     z.object({
       path: z.string(),
-      holders: z.array(
-        z.object({ claim_id: z.string(), handle: z.string(), name: z.string(), mode: z.string(), remaining_min: z.number() }),
-      ),
+      holders: z.array(z.object({ claim_id: z.string(), handle: z.string(), mode: z.string(), remaining_min: z.number() })),
       // Other people's edits of the last 30 minutes under a claim no longer live, as sentences built from hub values.
       recent: z.array(z.string()),
     }),
@@ -456,7 +454,8 @@ export const REST_ROUTES = {
   invite: {
     method: "POST",
     path: "/v1/invitations",
-    summary: "Invite an email address to the team (admins); returns the 7-day link, also emailed when SMTP is set",
+    summary:
+      "Invite an email address to the team as member or guest (admins; admin and owner roles from the console only); returns the 7-day link, also emailed when SMTP is set",
     body: InviteInput,
     output: InviteOutput,
   },
@@ -542,7 +541,8 @@ export const REST_ROUTES = {
   revokeInvitations: {
     method: "POST",
     path: "/v1/invitations/revoke",
-    summary: "Revoke the pending invitations of an email address (admins); their links stop working",
+    summary:
+      "Revoke the pending member or guest invitations of an email address (admins; admin and owner ones from the console only); their links stop working",
     body: RevokeInvitationsInput,
     output: RevokedOutput,
   },
