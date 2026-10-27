@@ -70,14 +70,15 @@ describe("claim globs are bounded: one member's scope cannot stall the hub", () 
       holderUserId: team.lea.userId,
       holderAgentId: leaAgent,
       scopeType: "glob",
-      scope: "{*,*}".repeat(12) + "z",
+      scope: "{*,*}".repeat(14) + "z",
       mode: "exclusive",
       ttlS: 14400,
       expiresAt: new Date(Date.now() + 14400_000),
     });
     const t0 = performance.now();
     const res = await preEdit(team.sam.token, "sam-glob", "src/api/users.ts");
-    expect(performance.now() - t0).toBeLessThan(100);
+    // The whole request, on a machine that may be loaded: unmatched it takes well under 500 ms, matched (14 groups) seconds.
+    expect(performance.now() - t0).toBeLessThan(500);
     expect(res.status).toBe(204);
   });
 
