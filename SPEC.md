@@ -786,7 +786,7 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Hub indiscret ou compromis | Accès à la base | Chiffrement au repos ; journal chaîné avec points de contrôle signés ; hébergement dans l'UE en option ; chiffrement de bout en bout facultatif des corps de messages en phase 3 |
 | Exfiltration par références ou pièces jointes | Un chemin sensible partagé par erreur | Liste d'exclusion de chemins (.env*, *.pem, .git/) ; le hub ne lit jamais de fichier ; 5 pièces jointes de 256 Ko au plus |
 | Déni de service | Inondation de messages | Limites de débit par agent et par équipe, tailles maximales, quotas |
-| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration), détection d'usage anormal (nouvel appareil, rafale) |
+| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), détection d'usage anormal (nouvel appareil, rafale) |
 | Chaîne d'approvisionnement | Dépendance ou plugin piégé | Versions épinglées, provenance npm, inventaire logiciel, contrôle des licences ; hooks minimaux, sans eval et sans autre hôte que le hub |
 
 ### Enveloppe des messages de pairs
@@ -952,7 +952,7 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | --- | --- |
 | Rendu | Hono JSX côté serveur et htmx 2 pour les échanges partiels ; aucun framework client, aucune étape de build du front |
 | Temps réel | Flux SSE par équipe, filtré selon le rôle ; reprise par Last-Event-ID après une coupure |
-| Mêmes droits que l'API | La console appelle les mêmes services que l'API, avec la session de la personne : elle n'a aucun passe-droit. Les actions réservées aux humains (membres, rôles, réglages, interrupteur, audit, acceptation de la mémoire, jetons) n'acceptent que cette session, jamais un jeton personnel |
+| Mêmes droits que l'API | La console appelle les mêmes services que l'API, avec la session de la personne : elle n'a aucun passe-droit. Les actions réservées aux humains (membres, rôles, réglages, interrupteur, audit, acceptation de la mémoire, jetons) n'acceptent que cette session, jamais un jeton personnel, à une exception : un jeton d'administrateur invite (POST /v1/invitations) et révoque l'invitation d'un membre ou d'un invité, jamais d'un admin ou d'un owner (E_FORBIDDEN, la console seule le fait), et pas pendant l'interrupteur (E_KILL_SWITCH) |
 | Langues et accès | Français et anglais ; navigation au clavier ; contrastes conformes aux recommandations WCAG AA |
 | Listes | Pagination par curseur partout, 50 éléments par page |
 
@@ -1107,7 +1107,7 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | Chemin | Rôle | Accès |
 | --- | --- | --- |
 | /mcp | Point d'accès MCP (Streamable HTTP, révisions 2026-07-28 et 2025-11-25) | Jeton ou OAuth |
-| /v1/* | API REST de la console, du CLI et des hooks (un jeton personnel n'ouvre que les routes de portée agent) ; description dans /v1/openapi.json | Jeton ou session |
+| /v1/* | API REST de la console, du CLI et des hooks (un jeton personnel n'ouvre que les routes de portée agent, plus l'invitation d'un membre ou d'un invité) ; description dans /v1/openapi.json | Jeton ou session |
 | /v1/stream | Flux SSE du démon et de la console | Jeton ou session |
 | /v1/device/start, /v1/device/token | Connexion du CLI dans le navigateur (flux d'appareil) | Public, limité par adresse |
 | /console/device | Saisie du code et approbation d'une connexion du CLI | Session |

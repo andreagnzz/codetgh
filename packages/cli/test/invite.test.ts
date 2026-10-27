@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { createInvitation } from "../../../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../../../apps/hub/test/harness.js";
 import { type Keyring, program } from "../src/main.js";
 
@@ -43,6 +44,13 @@ it("gives an admin a 7-day invitation link that opens the sign-up page", async (
 it("invites with a role, but only an owner invites owners", async () => {
   expect(await cli(team.lea.token, ["invite", "omar@acme.test", "--role", "guest"])).toContain("as guest");
   await expect(cli(team.lea.token, ["invite", "x@acme.test", "--role", "boss"])).rejects.toThrow(/member, admin, guest or owner/);
+});
+
+it("sends admin and owner invitations to the console, and revokes only member and guest ones", async () => {
+  await expect(cli(team.lea.token, ["invite", "adm@acme.test", "--role", "admin"])).rejects.toThrow(/made in the console/);
+  await expect(cli(team.lea.token, ["invite", "own@acme.test", "--role", "owner"])).rejects.toThrow(/made in the console/);
+  await createInvitation(hub.db, { teamId: team.teamId, email: "pending@acme.test", role: "admin", invitedBy: null, via: "system" });
+  await expect(cli(team.lea.token, ["invite", "pending@acme.test", "--revoke"])).rejects.toThrow(/revoked in the console/);
 });
 
 it("tells a member to ask an admin, and checks the address", async () => {

@@ -83,6 +83,12 @@ export async function inviteMember(
   via: "console" | "rest",
 ) {
   requireAdmin(p);
+  // A personal token is agent scope (SPEC): a stolen admin token must not mint a console account that outlives it.
+  if (p.auth !== "console") {
+    if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
+    if (input.role === "admin" || input.role === "owner")
+      throw new HubError("E_FORBIDDEN", "admin and owner invitations are made in the console, not with a token");
+  }
   const days = input.days ?? 7;
   if (!Number.isInteger(days) || days < 1 || days > 30) throw new HubError("E_INVALID", "an invitation lasts between 1 and 30 days");
   if (!(ROLES as readonly string[]).includes(input.role)) throw new HubError("E_INVALID", "role must be member, admin, guest or owner");
@@ -123,8 +129,11 @@ export async function revokeInvitations(db: Db, p: Principal, by: { id: string }
           "id" in by ? eq(invitation.id, by.id) : eq(invitation.email, by.email.toLowerCase()),
         ),
       )
-      .returning({ id: invitation.id });
+      .returning({ id: invitation.id, role: invitation.role });
     if (!rows.length) throw new HubError("E_NOT_FOUND", "no pending invitation to revoke");
+    // Throwing rolls the update back.
+    if (p.auth !== "console" && rows.some((r) => r.role === "admin" || r.role === "owner"))
+      throw new HubError("E_FORBIDDEN", "admin and owner invitations are revoked in the console, not with a token");
     for (const r of rows)
       await appendAudit(tx, {
         ...byUser(p),

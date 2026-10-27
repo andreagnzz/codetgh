@@ -2134,7 +2134,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
     .command("invite <email>")
     .helpGroup("Admin:")
     .description("invite someone to the team (admins): prints the 7-day sign-up link, also emailed when the hub has SMTP")
-    .option("--role <role>", "member, admin, guest or owner", "member")
+    .option("--role <role>", "member or guest (admin and owner invitations are made in the console)", "member")
     .option("--days <n>", "how many days the link works, 1 to 30", "7")
     .option("--revoke", "cancel the pending invitations of this email instead: their links stop working")
     .action(async (email: string, opts: { role: string; days: string; revoke?: boolean }) => {
