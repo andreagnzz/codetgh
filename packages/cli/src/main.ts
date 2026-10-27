@@ -2172,14 +2172,16 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const client = createClient({ url, token });
       if (opts.revoke) {
         const { revoked } = await client.revokeInvitations(email).catch((e: Error & { code?: string }) => {
-          if (e.code === "E_FORBIDDEN") throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email} --revoke`);
+          if (e.code === "E_FORBIDDEN" && !e.message.includes("in the console"))
+            throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email} --revoke`);
           throw e;
         });
         io.out(`Revoked ${revoked} invitation${revoked > 1 ? "s" : ""} for ${email}.`);
         return;
       }
       const sent = await client.invite(email, opts.role, Number(opts.days)).catch((e: Error & { code?: string }) => {
-        if (e.code === "E_FORBIDDEN") throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email}`);
+        if (e.code === "E_FORBIDDEN" && !e.message.includes("in the console"))
+          throw new Error(`${e.message}: ask an admin of your team to run codetgh invite ${email}`);
         throw e;
       });
       io.out(

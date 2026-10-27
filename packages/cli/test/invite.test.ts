@@ -47,10 +47,22 @@ it("invites with a role, but only an owner invites owners", async () => {
 });
 
 it("sends admin and owner invitations to the console, and revokes only member and guest ones", async () => {
-  await expect(cli(team.lea.token, ["invite", "adm@acme.test", "--role", "admin"])).rejects.toThrow(/made in the console/);
-  await expect(cli(team.lea.token, ["invite", "own@acme.test", "--role", "owner"])).rejects.toThrow(/made in the console/);
+  const refusal = (args: string[]) =>
+    cli(team.lea.token, args).then(
+      () => "",
+      (e: Error) => e.message,
+    );
   await createInvitation(hub.db, { teamId: team.teamId, email: "pending@acme.test", role: "admin", invitedBy: null, via: "system" });
-  await expect(cli(team.lea.token, ["invite", "pending@acme.test", "--revoke"])).rejects.toThrow(/revoked in the console/);
+  // The hub's message is the whole answer: asking an admin to run the same command would send the person in a circle.
+  for (const args of [
+    ["invite", "adm@acme.test", "--role", "admin"],
+    ["invite", "own@acme.test", "--role", "owner"],
+    ["invite", "pending@acme.test", "--revoke"],
+  ]) {
+    const message = await refusal(args);
+    expect(message).toMatch(/in the console, not with a token$/);
+    expect(message).not.toContain("ask an admin");
+  }
 });
 
 it("tells a member to ask an admin, and checks the address", async () => {
