@@ -198,6 +198,7 @@ export const repoPath = z
 // carry a sentence into another session's context.
 // Paths and globs a peer writes for others to read (claims, task paths): path characters only, so they can never
 // carry a sentence or markup into another session.
+// No ( ) or |: picomatch runs extglobs in exponential time. Revisit globTooComplex (apps/hub/src/domain/claims.ts) before adding them.
 const PATH_CHARS = /^[\p{L}\p{N}._\-/*?[\]{},!@+~#%=]+$/u;
 const PATH_CHARS_HELP = "letters, digits and . _ - / * ? [ ] { } , ! @ + ~ # % =, no spaces";
 const peerPath = repoPath.refine((s) => PATH_CHARS.test(s), { message: `a path or glob: ${PATH_CHARS_HELP}` });

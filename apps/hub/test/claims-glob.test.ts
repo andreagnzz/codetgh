@@ -1,7 +1,8 @@
+import { ClaimInput } from "@codetgh/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, claim } from "../src/db/schema.js";
-import { globTooComplex } from "../src/domain/claims.js";
+import { covers, globTooComplex } from "../src/domain/claims.js";
 import { newId } from "../src/ids.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -23,6 +24,16 @@ const preEdit = (token: string, sessionId: string, path: string) =>
     body: JSON.stringify({ session_id: sessionId, path }),
   });
 
+// What the hub spends in one covers() on a hostile path: median of 3 runs, so a GC pause does not count.
+function costMs(scope: string, path: string) {
+  const times = [0, 0, 0].map(() => {
+    const t0 = performance.now();
+    covers({ scopeType: "glob", scope }, path);
+    return performance.now() - t0;
+  });
+  return times.sort((a, b) => a - b)[1] ?? 0;
+}
+
 describe("claim globs are bounded: one member's scope cannot stall the hub", () => {
   it("refuses a glob with many brace groups at creation", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
@@ -34,9 +45,12 @@ describe("claim globs are bounded: one member's scope cannot stall the hub", () 
     expect(globTooComplex(scope)).toBe(false);
   });
 
-  it.each(["{*,*}".repeat(4), "*a*a*a*a", "{a,{b,c}}/x", "{a,b,c,d,e}/{f,g,h,i,j,k}/x"])("refuses %s", (scope) => {
-    expect(globTooComplex(scope)).toBe(true);
-  });
+  it.each(["{*,*}".repeat(4), "*a*a*az", "*{a,aa,aaa}*{a,aa,aaa}*z", "{a,{b,c}}/x", "{a,b,c,d,e}/{f,g,h,i,j,k}/x", "@(a|a)"])(
+    "refuses %s",
+    (scope) => {
+      expect(globTooComplex(scope)).toBe(true);
+    },
+  );
 
   it("still claims and matches ordinary globs", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
@@ -65,5 +79,26 @@ describe("claim globs are bounded: one member's scope cannot stall the hub", () 
     const res = await preEdit(team.sam.token, "sam-glob", "src/api/users.ts");
     expect(performance.now() - t0).toBeLessThan(100);
     expect(res.status).toBe(204);
+  });
+
+  // The design target is 25 ms; 100 leaves room for a loaded CI machine. The old limits (3 wildcards) let
+  // *{a,aa,aaa}*{a,aa,aaa}*z through at 340 ms.
+  it("keeps every accepted scope under 100 ms on a long path", () => {
+    const paths = ["a".repeat(300), `${"a".repeat(29)}/`.repeat(9) + "z"];
+    const tokens = ["*", "**", "?", "a", ".", "/", "[ab]", "{a,aa}", "{a,aa,aaa}"];
+    let seed = 20261027;
+    const next = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const hand = ["*a*a*az", "*{a,aa,aaa}*{a,aa,aaa}*z", "[ab]*[ab]*[ab]*z", "a?*a?*a?*z", "{a,b}*{a,b}*{a,b}*z", "**/a*/**/a*/**/z"];
+    const random = Array.from({ length: 2500 }, () =>
+      Array.from({ length: 3 + Math.floor(next() * 10) }, () => tokens[Math.floor(next() * tokens.length)]).join(""),
+    );
+    const accepted = [...hand, ...random].filter((s) => ClaimInput.safeParse({ scope: [s] }).success && !globTooComplex(s));
+    expect(accepted.length).toBeGreaterThan(1000);
+    // Stops at the first slow scope: a hostile one would otherwise run for minutes.
+    const slow = accepted.find((s) => paths.some((p) => costMs(s, p) > 100));
+    expect(slow).toBeUndefined();
   });
 });

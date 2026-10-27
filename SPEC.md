@@ -214,7 +214,7 @@ Priorités : low, normal, high, blocking. Une priorité blocking signale que l'�
 
 ### Réservations (claims)
 
-Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob (src/api/**), une tâche ou une ressource nommée. Les chemins sont relatifs à la racine du dépôt, avec des /, sensibles à la casse. La durée par défaut est de 30 minutes (ttl_s 1800, maximum 4 h), renouvelée à chaque édition. Un glob est borné, parce que le hub l'évalue à chaque édition de chaque coéquipier : 3 jokers (`*` ou `**`), 3 groupes d'accolades, pas d'accolades imbriquées, 8 virgules ; au-delà, E_INVALID. Un claim déjà stocké au-delà de ces bornes ne correspond à aucun chemin.
+Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob (src/api/**), une tâche ou une ressource nommée. Les chemins sont relatifs à la racine du dépôt, avec des /, sensibles à la casse. La durée par défaut est de 30 minutes (ttl_s 1800, maximum 4 h), renouvelée à chaque édition. Un glob est borné, parce que le hub l'évalue à chaque édition de chaque coéquipier : 2 jokers (`*` ou `**`), accolades et virgules ensemble 6 au plus, pas d'accolades imbriquées ; au-delà, E_INVALID. Un claim déjà stocké au-delà de ces bornes ne correspond à aucun chemin.
 
 | Mode | Sens | Posé par |
 | --- | --- | --- |
