@@ -28,20 +28,21 @@ for (const scheme of ["light", "dark"] as const)
       const stacked = page.locator(".brand img");
       await expect(stacked).toBeVisible();
       expect((await stacked.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(80);
-      expect(await stacked.evaluate((img: HTMLImageElement) => img.currentSrc)).toContain(
-        scheme === "dark" ? "lockup-stacked-on-dark" : "lockup-stacked-color",
-      );
+      await expect
+        .poll(() => stacked.evaluate((img: HTMLImageElement) => img.currentSrc))
+        .toContain(scheme === "dark" ? "lockup-stacked-on-dark" : "lockup-stacked-color");
       await page.screenshot({ path: `${SHOTS}${scheme}-${width}-login.png`, fullPage: true });
 
       await signIn(page, hub.url, team.lea);
       const logo = page.locator(".sidebar .brand img");
-      const src = await logo.evaluate((img: HTMLImageElement) => img.currentSrc);
+      // currentSrc is empty until the browser has chosen the source: wait for it instead of reading it once.
+      const src = () => logo.evaluate((img: HTMLImageElement) => img.currentSrc);
       const box = await logo.boundingBox();
       if (width <= 600) {
-        expect(src).toContain(scheme === "dark" ? "symbol-mint-thin" : "symbol-color");
+        await expect.poll(src).toContain(scheme === "dark" ? "symbol-mint-thin" : "symbol-color");
         expect(box?.width ?? 0).toBeGreaterThanOrEqual(24);
       } else {
-        expect(src).toContain(scheme === "dark" ? "lockup-horizontal-on-dark" : "lockup-horizontal-color");
+        await expect.poll(src).toContain(scheme === "dark" ? "lockup-horizontal-on-dark" : "lockup-horizontal-color");
         expect(box?.width ?? 0).toBeGreaterThanOrEqual(120);
       }
       // The keyboard focus stays visible.
