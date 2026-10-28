@@ -228,6 +228,8 @@ Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob
 | intent | Conflit | Avertissement | Le détenteur est notifié |
 | shared | Compatible, abonnement créé | Compatible | Compatible |
 
+Notifié : le détenteur d'une réservation shared reçoit une note de l'agent qui pose une réservation exclusive (outil claim) ou une réservation intent (hook avant une édition) sur ce qu'elle couvre, une fois par agent.
+
 Le réglage claims.enforcement choisit la réaction à un conflit : warn (l'agent est prévenu par un contexte ajouté, l'édition n'est jamais bloquée) ou ask (par défaut : Claude Code demande à la personne avant de modifier un fichier qu'un autre a réservé). Les valeurs off et block enregistrées par d'anciennes versions sont lues comme warn et ask, sans migration. Un avertissement n'interrompt jamais le travail.
 
 Une réservation appartient à une personne, pas à une session : deux sessions d'une même personne ne se gênent pas, et seule la réservation d'une autre personne compte comme conflit (claim, PreToolUse, claim_check, vérification des fichiers modifiés par le shell du hook Stop). Les sous-agents d'une session posent leurs réservations sous l'agent de la session parente : le hook PreToolUse envoie l'identifiant de session et ignore agent_id. Dans team_overview, `claims[].mine` vaut vrai pour toute réservation de la personne qui appelle, quelle que soit sa session, et le paquet de contexte de démarrage ne liste que les réservations des autres.
