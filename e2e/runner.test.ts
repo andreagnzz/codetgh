@@ -182,6 +182,14 @@ if (argv[0] === "pr" && argv[1] === "list") {
   const prs = existsSync(open) ? [{ ...own, ...JSON.parse(readFileSync(open, "utf8")) }] : [];
   console.log(JSON.stringify(prs.map((p) => Object.fromEntries(fields.map((f) => [f, p[f]])))));
 }
+// pr view --json: the PR of the worktree's branch, from this repository, unless pr-view says otherwise.
+const view = join(dir, "pr-view");
+if (argv[0] === "pr" && argv[1] === "view" && argv.some((a) => a.startsWith("--json="))) {
+  const own = { headRefName: execFileSync("git", ["branch", "--show-current"], { encoding: "utf8" }).trim(), isCrossRepository: false };
+  const pr = existsSync(view) ? { ...own, ...JSON.parse(readFileSync(view, "utf8")) } : own;
+  const fields = argv.find((a) => a.startsWith("--json=")).slice(7).split(",");
+  console.log(JSON.stringify(Object.fromEntries(fields.map((f) => [f, pr[f]]))));
+}
 if (argv[0] === "pr" && argv[1] === "create" && existsSync(open)) {
   console.error("a pull request for branch already exists");
   process.exit(1);
@@ -831,6 +839,36 @@ describe("codetgh runner review loop", () => {
     const t = await row(id);
     expect(t).toMatchObject({ status: "blocked", approved: false });
     expect(t?.notes.at(-1)?.text).toContain("blocked: the worktree is not at the head of the PR");
+  });
+
+  it("acts on the hub's PR number only once gh shows this task's PR: on its branch, in this repository", async () => {
+    const id = await create("foreign PR");
+    await runner();
+    const before = { reviews: reviewer().length, gh: lines("gh.jsonl").length };
+    const view = join(fake, "pr-view");
+    for (const [values, why] of [
+      [{ headRefName: "feature/someone-else" }, "is not this task's"],
+      [{ isCrossRepository: true }, "is not this task's"],
+      [null, "a PR number that is not one"],
+    ] as const) {
+      if (values) writeFileSync(view, JSON.stringify(values));
+      else await hub.db.update(task).set({ prNumber: -1 }).where(eq(task.id, id));
+      try {
+        await runner({ auto_merge: true });
+      } finally {
+        rmSync(view, { force: true });
+      }
+      const t = await row(id);
+      expect(t?.status).toBe("blocked");
+      expect(t?.notes.at(-1)?.text).toContain(why);
+      await hub.db.update(task).set({ status: "review" }).where(eq(task.id, id));
+    }
+    expect(reviewer()).toHaveLength(before.reviews);
+    expect(
+      lines("gh.jsonl")
+        .slice(before.gh)
+        .filter((l) => l.argv[1] !== "view"),
+    ).toEqual([]);
   });
 
   it("sends requested changes to the author in the same worktree, pushes the fix, and approves on round 2", async () => {

@@ -1098,6 +1098,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
 
     if (task.pr_number) {
       const pr = task.pr_number;
+      if (!Number.isSafeInteger(pr) || pr < 1) fail("the hub sent a PR number that is not one");
       untouched();
       step = "git worktree add failed";
       // Gone (cleaned up, another machine): back from the PR branch, without tracking, which would write the shared config.
@@ -1105,6 +1106,11 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await git(["-C", dir, "worktree", "prune"]);
         await git(["-C", dir, "worktree", "add", "--no-track", "-B", branch, wt, `origin/${branch}`]);
       }
+      // gh reviews, merges or retargets the hub's number only once it is this task's PR: its branch, in this repository.
+      step = "gh pr view failed";
+      const shown = JSON.parse(await gh(["pr", "view", String(pr), "--json=headRefName,isCrossRepository"]));
+      if (shown?.headRefName !== branch || shown?.isCrossRepository !== false)
+        fail(`PR #${pr} is not this task's: not on ${branch} in this repository`);
       if (job.restack) return await restack(pr, main, job.restack);
       // Retried by the owner after a block: back to review, where the next pass restacks or reviews it.
       if (task.status === "claimed") {
