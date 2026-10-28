@@ -131,6 +131,34 @@ describe("runner queue", () => {
     await set(t.id, { status: "cancelled", leaseOwner: null });
   });
 
+  it("drops the lease when a human changes the status, and never renews or resumes a lease off a live status", async () => {
+    const t = await create({ title: "human move" });
+    await owner("POST", "lease", { task_id: t.id, owner: "vps-1" });
+    await owner("POST", "update", { task_id: t.id, owner: "vps-1", patch: { status: "in_progress" } });
+    const moved = await consolePost(hub.url, team.lea.cookie, `/console/tasks/${t.id}`, {
+      expected_version: String((await row(t.id))?.version),
+      status: "todo",
+    });
+    expect(moved.status).toBeLessThan(400);
+    expect(await row(t.id)).toMatchObject({ status: "todo", leaseOwner: null, leaseUntil: null });
+    expect((await owner("POST", "renew", { task_id: t.id, owner: "vps-1" })).status).toBe(409);
+    const leased = async () =>
+      ((await (await owner("GET", "leases?owner=vps-1")).json()) as { leases: Array<{ task: { id: string } }> }).leases;
+    expect((await leased()).map((l) => l.task.id)).not.toContain(t.id);
+
+    // A row left with a live lease off claimed, in_progress and review, or with an expired one: neither renewed nor resumed.
+    for (const values of [
+      { status: "cancelled" as const, leaseOwner: "vps-1", leaseUntil: new Date(Date.now() + 600_000) },
+      { status: "in_progress" as const, leaseOwner: "vps-1", leaseUntil: new Date(Date.now() - 1000) },
+    ]) {
+      await set(t.id, values);
+      expect((await owner("POST", "renew", { task_id: t.id, owner: "vps-1" })).status).toBe(409);
+    }
+    await set(t.id, { status: "cancelled", leaseOwner: "vps-1", leaseUntil: new Date(Date.now() + 600_000) });
+    expect((await leased()).map((l) => l.task.id)).not.toContain(t.id);
+    await set(t.id, { status: "cancelled", leaseOwner: null, leaseUntil: null });
+  });
+
   it("moves a leased task through the allowed statuses, then drops the lease in review", async () => {
     const t = await create({ title: "update" });
     await owner("POST", "lease", { task_id: t.id, owner: "vps-1" });
@@ -303,6 +331,22 @@ describe("runner queue", () => {
       .from(task)
       .where(and(eq(task.title, "guest"), inArray(task.teamId, [team.teamId])));
     expect(leaked).toHaveLength(0);
+  });
+
+  it("refuses task_claim on a runner task, to a member and to the owner: only the runner leases it", async () => {
+    const t = await create({ title: "claimed by hand" });
+    for (const [token, agent] of [
+      [team.sam.token, samAgentId],
+      [team.lea.token, agentId],
+    ]) {
+      const c = await mcpClient(hub.url, token ?? "");
+      const r = await call(c, "task_claim", { agent, task_id: t.id, expected_version: t.version });
+      await c.close();
+      expect(JSON.parse(r.text).code).toBe("E_FORBIDDEN");
+    }
+    expect(await row(t.id)).toMatchObject({ status: "todo", assigneeUserId: null, version: t.version });
+    expect(await readyIds()).toContain(t.id);
+    await set(t.id, { status: "cancelled" });
   });
 
   it("refuses a runner task from any session of an admin who has a live delegate session", async () => {
