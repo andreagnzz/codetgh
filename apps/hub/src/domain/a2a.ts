@@ -8,7 +8,7 @@ import {
   ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/index.js";
 import { a2aTask, agent, membership, message, receipt, user } from "../db/schema.js";
@@ -59,7 +59,7 @@ export async function a2aAgentForToken(db: Db, p: Principal) {
     ? await db
         .select()
         .from(agent)
-        .where(and(eq(agent.tokenId, p.tokenId), eq(agent.kind, "a2a"), eq(agent.teamId, p.teamId)))
+        .where(and(eq(agent.tokenId, p.tokenId), eq(agent.kind, "a2a"), eq(agent.teamId, p.teamId), isNull(agent.removedAt)))
     : [];
   if (!row) throw new HubError("E_FORBIDDEN", "this token is not an A2A agent token");
   return row;

@@ -3,7 +3,7 @@ import { Role, TaskState } from "@a2a-js/sdk";
 import { ClientFactory } from "@a2a-js/sdk/client";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, message } from "../apps/hub/src/db/schema.js";
+import { agent, message, personalToken } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -123,5 +123,29 @@ describe("A2A (phase 3)", () => {
 
   it("only lets admins add external agents", async () => {
     expect((await consolePost(hub.url, team.sam.cookie, "/console/agents/a2a", { name: "x" })).status).toBe(403);
+  });
+
+  it("cuts a removed external agent off /a2a", async () => {
+    const res = await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Second bot" });
+    const second = (await res.text()).match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? "";
+    const post = () => fetch(`${hub.url}/a2a`, { method: "POST", headers: { Authorization: `Bearer ${second}` }, body: "{}" });
+    expect((await post()).status).toBe(200);
+    const [ext] = await hub.db
+      .select()
+      .from(agent)
+      .where(and(eq(agent.kind, "a2a"), eq(agent.label, "Second bot")));
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/agents/${ext?.id}/remove`)).status).toBe(204);
+    const [tok] = await hub.db
+      .select()
+      .from(personalToken)
+      .where(eq(personalToken.id, ext?.tokenId ?? ""));
+    expect(tok?.revokedAt).not.toBeNull();
+    expect((await post()).status).toBe(401);
+    // A token restored by hand still opens nothing for a removed agent.
+    await hub.db
+      .update(personalToken)
+      .set({ revokedAt: null })
+      .where(eq(personalToken.id, ext?.tokenId ?? ""));
+    expect((await post()).status).toBe(403);
   });
 });
