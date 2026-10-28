@@ -52,6 +52,14 @@ describe("claim globs are bounded: one member's scope cannot stall the hub", () 
     },
   );
 
+  // picomatch reads a leading ! as "every path but": !x/** would hold the whole project past the coversProject guard.
+  it.each(["!x/**", "!*", "./!src/**", "!!x/**"])("refuses the negated scope %s, and a stored one matches nothing", async (scope) => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    expect(code(await call(lea, "claim", { scope: [scope], mode: "exclusive" }))).toBe("E_INVALID");
+    await lea.close();
+    expect(covers({ scopeType: "glob", scope }, "lib/a.ts")).toBe(false);
+  });
+
   it("still claims and matches ordinary globs", async () => {
     const lea = await mcpClient(hub.url, team.lea.token);
     expect((await call(lea, "claim", { scope: ["{a,b}/*.ts", "packages/*/src/**"] })).isError).toBe(false);

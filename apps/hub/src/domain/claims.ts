@@ -36,6 +36,9 @@ function scopeType(scope: string): ScopeType {
   return picomatch.scan(scope).isGlob ? "glob" : "path";
 }
 
+// picomatch reads a leading ! as "every path but this": a negated glob reaches every file of the project but a few.
+const negated = (scope: string) => picomatch.scan(scope).negated;
+
 // A glob with no directory in front of ** (or a bare *) reaches every file of the project.
 const coversProject = (scope: string) => {
   const glob = scope.replace(/^\.\//, "");
@@ -52,13 +55,13 @@ export const globTooComplex = (scope: string) =>
   (scope.match(/\*+/g)?.length ?? 0) > 2 || (scope.match(/[{,]/g)?.length ?? 0) > 6 || /\{[^}]*\{|[()|]/.test(scope);
 
 const matchers = new Map<string, ((path: string) => boolean) | null>();
-// A stored scope over the limits (claimed before they existed, or written straight to the table) matches nothing: it
+// A stored scope over the limits or negated (claimed before they existed, or written straight to the table) matches nothing: it
 // blocks nobody, which is the safe side for a claim that is advisory (the permission prompt stays), whereas matching
 // it could stall every teammate, and reading it as a prefix would block the whole project. It ends with its ttl.
 function matcher(scope: string) {
   let m = matchers.get(scope);
   if (m === undefined) {
-    m = globTooComplex(scope) ? null : picomatch(scope, { dot: true });
+    m = globTooComplex(scope) || negated(scope) ? null : picomatch(scope, { dot: true });
     if (matchers.size >= 500) matchers.clear();
     matchers.set(scope, m);
   }
@@ -217,6 +220,8 @@ export async function createClaims(
         "E_INVALID",
         `${s.scope} is too complex: at most 2 wildcards (* or **), braces and commas totalling 6, no nested braces`,
       );
+    if (s.scopeType === "glob" && negated(s.scope))
+      throw new HubError("E_INVALID", `${s.scope}: a negated glob is not claimable, claim the paths you work on`);
     if (s.scopeType === "glob" && coversProject(s.scope))
       throw new HubError(
         "E_INVALID",
