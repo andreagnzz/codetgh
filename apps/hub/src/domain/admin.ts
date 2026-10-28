@@ -169,11 +169,13 @@ export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust
     // Anyone may quarantine their own agents; lifting a quarantine is an admin's call.
     if (a.userId !== p.user.id || trust === "trusted") requireAdmin(p);
     if (a.kind === "a2a" && trust === "trusted") throw new HubError("E_FORBIDDEN", "an external agent stays in quarantine");
-    // The whole person: a new session must not be a way out (agents.ts personTrust).
-    await tx
+    // The whole person: a new session must not be a way out (agents.ts personTrust). Nor a delegate session already live.
+    const rows = await tx
       .update(agent)
-      .set({ trustLevel: trust })
-      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, a.userId), ne(agent.kind, "a2a")));
+      .set({ trustLevel: trust, ...(trust === "quarantined" && { acceptRequestsFrom: null }) })
+      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, a.userId), ne(agent.kind, "a2a")))
+      .returning({ id: agent.id });
+    if (trust === "quarantined") await expireDelegated(tx, rows);
     await appendAudit(tx, { ...byUser(p), action: `agent.${trust}`, subjectId: a.id });
   });
 }
@@ -264,6 +266,15 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
+    // A guest runs no delegate session (agents.ts registerSession), so a live one stops accepting requests.
+    if (role === "guest") {
+      const rows = await tx
+        .update(agent)
+        .set({ acceptRequestsFrom: null })
+        .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, m.userId), isNotNull(agent.acceptRequestsFrom)))
+        .returning({ id: agent.id });
+      await expireDelegated(tx, rows);
+    }
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
   });
 }

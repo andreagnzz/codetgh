@@ -1,7 +1,7 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { membership, message } from "../apps/hub/src/db/schema.js";
+import { agent, membership, message } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hubRest } from "./helpers.js";
@@ -96,6 +96,38 @@ describe("the prompt hook tells a delegate to act only on what it shows", () => 
     expect(page).not.toContain(id);
     expect(page).not.toContain("Do it now");
     await end(team.sam.token, "sam-footer");
+  });
+});
+
+describe("a delegate session ends with its owner's standing", () => {
+  const accepts = async (session: string) =>
+    (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0]?.acceptRequestsFrom ?? null;
+  const refused = async () =>
+    (await callOnce(hub.url, team.lea.token, "ask_peer", { agent: lea, to: "@sam", kind: "request", question: "after" })).text;
+
+  it("stops accepting requests when its owner is quarantined", async () => {
+    const sam = await register(team.sam.token, "sam-quarantine", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the quarantine");
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/agents/${sam}/quarantined`)).status).toBe(204);
+    expect(await accepts("sam-quarantine")).toBeNull();
+    expect(await expired(id)).toBe(true);
+    expect(await shown("sam-quarantine", sam)).not.toContain('authorized="true"');
+    expect(await refused()).toContain("E_NO_DELEGATE");
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/agents/${sam}/trusted`)).status).toBe(204);
+    await end(team.sam.token, "sam-quarantine");
+  });
+
+  it("stops accepting requests when its owner becomes a guest", async () => {
+    await register(team.sam.token, "sam-guest", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the demotion");
+    const [m] = await hub.db.select().from(membership).where(eq(membership.userId, team.sam.userId));
+    const role = (r: string) => consolePost(hub.url, team.lea.cookie, `/console/members/${m?.id}/role`, { role: r });
+    expect((await role("guest")).status).toBe(204);
+    expect(await accepts("sam-guest")).toBeNull();
+    expect(await expired(id)).toBe(true);
+    expect(await refused()).toContain("E_NO_DELEGATE");
+    expect((await role("member")).status).toBe(204);
+    await end(team.sam.token, "sam-guest");
   });
 });
 
