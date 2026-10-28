@@ -1,5 +1,5 @@
 {
-  "id": "99bd11a3-ddd7-4aab-9487-58d9232947b3",
+  "id": "88ee1a12-9433-471a-9f78-79d4cb07f0de",
   "prevId": "ef094cd6-c233-4f63-8e04-7cbedcc63cfc",
   "version": "7",
   "dialect": "postgresql",
@@ -243,6 +243,12 @@
         "accept_requests_from": {
           "name": "accept_requests_from",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delegate_since": {
+          "name": "delegate_since",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -1456,12 +1462,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "flags": {
-          "name": "flags",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
         "refs": {
           "name": "refs",
           "type": "jsonb",
@@ -2434,12 +2434,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
-        },
-        "flags": {
-          "name": "flags",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",

@@ -177,15 +177,37 @@ describe("delegation does not chain or outlive its opt-in", () => {
 });
 
 describe("delegate sessions: the Bash check before each command", () => {
-  const bash = (command: string, delegate: boolean) =>
+  const shell = (tool: string, toolInput: Record<string, unknown>, delegate: boolean) =>
     runHook(
       "pre-bash",
-      { session_id: "sam-bash", tool_name: "Bash", tool_input: { command } },
+      { session_id: "sam-bash", tool_name: tool, tool_input: toolInput },
       {
         ...hookEnv(hub.url, team.sam.token),
         ...(delegate && { CODETGH_ACCEPT_REQUESTS_FROM: "@lea" }),
       },
     );
+  const bash = (command: string, delegate: boolean) => shell("Bash", { command }, delegate);
+
+  it("runs on every tool that runs a shell command, not only Bash", () => {
+    const hooks = JSON.parse(readFileSync(new URL("../packages/plugin/hooks/hooks.json", import.meta.url), "utf8"));
+    const entry = hooks.hooks.PreToolUse.find((e: { hooks: Array<{ args: string[] }> }) => e.hooks[0]?.args.includes("pre-bash"));
+    const matcher = new RegExp(`^(?:${entry.matcher})$`);
+    for (const tool of ["Bash", "Monitor", "PowerShell"]) expect(matcher.test(tool)).toBe(true);
+    expect(matcher.test("Read")).toBe(false);
+  });
+
+  it("checks Monitor and PowerShell commands as it checks Bash, and refuses a call it cannot read", async () => {
+    const monitor = await shell("Monitor", { command: "cat apps/hub/.env", description: "x", timeout_ms: 1000 }, true);
+    expect(monitor.code).toBe(2);
+    expect(monitor.err).toContain("blocked:");
+    expect((await shell("PowerShell", { command: "git push origin +main", description: "x" }, true)).code).toBe(2);
+    expect(await shell("PowerShell", { command: "git push origin feat/x" }, true)).toMatchObject({ code: 0, raw: "", err: "" });
+    // A WebSocket watch carries no command to check: refused in a delegate session, left to Claude Code elsewhere.
+    const ws = { ws: { url: "wss://example.com/feed" }, description: "x", timeout_ms: 1000 };
+    expect((await shell("Monitor", ws, true)).code).toBe(2);
+    expect(await shell("Monitor", ws, false)).toMatchObject({ code: 0, raw: "", err: "" });
+    expect(await shell("Monitor", { command: "cat apps/hub/.env" }, false)).toMatchObject({ code: 0, raw: "", err: "" });
+  });
 
   it("blocks a secret read or a force push with exit 2 and a reason, in a delegate session only", async () => {
     const secret = await bash("cat apps/hub/.env", true);
