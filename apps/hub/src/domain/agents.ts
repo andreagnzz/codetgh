@@ -357,7 +357,9 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
   let row = agentArg ? await pick(and(mine, eq(agent.id, agentArg))) : undefined;
   if (agentArg && !row) throw new HubError("E_FORBIDDEN", "this agent does not belong to you");
   const live = and(mine, isNull(agent.endedAt));
-  const ofToken = p.tokenId ? and(live, eq(agent.tokenId, p.tokenId)) : undefined;
+  // The person's REST agent (cli-<token>) reads every receipt of the person, so a call that names no agent never gets it.
+  const notRest = sql`${agent.sessionId} is distinct from ('cli-' || ${agent.tokenId})`;
+  const ofToken = p.tokenId ? and(live, notRest, eq(agent.tokenId, p.tokenId)) : undefined;
   // Several live Claude Code sessions: the latest is a guess that files one session's calls under another (and its
   // project). The caller's auto agent takes them instead: no project, and only the console routes to it. OAuth calls
   // (the claude.ai connector) have no token of their own, so they count the person's sessions.
@@ -375,9 +377,7 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
     else row = await pick(ofToken);
   }
   // Another token's delegate session would let this caller read and ack its authorized requests: name it or get none.
-  // The same goes for the person's REST agent (cli-<token>), which reads every receipt of the person.
-  if (!row && guess && !(await several(live)))
-    row = await pick(and(live, isNull(agent.acceptRequestsFrom), sql`${agent.sessionId} is distinct from ('cli-' || ${agent.tokenId})`));
+  if (!row && guess && !(await several(live))) row = await pick(and(live, isNull(agent.acceptRequestsFrom), notRest));
   if (!row) {
     if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
     const kind = p.auth === "oauth" ? "claude-ai" : "other";

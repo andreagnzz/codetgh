@@ -120,5 +120,8 @@ it("never guesses a delegate session for another token or OAuth: only a call nam
   const { token: tablet } = await createPersonalToken(hub.db, { userId: team.lea.userId, teamId: team.teamId, label: "lea tablet" });
   const third = await mcpClient(hub.url, tablet);
   expect((await call(third, "inbox_read", {})).text).not.toContain(request.id);
+  // Not even the calling token's own cli- agent.
+  expect((await fetch(`${hub.url}/v1/status`, { headers: { Authorization: `Bearer ${tablet}` } })).status).toBe(200);
+  expect((await call(third, "inbox_read", {})).text).not.toContain(request.id);
   await third.close();
 });
