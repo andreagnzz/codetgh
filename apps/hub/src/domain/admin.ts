@@ -205,6 +205,14 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
       .update(agent)
       .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date(), acceptRequestsFrom: null, delegateSince: null })
       .where(eq(agent.id, a.id));
+    // An external agent is its token: removing it ends its access to /a2a.
+    if (a.kind === "a2a" && a.tokenId) {
+      await tx
+        .update(personalToken)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(personalToken.id, a.tokenId), isNull(personalToken.revokedAt)));
+      await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: a.tokenId });
+    }
     await expireDelegated(tx, [a]);
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
     await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });

@@ -417,7 +417,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           if ((await me(agent)).trustLevel === "quarantined") throw new HubError("E_FORBIDDEN", "this agent is in quarantine");
           if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
           write();
-          return decideMemory(db, p, input, "mcp");
+          return decideMemory(deps, p, input, "mcp");
         }),
     );
   }
