@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { INVITE_HEADER } from "../apps/hub/src/auth.js";
 import { alert, auditEvent, membership, receipt, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { createPersonalToken } from "../apps/hub/src/tokens.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -10,7 +11,10 @@ import { consolePost } from "./helpers.js";
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 beforeAll(async () => {
-  hub = await startHub();
+  // Léa writes in several loops and the console within seconds: an hour passes between calls, so her person budget,
+  // which this file does not test, cannot refuse a send on a fast machine. The pair limit counts stored messages.
+  let now = Date.now();
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   // Sessions on one project: a loop's copy for the orchestrator reaches only its sessions on the thread's project.
   for (const m of [team.lea, team.sam, team.malik]) await startSession(hub.url, m.token, `${m.handle}-loop`, { repo: ACME_REPO });
