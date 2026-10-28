@@ -562,7 +562,7 @@ UserPromptSubmit se déclenche aussi pour les tâches planifiées, les rapports 
 
 ### Paquet de contexte
 
-SessionStart écrit dans additionalContext (10 000 caractères au plus, cible de 1 200 tokens) un résumé en tête duquel figurent les relais et les demandes blocking. Ce résumé ne contient que des données du hub : le texte d'un pair y est remplacé par l'identifiant du message, qui arrive dans l'enveloppe avec le premier prompt. Les champs libres (label, branche, statut) tiennent sur une ligne de 60 caractères au plus. Exemple d'environ 150 tokens :
+SessionStart écrit dans additionalContext (10 000 caractères au plus, cible de 1 200 tokens ; le texte des coéquipiers est coupé sur sa longueur une fois échappé, pour que le paquet tienne et que son enveloppe se ferme toujours) un résumé en tête duquel figurent les relais et les demandes blocking. Ce résumé ne contient que des données du hub : le texte d'un pair y est remplacé par l'identifiant du message, qui arrive dans l'enveloppe avec le premier prompt. Les champs libres (label, branche, statut) tiennent sur une ligne de 60 caractères au plus. Exemple d'environ 150 tokens :
 
 ```
 <codetgh_context team="Acme web" project="acme/webapp" agent="agt_01JC4Z2E7Q" you="Sam">
