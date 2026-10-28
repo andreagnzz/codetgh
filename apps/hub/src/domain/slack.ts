@@ -2,9 +2,11 @@ import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto"
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { Config } from "../config.js";
-import { alert, bridgeLink, message, slackLink, team, thread, user } from "../db/schema.js";
+import { alert, bridgeLink, membership, message, slackLink, team, thread, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { type Principal, principalForUser } from "../principal.js";
+import { byUser } from "./admin.js";
+import { appendAudit } from "./audit.js";
 import { type MessagingDeps, sendMessage } from "./messages.js";
 
 // Slack's request signing: HMAC-SHA256 over "v0:<timestamp>:<raw body>", refused when older than 5 minutes.
@@ -160,13 +162,16 @@ export async function handleSlackEvent(
 // Console → Slack: a one-time code the member types in Slack to bind their Slack account.
 export async function createSlackCode(deps: MessagingDeps, p: Principal) {
   const code = Array.from({ length: 8 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[randomInt(32)]).join("");
-  await deps.db
-    .insert(slackLink)
-    .values({ teamId: p.teamId, userId: p.user.id, codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) })
-    .onConflictDoUpdate({
-      target: [slackLink.teamId, slackLink.userId],
-      set: { codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) },
-    });
+  await deps.db.transaction(async (tx) => {
+    await tx
+      .insert(slackLink)
+      .values({ teamId: p.teamId, userId: p.user.id, codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) })
+      .onConflictDoUpdate({
+        target: [slackLink.teamId, slackLink.userId],
+        set: { codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) },
+      });
+    await appendAudit(tx, { ...byUser(p), action: "slack.link_code_created", subjectId: p.membershipId });
+  });
   return code;
 }
 
@@ -175,10 +180,11 @@ export async function handleSlackCommand(deps: MessagingDeps, form: Record<strin
   const { db } = deps;
   const code = (form.text ?? "").trim().toUpperCase();
   const [row] = await db
-    .select({ teamId: slackLink.teamId, userId: slackLink.userId, name: user.name, teamName: team.name })
+    .select({ teamId: slackLink.teamId, userId: slackLink.userId, name: user.name, teamName: team.name, membershipId: membership.id })
     .from(slackLink)
     .innerJoin(user, eq(user.id, slackLink.userId))
     .innerJoin(team, eq(team.id, slackLink.teamId))
+    .innerJoin(membership, and(eq(membership.teamId, slackLink.teamId), eq(membership.userId, slackLink.userId)))
     .where(and(eq(slackLink.codeHash, hashCode(code)), gt(slackLink.codeExpiresAt, new Date())));
   if (!row || !form.user_id) return "This code is invalid or expired: create a new one in the CodeTgh console (My data → Link Slack).";
   await db.transaction(async (tx) => {
@@ -191,6 +197,15 @@ export async function handleSlackCommand(deps: MessagingDeps, form: Record<strin
       .update(slackLink)
       .set({ slackUserId: form.user_id, codeHash: null, codeExpiresAt: null })
       .where(and(eq(slackLink.teamId, row.teamId), eq(slackLink.userId, row.userId)));
+    // Replies from that Slack account now reach the team as the member: their action, without the Slack account's id.
+    await appendAudit(tx, {
+      teamId: row.teamId,
+      actorType: "user",
+      actorUserId: row.userId,
+      via: "rest",
+      action: "slack.linked",
+      subjectId: row.membershipId,
+    });
   });
   return `Linked to ${row.name} in ${row.teamName}. Your replies in CodeTgh threads here now reach the team as you.`;
 }
