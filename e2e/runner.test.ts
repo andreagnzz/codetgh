@@ -676,7 +676,7 @@ describe("codetgh runner", () => {
     writeFileSync(join(fake, "containers", "codetgh-job-stale"), stale);
     await runner();
     expect(existsSync(join(fake, "containers", "codetgh-job-stale"))).toBe(false);
-    expect(alive(Number(stale))).toBe(false);
+    expect(await exited(Number(stale))).toBe(true);
     expect(lines("docker.jsonl").map((l) => l.argv.join(" "))).toContain(`ps -aq --filter=label=codetgh.runner=${runnerOwner()}`);
   });
 
@@ -1086,7 +1086,7 @@ describe("codetgh runner review loop", () => {
     await stopRunner();
     await done;
     const orphan = Number(readFileSync(join(fake, "orphan-pid"), "utf8"));
-    expect(alive(orphan)).toBe(false);
+    expect(await exited(orphan)).toBe(true);
     expect((await row(id))?.status).toBe("in_progress");
     // Still leased to this runner: the next start would resume it.
     await hub.db.update(task).set({ status: "cancelled", leaseOwner: null, leaseUntil: null }).where(eq(task.id, id));
@@ -1141,7 +1141,7 @@ describe("codetgh runner review loop", () => {
       try {
         process.kill(agent, "SIGKILL");
         await done;
-        expect(alive(Number(readFileSync(join(fake, "orphan-pid"), "utf8")))).toBe(false);
+        expect(await exited(Number(readFileSync(join(fake, "orphan-pid"), "utf8")))).toBe(true);
         expect(alive(user)).toBe(true);
       } finally {
         process.kill(user, "SIGKILL");
