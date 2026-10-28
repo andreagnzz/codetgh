@@ -396,6 +396,15 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       const key = `${r.userId}:${r.agentId ?? ""}`;
       if (!recipients.has(key)) recipients.set(key, r);
     }
+    // A reply's parent sender and a verdict's thread writers come from the thread: a revoked person gets nothing new.
+    if (parent) {
+      const userIds = [...new Set([...recipients.values()].map((r) => r.userId))];
+      const active = await tx
+        .select({ userId: membership.userId })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), eq(membership.status, "active"), inArray(membership.userId, userIds)));
+      for (const [key, r] of recipients) if (!active.some((m) => m.userId === r.userId)) recipients.delete(key);
+    }
     if (!recipients.size) throw new HubError("E_INVALID", "no recipient besides yourself");
     if (input.delegate) {
       // Locked, so two requests at once cannot both pass the cap, nor one slip past « Couper ».
@@ -644,11 +653,6 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
         expiresAt: expiry ? new Date(Date.now() + expiry) : null,
       })
       .returning();
-    await tx
-      .insert(receipt)
-      .values(
-        [...recipients.values()].map((r) => ({ messageId: id, teamId: p.teamId, recipientUserId: r.userId, recipientAgentId: r.agentId })),
-      );
     if (flags.includes("instruction-like")) {
       await tx.insert(alert).values({
         id: newId("alr"),
@@ -680,6 +684,12 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       subjectId: id,
       data: { kind: input.kind, thread: threadId, recipients: recipients.size, ...(input.delegate && { delegated: true }) },
     });
+    // After the audit's team lock, held until commit: receipt seqs then follow commit order, so the stream never skips one.
+    await tx
+      .insert(receipt)
+      .values(
+        [...recipients.values()].map((r) => ({ messageId: id, teamId: p.teamId, recipientUserId: r.userId, recipientAgentId: r.agentId })),
+      );
     return {
       muted: false as const,
       row: row as typeof message.$inferSelect,

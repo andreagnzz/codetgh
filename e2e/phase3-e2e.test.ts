@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
+import { agent, message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 import { hubRest } from "./helpers.js";
@@ -148,8 +148,13 @@ describe("end-to-end encrypted threads (phase 3)", () => {
 
   it("refuses a recipient without a key, and shows MCP readers a placeholder", async () => {
     expect((await cli("sam", ["send", "--encrypt", "--to", "@malik", "--body", "hi"])).code).toBe(1);
+    // Léa's REST agent reads her whole inbox; a call that names no agent never gets it.
+    const [rest] = await hub.db
+      .select({ id: agent.id })
+      .from(agent)
+      .where(and(eq(agent.userId, team.lea.userId), like(agent.sessionId, "cli-%")));
     const lea = await mcpClient(hub.url, team.lea.token);
-    const r = await call(lea, "inbox_read", {});
+    const r = await call(lea, "inbox_read", { agent: rest?.id });
     await lea.close();
     expect(r.text).not.toContain("v1.");
     expect(r.text).toContain("encrypted");

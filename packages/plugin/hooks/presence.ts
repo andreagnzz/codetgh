@@ -1,6 +1,12 @@
 import type { EngineInterface, Register, SessionRateLimit } from "claude-code";
 
-type Status = { you: { handle: string }; people: { handle: string; sessions: unknown[] }[]; unread: Record<string, number> };
+type Status = {
+  you: { handle: string };
+  paused?: boolean;
+  push_allowed_modes?: string[];
+  people: { handle: string; sessions: unknown[] }[];
+  unread: Record<string, number>;
+};
 
 // The Stop hook's rewake waiter gives up after this (REWAKE_BUDGET_MS in hook.ts); after it, only the mod can wake the session.
 const REWAKE_MS = 3_540_000;
@@ -22,6 +28,8 @@ let handoffFor: string | undefined;
 let limited = false;
 // Only the rewake opt-in (push_mode, allowed by the team) lets the mod start turns; hooks mode never does.
 let rewake = false;
+// The team's allowance as of the last status poll: an admin can turn rewake off after the member chose it.
+let allowed = false;
 
 // Counts only: no handle, status or message text a peer wrote reaches the screen.
 function counts(s: Status) {
@@ -33,7 +41,7 @@ function counts(s: Status) {
 
 // Fixed texts only: at most the unread count, never a peer's handle, subject or words.
 function submit($: EngineInterface, text: string, now: number) {
-  if (!rewake) return false;
+  if (!rewake || !allowed) return false;
   wakes = wakes.filter((t) => now - t < WAKES_WINDOW_MS);
   if (wakes.length >= WAKES) return false;
   wakes.push(now);
@@ -118,12 +126,14 @@ async function refresh($: EngineInterface, url: string, token: string) {
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     s = JSON.parse(res.text) as Status;
+    allowed = Boolean(s.push_allowed_modes?.includes("rewake"));
     const c = counts(s);
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
     // Read or expired messages lower the baseline, so a later one still counts as new.
     const before = Math.min(seen ?? 0, c.unread);
     seen = seen === undefined ? undefined : before;
     if (
+      !s.paused &&
       c.unread > before &&
       idleSince !== undefined &&
       (!waiter || now - idleSince >= REWAKE_MS) &&
@@ -138,7 +148,8 @@ async function refresh($: EngineInterface, url: string, token: string) {
     $.ui.status(undefined);
     return;
   }
-  if (live) await limits($, url, token, s.you.handle, now, live);
+  // Under the team's kill switch every other path stops: no turn, no handoff prompt, no team note.
+  if (live && !s.paused) await limits($, url, token, s.you.handle, now, live);
 }
 
 export const register: Register = (on, options) => {
@@ -156,7 +167,8 @@ export const register: Register = (on, options) => {
     return next(e);
   });
   on("turn.start", async (_$, e, next) => {
-    idleSince = undefined;
+    // A subagent's or teammate's turn (agentId) leaves the main loop as it was, as at turn.complete.
+    if (!e.agentId) idleSince = undefined;
     return next(e);
   });
   on("turn.complete", async ($, e, next) => {

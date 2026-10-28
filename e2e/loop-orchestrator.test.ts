@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { INVITE_HEADER } from "../apps/hub/src/auth.js";
-import { alert, auditEvent, membership, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { alert, auditEvent, membership, receipt, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { createPersonalToken } from "../apps/hub/src/tokens.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -147,6 +147,32 @@ it("does not hand the orchestrator role to a newcomer who takes the handle of a 
   expect(code(r), r.text).toBe("E_FORBIDDEN");
   const [t] = await hub.db.select().from(thread).where(eq(thread.id, stuck.thread));
   expect(t?.mutedAt).not.toBeNull();
+});
+
+it("delivers a verdict to the looping members still in the team only", async () => {
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+    retention_days: "90",
+    secret_patterns: "",
+    loop_orchestrator: "sam",
+  });
+  const sol = await join("Sol");
+  const quinn = await join("Quinn");
+  const stuck = await loop(sol, quinn);
+  const [gone] = await hub.db.select().from(membership).where(eq(membership.userId, quinn.userId));
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${gone?.id}/revoke`)).status).toBeLessThan(400);
+  const received = async (userId: string) => (await hub.db.select().from(receipt).where(eq(receipt.recipientUserId, userId))).length;
+  const before = await received(quinn.userId);
+
+  const sam = await mcpClient(hub.url, team.sam.token);
+  const verdict = await call(sam, "send_message", {
+    kind: "status",
+    reply_to: stuck.id,
+    body: "Sol picks the format.",
+    loop_verdict: { reopen: true },
+  });
+  expect(verdict.isError, verdict.text).toBe(false);
+  expect(await received(quinn.userId)).toBe(before);
+  expect((await call(await mcpClient(hub.url, sol.token), "inbox_read", { thread: stuck.thread })).text).toContain("Sol picks the format.");
 });
 
 it("hands the orchestrator only the loop of a direct thread, and audits that read like an admin's", async () => {
