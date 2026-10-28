@@ -291,6 +291,9 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
   const { keys } = await client.keys(handles);
   const missing = handles.filter((h) => !keys.find((k) => k.handle === h)?.public_key);
   if (missing.length) throw new Error(`${missing.join(", ")} has no encryption key yet (codetgh keys init)`);
+  // Every handle asked for is there, so any other entry is one the hub added: it would get the thread key too.
+  if (keys.length !== handles.length || keys.some((k) => !handles.includes(k.handle)))
+    throw new Error("the hub sent encryption keys for handles not asked for: not sealing");
   // Trust on first use: a key the hub serves later for the same handle must be the one pinned here.
   for (const k of keys) {
     const pinned = k.handle === me ? publicKeyOf(privateKey) : keyring.get(`${url}#pin:${k.handle}`);

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
@@ -153,6 +153,26 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     await lea.close();
     expect(r.text).not.toContain("v1.");
     expect(r.text).toContain("encrypted");
+  });
+
+  it("wraps a new thread's key only for the handles asked for, and refuses a key the hub adds", async () => {
+    // A hostile hub answers the key lookup with the real keys plus one of its own, under a handle never pinned.
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const res = await realFetch(input, init);
+      if (!String(input).startsWith(`${hub.url}/v1/keys?`)) return res;
+      const body = (await res.json()) as { keys: Array<{ handle: string; public_key: string | null }> };
+      body.keys.push({ handle: "@ghost", public_key: publicKeyOf(newKeyPair().privateKey) });
+      return Response.json(body);
+    });
+    const before = await hub.db.select().from(message);
+    const r = await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--body", "for Léa only"]).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not asked for");
+    expect(await hub.db.select().from(message)).toHaveLength(before.length);
+    expect([...keyring("sam").store.keys()].some((k) => k.endsWith("#pin:@ghost"))).toBe(false);
   });
 
   it("pins each recipient's public key, and refuses to seal for a key the hub swapped", async () => {
