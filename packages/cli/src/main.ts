@@ -282,7 +282,10 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
     // Key confirmation: the wrap is anonymous, so a hub could wrap a key of its own, and seal the message under it too.
     // Only the key this machine saw for that message proves the hub kept the real one.
     const seen = keyring.get(seenKey(url, m.reply_to));
-    if (!seen) throw new Error(`this machine never sent or opened ${m.reply_to}: open it here with codetgh inbox, then reply`);
+    if (!seen)
+      throw new Error(
+        `this machine never sent or opened ${m.reply_to} (a message you sent while offline is not recorded): reply to a message you opened with codetgh inbox`,
+      );
     const key = unwrapKey((await client.threadKey(m.reply_to)).wrapped, privateKey);
     if (keyHash(key) !== seen)
       throw new Error(`the thread key the hub sent is not the one this machine saw for ${m.reply_to}: not sealing a reply with it`);

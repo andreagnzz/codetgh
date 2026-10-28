@@ -156,7 +156,9 @@ describe("end-to-end encrypted threads (phase 3)", () => {
       keyrings.lea = first;
     });
     expect(r.code).toBe(1);
-    expect(r.out).toContain("codetgh inbox");
+    // Inbox never lists a message its sender queued offline, so the error names that case and what still works.
+    expect(r.out).toContain("a message you sent while offline is not recorded");
+    expect(r.out).toContain("reply to a message you opened with codetgh inbox");
     // The sender's machine saw the key when it sent the message.
     const own = await cli("sam", ["send", "--encrypt", "--allow-offline", "--reply-to", sentId, "--to", "@lea", "--body", "Yes."]);
     expect(own.code).toBe(0);
