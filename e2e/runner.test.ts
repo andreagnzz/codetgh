@@ -779,6 +779,14 @@ describe("codetgh runner", () => {
     expect(secret.code).toBe(2);
     expect(secret.err).toContain("blocked:");
     expect(await bash("git push -u origin codetgh/x")).toMatchObject({ code: 0, raw: "", err: "" });
+    // A call with no command to check is refused there too (a Monitor WebSocket watch).
+    const ws = await runHook(
+      "pre-bash",
+      { session_id: "lea-runner-bash", tool_name: "Monitor", tool_input: { ws: { url: "wss://example.com/feed" }, timeout_ms: 1000 } },
+      { ...hookEnv(hub.url, team.lea.token), CODETGH_RUNNER: "1" },
+    );
+    expect(ws.code).toBe(2);
+    expect(ws.err).toContain("CodeTgh runner job");
   });
 });
 

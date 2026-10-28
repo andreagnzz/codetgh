@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
 import { auditEvent, membership, project, task } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { ACME_REPO, auth, call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -347,5 +347,37 @@ describe("runner queue", () => {
     expect(await row(t.id)).toMatchObject({ status: "todo", assigneeUserId: null, version: t.version });
     expect(await readyIds()).toContain(t.id);
     await set(t.id, { status: "cancelled" });
+  });
+
+  it("refuses a runner task from any session of an admin who has a live delegate session", async () => {
+    // Malik could ask Sam's delegate to flag a task, and the owner's runner would run Malik's text (E_DELEGATE_CHAIN).
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const sam = await mcpClient(hub.url, team.sam.token);
+    try {
+      const session = (accept?: string[]) =>
+        fetch(`${hub.url}/v1/agents/session`, {
+          method: "POST",
+          headers: auth(team.sam.token),
+          body: JSON.stringify({
+            session_id: "runner-sam-delegate",
+            source: "startup",
+            repo_fingerprint: ACME_REPO,
+            accept_requests_from: accept,
+          }),
+        });
+      const delegate = ((await (await session(["@malik"])).json()) as { agent_id: string }).agent_id;
+      for (const agent of [delegate, samAgentId]) {
+        const r = await call(sam, "task_create", { agent, title: "relayed", runner: true });
+        expect(code(r)).toBe("E_DELEGATE_CHAIN");
+        expect(JSON.parse(r.text).message).toContain("a runner task cannot be created while you have a live delegate session");
+      }
+      await session();
+      const after = await call(sam, "task_create", { agent: samAgentId, title: "admin, no delegate", runner: true });
+      expect(JSON.parse(after.text).runner).toBe(true);
+      await set(JSON.parse(after.text).id, { status: "cancelled" });
+    } finally {
+      await sam.close();
+      await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    }
   });
 });

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
+import { type AnyColumn, and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -403,6 +403,8 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
             eq(message.delegated, true),
             notExpired(),
             or(isNull(receipt.readAt), eq(receipt.ackStatus, "accepted")),
+            // Only what was sent under the current opt-in: an earlier one's leftovers do not keep the session busy.
+            d.delegateSince ? gte(message.createdAt, d.delegateSince) : undefined,
           ),
         );
       if ((open?.n ?? 0) >= MAX_OPEN_DELEGATED)
@@ -738,7 +740,22 @@ export const visibleTo = (p: Principal, a: Agent | null) =>
 // Blocking first, then handoffs (they carry the context to resume work), then by priority.
 const PRIORITY_ORDER = sql`case when ${message.priority} = 'blocking' then 0 when ${message.kind} = 'handoff' then 1 when ${message.priority} = 'high' then 2 when ${message.priority} = 'normal' then 3 else 4 end`;
 
-export type InboxItem = { seq: number; message: typeof message.$inferSelect; fromName: string };
+// An active member of the message's team, neither a guest nor in quarantine (agents.ts inGoodStanding).
+const inGoodStanding = (userId: AnyColumn) => sql`exists (select 1 from ${membership} where ${membership.teamId} = ${message.teamId}
+    and ${membership.userId} = ${userId} and ${membership.status} = 'active' and ${membership.role} <> 'guest')
+  and not exists (select 1 from ${agent} where ${agent.teamId} = ${message.teamId} and ${agent.userId} = ${userId}
+    and ${agent.trustLevel} = 'quarantined')`;
+
+// authorized="true" is decided when a request is shown, not when it was sent: it was delegated, the session it went to is
+// live and still accepts its sender under the opt-in the request was sent in, and both the sender and that session's
+// owner are in good standing.
+const authorizedNow = sql<boolean>`${message.delegated}
+  and exists (select 1 from ${agent} where ${agent.id} = ${receipt.recipientAgentId} and ${agent.endedAt} is null
+    and ${agent.removedAt} is null and ${message.fromUserId} = any(${agent.acceptRequestsFrom})
+    and ${message.createdAt} >= ${agent.delegateSince})
+  and ${inGoodStanding(message.fromUserId)} and ${inGoodStanding(receipt.recipientUserId)}`;
+
+export type InboxItem = { seq: number; message: typeof message.$inferSelect; fromName: string; authorized?: boolean };
 
 export async function unread(
   db: Db,
@@ -747,7 +764,7 @@ export async function unread(
   opts: { thread?: string; kinds?: string[]; afterSeq?: number; limit: number; byPriority?: boolean },
 ) {
   const rows = await db
-    .select({ seq: receipt.seq, message, fromName: user.name })
+    .select({ seq: receipt.seq, message, fromName: user.name, authorized: authorizedNow })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
     .innerJoin(user, eq(user.id, message.fromUserId))
@@ -836,7 +853,7 @@ export const envelope = (i: InboxItem) =>
       authoredBy: i.message.authoredBy,
       sentAt: i.message.createdAt,
       flags: i.message.flags,
-      authorized: i.message.delegated,
+      authorized: i.authorized,
     },
     i.message.subject,
     i.message.encrypted ? ENCRYPTED_PLACEHOLDER : i.message.body,
