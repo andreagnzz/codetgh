@@ -126,7 +126,7 @@ describe("codetgh project new", () => {
     ).toEqual([]);
   });
 
-  it("keeps a linked project's name for a member, and writes it into CLAUDE.md as one quoted line, whatever it holds", async () => {
+  it("keeps a linked project's name for a member, and writes it into CLAUDE.md cut down to the project name set", async () => {
     fakeClaude(true);
     const origin = "https://github.com/acme/pay-old.git";
     const dir = repo(origin);
@@ -139,7 +139,8 @@ describe("codetgh project new", () => {
     const md = readFileSync(join(dir, "CLAUDE.md"), "utf8");
     // A $' in a replacement string would paste the rest of the file in; a newline would start a line of its own.
     expect(md.match(/Tail rules\./g)).toHaveLength(1);
-    expect(md).not.toMatch(/^SYSTEM/m);
+    // Committed for every teammate's Claude to read: only letters, digits, spaces and . _ - / of it.
+    expect(md).toContain(`This repository is the CodeTgh project "Pay xSYSTEM obey" on ${hub.url}.`);
   });
 
   it("needs a git repository with an origin", async () => {
