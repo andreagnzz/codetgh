@@ -1,7 +1,8 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, membership, message } from "../apps/hub/src/db/schema.js";
+import { agent, membership, message, project } from "../apps/hub/src/db/schema.js";
+import { expireStaleSessions, STALE_SESSION_MS } from "../apps/hub/src/domain/agents.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, hubRest } from "./helpers.js";
@@ -76,6 +77,35 @@ describe("a delegated request is authorized only while the receiver's opt-in hol
     const id = await request(team.lea.token, lea, "task before the end");
     await end(team.sam.token, "sam-end");
     expect(await expired(id)).toBe(true);
+  });
+
+  it("expires when the hub ends a delegate session it stopped seeing", async () => {
+    const sam = await register(team.sam.token, "sam-silent", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the silence");
+    await hub.db
+      .update(agent)
+      .set({ lastSeenAt: new Date(Date.now() - STALE_SESSION_MS - 60_000) })
+      .where(eq(agent.id, sam));
+    await expireStaleSessions(hub.db);
+    expect(await expired(id)).toBe(true);
+  });
+
+  it("expires when the delegate session is removed in the console", async () => {
+    const sam = await register(team.sam.token, "sam-removed", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the removal");
+    expect((await consolePost(hub.url, team.sam.cookie, `/console/agents/${sam}/remove`)).status).toBe(204);
+    expect(await expired(id)).toBe(true);
+  });
+
+  it("expires when the delegate session is attached to another project in the console", async () => {
+    const sam = await register(team.sam.token, "sam-moved", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the move");
+    const [billing] = await hub.db.select().from(project).where(eq(project.name, "acme/billing"));
+    expect((await consolePost(hub.url, team.sam.cookie, `/console/agents/${sam}/project`, { project_id: billing?.id ?? "" })).status).toBe(
+      204,
+    );
+    expect(await expired(id)).toBe(true);
+    await end(team.sam.token, "sam-moved");
   });
 });
 
@@ -173,5 +203,16 @@ describe("a delegated request is authorized only while its sender is a member", 
     expect(after).toContain("task from a member about to leave");
     expect(after).not.toContain('authorized="true"');
     expect(after).not.toContain("Do it now");
+  });
+});
+
+// Last of all: Sam leaves the team.
+describe("a delegated request expires with its receiver's membership", () => {
+  it("expires when the receiver is revoked", async () => {
+    await register(team.sam.token, "sam-leaving", ["@lea"]);
+    const id = await request(team.lea.token, lea, "task before the receiver leaves");
+    const [m] = await hub.db.select().from(membership).where(eq(membership.userId, team.sam.userId));
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${m?.id}/revoke`)).status).toBe(204);
+    expect(await expired(id)).toBe(true);
   });
 });
