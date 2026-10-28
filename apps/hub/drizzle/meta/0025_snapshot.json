@@ -1,6 +1,6 @@
 {
-  "id": "2cfa4c01-d04e-42ea-acc0-b3fe11e8a33a",
-  "prevId": "beb19c1b-34d9-45eb-8f2e-9ef35ea4fa4a",
+  "id": "c65820ca-26e2-4749-8d87-baf7ed27b2b5",
+  "prevId": "88ee1a12-9433-471a-9f78-79d4cb07f0de",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -243,6 +243,12 @@
         "accept_requests_from": {
           "name": "accept_requests_from",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delegate_since": {
+          "name": "delegate_since",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -1301,12 +1307,6 @@
         },
         "agents_paused_at": {
           "name": "agents_paused_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "oauth_not_before": {
-          "name": "oauth_not_before",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false

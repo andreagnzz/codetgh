@@ -201,6 +201,8 @@ export const agent = pgTable(
     lastToolAt: timestamp("last_tool_at"),
     // codetgh start --accept-requests-from: user ids whose requests this session does; null when it is not a delegate.
     acceptRequestsFrom: text("accept_requests_from").array(),
+    // When the current opt-in began (database clock, as message.created_at): a request sent before it is never authorized.
+    delegateSince: timestamp("delegate_since"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("agent_session_uq").on(t.teamId, t.userId, t.sessionId), index("agent_team_seen_idx").on(t.teamId, t.lastSeenAt)],

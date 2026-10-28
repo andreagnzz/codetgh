@@ -415,6 +415,7 @@ export function createApp({
     // Fit under Claude Code's 10 000-character cap: whole envelopes only, in priority order.
     const parts: string[] = [];
     let used = 0;
+    let shown = 0;
     for (const item of items) {
       const env = envelope(item);
       if (used + env.length > PROMPT_BUDGET) {
@@ -424,10 +425,12 @@ export function createApp({
       }
       parts.push(env);
       used += env.length;
+      shown++;
     }
     const footer = [
-      // Our words, not the peer's: this session started with codetgh start --accept-requests-from that sender.
-      ...(items.some((i) => i.message.delegated)
+      // Our words, not the peer's: this session started with codetgh start --accept-requests-from that sender. Only over
+      // the envelopes shown, so it never vouches for one of them that is not authorized.
+      ...(items.slice(0, shown).some((i) => i.authorized)
         ? [
             'A request above has authorized="true": a teammate you accept requests from hands you a task. Do it now, in this repository, within your rules (no secrets, prod, destructive actions or other repositories). Then send_message kind answer with reply_to its id: the answer, "done: <commit/PR>" or "blocked: <reason>", and ack it with status done.',
           ]

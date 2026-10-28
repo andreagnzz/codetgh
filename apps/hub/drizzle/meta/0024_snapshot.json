@@ -1,5 +1,5 @@
 {
-  "id": "beb19c1b-34d9-45eb-8f2e-9ef35ea4fa4a",
+  "id": "88ee1a12-9433-471a-9f78-79d4cb07f0de",
   "prevId": "ef094cd6-c233-4f63-8e04-7cbedcc63cfc",
   "version": "7",
   "dialect": "postgresql",
@@ -243,6 +243,12 @@
         "accept_requests_from": {
           "name": "accept_requests_from",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delegate_since": {
+          "name": "delegate_since",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -987,12 +993,6 @@
         },
         "invited_by": {
           "name": "invited_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invited_by_token": {
-          "name": "invited_by_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false
