@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
+import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
@@ -106,12 +106,60 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
     const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("opens no message of this thread");
+    expect(r.out).toContain("not the one this machine saw");
     expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
     await hub.db
       .update(threadKey)
       .set({ wrapped: real?.wrapped ?? "" })
       .where(mine);
+  });
+
+  it("checks a reply's thread key against the one this machine saw, not against a ciphertext from the same hub", async () => {
+    // A database writer wraps a key of its own to Léa's public key and reseals the message under it, so the two agree.
+    const [original] = await hub.db.select().from(message).where(eq(message.id, sentId));
+    const threadId = original?.threadId ?? "";
+    const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
+    const [real] = await hub.db.select().from(threadKey).where(mine);
+    const forged = newThreadKey();
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: wrapKey(forged, publicKeyOf(keyring("lea").get(`${hub.url}#e2e`) ?? "")) })
+      .where(mine);
+    await hub.db
+      .update(message)
+      .set({ body: sealBody("Friday plan: cancelled", forged) })
+      .where(eq(message.id, sentId));
+    const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not the one this machine saw");
+    expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
+    const inbox = await cli("lea", ["inbox"]);
+    expect(inbox.out).not.toContain("cancelled");
+    expect(inbox.out).toContain(`not showing ${sentId}`);
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: real?.wrapped ?? "" })
+      .where(mine);
+    await hub.db
+      .update(message)
+      .set({ body: original?.body ?? "" })
+      .where(eq(message.id, sentId));
+  });
+
+  it("replies only from a machine that sent or opened the message", async () => {
+    // Léa's second machine holds her private key, but she never read the message there.
+    const first = keyring("lea");
+    delete keyrings.lea;
+    keyring("lea").set(`${hub.url}#e2e`, first.get(`${hub.url}#e2e`) ?? "");
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]).finally(() => {
+      keyrings.lea = first;
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("codetgh inbox");
+    // The sender's machine saw the key when it sent the message.
+    const own = await cli("sam", ["send", "--encrypt", "--allow-offline", "--reply-to", sentId, "--to", "@lea", "--body", "Yes."]);
+    expect(own.code).toBe(0);
   });
 
   it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
