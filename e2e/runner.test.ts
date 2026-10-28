@@ -412,6 +412,11 @@ async function waitForPid() {
   for (let i = 0; i < 200 && !existsSync(join(fake, "pid")); i++) await sleep(25);
   return Number(readFileSync(join(fake, "pid"), "utf8"));
 }
+// A killed agent can still be listed for a moment after the runner returns, until it is reaped: bounded wait.
+async function exited(pid: number) {
+  for (let i = 0; i < 200 && alive(pid); i++) await sleep(25);
+  return !alive(pid);
+}
 
 describe("codetgh runner", () => {
   let parent = "";
@@ -624,7 +629,7 @@ describe("codetgh runner", () => {
     const pid = await waitForPid();
     await hub.db.update(task).set({ leaseOwner: "another-runner" }).where(eq(task.id, id));
     const out = await done;
-    expect(alive(pid)).toBe(false);
+    expect(await exited(pid)).toBe(true);
     expect(out).toContain("lease lost");
     expect((await row(id))?.status).toBe("in_progress");
     expect(existsSync(worktree(id))).toBe(true);
@@ -636,7 +641,7 @@ describe("codetgh runner", () => {
     const done = runner({ job_timeout_min: 0.02 });
     const pid = await waitForPid();
     await done;
-    expect(alive(pid)).toBe(false);
+    expect(await exited(pid)).toBe(true);
     const r = await row(id);
     expect(r?.status).toBe("blocked");
     expect(r?.notes.at(-1)?.text).toContain("0.02 min");
