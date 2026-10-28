@@ -1091,7 +1091,7 @@ pnpm build       hub, CLI, hook.js et plugin
 | Variable | Rôle | Défaut |
 | --- | --- | --- |
 | CODETGH_PUBLIC_URL | Adresse publique : émetteur OAuth, ressource MCP, liens d'invitation | Obligatoire |
-| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les sessions, chiffre les champs sensibles | Obligatoire |
+| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les cookies de session, chiffre la clé de signature OAuth (table jwks), dérive les jetons CSRF de la console, les secrets des webhooks GitHub, les empreintes des secrets autorisés et, sans CODETGH_AUDIT_KEY, la clé des points de contrôle d'audit ; rotation : docs/DEPLOY.md | Obligatoire |
 | DATABASE_URL | Chaîne de connexion Postgres ; absente, le hub utilise PGlite | PGlite |
 | CODETGH_DATA_DIR | Dossier de PGlite et des pièces jointes | ./data |
 | PORT | Port d'écoute HTTP | 8787 |
