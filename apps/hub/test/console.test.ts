@@ -32,6 +32,14 @@ describe("console", () => {
     expect(res.status).toBe(302);
   });
 
+  it("sends an htmx request without a session to /login with HX-Redirect, which htmx follows instead of swapping", async () => {
+    const res = await fetch(`${hub.url}/console/kill-switch`, { method: "POST", headers: { "HX-Request": "true" }, redirect: "manual" });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("hx-redirect")).toBe("/login");
+    expect(res.headers.get("location")).toBeNull();
+    expect((await fetch(`${hub.url}/console/kill-switch`, { method: "POST", redirect: "manual" })).status).toBe(302);
+  });
+
   it("serves pages under a self-only CSP with no inline script", async () => {
     const res = await fetch(`${hub.url}/console`, { headers: { cookie: team.lea.cookie } });
     expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");

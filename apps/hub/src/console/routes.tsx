@@ -165,8 +165,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.use(async (c, next) => {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const principal = session ? await principalForUser(db, session.user.id, "console").catch(() => null) : null;
-    // The device page is opened from a terminal: back to it after signing in.
-    if (!session || !principal) return c.redirect(c.req.path === "/console/device" ? "/login?next=/console/device" : "/login");
+    if (!session || !principal) {
+      // The device page is opened from a terminal: back to it after signing in.
+      const login = c.req.path === "/console/device" ? "/login?next=/console/device" : "/login";
+      // htmx would follow a 302 inside its request and swap the login page in, or nothing: it is told to go there.
+      if (c.req.header("HX-Request") === "true") return c.body(null, 204, { "HX-Redirect": login });
+      return c.redirect(login);
+    }
     c.set("principal", principal);
     c.set("csrf", csrfFor(session.session.id));
     c.set("sessionCreatedAt", new Date(session.session.createdAt));
