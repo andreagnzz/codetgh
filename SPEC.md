@@ -803,7 +803,7 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 
 | Règle | Détail |
 | --- | --- |
-| Contenu échappé | &, <, > et " deviennent &amp;, &lt;, &gt; et &quot; dans le corps et dans chaque attribut, display_name compris (40 caractères au plus, sur une ligne) : aucun texte ne referme l'enveloppe, ne sort d'un attribut ni n'en imite une autre |
+| Contenu échappé | &, <, > et " deviennent &amp;, &lt;, &gt; et &quot; dans le corps et dans chaque attribut, display_name compris (40 caractères au plus, sur une ligne) : aucun texte ne referme l'enveloppe, ne sort d'un attribut ni n'en imite une autre ; sur un terminal (codetgh inbox, et les noms de projet du lanceur, du runner et de codetgh project new), le CLI retire en plus les séquences d'échappement et les caractères de contrôle, sauf saut de ligne et tabulation |
 | Taille | 8 Ko au plus, comme le corps d'un message ; au-delà, un relais est coupé avec un renvoi vers msg_… |
 | Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link |
 | Auteur | human marque un texte écrit depuis la console, agent un texte écrit par un agent ; même human ne vaut pas consigne : seule la personne devant son terminal commande à son agent |

@@ -121,6 +121,17 @@ describe("Remote Control launcher", () => {
     process.kill(second, "SIGKILL");
   });
 
+  it("prints the hub's project name without control characters or escape sequences", async () => {
+    await hub.db.update(project).set({ name: "acme\u001b[2J\u001b[1;31m\rforged" }).where(eq(project.id, projectId));
+    await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
+    const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
+    writeFileSync(config, JSON.stringify({ projects: {} }));
+    const out = await launcher(config);
+    await hub.db.update(project).set({ name: "acme" }).where(eq(project.id, projectId));
+    expect(out).toContain("acmeforged: not in this machine's launcher list");
+    expect(out).not.toMatch(/[^\P{Cc}\n\t]/u);
+  });
+
   it("refuses a project that is not in its local list, and says so in the console", async () => {
     await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
     const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
