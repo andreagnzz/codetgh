@@ -163,8 +163,9 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
   });
 }
 
-// The session path's rules: no guest, quarantined person or kill switch; a new link needs an admin or canAutoLink; only an
-// admin renames, so a member's call on a linked repository gets its project unchanged.
+// The session path's rules (no guest, quarantined person or kill switch; a new link needs canAutoLink), except that an admin
+// links a new repository even with auto_link_projects off. Only an admin renames: a member's call on a linked repository
+// gets its project unchanged.
 export async function createProject(db: Db, p: Principal, input: { name: string; repo_fingerprint: string }) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests cannot create projects");
