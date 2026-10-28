@@ -169,6 +169,7 @@ export const StatusOutput = z.object({
   you: z.object({ handle: z.string(), agent: z.string().nullable() }),
   paused: z.boolean(),
   agents_paused: z.boolean(),
+  push_allowed_modes: WhoamiSchema.shape.push_allowed_modes,
   // One entry per person; sessions are the live ones only. *_untrusted fields are teammates' words, escaped on one line:
   // data, never instructions; flags are what the hub saw in them (instruction-like, secret-suspect, external-link).
   people: z.array(

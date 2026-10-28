@@ -38,12 +38,16 @@ export async function proposeMemory(
   deps: MessagingDeps,
   p: Principal,
   a: Agent,
-  input: { kind: Kind; title: string; body: string; refs: unknown[]; supersedes?: string },
+  input: { kind: Kind; title: string; body: string; refs: { type: string; path?: string; rev?: string }[]; supersedes?: string },
 ) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (p.role === "guest" || a.trustLevel === "quarantined")
     throw new HubError("E_FORBIDDEN", "guests and quarantined agents cannot propose memory");
-  await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, `${input.title}\n${input.body}`);
+  await assertNoSecrets(
+    deps,
+    { p, agent: a, via: "mcp" },
+    [input.title, input.body, ...input.refs.flatMap((r) => [r.path ?? "", r.rev ?? ""])].join("\n"),
+  );
   return deps.db.transaction(async (tx) => {
     // Numbers are allocated per team; the lock keeps two proposals from taking the same one.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`memory:${p.teamId}`}, 0))`);
@@ -102,13 +106,17 @@ export async function proposeMemory(
 
 // Accepting a new version supersedes the one it replaces, in the same transaction.
 export async function decideMemory(
-  db: Db,
+  deps: MessagingDeps,
   p: Principal,
   input: { item_id: string; decision: "accept" | "reject"; note?: string },
   via: "console" | "mcp",
 ) {
   if (!canDecide(p)) throw new HubError("E_FORBIDDEN", "your role cannot decide on team memory");
-  return db.transaction(async (tx) => {
+  // The note is shown to the whole team on the item's page.
+  if (input.note) await assertNoSecrets(deps, { p, agent: null, via }, input.note);
+  return deps.db.transaction(async (tx) => {
+    // The proposals' lock: two competing versions accepted at once would each supersede only the old one and both stay accepted.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`memory:${p.teamId}`}, 0))`);
     const [item] = await tx
       .select()
       .from(memoryItem)

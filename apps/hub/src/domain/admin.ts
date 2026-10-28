@@ -48,6 +48,17 @@ export async function endPendingInvitations(
   for (const r of rows) await appendAudit(db, { ...by, action: "invitation.revoked", subjectId: r.id });
 }
 
+// Owner changes take the owners lock, as eraseMe does, and read the actor's role again under it: two owners demoting or
+// revoking each other at once cannot both pass on the role their requests started with and leave the team with no owner.
+export async function requireOwnerNow(tx: Db, teamId: string, userId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owners:${teamId}`}, 0))`);
+  const [me] = await tx
+    .select({ role: membership.role })
+    .from(membership)
+    .where(and(eq(membership.teamId, teamId), eq(membership.userId, userId), eq(membership.status, "active")));
+  if (me?.role !== "owner") throw new HubError("E_FORBIDDEN", "you are no longer an owner of this team");
+}
+
 export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";
 
 export function requireAdmin(p: Principal) {
@@ -208,6 +219,14 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
       .update(agent)
       .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date(), acceptRequestsFrom: null, delegateSince: null })
       .where(eq(agent.id, a.id));
+    // An external agent is its token: removing it ends its access to /a2a.
+    if (a.kind === "a2a" && a.tokenId) {
+      await tx
+        .update(personalToken)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(personalToken.id, a.tokenId), isNull(personalToken.revokedAt)));
+      await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: a.tokenId });
+    }
     await expireDelegated(tx, [a]);
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
     await appendAudit(tx, { ...byUser(p), action: "agent.removed", subjectId: a.id });
@@ -272,14 +291,17 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
 
 export async function changeRole(db: Db, p: Principal, membershipId: string, role: Role) {
   requireAdmin(p);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await lockDelegates(tx, p.teamId);
     const [m] = await tx
       .select()
       .from(membership)
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId), eq(membership.status, "active")));
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
-    if ((m.role === "owner" || role === "owner") && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes owners");
+    if (m.role === "owner" || role === "owner") {
+      if (p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes owners");
+      await requireOwnerNow(tx, p.teamId, p.user.id);
+    }
     if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
@@ -296,5 +318,6 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
       await expireDelegated(tx, rows);
     }
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
+    return m.userId;
   });
 }

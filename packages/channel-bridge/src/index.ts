@@ -31,10 +31,19 @@ async function relay() {
     try {
       for await (const e of hub.stream()) {
         delay = 1000;
-        const { messages, envelopes } = await hub.inbox({ thread: e.thread, limit: 20 });
-        const n = messages.findIndex((m) => m.id === e.message_id);
+        // Oldest first, 20 a page: a thread with more unread holds the new message on a later page.
+        let page = await hub.inbox({ thread: e.thread, limit: 20 });
+        let n = page.messages.findIndex((m) => m.id === e.message_id);
+        while (n < 0 && page.next_page_token) {
+          page = await hub.inbox({ thread: e.thread, limit: 20, page_token: page.next_page_token });
+          n = page.messages.findIndex((m) => m.id === e.message_id);
+        }
+        const { envelopes } = page;
         // Already acked elsewhere: nothing to push.
         if (n < 0) continue;
+        // The bridge reads as the person, not as one session: a request authorized for a delegate session reaches that
+        // session through its own hooks, never another session as authorized="true".
+        if (/^<peer_message [^>]* authorized="true" /.test(envelopes[n] ?? "")) continue;
         await mcp.notification({
           method: "notifications/claude/channel",
           params: { content: envelopes[n] ?? "", meta: { message_id: e.message_id, kind: e.kind, priority: e.priority, thread: e.thread } },

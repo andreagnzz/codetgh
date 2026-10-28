@@ -165,8 +165,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.use(async (c, next) => {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const principal = session ? await principalForUser(db, session.user.id, "console").catch(() => null) : null;
-    // The device page is opened from a terminal: back to it after signing in.
-    if (!session || !principal) return c.redirect(c.req.path === "/console/device" ? "/login?next=/console/device" : "/login");
+    if (!session || !principal) {
+      // The device page is opened from a terminal: back to it after signing in.
+      const login = c.req.path === "/console/device" ? "/login?next=/console/device" : "/login";
+      // htmx would follow a 302 inside its request and swap the login page in, or nothing: it is told to go there.
+      if (c.req.header("HX-Request") === "true") return c.body(null, 204, { "HX-Redirect": login });
+      return c.redirect(login);
+    }
     c.set("principal", principal);
     c.set("csrf", csrfFor(session.session.id));
     c.set("sessionCreatedAt", new Date(session.session.createdAt));
@@ -209,6 +214,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
         keep={filter ? filter.selected : kept(c)}
+        archived={c.req.query("archived") === "1"}
       >
         {body as never}
       </Layout>,
@@ -484,7 +490,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         rows={of.map((t) => [
           <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
           _(t.kind),
-          t.subject ?? "",
+          // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
+          t.kind === "direct" && !mine.includes(t.id) ? "" : (t.subject ?? ""),
           t.agentStreak,
           <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
           <When at={t.lastMessageAt} lang={_.lang} />,
@@ -499,7 +506,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Threads",
       <>
         <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
-        {f.selected || rows.length === 0
+        {/* A guest never sees the team's projects, their names as headings included. */}
+        {f.selected || rows.length === 0 || p.role === "guest"
           ? table(rows)
           : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
               <section aria-labelledby={`p-${g.id}`}>
@@ -527,19 +535,17 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(and(eq(thread.id, c.req.param("id") ?? ""), eq(thread.teamId, p.teamId)));
     if (!t) throw new HubError("E_NOT_FOUND", "thread not found");
     const participant = (await participantThreads(p)).some((r) => r.id === t.id);
-    // SPEC: an admin may open a direct thread they are not in, in full, and every opening is audited.
+    // SPEC: an admin may open a direct thread they are not in, in full, and every opening (the page, below) is audited.
     if (!participant) requireMember(p);
     const adminRead = t.kind === "direct" && !participant;
-    if (adminRead) {
-      requireAdmin(p);
-      await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
-    }
+    if (adminRead) requireAdmin(p);
     return { t, adminRead };
   };
 
   consoleApp.get("/threads/:id", async (c) => {
     const { t, adminRead } = await loadThread(c);
     const p = c.get("principal");
+    if (adminRead) await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
     const project = kept(c);
     const rows = await db
       .select({ message, name: user.name })
@@ -584,12 +590,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
-          <label>
-            Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
-          </label>
-          <button type="submit">Send</button>
-        </form>
+        {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
+        {!adminRead && !t.encrypted && (
+          <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
+            <label>
+              Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
+            </label>
+            <button type="submit">Send</button>
+          </form>
+        )}
         {t.mutedAt ? (
           <Action post={`/console/threads/${t.id}/reopen`} label="Reopen" />
         ) : (
@@ -601,7 +610,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // A human reply carries authored_by=human, resets the agent streak and reopens a muted thread.
   consoleApp.post("/threads/:id/reply", async (c) => {
-    const { t } = await loadThread(c);
+    const { t, adminRead } = await loadThread(c);
+    if (adminRead) throw new HubError("E_FORBIDDEN", "only participants reply to a direct thread");
     const body = (await form(c)).body ?? "";
     await sendMessage(
       messaging,
@@ -1003,7 +1013,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.get("/me/export", async (c) => {
-    const data = await exportMyData(db, c.get("principal"));
+    const p = c.get("principal");
+    const data = await exportMyData(db, p);
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "member.data_exported", subjectId: p.membershipId }));
     return c.json(data, 200, { "content-disposition": 'attachment; filename="codetgh-my-data.json"' });
   });
 
@@ -1123,8 +1135,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
   });
   consoleApp.post("/device/deny", async (c) => {
+    const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    device.decide(code, keys, { deny: true });
+    const entry = device.decide(code, keys, { deny: true });
+    await db.transaction((tx) =>
+      appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
+    );
     return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
   });
 
@@ -1187,15 +1203,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
           rows={rows.map((r) => [
             r.name,
-            <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
-              <label>
-                <span class="sr-only">{_("Handle")}</span>@
-                <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
-              </label>
-              <button type="submit" class="quiet">
-                {_("Rename")}
-              </button>
-            </form>,
+            // Only an owner renames an owner.
+            r.membership.role === "owner" && p.role !== "owner" ? (
+              `@${r.membership.handle}`
+            ) : (
+              <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
+                <label>
+                  <span class="sr-only">{_("Handle")}</span>@
+                  <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
+                </label>
+                <button type="submit" class="quiet">
+                  {_("Rename")}
+                </button>
+              </form>
+            ),
             r.email,
             <Pill>{_(r.membership.role)}</Pill>,
             r.membership.userId !== p.user.id && (
@@ -1256,7 +1277,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/members/:id/role", async (c) => {
     const role = (await form(c)).role ?? "";
     if (!(ROLES as readonly string[]).includes(role)) throw new HubError("E_INVALID", "unknown role");
-    await changeRole(db, c.get("principal"), c.req.param("id"), role as Role);
+    const p = c.get("principal");
+    const userId = await changeRole(db, p, c.req.param("id"), role as Role);
+    // Their open streams end and reconnect with the new role: a demoted admin stops getting everyone's activity.
+    bus.emit("revoked", { teamId: p.teamId, userId });
     return refresh(c);
   });
 
@@ -1587,7 +1611,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/memory/:id/decide", async (c) => {
     const f = await form(c);
     if (f.decision !== "accept" && f.decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
-    await decideMemory(db, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
+    await decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
     bus.emit("attention", { teamId: c.get("principal").teamId });
     return refresh(c);
   });
