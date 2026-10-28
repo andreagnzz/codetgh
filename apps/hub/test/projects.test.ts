@@ -33,6 +33,11 @@ describe("project names", () => {
     const res = await create(team.lea.token, "Équipe web/api_v2.1 - beta", newRepo());
     expect(res.status).toBe(200);
     expect((await res.json()).name).toBe("Équipe web/api_v2.1 - beta");
+    // The same accent typed as a letter and a combining mark (NFD, as macOS file names come).
+    const decomposed = "Équipe café".normalize("NFD");
+    const nfd = await create(team.lea.token, decomposed, newRepo());
+    expect(nfd.status).toBe(200);
+    expect((await nfd.json()).name).toBe(decomposed);
   });
 });
 

@@ -1,5 +1,6 @@
 import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
 import { shortAgentId } from "@codetgh/shared";
+import { projectNameText } from "@codetgh/shared/rest";
 import { and, count, eq, gt, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, task, user } from "../db/schema.js";
@@ -297,11 +298,11 @@ const versionNumber = (v: string) =>
     .reduce((a, n) => a * 1000 + n, 0);
 
 // One line for the person at session start, which also reaches the model. The project name is a member's text: cut down to
-// the characters CreateProjectInput allows, as a name stored before that rule may hold more. short: after /clear or
-// compaction, only who and where, with the agent id to match team_overview.
+// the characters CreateProjectInput allows. short: after /clear or compaction, only who and where, with the agent id to
+// match team_overview.
 export async function statusLine(db: Db, p: Principal, me: Agent, short = false) {
   const [prj] = me.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, me.projectId)) : [];
-  const who = [`CodeTgh ✓ ${(prj?.name ?? "no project").replace(/[^\p{L}\p{N} ._/-]/gu, "")}`, `@${p.handle}`, shortAgentId(me.id)];
+  const who = [`CodeTgh ✓ ${projectNameText(prj?.name ?? "no project")}`, `@${p.handle}`, shortAgentId(me.id)];
   if (short) return who.join(" · ");
   // Teammates with a live session; a guest sees no team presence, only their own unread count.
   const online =
