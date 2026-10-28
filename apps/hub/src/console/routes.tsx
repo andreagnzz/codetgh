@@ -1012,7 +1012,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.get("/me/export", async (c) => {
-    const data = await exportMyData(db, c.get("principal"));
+    const p = c.get("principal");
+    const data = await exportMyData(db, p);
+    await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "member.data_exported", subjectId: p.membershipId }));
     return c.json(data, 200, { "content-disposition": 'attachment; filename="codetgh-my-data.json"' });
   });
 
@@ -1132,8 +1134,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
   });
   consoleApp.post("/device/deny", async (c) => {
+    const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    device.decide(code, keys, { deny: true });
+    const entry = device.decide(code, keys, { deny: true });
+    await db.transaction((tx) =>
+      appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
+    );
     return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
   });
 
