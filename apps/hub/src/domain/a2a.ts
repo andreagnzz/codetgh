@@ -20,8 +20,10 @@ import { type Agent, oneLine } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { envelope, MAX_BODY_BYTES, type MessagingDeps, sendMessage } from "./messages.js";
 
-// The lowest-trust caller writes to the database every team shares: a cap on its tasks, the oldest go first.
+// The lowest-trust caller writes to the database every team shares: a cap on its tasks, the oldest go first, and on
+// the messages a task keeps (the SDK stores a follow-up before the hub sends it, refused or not).
 const MAX_TASKS_PER_AGENT = 200;
+const MAX_HISTORY = 10;
 
 // An external agent is a guest of the team whose only agent is quarantined for good: it may ask and answer, nothing else.
 export async function createExternalAgent(db: Db, p: Principal, name: string) {
@@ -153,7 +155,7 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       questionOf.delete(task.id);
       // A refused send leaves nothing behind: the failed task is in the caller's answer.
       if (!messageId && task.status?.state === TaskState.TASK_STATE_FAILED) return;
-      const stored = { ...task, history: task.history.map(kept) };
+      const stored = { ...task, history: task.history.slice(-MAX_HISTORY).map(kept) };
       await db
         .insert(a2aTask)
         .values({ id: task.id, teamId: p.teamId, agentId: a.id, messageId, task: stored })

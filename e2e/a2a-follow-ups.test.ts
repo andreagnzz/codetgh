@@ -1,0 +1,52 @@
+import { randomUUID } from "node:crypto";
+import { Role, TaskState } from "@a2a-js/sdk";
+import { ClientFactory } from "@a2a-js/sdk/client";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { a2aTask } from "../apps/hub/src/db/schema.js";
+import { RateLimiter } from "../apps/hub/src/domain/limits.js";
+import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { consolePost } from "./helpers.js";
+
+let hub: Hub;
+let team: Awaited<ReturnType<Hub["seed"]>>;
+let token = "";
+beforeAll(async () => {
+  // Many requests by one external agent in a few milliseconds: a clock that moves an hour per call keeps the budgets out.
+  let now = 0;
+  hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
+  team = await hub.seed();
+  const res = await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Partner" });
+  token = (await res.text()).match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? "";
+});
+afterAll(() => hub.stop());
+
+const ask = (body: string, taskId = "") => ({
+  tenant: "",
+  message: {
+    messageId: randomUUID(),
+    contextId: "",
+    taskId,
+    role: Role.ROLE_USER,
+    parts: [{ content: { $case: "text" as const, value: body }, metadata: undefined, filename: "", mediaType: "text/plain" }],
+    metadata: undefined,
+    extensions: [],
+    referenceTaskIds: [],
+  },
+  configuration: undefined,
+  metadata: undefined,
+});
+const auth = () => ({ serviceParameters: { Authorization: `Bearer ${token}` } });
+
+// The SDK stores a follow-up in the task before the hub sends it: refused follow-ups must not grow the row without end.
+it("keeps at most 10 messages in a task's history, however many follow-ups are refused", async () => {
+  const client = await new ClientFactory().createFromUrl(hub.url);
+  const sent = await client.sendMessage(ask("What is your SLA?"), auth());
+  const id = "status" in sent ? sent.id : "";
+  for (let i = 0; i < 12; i++) {
+    const r = await client.sendMessage(ask(`${i} ${"z".repeat(9_000)}`, id), auth());
+    expect("status" in r && r.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+  }
+  const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
+  expect(row?.task.history.length).toBeLessThanOrEqual(10);
+});
