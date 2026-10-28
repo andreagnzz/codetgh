@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { agent, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
+import { agent, alert, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
 import { call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
@@ -122,6 +122,32 @@ describe("team memory", () => {
       expect((await decide(team.lea.cookie, p.id, "accept")).status).toBe(204);
     } finally {
       await hub.db.update(teamTable).set({ killSwitchAt: null, settings: {} }).where(eq(teamTable.id, team.teamId));
+      await sam.close();
+      await lea.close();
+    }
+  });
+
+  it("blocks a decision note holding a secret, over MCP and in the console", async () => {
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { memory_accept_via_mcp: true } })
+      .where(eq(teamTable.id, team.teamId));
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const note = `clé ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`;
+    try {
+      const p = json(await call(sam, "memory_propose", { kind: "note", title: "Note test", body: "A plain note." }));
+      expect(code(await call(lea, "memory_accept", { item_id: p.id, decision: "accept", note }))).toBe("E_SECRET_BLOCKED");
+      expect((await decide(team.lea.cookie, p.id, "reject", note)).status).toBe(422);
+      const [still] = await hub.db.select().from(memoryItem).where(eq(memoryItem.id, p.id));
+      expect(still).toMatchObject({ status: "proposed", decisionNote: null });
+      const alerts = await hub.db
+        .select()
+        .from(alert)
+        .where(and(eq(alert.kind, "secret_blocked"), eq(alert.userId, team.lea.userId)));
+      expect(alerts).toHaveLength(2);
+    } finally {
+      await hub.db.update(teamTable).set({ settings: {} }).where(eq(teamTable.id, team.teamId));
       await sam.close();
       await lea.close();
     }

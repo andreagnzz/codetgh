@@ -1587,7 +1587,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/memory/:id/decide", async (c) => {
     const f = await form(c);
     if (f.decision !== "accept" && f.decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
-    await decideMemory(db, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
+    await decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
     bus.emit("attention", { teamId: c.get("principal").teamId });
     return refresh(c);
   });

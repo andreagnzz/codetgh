@@ -102,13 +102,15 @@ export async function proposeMemory(
 
 // Accepting a new version supersedes the one it replaces, in the same transaction.
 export async function decideMemory(
-  db: Db,
+  deps: MessagingDeps,
   p: Principal,
   input: { item_id: string; decision: "accept" | "reject"; note?: string },
   via: "console" | "mcp",
 ) {
   if (!canDecide(p)) throw new HubError("E_FORBIDDEN", "your role cannot decide on team memory");
-  return db.transaction(async (tx) => {
+  // The note is shown to the whole team on the item's page.
+  if (input.note) await assertNoSecrets(deps, { p, agent: null, via }, input.note);
+  return deps.db.transaction(async (tx) => {
     const [item] = await tx
       .select()
       .from(memoryItem)
