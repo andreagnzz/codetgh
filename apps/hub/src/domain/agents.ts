@@ -3,7 +3,7 @@ import { CreateProjectInput } from "@codetgh/shared/rest";
 import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
-import { agent, membership, project, user } from "../db/schema.js";
+import { agent, membership, message, project, receipt, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -61,6 +61,25 @@ async function personTrust(db: Db, p: Principal) {
   return q ? ("quarantined" as const) : ("trusted" as const);
 }
 
+// An active member, neither a guest nor in quarantine, read now: a principal holds the role its request started with.
+export async function inGoodStanding(db: Db, teamId: string, userId: string) {
+  const [m] = await db
+    .select({ role: membership.role })
+    .from(membership)
+    .where(and(eq(membership.teamId, teamId), eq(membership.userId, userId), eq(membership.status, "active")));
+  const [q] = await db
+    .select({ id: agent.id })
+    .from(agent)
+    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), eq(agent.trustLevel, "quarantined")))
+    .limit(1);
+  return Boolean(m && m.role !== "guest" && !q);
+}
+
+// Delegate opt-ins, and the role and trust they depend on (changeRole, setAgentTrust), change one at a time per team.
+// Taken before anything else in the transaction; appendAudit's team lock comes last.
+export const lockDelegates = (tx: Db, teamId: string) =>
+  tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`delegates:${teamId}`}, 0))`);
+
 // Members link a new repository by starting a session in it; never a guest, a quarantined person, or once an admin
 // turned auto_link_projects off.
 export async function canAutoLink(db: Db, p: Principal) {
@@ -73,10 +92,11 @@ export const isLaunch = (source?: string) => !source || source === "startup" || 
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
+    if (input.accept_requests_from?.length) await lockDelegates(tx, p.teamId);
     // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
     // Refused before the repository is looked at, so the refusal is the same whether or not it is linked.
     const asked = [...new Set(input.accept_requests_from ?? [])];
-    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
+    if (asked.length && !(await inGoodStanding(tx, p.teamId, p.user.id)))
       throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     let projectId: string | null = null;
     // An unknown repository stays off the hub, unless the session sends its name to link it and may do so.
@@ -140,7 +160,13 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       !launched && {
         acceptRequestsFrom: sql`case when ${agent.projectId} is not distinct from ${input.repo_fingerprint ? projectId : agent.projectId} then ${agent.acceptRequestsFrom} else null end`,
       };
-    const [row] = await tx
+    // Read before the upsert changes it, locked: a new opt-in is told apart from the one in place.
+    const [before] = await tx
+      .select({ accept: agent.acceptRequestsFrom })
+      .from(agent)
+      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, input.session_id)))
+      .for("update");
+    const [upserted] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
       .onConflictDoUpdate({
@@ -148,7 +174,20 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
         set: { ...(input.repo_fingerprint ? values : kept), ...keep },
       })
       .returning();
-    if (!row) throw new HubError("E_INVALID", "agent registration failed");
+    if (!upserted) throw new HubError("E_INVALID", "agent registration failed");
+    let row = upserted;
+    // Another list, or none: a new opt-in starts now, on the database's clock as message.created_at is. What was sent under
+    // the earlier one is never authorized again (messages.ts authorizedNow), and expires.
+    const list = (l: string[] | null | undefined) => (l ? [...l].sort().join() : null);
+    if (list(before?.accept) !== list(row.acceptRequestsFrom)) {
+      const [restarted] = await tx
+        .update(agent)
+        .set({ delegateSince: row.acceptRequestsFrom ? sql`clock_timestamp()` : null })
+        .where(eq(agent.id, row.id))
+        .returning();
+      row = restarted ?? row;
+      await expireDelegated(tx, [row]);
+    }
     await appendAudit(tx, {
       teamId: p.teamId,
       actorType: "agent",
@@ -228,11 +267,18 @@ export async function setAgentsPaused(db: Db, p: Principal, paused: boolean) {
 
 // SessionEnd, or a session the hub stopped seeing: the row stays for the audit, it only leaves routing and listings.
 async function endAgents(tx: Db, where: SQL | undefined) {
+  // Found, and locked, before the update clears their list: only delegate sessions have requests to expire.
+  const delegates = await tx
+    .select({ id: agent.id, userId: agent.userId })
+    .from(agent)
+    .where(and(where, isNull(agent.endedAt), isNotNull(agent.acceptRequestsFrom)))
+    .for("update");
   const rows = await tx
     .update(agent)
-    .set({ endedAt: new Date(), acceptRequestsFrom: null })
+    .set({ endedAt: new Date(), acceptRequestsFrom: null, delegateSince: null })
     .where(and(where, isNull(agent.endedAt)))
     .returning({ id: agent.id, teamId: agent.teamId });
+  await expireDelegated(tx, delegates);
   // Intent claims end with the session; exclusive and shared claims run until their TTL.
   for (const row of rows) await releaseFor(tx, { agentId: row.id }, "session_end", true);
   return rows;
@@ -470,7 +516,11 @@ export async function listAgents(
 // A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy). The hub cannot
 // tell which of a person's sessions made an MCP call (the caller names the agent), so while any live session of theirs
 // is a delegate, none of them sends a request.
-export async function requireNoDelegate(db: Db, p: Principal) {
+export async function requireNoDelegate(
+  db: Db,
+  p: Principal,
+  why = "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
+) {
   const [live] = await db
     .select({ id: agent.id })
     .from(agent)
@@ -484,10 +534,37 @@ export async function requireNoDelegate(db: Db, p: Principal) {
       ),
     )
     .limit(1);
-  if (live)
-    throw new HubError(
-      "E_DELEGATE_CHAIN",
-      "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
+  if (live) throw new HubError("E_DELEGATE_CHAIN", why);
+}
+
+// A request handed to a delegate session and not done yet expires once the session no longer accepts its sender, as on « Couper ».
+export async function expireDelegated(tx: Db, agents: Array<{ id: string; userId: string }>) {
+  if (!agents.length) return;
+  await tx
+    .update(message)
+    .set({ expiresAt: new Date() })
+    .where(
+      and(
+        eq(message.delegated, true),
+        gt(message.expiresAt, new Date()),
+        inArray(
+          message.id,
+          tx
+            .select({ id: receipt.messageId })
+            .from(receipt)
+            // By recipient user first, so receipt_recipient_idx (recipient_user_id, read_at) finds the unread ones.
+            .where(
+              and(
+                inArray(receipt.recipientUserId, [...new Set(agents.map((a) => a.userId))]),
+                isNull(receipt.readAt),
+                inArray(
+                  receipt.recipientAgentId,
+                  agents.map((a) => a.id),
+                ),
+              ),
+            ),
+        ),
+      ),
     );
 }
 
@@ -496,7 +573,7 @@ export async function delegateFor(db: Db, p: Principal, from: Agent, handle: str
   await requireNoDelegate(db, p);
   const [row] = from.projectId
     ? await db
-        .select({ id: agent.id })
+        .select({ id: agent.id, userId: agent.userId })
         .from(agent)
         .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
         .where(
@@ -514,7 +591,8 @@ export async function delegateFor(db: Db, p: Principal, from: Agent, handle: str
         .orderBy(desc(agent.lastSeenAt))
         .limit(1)
     : [];
-  if (!row)
+  // An opt-in still set on a guest or a quarantined person (a role change racing a launch) routes nothing.
+  if (!row || !(await inGoodStanding(db, p.teamId, row.userId)))
     throw new HubError(
       "E_NO_DELEGATE",
       `${handle} has no live session on this project that accepts your requests (codetgh start --accept-requests-from @${p.handle}): ask a question instead`,
