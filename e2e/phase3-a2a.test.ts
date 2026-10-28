@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Role, TaskState } from "@a2a-js/sdk";
 import { ClientFactory } from "@a2a-js/sdk/client";
-import { and, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, message } from "../apps/hub/src/db/schema.js";
+import { a2aTask, agent, message } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -87,6 +87,56 @@ describe("A2A (phase 3)", () => {
     expect((await fetch(`${hub.url}/v1/whoami`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401);
     const [a] = await hub.db.select().from(agent).where(eq(agent.kind, "a2a"));
     expect((await consolePost(hub.url, team.lea.cookie, `/console/agents/${a?.id}/trusted`)).status).toBe(403);
+  });
+
+  // The lowest-trust caller writes to the database every team shares: what it sends is kept only as far as the hub used it.
+  it("keeps only the text the hub sent, and nothing of a refused send", async () => {
+    const client = await new ClientFactory().createFromUrl(hub.url);
+    const padded = ask("Do you have a status page?");
+    padded.message.metadata = { padding: "x".repeat(60_000) } as unknown as typeof padded.message.metadata;
+    const sent = await client.sendMessage(padded, auth());
+    const id = "status" in sent ? sent.id : "";
+    const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
+    const [kept] = row?.task.history ?? [];
+    expect(row?.task.history).toHaveLength(1);
+    expect(kept?.parts.map((p) => p.content)).toEqual([{ $case: "text", value: "Do you have a status page?" }]);
+    expect(kept?.metadata).toBeUndefined();
+    expect(JSON.stringify(row?.task).length).toBeLessThan(2_000);
+
+    const refused = await client.sendMessage(ask("z".repeat(9_000)), auth());
+    expect("status" in refused && refused.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+    expect(
+      await hub.db
+        .select()
+        .from(a2aTask)
+        .where(eq(a2aTask.id, "status" in refused ? refused.id : "")),
+    ).toEqual([]);
+  });
+
+  it("keeps the latest 200 tasks of an external agent, dropping the oldest", async () => {
+    const [ext] = await hub.db.select().from(agent).where(eq(agent.kind, "a2a"));
+    const agentId = ext?.id ?? "";
+    const tasks = async () => (await hub.db.select({ n: count() }).from(a2aTask).where(eq(a2aTask.agentId, agentId)))[0]?.n ?? 0;
+    const filler = 200 - (await tasks());
+    await hub.db.insert(a2aTask).values(
+      Array.from({ length: filler }, (_, i) => ({
+        id: `old-${i}`,
+        teamId: team.teamId,
+        agentId,
+        task: { id: `old-${i}` } as typeof a2aTask.$inferInsert.task,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)),
+      })),
+    );
+    const client = await new ClientFactory().createFromUrl(hub.url);
+    await client.sendMessage(ask("One more question."), auth());
+    expect(await tasks()).toBe(200);
+    const [oldest] = await hub.db
+      .select({ id: a2aTask.id })
+      .from(a2aTask)
+      .where(eq(a2aTask.agentId, agentId))
+      .orderBy(asc(a2aTask.createdAt))
+      .limit(1);
+    expect(oldest?.id).toBe("old-1");
   });
 
   it("limits each external agent's requests", async () => {

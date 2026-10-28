@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { message, receipt, team, thread } from "../src/db/schema.js";
+import { a2aTask, message, receipt, team, thread } from "../src/db/schema.js";
 import { purgeMessages } from "../src/domain/messages.js";
 import { createTeam } from "../src/domain/teams.js";
 import { newId } from "../src/ids.js";
@@ -54,4 +54,19 @@ it("deletes messages older than each team's retention, with their receipts", asy
   expect(await hub.db.select().from(receipt).where(eq(receipt.messageId, old))).toEqual([]);
   expect(await exists(recent)).toBe(true);
   expect(await exists(kept)).toBe(true);
+});
+
+it("deletes external agents' A2A tasks with the messages they stand for", async () => {
+  const task = (id: string, createdAt: Date) => ({
+    id,
+    teamId: seeded.teamId,
+    agentId: "agt_external",
+    task: { id } as typeof a2aTask.$inferInsert.task,
+    createdAt,
+  });
+  await hub.db.insert(a2aTask).values([task("a2a-old", daysAgo(91)), task("a2a-recent", daysAgo(1))]);
+
+  await purgeMessages(hub.db);
+
+  expect((await hub.db.select({ id: a2aTask.id }).from(a2aTask)).map((r) => r.id)).toEqual(["a2a-recent"]);
 });

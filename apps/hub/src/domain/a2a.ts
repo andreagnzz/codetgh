@@ -8,7 +8,7 @@ import {
   ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { a2aTask, agent, membership, message, receipt, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -18,7 +18,10 @@ import { createPersonalToken } from "../tokens.js";
 import { byUser, requireAdmin } from "./admin.js";
 import { type Agent, oneLine } from "./agents.js";
 import { appendAudit } from "./audit.js";
-import { envelope, type MessagingDeps, sendMessage } from "./messages.js";
+import { envelope, MAX_BODY_BYTES, type MessagingDeps, sendMessage } from "./messages.js";
+
+// The lowest-trust caller writes to the database every team shares: a cap on its tasks, the oldest go first.
+const MAX_TASKS_PER_AGENT = 200;
 
 // An external agent is a guest of the team whose only agent is quarantined for good: it may ask and answer, nothing else.
 export async function createExternalAgent(db: Db, p: Principal, name: string) {
@@ -81,6 +84,20 @@ const agentMessage = (task: Pick<Task, "id" | "contextId">, id: string, value: s
   referenceTaskIds: [],
 });
 
+const textOf = (m: Message) =>
+  m.parts
+    .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
+    .join("\n")
+    .trim();
+// What a task keeps of a message: its text, cut at the message limit; no other part, no metadata, no extension.
+const kept = (m: Message): Message => ({
+  ...m,
+  parts: [textPart(Buffer.from(textOf(m)).subarray(0, MAX_BODY_BYTES).toString())],
+  metadata: undefined,
+  extensions: [],
+  referenceTaskIds: [],
+});
+
 type Caller = { p: Principal; agent: Agent };
 
 export function a2aServer(deps: MessagingDeps, publicUrl: string) {
@@ -134,10 +151,26 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       const { p, agent: a } = caller(ctx);
       const messageId = questionOf.get(task.id) ?? null;
       questionOf.delete(task.id);
+      // A refused send leaves nothing behind: the failed task is in the caller's answer.
+      if (!messageId && task.status?.state === TaskState.TASK_STATE_FAILED) return;
+      const stored = { ...task, history: task.history.map(kept) };
       await db
         .insert(a2aTask)
-        .values({ id: task.id, teamId: p.teamId, agentId: a.id, messageId, task })
-        .onConflictDoUpdate({ target: a2aTask.id, set: { task } });
+        .values({ id: task.id, teamId: p.teamId, agentId: a.id, messageId, task: stored })
+        .onConflictDoUpdate({ target: a2aTask.id, set: { task: stored } });
+      const over = await db
+        .select({ id: a2aTask.id })
+        .from(a2aTask)
+        .where(eq(a2aTask.agentId, a.id))
+        .orderBy(desc(a2aTask.createdAt))
+        .offset(MAX_TASKS_PER_AGENT);
+      if (over.length)
+        await db.delete(a2aTask).where(
+          inArray(
+            a2aTask.id,
+            over.map((r) => r.id),
+          ),
+        );
     },
     async load(taskId, ctx) {
       const { p, agent: a } = caller(ctx);
@@ -176,10 +209,7 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
   const executor: AgentExecutor = {
     async execute(rc, bus) {
       const { p, agent: a } = caller(rc.context);
-      const question = rc.userMessage.parts
-        .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
-        .join("\n")
-        .trim();
+      const question = textOf(rc.userMessage);
       const task: Task = {
         id: rc.taskId,
         contextId: rc.contextId,

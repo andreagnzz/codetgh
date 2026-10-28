@@ -765,7 +765,7 @@ Les ponts relient le hub à d'autres lieux de travail de l'équipe. Aucun ne don
 | --- | --- | --- | --- |
 | GitHub (application GitHub) | GitHub vers le hub | Événements de PR et de CI publiés en status ou alert dans le fil du projet ; lien tâche-PR par refs | Métadonnées en lecture seule ; secret de webhook vérifié. Un tag créé termine les tâches qui l'attendent (`verify`), dans le projet du dépôt seulement |
 | Slack | Hub vers Slack, puis retour | Alertes et demandes blocking dans un canal ; réponse humaine depuis Slack avec authored_by à human | Compte Slack lié à un membre ; Claude Tag reste l'agent d'Anthropic dans Slack, CodeTgh ne le remplace pas |
-| A2A | Agent externe vers le hub | Une Agent Card annonce l'équipe ; un agent tiers peut envoyer une question | Agent invité en quarantaine permanente : ni réservation, ni mémoire |
+| A2A | Agent externe vers le hub | Une Agent Card annonce l'équipe ; un agent tiers peut envoyer une question | Agent invité en quarantaine permanente : ni réservation, ni mémoire ; sa tâche ne garde que le texte envoyé (8 Ko), rien d'un envoi refusé, 200 tâches au plus par agent, effacées avec les messages à la rétention |
 | Client TypeScript | Code vers le hub | @codetgh/sdk, généré depuis l'OpenAPI du hub | Mêmes jetons, mêmes limites que les agents |
 
 ## Sécurité et confiance

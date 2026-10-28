@@ -4,7 +4,7 @@ import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
+import { a2aTask, agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -18,7 +18,7 @@ export type MessagingDeps = { db: Db; bus: Bus; limiter: RateLimiter; secret: st
 type Recipient = { userId: string; agentId: string | null };
 type Author = { p: Principal; agent: Agent | null; via: "mcp" | "rest" | "console" };
 
-const MAX_BODY_BYTES = 8192;
+export const MAX_BODY_BYTES = 8192;
 // Ciphertext of an 8 KB body: base64url of IV + text + tag, with its format prefix.
 const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
@@ -691,11 +691,13 @@ export const sentView = (m: Awaited<ReturnType<typeof sendMessage>>) => ({
   reach: m.reach,
 });
 
-// Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
+// Retention: messages older than the team's setting go, receipts with them (FK cascade), and the external agents' A2A
+// tasks those messages stood for; threads, memory and audit stay.
 export async function purgeMessages(db: Db) {
   for (const t of await db.select({ id: team.id, settings: team.settings }).from(team)) {
     const cutoff = new Date(Date.now() - (t.settings.retention_days ?? 90) * 86_400_000);
     await db.delete(message).where(and(eq(message.teamId, t.id), lt(message.createdAt, cutoff)));
+    await db.delete(a2aTask).where(and(eq(a2aTask.teamId, t.id), lt(a2aTask.createdAt, cutoff)));
   }
 }
 
