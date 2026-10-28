@@ -391,7 +391,7 @@ Une erreur est un résultat d'outil avec isError vrai, un code stable, un messag
 | E_TOO_LARGE | Corps ou pièce jointe trop gros | Résumer et passer par une référence |
 | E_NO_DELEGATE | Le destinataire n'a pas de session déléguée active sur ce projet qui accepte l'expéditeur | Poser une question à la place |
 | E_DELEGATE_BUSY | La session déléguée traite déjà une demande | Attendre sa réponse |
-| E_DELEGATE_CHAIN | Une session de la personne est déléguée et une de ses sessions tente d'envoyer une demande | Répondre au demandeur, ou poser une question |
+| E_DELEGATE_CHAIN | Une session de la personne est déléguée et une de ses sessions tente d'envoyer une demande ou de créer une tâche du runner | Répondre au demandeur, ou poser une question |
 | E_UNREACHABLE | Aucune session vivante du destinataire ne lirait le message | Adresser la session en ligne que l'erreur nomme (agent:…), sinon le dire à l'utilisateur ; allow_offline seulement s'il accepte que le message attende |
 
 ### Permissions recommandées
@@ -858,7 +858,7 @@ Hors des sessions déléguées, deux programmes du propriétaire lancent quelque
 Le lanceur démarre `claude remote-control` dans le dossier du projet et rapporte ce qui tourne.
 
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
-- Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.
+- Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer. Tant qu'une session de la personne est déléguée, aucune de ses sessions ne le pose (E_DELEGATE_CHAIN) : la demande d'un pair n'atteint jamais le runner.
 - Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
 - Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`, ou en `review` si elle a une PR. Le runner garde un identifiant stable (`~/.config/codetgh/runner-id`) : redémarré, il reprend ses propres baux. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
 - Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
