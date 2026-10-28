@@ -32,7 +32,12 @@ export function createAuth(
         google: { clientId: process.env.AUTH_GOOGLE_ID, clientSecret: process.env.AUTH_GOOGLE_SECRET ?? "" },
       }),
     },
-    advanced: { database: { generateId: ({ model }) => newId(ID_PREFIX[model] ?? model.slice(0, 4).toLowerCase()) } },
+    advanced: {
+      database: { generateId: ({ model }) => newId(ID_PREFIX[model] ?? model.slice(0, 4).toLowerCase()) },
+      // Its sign-in limits and session addresses use the address the hub found (the socket, or the trusted proxy's
+      // X-Forwarded-For), never a header the client wrote.
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+    },
     // Sign-up is invitation-only: a password sign-up must carry the invitation token (X-CodeTgh-Invite);
     // a social sign-up needs an email the provider has verified.
     databaseHooks: db && {
@@ -96,6 +101,7 @@ export function createAuth(
 
 export const MCP_SCOPE = "codetgh";
 export const INVITE_HEADER = "x-codetgh-invite";
+export const CLIENT_IP_HEADER = "x-codetgh-client-ip";
 export const SSO_PROVIDER = "sso";
 const ID_PREFIX: Record<string, string> = { user: "usr", session: "ses", account: "acc", verification: "ver" };
 

@@ -1158,7 +1158,7 @@ volumes:
 
 | Sujet | Règle |
 | --- | --- |
-| TLS | Le proxy termine HTTPS ; le hub n'accepte les en-têtes X-Forwarded-* que de l'adresse du proxy configurée (CODETGH_TRUSTED_PROXY ; il lit alors la dernière entrée de X-Forwarded-For) ; HSTS actif |
+| TLS | Le proxy termine HTTPS ; le hub n'accepte les en-têtes X-Forwarded-* que de l'adresse du proxy configurée (CODETGH_TRUSTED_PROXY ; il lit alors la dernière entrée de X-Forwarded-For), et passe la même adresse aux limites de connexion de /api/auth/* ; HSTS actif |
 | Migrations | Appliquées au démarrage sous verrou consultatif Postgres ; chacune reste compatible avec la version précédente du hub |
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |

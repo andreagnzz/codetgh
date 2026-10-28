@@ -47,7 +47,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { type Logger, pino } from "pino";
 import { ulid } from "ulid";
-import { type Auth, MCP_SCOPE } from "./auth.js";
+import { type Auth, CLIENT_IP_HEADER, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
@@ -834,7 +834,12 @@ export function createApp({
       return errorResponse(c, e);
     }
   });
-  app.on(["GET", "HEAD", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => auth.handler(c.req.raw));
+  app.on(["GET", "HEAD", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => {
+    // Set over any value the client sent: better-auth reads the client's address from this header only.
+    const headers = new Headers(c.req.raw.headers);
+    headers.set(CLIENT_IP_HEADER, clientIp(c, config.trustedProxy));
+    return auth.handler(new Request(c.req.raw, { headers }));
+  });
   const csp = secureHeaders({ contentSecurityPolicy: { defaultSrc: ["'self'"] } });
   app.get("/login", csp, (c) =>
     c.html(

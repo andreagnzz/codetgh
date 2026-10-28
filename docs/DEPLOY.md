@@ -19,7 +19,11 @@ Hardening, as set in `deploy/compose.yaml`:
 
 - The hub listens on `127.0.0.1` unless `HOST` says otherwise. The container sets `HOST=0.0.0.0` inside, and compose publishes it on `127.0.0.1:8787` only.
 - With Tailscale Funnel the hub is public on the internet. With `tailscale serve` it is reachable from your tailnet only, which is enough when every teammate joins the tailnet.
-- Per-address limits (browser sign-in) use the socket's address. Behind a proxy every request shares the proxy's address: set `CODETGH_TRUSTED_PROXY` to that address in `deploy/.env` only if the proxy appends `X-Forwarded-For`; the hub then reads the last entry, and ignores the header from anyone else.
+- Per-address limits (browser sign-in, and the sign-in routes under `/api/auth/`) use the socket's address, or the last `X-Forwarded-For` entry when the socket is `CODETGH_TRUSTED_PROXY`; the header from anyone else is ignored. Behind a proxy every request shares the proxy's address, so set `CODETGH_TRUSTED_PROXY` to that address in `deploy/.env` when the proxy sets or appends `X-Forwarded-For`.
+- Docker + Funnel: the hub's socket is the compose network's gateway for every request, and Funnel replaces `X-Forwarded-For` with the client's address (`docs/FACTS.md`). Set `CODETGH_TRUSTED_PROXY` to the gateway this prints, then restart the hub; left unset, one client can use up the sign-in limits of everyone:
+  ```
+  docker network inspect codetgh_default --format '{{(index .IPAM.Config 0).Gateway}}'
+  ```
 - Open to anyone who reaches the hub: the login page, the browser sign-in start (`/v1/device/start`, limited per address), and OAuth client registration (the claude.ai connector registers itself this way). Creating an account still needs an invitation for that email.
 
 ## First start
