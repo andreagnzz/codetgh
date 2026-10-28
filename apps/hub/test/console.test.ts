@@ -1,4 +1,6 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { eq } from "drizzle-orm";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { membership, message, team as teamTable } from "../src/db/schema.js";
 import { createExternalAgent } from "../src/domain/a2a.js";
@@ -209,6 +211,43 @@ describe("roles", () => {
     const [after] = await hub.db.select().from(membership).where(eq(membership.id, lea.membershipId));
     expect(after).toMatchObject({ role: "owner", status: "active" });
     await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+  });
+});
+
+// Postgres only (pnpm test:pg): PGlite runs one transaction at a time, so it cannot hold a lock while the hub waits on it.
+describe.runIf(process.env.TEST_DATABASE_URL)("owners lock", () => {
+  it("holds an owner change while another one is in progress, then refuses it on the role that one left", async () => {
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.userId, team.sam.userId));
+    const lea = await principalForToken(hub.db, team.lea.token);
+    const sam = await principalForToken(hub.db, team.sam.token);
+    if (!lea || !sam) throw new Error("setup");
+    const holder = new pg.Client({ connectionString: hub.config.databaseUrl });
+    await holder.connect();
+    try {
+      // Léa demoting Sam, caught between the owners lock and its commit.
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`owners:${team.teamId}`]);
+      await holder.query("update membership set role = 'admin' where id = $1", [sam.membershipId]);
+      let answered = false;
+      const demoting = changeRole(hub.db, sam, lea.membershipId, "admin");
+      demoting.then(
+        () => {
+          answered = true;
+        },
+        () => {
+          answered = true;
+        },
+      );
+      await sleep(500);
+      expect(answered).toBe(false);
+      await holder.query("commit");
+      await expect(demoting).rejects.toThrow("no longer an owner");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.id, lea.membershipId));
+      await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    }
   });
 });
 
