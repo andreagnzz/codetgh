@@ -332,4 +332,20 @@ describe("runner queue", () => {
       .where(and(eq(task.title, "guest"), inArray(task.teamId, [team.teamId])));
     expect(leaked).toHaveLength(0);
   });
+
+  it("refuses task_claim on a runner task, to a member and to the owner: only the runner leases it", async () => {
+    const t = await create({ title: "claimed by hand" });
+    for (const [token, agent] of [
+      [team.sam.token, samAgentId],
+      [team.lea.token, agentId],
+    ]) {
+      const c = await mcpClient(hub.url, token ?? "");
+      const r = await call(c, "task_claim", { agent, task_id: t.id, expected_version: t.version });
+      await c.close();
+      expect(JSON.parse(r.text).code).toBe("E_FORBIDDEN");
+    }
+    expect(await row(t.id)).toMatchObject({ status: "todo", assigneeUserId: null, version: t.version });
+    expect(await readyIds()).toContain(t.id);
+    await set(t.id, { status: "cancelled" });
+  });
 });

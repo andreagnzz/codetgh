@@ -149,6 +149,7 @@ export async function claimTask(db: Db, p: Principal, a: Agent, input: { task_id
     .from(task)
     .where(and(eq(task.id, input.task_id), eq(task.teamId, p.teamId)));
   if (!current) throw new HubError("E_NOT_FOUND", `no task ${input.task_id}`);
+  if (current.runner) throw new HubError("E_FORBIDDEN", `task ${input.task_id} is the runner's: only the runner leases it`);
   // A todo task assigned to someone else is theirs; one already claimed falls through to the version check below.
   if (current.status === "todo" && current.assigneeUserId && current.assigneeUserId !== p.user.id)
     throw new HubError("E_FORBIDDEN", `task ${input.task_id} is assigned to someone else: ask them, or ask an admin to reassign it`);
