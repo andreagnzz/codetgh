@@ -179,4 +179,23 @@ describe("team memory", () => {
     await hub.db.update(teamTable).set({ killSwitchAt: null }).where(eq(teamTable.id, team.teamId));
     await sam.close();
   });
+
+  it("blocks a secret in refs and stores nothing", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const secret = `ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`;
+    for (const r of [
+      { type: "file", path: secret },
+      { type: "commit", rev: secret },
+    ])
+      expect(code(await call(malik, "memory_propose", { kind: "note", title: "Refs test", body: "Plain body.", refs: [r] }))).toBe(
+        "E_SECRET_BLOCKED",
+      );
+    expect(await hub.db.select().from(memoryItem).where(eq(memoryItem.title, "Refs test"))).toHaveLength(0);
+    const alerts = await hub.db
+      .select()
+      .from(alert)
+      .where(and(eq(alert.kind, "secret_blocked"), eq(alert.userId, team.malik.userId)));
+    expect(alerts).toHaveLength(2);
+    await malik.close();
+  });
 });

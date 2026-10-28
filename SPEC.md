@@ -261,7 +261,7 @@ Un relais (handoff) envoie une capsule de contexte :
 
 ### Mémoire d'équipe
 
-Un memory_item a quatre kind : decision (choix avec contexte et conséquences), contract (interface partagée : schéma d'API, types, migration), convention (règle de code ou de commande) et note. Statuts : proposed, accepted, superseded, rejected. Un agent ne peut écrire qu'en proposed ; l'acceptation exige un humain de rôle member ou plus (réglage memory.accept_by, à owner pour les équipes strictes). Chaque version est conservée. Le hub cherche les secrets dans le titre, le corps et la note de décision (E_SECRET_BLOCKED, alerte secret_blocked). Au démarrage de session, le hub compose un paquet de contexte de 1 200 tokens maximum : éléments épinglés d'abord, puis ceux qui touchent aux chemins et à la branche de l'agent.
+Un memory_item a quatre kind : decision (choix avec contexte et conséquences), contract (interface partagée : schéma d'API, types, migration), convention (règle de code ou de commande) et note. Statuts : proposed, accepted, superseded, rejected. Un agent ne peut écrire qu'en proposed ; l'acceptation exige un humain de rôle member ou plus (réglage memory.accept_by, à owner pour les équipes strictes). Chaque version est conservée. Le hub cherche les secrets dans le titre, le corps, les références et la note de décision (E_SECRET_BLOCKED, alerte secret_blocked). Au démarrage de session, le hub compose un paquet de contexte de 1 200 tokens maximum : éléments épinglés d'abord, puis ceux qui touchent aux chemins et à la branche de l'agent.
 
 ### Livraison
 
