@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { repoFingerprint } from "@codetgh/shared/repo";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { buildSync } from "esbuild";
@@ -76,6 +77,34 @@ describe("channel bridge (phase 3)", () => {
     expect(pushed[0]?.content).toContain("Can you &lt;b&gt;review&lt;/b&gt; PR 7?");
     expect(pushed[0]?.meta).toMatchObject({ message_id: id, kind: "question", priority: "normal" });
     expect(Object.keys(pushed[0]?.meta ?? {}).every((k) => /^\w+$/.test(k))).toBe(true);
+  });
+
+  it("never pushes a request another session of the person takes as its delegate", async () => {
+    const register = async (token: string, session: string, accept?: string[]) => {
+      const res = await fetch(`${hub.url}/v1/agents/session`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          session_id: session,
+          source: "startup",
+          repo_fingerprint: repoFingerprint("git@github.com:acme/webapp.git"),
+          accept_requests_from: accept,
+        }),
+      });
+      return ((await res.json()) as { agent_id: string }).agent_id;
+    };
+    await register(team.sam.token, "sam-delegate", ["@lea"]);
+    const lea = await register(team.lea.token, "lea-webapp");
+    const { client, pushed } = await bridge("channel");
+    await new Promise((r) => setTimeout(r, 300));
+    const request = await callOnce(hub.url, team.lea.token, "ask_peer", { agent: lea, to: "@sam", kind: "request", question: "Ship it" });
+    expect(request.isError).toBe(false);
+    const id = await send("a plain question");
+    await wait(() => pushed.length > 0);
+    await new Promise((r) => setTimeout(r, 300));
+    await client.close();
+    expect(pushed.map((p) => p.meta?.message_id)).toEqual([id]);
+    expect(pushed[0]?.content).not.toContain('authorized="true"');
   });
 
   it("stays silent unless the member chose the channel push mode", async () => {

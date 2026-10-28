@@ -35,6 +35,9 @@ async function relay() {
         const n = messages.findIndex((m) => m.id === e.message_id);
         // Already acked elsewhere: nothing to push.
         if (n < 0) continue;
+        // The bridge reads as the person, not as one session: a request authorized for a delegate session reaches that
+        // session through its own hooks, never another session as authorized="true".
+        if (/^<peer_message [^>]* authorized="true" /.test(envelopes[n] ?? "")) continue;
         await mcp.notification({
           method: "notifications/claude/channel",
           params: { content: envelopes[n] ?? "", meta: { message_id: e.message_id, kind: e.kind, priority: e.priority, thread: e.thread } },
