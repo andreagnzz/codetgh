@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { ROLES, type Role } from "@codetgh/shared";
-import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, invitation, membership, oauthAccessToken, oauthRefreshToken, personalToken, session, team, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -77,12 +77,36 @@ export async function createInvitation(
   return { id, token };
 }
 
+// The decisive check where an invitation is used (the revocation hooks only clean up): its author is still an active
+// member whose current role may grant the invited one, and the token that made it, if any, is neither revoked nor expired.
+const honoured = () =>
+  and(
+    or(
+      isNull(invitation.invitedBy),
+      sql`exists (select 1 from ${membership} where ${and(
+        eq(membership.teamId, invitation.teamId),
+        eq(membership.userId, invitation.invitedBy),
+        eq(membership.status, "active"),
+        or(eq(membership.role, "owner"), and(eq(membership.role, "admin"), ne(invitation.role, "owner"))),
+      )})`,
+    ),
+    or(
+      isNull(invitation.invitedByToken),
+      sql`exists (select 1 from ${personalToken} where ${and(
+        eq(personalToken.id, invitation.invitedByToken),
+        isNull(personalToken.revokedAt),
+        gt(personalToken.expiresAt, new Date()),
+      )})`,
+    ),
+  );
+
 const pending = (email: string) =>
   and(
     eq(invitation.email, email.toLowerCase()),
     isNull(invitation.acceptedAt),
     isNull(invitation.revokedAt),
     gt(invitation.expiresAt, new Date()),
+    honoured(),
   );
 
 // An admin invites one email address; the link is always returned, so it can be delivered another way if the email bounces.
@@ -252,7 +276,7 @@ export async function findInvitation(db: Db, token: string) {
     })
     .from(invitation)
     .innerJoin(team, eq(team.id, invitation.teamId))
-    .where(eq(invitation.tokenHash, hashToken(token)));
+    .where(and(eq(invitation.tokenHash, hashToken(token)), honoured()));
   return row ?? null;
 }
 
@@ -318,6 +342,7 @@ export async function joinWithInvitation(db: Db, user: { id: string; name: strin
           isNull(invitation.acceptedAt),
           isNull(invitation.revokedAt),
           gt(invitation.expiresAt, new Date()),
+          honoured(),
         ),
       )
       .for("update");
