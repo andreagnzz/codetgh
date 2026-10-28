@@ -386,6 +386,15 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       const key = `${r.userId}:${r.agentId ?? ""}`;
       if (!recipients.has(key)) recipients.set(key, r);
     }
+    // A reply's parent sender and a verdict's thread writers come from the thread: a revoked person gets nothing new.
+    if (parent) {
+      const userIds = [...new Set([...recipients.values()].map((r) => r.userId))];
+      const active = await tx
+        .select({ userId: membership.userId })
+        .from(membership)
+        .where(and(eq(membership.teamId, p.teamId), eq(membership.status, "active"), inArray(membership.userId, userIds)));
+      for (const [key, r] of recipients) if (!active.some((m) => m.userId === r.userId)) recipients.delete(key);
+    }
     if (!recipients.size) throw new HubError("E_INVALID", "no recipient besides yourself");
     if (input.delegate) {
       // Locked, so two requests at once cannot both pass the cap, nor one slip past « Couper ».
