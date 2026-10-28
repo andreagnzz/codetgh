@@ -246,6 +246,10 @@ Project settings therefore use:
 
 Not yet tried: installing from an HTTPS hub in a trusted folder (needs a public URL; part of the human's fresh-machine test).
 
+### End-to-end encrypted replies: what the CLI checks (2026-10-28)
+
+A wrapped thread key is anonymous (X25519 to the member's public key, no sender signature), so the hub, or anyone who writes to its database, can wrap a key of its own to a member and seal the replied-to message under it: a check against a ciphertext from the same hub proves nothing. `codetgh send --encrypt --reply-to <id>` therefore compares the unwrapped key with the SHA-256 of the thread key this machine saw for `<id>` (keyring entry `<hub>#mk:<id>`), written when it sent `<id>` or first opened it with `codetgh inbox`, and never replaced; `codetgh inbox` does not show a message whose key changed since. Limits: a machine that neither sent nor opened `<id>` (another computer, a send that left from the offline outbox) refuses to reply to it: on another computer, `codetgh inbox` opens it there first; a message its sender queued offline is never recorded, and inbox does not list one's own messages, so the sender replies to a later message of the thread opened with `codetgh inbox`, or starts a new thread; and the first sight is trust on first use, so a message the hub forges before this machine saw the real one is not caught. Each encrypted message sent or opened adds one keychain item, and none is deleted yet; a keychain that refuses it after a send only warns, since the message is already on the hub. Tested in `e2e/phase3-e2e.test.ts`.
+
 ### Tailscale Funnel for the public HTTPS address (2026-10-14)
 
 - [Tailscale Funnel](https://tailscale.com/kb/1223/funnel), last validated 2026-01-20:
