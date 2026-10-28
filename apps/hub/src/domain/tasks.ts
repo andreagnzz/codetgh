@@ -116,6 +116,7 @@ export async function createTask(
     if (missing) throw new HubError("E_NOT_FOUND", `no task ${missing}`);
   }
   const assignee = input.assignee ? await userByHandle(db, p, input.assignee) : null;
+  const title = input.title.replace(/\s+/g, " ");
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(task)
@@ -123,8 +124,9 @@ export async function createTask(
         id: newId("tsk"),
         teamId: p.teamId,
         projectId: a?.projectId ?? null,
-        title: input.title.replace(/\s+/g, " "),
+        title,
         body: input.body,
+        flags: textFlags(`${title}\n${input.body}`),
         paths: input.paths,
         dependsOn: input.depends_on,
         assigneeUserId: assignee?.userId ?? null,
@@ -401,7 +403,8 @@ export async function taskView(db: Db, p: Principal, taskId: string, withNotes =
       priority: "normal",
       authoredBy: t.createdByAgent ? "agent" : "human",
       sentAt: t.createdAt,
-      flags: textFlags(`${t.title}\n${t.body}${notes}`),
+      // Title and body were flagged at creation; notes are short lines, flagged here.
+      flags: [...new Set([...(t.flags ?? textFlags(`${t.title}\n${t.body}`)), ...(notes ? textFlags(notes) : [])])],
     },
     t.title,
     `${t.body}${notes}`,

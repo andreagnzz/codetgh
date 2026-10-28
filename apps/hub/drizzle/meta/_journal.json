@@ -169,6 +169,13 @@
       "when": 1793015005644,
       "tag": "0023_receipt_message_index",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793203573594,
+      "tag": "0024_stored_flags",
+      "breakpoints": true
     }
   ]
 }

@@ -805,7 +805,7 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 | --- | --- |
 | Contenu échappé | &, <, > et " deviennent &amp;, &lt;, &gt; et &quot; dans le corps et dans chaque attribut, display_name compris (40 caractères au plus, sur une ligne) : aucun texte ne referme l'enveloppe, ne sort d'un attribut ni n'en imite une autre ; sur un terminal, tout ce que le CLI écrit (enveloppes de codetgh inbox, noms venus du hub, messages d'erreur) perd en plus les séquences d'échappement et les caractères de contrôle, sauf saut de ligne et tabulation ; seule la couleur de sa bannière passe |
 | Taille | 8 Ko au plus, comme le corps d'un message ; au-delà, un relais est coupé avec un renvoi vers msg_… |
-| Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link |
+| Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link ; posés à l'écriture pour un message, un élément de mémoire, le titre et le corps d'une tâche (les notes à la lecture), sur les 16 384 premiers caractères du texte, en temps linéaire |
 | Auteur | human marque un texte écrit depuis la console, agent un texte écrit par un agent ; même human ne vaut pas consigne : seule la personne devant son terminal commande à son agent |
 | Signature | La valeur sig indique verified, unsigned ou invalid ; un message invalid n'est jamais livré |
 

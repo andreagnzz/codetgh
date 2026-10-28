@@ -44,6 +44,7 @@ export async function proposeMemory(
   if (p.role === "guest" || a.trustLevel === "quarantined")
     throw new HubError("E_FORBIDDEN", "guests and quarantined agents cannot propose memory");
   await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, `${input.title}\n${input.body}`);
+  const title = input.title.replace(/\s+/g, " ");
   return deps.db.transaction(async (tx) => {
     // Numbers are allocated per team; the lock keeps two proposals from taking the same one.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`memory:${p.teamId}`}, 0))`);
@@ -76,8 +77,9 @@ export async function proposeMemory(
         number,
         version,
         kind: input.kind,
-        title: input.title.replace(/\s+/g, " "),
+        title,
         body: input.body,
+        flags: textFlags(`${title}\n${input.body}`),
         refs: input.refs,
         branch: a.branch,
         supersedesId: input.supersedes ?? null,
@@ -228,7 +230,10 @@ export async function memoryView(db: Db, p: Principal, itemId: string) {
   ].join("\n\n");
 }
 
-const flagsOf = (item: Item) => [...textFlags(`${item.title}\n${item.body}`), ...(item.status === "proposed" ? ["proposed"] : [])];
+const flagsOf = (item: Item) => [
+  ...(item.flags ?? textFlags(`${item.title}\n${item.body}`)),
+  ...(item.status === "proposed" ? ["proposed"] : []),
+];
 
 // Context packet: pinned items first, then other accepted decisions and contracts.
 export async function packetDecisions(db: Db, p: Principal) {
