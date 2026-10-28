@@ -35,8 +35,10 @@ export const Layout: FC<{
   lang: Lang;
   filter?: ProjectFilter;
   keep?: string;
+  // On the Archives tab, the filter links stay on it.
+  archived?: boolean;
   children?: Child;
-}> = ({ p, csrf, title, path, lang, filter, keep, children }) => {
+}> = ({ p, csrf, title, path, lang, filter, keep, archived, children }) => {
   const _ = (s: string) => t(lang, s);
   const admin = p.role === "owner" || p.role === "admin";
   const current = (href: string) =>
@@ -96,7 +98,7 @@ export const Layout: FC<{
                   (pr) => (
                     <>
                       <a
-                        href={`${path}?project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
+                        href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
                         aria-current={pr.id === filter.selected ? "page" : undefined}
                       >
                         {pr.name}

@@ -134,6 +134,17 @@ describe("console: one project at a time", () => {
     expect(await get(`/console/tasks?archived=1&project=${webapp}`)).not.toContain("Acme task");
   });
 
+  it("keeps the Archives tab in the project filter links", async () => {
+    for (const path of ["/console/threads", "/console/tasks"]) {
+      const html = await get(`${path}?archived=1`);
+      const start = html.indexOf('class="projects-filter"');
+      const filter = html.slice(start, html.indexOf("</nav>", start));
+      expect(filter, path).toContain(`href="${path}?archived=1&amp;project=${acme}"`);
+      expect(filter, path).toContain(`href="${path}?archived=1&amp;project="`);
+      expect(await get(path)).toContain(`href="${path}?project=${acme}"`);
+    }
+  });
+
   it("gives a guest nothing more with the filter", async () => {
     await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
     const res = await fetch(`${hub.url}/console/tasks?project=${acme}`, { headers: { cookie: team.malik.cookie } });

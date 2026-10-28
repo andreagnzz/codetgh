@@ -214,6 +214,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
         keep={filter ? filter.selected : kept(c)}
+        archived={c.req.query("archived") === "1"}
       >
         {body as never}
       </Layout>,
