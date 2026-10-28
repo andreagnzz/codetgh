@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -121,6 +122,44 @@ it("checks a file whose name starts with two dots, and leaves a path outside the
   const inside = await runHook("pre-edit", edit(join(repo, "..cache/x.txt")), sam);
   expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/\.\.cache\/x\.txt.*@lea/s);
   expect((await runHook("pre-edit", edit(join(repo, "../outside.txt")), sam)).out).toBeNull();
+});
+
+it("checks edits against the session's repository, even when the first edit is in another one", async () => {
+  const lea = hookEnv(hub.url, team.lea.token);
+  await runHook("session-start", { session_id: "lea-root", source: "startup", cwd: repo }, lea);
+  const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-root"));
+  const leaMcp = await mcpClient(hub.url, team.lea.token);
+  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["src/index.ts"], mode: "exclusive", ttl_s: 1800 });
+  await leaMcp.close();
+  // A submodule or a folder added with /add-dir: another git repository, with a file at the same relative path.
+  const other = gitRepo("git@github.com:acme/vendored-lib.git");
+  const edit = (session_id: string, file_path: string) => ({
+    session_id,
+    cwd: repo,
+    tool_name: "Edit",
+    tool_input: { file_path, old_string: "a", new_string: "b" },
+  });
+  const samClaims = () =>
+    hub.db
+      .select()
+      .from(claim)
+      .where(and(eq(claim.holderUserId, team.sam.userId), eq(claim.scope, "src/index.ts")));
+
+  const sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "sam-root", source: "startup", cwd: repo }, sam);
+  expect((await runHook("pre-edit", edit("sam-root", join(other, "src/index.ts")), sam)).out).toBeNull();
+  expect(await samClaims()).toEqual([]);
+  const inside = await runHook("pre-edit", edit("sam-root", join(repo, "src/index.ts")), sam);
+  expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/src\/index\.ts.*@lea/s);
+
+  // A session started outside any repository takes the one it joins.
+  const malik = hookEnv(hub.url, team.malik.token);
+  const home = mkdtempSync(join(tmpdir(), "codetgh-home-"));
+  await runHook("session-start", { session_id: "malik-root", source: "startup", cwd: home }, malik);
+  await runHook("cwd-changed", { session_id: "malik-root", cwd: repo, old_cwd: home, new_cwd: repo }, malik);
+  expect((await runHook("pre-edit", edit("malik-root", join(other, "src/index.ts")), malik)).out).toBeNull();
+  const joined = await runHook("pre-edit", edit("malik-root", join(repo, "src/index.ts")), malik);
+  expect((joined.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/src\/index\.ts.*@lea/s);
 });
 
 it("reports at the end of a turn a claimed file changed through the shell", async () => {

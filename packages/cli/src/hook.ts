@@ -323,22 +323,28 @@ async function cwdChanged(input: Input) {
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
   if (!state.projectless) return null;
-  const repo = await repoAt(input.new_cwd ?? input.directory);
+  const dir = input.new_cwd ?? input.directory;
+  const [repo, top] = await Promise.all([repoAt(dir), git(dir, ["rev-parse", "--show-toplevel"])]);
   // Each cd inside one repository fires again: ask the hub once per repository.
   if (!repo.fingerprint || repo.fingerprint === state.tried) return null;
   saveState(input.session_id, { tried: repo.fingerprint });
+  // The edit hooks check paths against the repository the session joins.
+  let root = top;
+  try {
+    root = realpathSync.native(top);
+  } catch {}
   try {
     const registered = await register({ ...input, source: "cwd-changed" }, repo, BUDGET_MS);
     if ("status" in registered) return null;
     // The hub links the agent in the same transaction that creates the project: count it as linked.
     if ("lateLink" in registered) {
-      saveState(input.session_id, { projectless: false });
+      saveState(input.session_id, { projectless: false, root });
       return null;
     }
     const { body } = registered;
     if (body.paused) return null;
     if (body.linked === false) return { systemMessage: offLine(body) };
-    saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
+    saveState(input.session_id, { projectless: false, root, ...(body.agent_id && { agent: body.agent_id }) });
     // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
     return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "") || "this repository"}` };
   } catch {
@@ -437,6 +443,8 @@ async function repoPath(input: Input, state: State) {
   try {
     dir = realpathSync.native(dir);
   } catch {}
+  // The repository the session started in, never the first one edited in (a submodule, a folder added with /add-dir).
+  if (!state.root && state.startRoot) state.root = state.startRoot;
   if (!state.root) {
     const top = await git(dir, ["rev-parse", "--show-toplevel"]);
     if (!top) return null;
