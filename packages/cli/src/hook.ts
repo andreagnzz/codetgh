@@ -335,7 +335,11 @@ async function cwdChanged(input: Input) {
   } catch {}
   try {
     const registered = await register({ ...input, source: "cwd-changed" }, repo, BUDGET_MS);
-    if ("status" in registered) return null;
+    if ("status" in registered) {
+      // A 5xx or a 429 says nothing about this repository: the next cd in it asks again.
+      if (registered.status >= 500 || registered.status === 429) saveState(input.session_id, { tried: undefined });
+      return null;
+    }
     // The hub links the agent in the same transaction that creates the project: count it as linked.
     if ("lateLink" in registered) {
       saveState(input.session_id, { projectless: false, root });
@@ -348,6 +352,8 @@ async function cwdChanged(input: Input) {
     // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
     return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "") || "this repository"}` };
   } catch {
+    // No answer in time: the same.
+    saveState(input.session_id, { tried: undefined });
     return null;
   }
 }

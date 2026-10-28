@@ -65,6 +65,20 @@ it("does nothing when the new directory is not a repository", async () => {
   expect((await row("sam-home-2"))?.projectId).toBeNull();
 });
 
+it("asks again in the same repository when the hub could not answer", async () => {
+  const env = hookEnv(hub.url, team.malik.token);
+  const start = home();
+  await runHook("session-start", { session_id: "malik-retry", source: "startup", cwd: start }, env);
+  const repo = gitRepo("git@github.com:acme/cwd-retry.git");
+  const cd = { session_id: "malik-retry", cwd: repo, old_cwd: start, new_cwd: repo };
+  expect((await runHook("cwd-changed", cd, { ...env, CLAUDE_PLUGIN_OPTION_CODETGH_URL: "http://127.0.0.1:9" })).out).toBeNull();
+  expect((await row("malik-retry"))?.projectId).toBeNull();
+  const r = await runHook("cwd-changed", cd, env);
+  expect(systemMessage(r)).toBe("CodeTgh: this session is now on cwd-retry");
+  const [prj] = await projectsOf("git@github.com:acme/cwd-retry.git");
+  expect((await row("malik-retry"))?.projectId).toBe(prj?.id);
+});
+
 it("links a guest's session to no repository, linked or not, and says the same line for both", async () => {
   const env = hookEnv(hub.url, team.malik.token);
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
