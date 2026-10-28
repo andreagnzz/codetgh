@@ -310,7 +310,7 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
 // A one-line banner. Teal only: the brand keeps Mint for dark backgrounds, and a terminal's background is unknown.
 // Its colour is the one escape sequence the CLI prints: written straight to the terminal, past printable.
 function banner(io: Io, what: string) {
-  const line = (name: string) => `${name} ${what} · Plusieurs Claude Code, une même ligne.`;
+  const line = (name: string) => `${name} ${printable(what)} · Plusieurs Claude Code, une même ligne.`;
   if (process.stdout.isTTY && !process.env.NO_COLOR) process.stdout.write(`${line("\x1b[1;38;5;30mCodeTgh\x1b[0m")}\n`);
   else io.out(line("CodeTgh"));
 }
