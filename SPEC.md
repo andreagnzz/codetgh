@@ -909,6 +909,7 @@ Limites assumées : dans son conteneur, l'agent peut tout faire de son worktree,
 | Avoir une session dans un dépôt (hooks, lien du projet) | Oui | Oui | Oui | Non : dans un dépôt, lié ou non, le hub ne lui ouvre aucune session et ne lui dit pas si c'est un projet ; seule une session lancée hors de tout dépôt est la sienne |
 | Lire les messages directs d'autrui (lecture tracée dans l'audit) | Oui | Oui | Non | Non |
 | Envoyer des messages par ses agents | Oui | Oui | Oui | Notes et questions |
+| Chiffrer un message, lire les clés publiques des membres (GET /v1/keys) | Oui | Oui | Oui | Non |
 | Poser des réservations | Oui | Oui | Oui | Non |
 | Accepter la mémoire | Oui | Oui | Oui, selon memory.accept_by | Non |
 | Inviter, révoquer un membre (un administrateur ne touche pas aux propriétaires) | Oui | Oui | Non | Non |

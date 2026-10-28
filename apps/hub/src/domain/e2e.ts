@@ -4,6 +4,7 @@ import type { Db } from "../db/index.js";
 import { memberKey, membership, message, threadKey } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
+import { requireMember } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { sentOrReceivedBy } from "./messages.js";
 
@@ -31,7 +32,9 @@ export async function publishKey(db: Db, p: Principal, publicKey: string) {
   });
 }
 
+// A guest sends no encrypted message, and the answer would list the members and who has a key.
 export async function publicKeys(db: Db, p: Principal, handles: string[]) {
+  requireMember(p);
   const rows = await db
     .select({ handle: membership.handle, publicKey: memberKey.publicKey })
     .from(membership)
