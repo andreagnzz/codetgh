@@ -48,6 +48,8 @@ describe("client address", () => {
       const lines: string[] = [];
       vi.stubEnv("NODE_ENV", "production");
       const prod = await startHub({ logLines: lines, config: { trustedProxy } }).finally(() => vi.unstubAllEnvs());
+      // better-auth seeds its OAuth resource in the background once created: let it finish before the database closes.
+      await prod.auth.$context;
       await prod.stop();
       return lines.join("\n");
     };
