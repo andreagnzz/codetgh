@@ -579,11 +579,16 @@ export function createApp({
 
   v1.get("/status", async (c) => {
     const p = c.get("principal");
+    // The presence mod polls every 30 s per session: room for 20 sessions of one person, not for a loop.
+    const wait = limiter.take(`status:${p.user.id}`, 4);
+    if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many status reads: wait and retry", wait);
     const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
     // A bad usage reading is dropped, never the presence refresh.
     const { session_id: _, ...usage } = StatusQuery.safeParse(c.req.query()).data ?? {};
-    const live = sessionId ? await touchSession(db, p, sessionId, usage) : false;
-    if (live) bus.emit("presence", { teamId: p.teamId });
+    const was = sessionId ? await touchSession(db, p, sessionId, usage) : null;
+    const live = was !== null;
+    // Every console tab of the team re-renders on this: only a session that was not online changes what they show.
+    if (was && was !== "online") bus.emit("presence", { teamId: p.teamId });
     // The mod wakes its session on this count: a live session counts only what it can read itself, a session that is
     // not live (ended, unknown, stale) counts nothing. Only a call without session_id (CLI, SDK) sees the whole inbox.
     const me = sessionId ? (live ? await agentBySession(db, p, sessionId) : null) : await restAgent(p, undefined);

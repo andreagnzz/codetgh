@@ -69,3 +69,28 @@ it("counts no unread for a session id that is not live, keeps the rest of the ov
   }
   expect((await hub.db.select().from(agent).where(eq(agent.userId, team.lea.userId))).length).toBe(before);
 });
+
+// Every open console tab of the team re-renders its dashboard on a presence event: a poll that changes nothing sends none.
+it("signals presence only when the polling session was not online", async () => {
+  const sess = (await startSession(hub.url, team.malik.token, "malik-poll")).agent_id ?? "";
+  let signals = 0;
+  const count = () => signals++;
+  hub.bus.on("presence", count);
+  expect((await status(team.malik.token, "malik-poll")).status).toBe(200);
+  expect(signals).toBe(0);
+  await hub.db
+    .update(agent)
+    .set({ lastSeenAt: new Date(Date.now() - 5 * 60_000) })
+    .where(eq(agent.id, sess));
+  expect((await status(team.malik.token, "malik-poll")).status).toBe(200);
+  expect(signals).toBe(1);
+  hub.bus.off("presence", count);
+});
+
+// The presence mod polls every 30 s per session: a person's budget leaves room for 20 sessions, not for a loop.
+it("rate-limits a person's status polls", async () => {
+  const codes: number[] = [];
+  for (let i = 0; i < 150 && !codes.includes(429); i++) codes.push((await status(team.malik.token, "malik-poll")).status);
+  expect(codes.slice(0, 30)).toEqual(Array(30).fill(200));
+  expect(codes).toContain(429);
+});

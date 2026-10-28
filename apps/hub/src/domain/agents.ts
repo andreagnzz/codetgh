@@ -275,21 +275,19 @@ const at = (s?: number) => (s === undefined ? null : new Date(s * 1000));
 
 // The presence mod's poll: keeps the caller's own open session online while it idles at the prompt. Never creates one.
 // Only a live session of the caller's stores the usage it reports; a window it no longer reads is cleared.
+// Answers the presence the session had before this poll, or null when it is no live session of the caller's.
 export async function touchSession(db: Db, p: Principal, sessionId: string, usage: Usage = {}) {
-  const rows = await db
-    .update(agent)
-    .set({ lastSeenAt: new Date() })
-    .where(
-      and(
-        eq(agent.teamId, p.teamId),
-        eq(agent.userId, p.user.id),
-        eq(agent.sessionId, sessionId),
-        isNull(agent.endedAt),
-        isNull(agent.removedAt),
-      ),
-    )
-    .returning({ id: agent.id });
-  if (rows.length && Object.values(usage).some((v) => v !== undefined))
+  const mine = and(
+    eq(agent.teamId, p.teamId),
+    eq(agent.userId, p.user.id),
+    eq(agent.sessionId, sessionId),
+    isNull(agent.endedAt),
+    isNull(agent.removedAt),
+  );
+  const [was] = await db.select({ lastSeenAt: agent.lastSeenAt, endedAt: agent.endedAt }).from(agent).where(mine);
+  if (!was) return null;
+  await db.update(agent).set({ lastSeenAt: new Date() }).where(mine);
+  if (Object.values(usage).some((v) => v !== undefined))
     await db
       .update(membership)
       .set({
@@ -299,7 +297,7 @@ export async function touchSession(db: Db, p: Principal, sessionId: string, usag
         usageSevenDayReset: at(usage.seven_day_reset),
       })
       .where(eq(membership.id, p.membershipId));
-  return rows.length > 0;
+  return presence(was);
 }
 
 // last_tool is a closed vocabulary: Claude Code's built-in tool names (code.claude.com/docs/en/tools-reference; MultiEdit and
