@@ -1,7 +1,7 @@
 import type { Role } from "@codetgh/shared";
-import { and, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, message, personalToken, project, receipt, type TeamSettings, team } from "../db/schema.js";
+import { agent, alert, invitation, membership, message, personalToken, project, receipt, type TeamSettings, team } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { appendAudit } from "./audit.js";
@@ -32,6 +32,13 @@ export async function requireNotBridge(db: Db, teamId: string, userId: string) {
   if (await hasAgentOfKind(db, teamId, userId, ["bridge"]))
     throw new HubError("E_FORBIDDEN", "the GitHub or Slack bridge member cannot be revoked: its webhook would stop working");
 }
+
+// A pending invitation ends with the admin rights or the token that made it: a cut-off access must not return through a link.
+export const endPendingInvitations = (db: Db, teamId: string, madeBy: SQL) =>
+  db
+    .update(invitation)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(invitation.teamId, teamId), isNull(invitation.acceptedAt), isNull(invitation.revokedAt), madeBy));
 
 export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";
 
@@ -259,6 +266,7 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
     if (!t) throw new HubError("E_NOT_FOUND", "token not found");
     if (t.userId !== p.user.id) requireAdmin(p);
     await tx.update(personalToken).set({ revokedAt: new Date() }).where(eq(personalToken.id, t.id));
+    await endPendingInvitations(tx, p.teamId, eq(invitation.invitedByToken, t.id));
     await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: t.id });
     return t.userId;
   });
@@ -276,6 +284,7 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
+    if (role === "member" || role === "guest") await endPendingInvitations(tx, p.teamId, eq(invitation.invitedBy, m.userId));
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
   });
 }

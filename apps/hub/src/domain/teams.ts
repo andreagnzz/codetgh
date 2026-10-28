@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge } from "./admin.js";
+import { byUser, endPendingInvitations, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -40,7 +40,15 @@ export async function createTeam(db: Db, name: string) {
 
 export async function createInvitation(
   db: Db,
-  input: { teamId: string; email: string; role: Role; invitedBy: string | null; via: "console" | "rest" | "system"; days?: number },
+  input: {
+    teamId: string;
+    email: string;
+    role: Role;
+    invitedBy: string | null;
+    invitedByToken?: string | null;
+    via: "console" | "rest" | "system";
+    days?: number;
+  },
 ) {
   const token = randomBytes(24).toString("base64url");
   const id = newId("inv");
@@ -52,6 +60,7 @@ export async function createInvitation(
       role: input.role,
       tokenHash: hashToken(token),
       invitedBy: input.invitedBy,
+      invitedByToken: input.invitedByToken,
       expiresAt: new Date(Date.now() + (input.days ? input.days * 86_400_000 : INVITE_TTL_MS)),
     });
     await appendAudit(tx, {
@@ -95,7 +104,15 @@ export async function inviteMember(
   const role = input.role as Role;
   if (role === "owner" && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner invites owners");
   if (!/^[^\s@]+@[^\s@]+$/.test(input.email)) throw new HubError("E_INVALID", "invalid email");
-  const { token } = await createInvitation(deps.db, { teamId: p.teamId, email: input.email, role, invitedBy: p.user.id, via, days });
+  const { token } = await createInvitation(deps.db, {
+    teamId: p.teamId,
+    email: input.email,
+    role,
+    invitedBy: p.user.id,
+    invitedByToken: p.tokenId,
+    via,
+    days,
+  });
   const link = `${deps.publicUrl}/invite/${token}`;
   let emailed = false;
   if (deps.mailer.enabled) {
@@ -348,6 +365,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .update(personalToken)
       .set({ revokedAt: now })
       .where(and(eq(personalToken.userId, m.userId), eq(personalToken.teamId, input.teamId), isNull(personalToken.revokedAt)));
+    await endPendingInvitations(tx, input.teamId, eq(invitation.invitedBy, m.userId));
     await tx
       .update(agent)
       .set({ endedAt: now })
