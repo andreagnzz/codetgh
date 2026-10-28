@@ -76,11 +76,15 @@ describe("textFlags", () => {
   // The hub flags peer text on its one event loop: no pattern may cost more than the length of the text, nor read past what
   // an envelope can show.
   it("stays linear on newline, space and curl heavy text, and scans a bounded length", () => {
-    for (const text of ["\n".repeat(16_000), `<${" ".repeat(16_000)}`, "curl ".repeat(3_200), `${"x".repeat(2_000_000)}\nsystem: no`]) {
+    for (const text of ["\n".repeat(16_000), `<${" ".repeat(16_000)}`, `${"x".repeat(2_000_000)}\nsystem: no`]) {
       const t0 = performance.now();
       textFlags(text);
       expect(performance.now() - t0).toBeLessThan(100);
     }
+    // A line of curls that fits in the scanned length: about 90 ms with a scan from each curl to the line's end, under 1 ms now.
+    const t0 = performance.now();
+    textFlags("curl ".repeat(3_200));
+    expect(performance.now() - t0).toBeLessThan(20);
   });
 });
 
