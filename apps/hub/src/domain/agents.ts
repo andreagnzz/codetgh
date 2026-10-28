@@ -375,7 +375,9 @@ export async function resolveAgent(db: Db, p: Principal, agentArg: string | unde
     else row = await pick(ofToken);
   }
   // Another token's delegate session would let this caller read and ack its authorized requests: name it or get none.
-  if (!row && guess && !(await several(live))) row = await pick(and(live, isNull(agent.acceptRequestsFrom)));
+  // The same goes for the person's REST agent (cli-<token>), which reads every receipt of the person.
+  if (!row && guess && !(await several(live)))
+    row = await pick(and(live, isNull(agent.acceptRequestsFrom), sql`${agent.sessionId} is distinct from ('cli-' || ${agent.tokenId})`));
   if (!row) {
     if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
     const kind = p.auth === "oauth" ? "claude-ai" : "other";

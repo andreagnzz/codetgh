@@ -107,4 +107,18 @@ it("never guesses a delegate session for another token or OAuth: only a call nam
   if (!oauth) throw new Error("no principal");
   expect((await resolveAgent(hub.db, oauth, undefined, "mcp")).id).not.toBe(delegate);
   expect((await resolveAgent(hub.db, oauth, delegate, "mcp")).id).toBe(delegate);
+
+  // Nor the person's REST agent (cli-<token>, made by the CLI or the presence mod), which reads every receipt of the person.
+  expect((await fetch(`${hub.url}/v1/status`, { headers: { Authorization: `Bearer ${team.lea.token}` } })).status).toBe(200);
+  const sam = await mcpClient(hub.url, team.sam.token);
+  const request = JSON.parse(
+    (await call(sam, "send_message", { to: `agent:${delegate}`, kind: "request", body: "for the delegate only", allow_offline: true }))
+      .text,
+  ) as { id: string };
+  await sam.close();
+  expect((await resolveAgent(hub.db, oauth, undefined, "mcp")).sessionId).not.toMatch(/^cli-/);
+  const { token: tablet } = await createPersonalToken(hub.db, { userId: team.lea.userId, teamId: team.teamId, label: "lea tablet" });
+  const third = await mcpClient(hub.url, tablet);
+  expect((await call(third, "inbox_read", {})).text).not.toContain(request.id);
+  await third.close();
 });
