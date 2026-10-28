@@ -22,6 +22,7 @@ const MAX_BODY_BYTES = 8192;
 // Ciphertext of an 8 KB body: base64url of IV + text + tag, with its format prefix.
 const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
+const TEAM_SCALE = 10; // a team sends as much as ten busy people
 const MAX_SUBJECT = 200;
 const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before the loop guard mutes it
 // Agent messages between two people, all threads, both ways. shortcut: fixed numbers; a team setting if teams need more.
@@ -311,11 +312,13 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   ) {
     throw new HubError("E_TOO_LARGE", "body over 8 KB, more than 20 refs or subject over 200 characters: summarize and use a reference");
   }
-  if (fromAgentId) {
-    // Per agent (SPEC) and per user, so new sessions cannot reset the budget.
-    const wait = Math.max(limiter.take(fromAgentId), limiter.take(`user:${p.user.id}`));
-    if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
-  }
+  // Per agent (SPEC), per person whoever writes (a new session, the console or Slack cannot reset it), and per team.
+  const wait = Math.max(
+    fromAgentId ? limiter.take(fromAgentId) : 0,
+    limiter.take(`user:${p.user.id}`),
+    limiter.take(`team:${p.teamId}`, TEAM_SCALE),
+  );
+  if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
 
   // The loop orchestrator is a member the admins named: its agent judges loops the guard muted.
   const [orchestrator] = p.settings.loop_orchestrator

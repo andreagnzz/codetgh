@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { hubRest } from "./helpers.js";
+import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -26,6 +26,17 @@ it("rate-limits a person's writes the way it limits their messages", async () =>
     repo_name: "acme/webapp",
   });
   expect(res.status).toBe(429);
+});
+
+// The console and the Slack relay write as the person: their sends take the budget of the person's agents.
+it("rate-limits a person's console replies with the budget of their messages", async () => {
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "note", body: "hello", allow_offline: true })).text);
+  const statuses: number[] = [];
+  for (let i = 0; i < 12; i++)
+    statuses.push((await consolePost(hub.url, team.lea.cookie, `/console/threads/${sent.thread}/reply`, { body: `reply ${i}` })).status);
+  expect(statuses.slice(0, 8)).toEqual(Array(8).fill(204));
+  expect(statuses).toContain(429);
 });
 
 it("caps the claims one person holds at once", async () => {
