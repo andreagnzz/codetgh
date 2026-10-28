@@ -42,10 +42,12 @@ it("keeps tasks, memory, claims and the team view from a guest's agent", async (
   }
   const status = await fetch(`${hub.url}/v1/status`, { headers: { Authorization: `Bearer ${team.malik.token}` } });
   expect(status.status).toBe(403);
+  // A repository tells a guest nothing, not even that it is a team project: no session there.
   const started = await startSession(hub.url, team.malik.token, "malik-g2", { repo: ACME_REPO });
+  expect(started.agent_id).toBeNull();
   expect(started.context).not.toMatch(/src\/billing|Billing moves/);
-  // Their own messages still arrive.
-  expect((await call(malik, "inbox_read", { agent: started.agent_id })).text).toContain("hello guest");
+  // Their own messages still arrive, in codetgh inbox.
+  expect(JSON.stringify(await (await hubRest(hub.url, team.malik.token, "POST", "/v1/inbox", {})).json())).toContain("hello guest");
 });
 
 it("keeps the same pages and thread actions from a guest in the console", async () => {

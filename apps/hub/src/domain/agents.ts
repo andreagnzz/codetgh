@@ -73,9 +73,16 @@ export const isLaunch = (source?: string) => !source || source === "startup" || 
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
+    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
+    // Refused before the repository is looked at, so the refusal is the same whether or not it is linked.
+    const asked = [...new Set(input.accept_requests_from ?? [])];
+    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
+      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     let projectId: string | null = null;
     // An unknown repository stays off the hub, unless the session sends its name to link it and may do so.
     if (input.repo_fingerprint) {
+      // A guest sees only their own threads: to them every repository is unknown, so the answer never tells a linked one.
+      if (p.role === "guest") return null;
       const [row] = await tx
         .select({ id: project.id })
         .from(project)
@@ -86,10 +93,6 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
-    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
-    const asked = [...new Set(input.accept_requests_from ?? [])];
-    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
-      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     const accept = asked.length
       ? await tx
           .select({ userId: membership.userId })

@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, auditEvent, project, team as teamTable } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
-import { auth, type Hub, startHub, startSession } from "./harness.js";
+import { ACME_REPO, auth, type Hub, setRole, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -92,5 +92,38 @@ describe("POST /v1/projects", () => {
         .where(and(eq(auditEvent.subjectId, created.id), eq(auditEvent.action, action)));
     expect(await audited("project.created")).toHaveLength(1);
     expect(await audited("project.renamed")).toHaveLength(1);
+  });
+});
+
+// SPEC: a guest sees only their own threads. A repository fingerprint must not tell them whether it is a team project.
+describe("POST /v1/agents/session for a guest", () => {
+  const post = (token: string, session_id: string, repo_fingerprint: string, extra = {}) =>
+    fetch(`${hub.url}/v1/agents/session`, {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ session_id, repo_fingerprint, branch: "main", repo_name: "probe", ...extra }),
+    });
+  const register = async (token: string, session_id: string, repo_fingerprint: string) =>
+    (await post(token, session_id, repo_fingerprint)).json();
+
+  it("answers the same for a linked and an unlinked repository, with no project", async () => {
+    await setRole(hub, team.malik.userId, "guest");
+    const linked = await register(team.malik.token, "malik-linked", ACME_REPO);
+    const unlinked = await register(team.malik.token, "malik-unlinked", newRepo());
+    // A delegate opt-in is refused the same way in both.
+    const refused = [
+      (await post(team.malik.token, "malik-delegate", ACME_REPO, { accept_requests_from: ["@lea"] })).status,
+      (await post(team.malik.token, "malik-delegate", newRepo(), { accept_requests_from: ["@lea"] })).status,
+    ];
+    await setRole(hub, team.malik.userId, "member");
+    expect(refused).toEqual([403, 403]);
+    expect(linked).toEqual(unlinked);
+    expect(JSON.stringify(linked)).not.toContain("acme");
+    expect(await hub.db.select().from(agent).where(eq(agent.sessionId, "malik-linked"))).toEqual([]);
+  });
+
+  it("still links a member's session and names its project", async () => {
+    const body = await register(team.sam.token, "sam-linked", ACME_REPO);
+    expect(body).toMatchObject({ linked: true, project: "acme", agent_id: expect.stringMatching(/^agt_/) });
   });
 });
