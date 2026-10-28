@@ -90,6 +90,8 @@ describe("browser sign-in (device authorization)", () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { message: string }).message).toMatch(/denied/);
     expect(await hub.db.select().from(personalToken).where(eq(personalToken.label, "malik-desktop"))).toHaveLength(0);
+    const [denied] = await hub.db.select().from(auditEvent).where(eq(auditEvent.action, "device.denied"));
+    expect(denied).toMatchObject({ actorUserId: team.malik.userId, via: "console" });
   });
 
   it("expiry: a code older than its lifetime can neither be approved nor polled", async () => {

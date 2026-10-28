@@ -191,8 +191,7 @@ Enveloppe d'un message (identifiants abrégés dans l'exemple)
   "requires_ack": false,
   "expires_at": null,
   "reply_to": null,
-  "hop": 0,
-  "sig": "ed25519:MEUCIQ…"
+  "hop": 0
 }
 ```
 
@@ -240,7 +239,7 @@ Hook pre-push, optionnel. `codetgh hooks install` écrit `.git/hooks/pre-push` (
 
 ### Tâches et relais
 
-Une tâche passe par todo, claimed, in_progress, blocked, review, done ou cancelled. task_claim est atomique : la mise à jour échoue si version a changé. Archives : une tâche done ou cancelled depuis plus de 24 h, et un fil sans message depuis 24 h où personne n'a de non-lu, sortent des vues par défaut (console, task_list sauf include_archived) ; c'est un filtre de lecture, rien n'est supprimé, et un nouveau message ramène le fil.
+Une tâche passe par todo, claimed, in_progress, blocked, review, done ou cancelled. task_claim est atomique : la mise à jour échoue si version a changé. Il refuse une tâche du runner (E_FORBIDDEN), à tous : seul le runner la prend, par un bail. Archives : une tâche done ou cancelled depuis plus de 24 h, et un fil sans message depuis 24 h où personne n'a de non-lu, sortent des vues par défaut (console, task_list sauf include_archived) ; c'est un filtre de lecture, rien n'est supprimé, et un nouveau message ramène le fil.
 
 La tâche suit le dépôt :
 - `verify: {tag: "<nom>"}` (task_create, task_update ; `verify: "none"` l'efface) lie la tâche à un tag git. Le nom suit les règles d'un nom de référence git : 100 caractères au plus, lettres, chiffres et `. _ / + -`, sans `..`, sans `-` ou `/` au début, sans `/` ni `.` à la fin, sans `//`, ni `.lock`. Qui la change : l'assigné, le créateur ou un administrateur, comme le reste de la tâche. Le tag se lit dans task_list et task_get (`verify`). Quand le pont GitHub reçoit un événement `create` avec `ref_type = "tag"`, signé HMAC comme les autres, il retrouve le projet par l'empreinte du dépôt et passe à `done`, en tant que hub, toute tâche de ce projet dont `verify_tag` est ce tag et qui n'est ni `done` ni `cancelled`, avec la note « verified by tag <tag> ». Même rigueur que le lien de fusion du runner : même dépôt, même projet, contrôle du statut ; un tag d'un autre dépôt ne fait rien, une livraison rejouée non plus (`done` ne change plus). Le nom se compare exactement, et un événement `create` d'une branche ne correspond jamais. Un tag n'est pas un moyen de contourner les règles : le hub garde qui l'a posé (`verify_set_by`), et à l'arrivée du tag la tâche ne se termine que si cette personne est encore membre actif, hors invité, et pourrait encore modifier la tâche (assigné, créateur ou administrateur), si ses `depends_on` sont tous `done`, et si aucun runner ne la tient (une tâche du runner avec un bail vivant, ou une PR ouverte, c'est-à-dire un numéro de PR en `review` ou `in_progress`, est laissée telle quelle). Sinon la tâche reste ouverte et reçoit une fois la note « tag reached, not applied: <raison fixe> » (le posant n'a plus le droit, dépendances pas finies, le runner la tient). L'audit garde la tâche, le tag, l'identifiant de livraison, l'empreinte du corps et le `sender.login` s'il a la forme `^[A-Za-z0-9-]{1,39}$`, jamais le corps. `verify.command` n'existe pas : seul le runner pourrait l'exécuter.
@@ -277,7 +276,7 @@ Un memory_item a quatre kind : decision (choix avec contexte et conséquences), 
 | Expiration | expires_at optionnel ; défauts : status 24 h, alert 7 jours |
 | Rétention | Messages 90 jours (réglable) ; décisions, contrats et audit conservés |
 | Tailles | Corps 8 Ko au plus (E_TOO_LARGE au-delà) ; 20 références ; 5 pièces jointes de 256 Ko |
-| Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 5 messages d'agents d'affilée, le fil est mis en sourdine et les humains sont alertés ; si l'équipe a nommé un orchestrateur de boucles (loop_orchestrator), son agent lit le fil, publie un verdict et peut le rouvrir une seule fois |
+| Anti-boucle | hop compte les messages d'agents qui se suivent dans un fil sans intervention humaine ; au-delà de 5 messages d'agents d'affilée, le fil est mis en sourdine et les humains sont alertés ; si l'équipe a nommé un orchestrateur de boucles (loop_orchestrator), son agent reçoit les 5 derniers messages du fil, pas son historique (dans le message direct d'autrui, une lecture tracée comme celle d'un administrateur : thread.read_by_orchestrator ; il n'en devient pas participant, la suite du fil ne lui parvient pas), publie un verdict et peut le rouvrir une seule fois |
 | Débit | 30 messages par minute et 600 par heure et par agent, rafale de 10 |
 
 Présence. Chaque appel d'un agent met à jour last_seen_at. Un agent est online sous 90 s, idle sous 15 min, offline au-delà. Le mod de présence interroge GET /v1/status toutes les 30 s avec l'identifiant de sa session ($.session.id()) : le hub met à jour last_seen_at de cet agent s'il appartient à l'appelant (même équipe, même personne), sans jamais en créer. Une session ouverte au repos reste ainsi online. Sans le mod (hooks seuls), la présence reste liée à l'activité. Une session Claude Code (kind claude-code) que le hub n'a pas vue depuis 12 h est close comme à son SessionEnd, par une tâche du hub toutes les 10 min : ended_at posé, réservations intent libérées (les autres vont à leur TTL), un audit agent.session_expired par agent, métadonnées seules. La ligne reste pour l'audit ; elle sort du routage et des listes.
@@ -295,8 +294,8 @@ Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en a
 | Convention | Règle |
 | --- | --- |
 | Noms | snake_case, stables. Dans Claude Code : mcp__plugin_codetgh_hub__<outil> via le plugin, mcp__codetgh__<outil> si le serveur est ajouté à la main |
-| Identité | L'argument agent (identifiant donné par le paquet de contexte) est facultatif. Le hub vérifie qu'il appartient à l'utilisateur du jeton, sinon il prend l'agent associé au jeton, ou l'agent le plus récemment actif de l'utilisateur. Si le jeton (ou, en OAuth, la personne) a plusieurs sessions Claude Code ouvertes, le hub ne devine pas : l'appel va à l'agent auto du jeton, sans projet ni session. Il ne devine jamais non plus une session déléguée d'un autre jeton ou pour un appel OAuth : seul un argument agent qui la nomme agit en son nom. Le hook PreToolUse du plugin ajoute l'agent de la session à chaque appel d'un outil CodeTgh (plugin ou connecteur claude.ai) qui n'en donne pas, sans décider de la permission |
-| Adresses | L'objet to du modèle de données, ou une forme courte : @lea, @team, @role:reviewer, agent:agt_…, thread:thr_… |
+| Identité | L'argument agent (identifiant donné par le paquet de contexte) est facultatif. Le hub vérifie qu'il appartient à l'utilisateur du jeton, sinon il prend l'agent associé au jeton, ou l'agent le plus récemment actif de l'utilisateur. Si le jeton (ou, en OAuth, la personne) a plusieurs sessions Claude Code ouvertes, le hub ne devine pas : l'appel va à l'agent auto du jeton, sans projet ni session. Il ne devine jamais non plus une session déléguée d'un autre jeton ou pour un appel OAuth : seul un argument agent qui la nomme agit en son nom. Ni l'agent REST de la personne, même celui du jeton (cli-…, qui lit tous ses reçus) : sans autre agent, l'appel va à l'agent auto. Le hook PreToolUse du plugin ajoute l'agent de la session à chaque appel d'un outil CodeTgh (plugin ou connecteur claude.ai) qui n'en donne pas, sans décider de la permission |
+| Adresses | L'objet to du modèle de données, ou une forme courte : @lea, @team, @role:reviewer, agent:agt_…, thread:thr_…. Une réponse sans to va à l'auteur du message parent, un verdict de boucle à ceux qui ont écrit dans le fil, membres encore actifs seulement (E_INVALID s'il ne reste personne) |
 | Idempotence | Les écritures acceptent idempotency_key (ULID) ; le hub dédoublonne pendant 24 h |
 | Taille des réponses | 2 000 tokens au plus par défaut ; 20 000 caractères pour inbox_read et memory_search (anthropic/maxResultSizeChars) ; pagination par page_token opaque |
 | Annotations | readOnlyHint sur les lectures, destructiveHint et openWorldHint faux partout |
@@ -308,7 +307,7 @@ Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en a
 | Outil | Rôle | Entrées principales | Accès | Phase |
 | --- | --- | --- | --- | --- |
 | whoami | Identité de l'agent, équipe, projet lié, rôle, réglages applicables | aucune | Lecture | 1 |
-| team_overview | Vue par personne : `people: [{handle, name_untrusted, status_untrusted, flags, status_age_s, usage, open_tasks, last_seen, sessions: [{agent, project_untrusted, label_untrusted, flags, presence, activity, last_seen, platform, delegate_for}]}]`, plus `you`, `claims`, `unread`, `blocking_message_ids` et `trust`. Une entrée par personne ; `sessions` ne liste que les sessions vivantes (online ou idle, sans les agents bridge, a2a et cli-…), jamais celle qui appelle. `activity` est `{state: in_turn|idle|unknown, since_s, last_tool?, last_tool_age_s?}` : `since_s` est l'âge du dernier rapport (null si la session n'en a fait aucun), `last_tool` n'apparaît que pendant le tour qui l'a utilisé (voir « Activité »). `status_untrusted` est le dernier status_set de la personne, échappé sur 60 caractères, montré aussi après son ttl_s avec son âge en secondes (null s'il a été posé avant que le hub garde l'heure) : la console applique la même règle | scope (project ou team), limit (sessions listées), online_only (vrai par défaut ; faux : aussi les personnes sans session vivante, une fois, avec last_seen et sessions vide), handle, project (un identifiant ou current), compact (personnes et sessions seulement, sans usage ni claims) | Lecture | 1 |
+| team_overview | Vue par personne : `people: [{handle, name_untrusted, status_untrusted, flags, status_age_s, usage, open_tasks, last_seen, sessions: [{agent, project_untrusted, label_untrusted, flags, presence, activity, last_seen, platform, delegate_for}]}]`, plus `you`, `paused`, `push_allowed_modes` (hooks, et rewake si l'équipe l'autorise), `claims`, `unread`, `blocking_message_ids` et `trust`. Une entrée par personne ; `sessions` ne liste que les sessions vivantes (online ou idle, sans les agents bridge, a2a et cli-…), jamais celle qui appelle. `activity` est `{state: in_turn|idle|unknown, since_s, last_tool?, last_tool_age_s?}` : `since_s` est l'âge du dernier rapport (null si la session n'en a fait aucun), `last_tool` n'apparaît que pendant le tour qui l'a utilisé (voir « Activité »). `status_untrusted` est le dernier status_set de la personne, échappé sur 60 caractères, montré aussi après son ttl_s avec son âge en secondes (null s'il a été posé avant que le hub garde l'heure) : la console applique la même règle | scope (project ou team), limit (sessions listées), online_only (vrai par défaut ; faux : aussi les personnes sans session vivante, une fois, avec last_seen et sessions vide), handle, project (un identifiant ou current), compact (personnes et sessions seulement, sans usage ni claims) | Lecture | 1 |
 | team_overview, capacité | Par personne, une seule fois : `usage` de la personne (`five_hour` et `seven_day` : pourcentage entier et `resets_at`, relevés par le mod de présence sur son sondage `/v1/status`, stockés par personne sans autre donnée ; une fenêtre passée sa remise n'est plus montrée) et `open_tasks` (nombre de tâches claimed et in_progress) ; par session : `platform` (process.platform envoyé au SessionStart) et `delegate_for` (les @ dont la session déléguée accepte les demandes, sinon null) ; `you.usage` pour soi. Un invité ne voit rien de plus (team_overview lui est refusé) ; l'usage n'est visible que des coéquipiers de la même équipe | aucune | Lecture | 3 |
 | status_set | Publie ce que fait l'agent : une ligne, des chemins, une durée ; le hub garde l'heure de pose (status_set_at), d'où l'âge montré partout | text, paths[], ttl_s | Écriture | 1 |
 | send_message | Envoie une note, une question, une réponse, une demande ou une alerte | to, kind, subject, body, priority, refs[], reply_to, requires_ack | Écriture | 1 |
@@ -322,7 +321,7 @@ Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en a
 | task_list | Liste les tâches, filtrées : `{tasks: [{id, title_untrusted, flags, status, version, assignee, verify?, blocked_reason_untrusted?, …}], trust}`, titres échappés sur une ligne de 120 caractères et raison de blocage sur 200, sans enveloppe | status, assignee, include_archived, project (current par défaut : le projet de la session ; un identifiant, ou all ; les tâches sans projet, créées dans la console, sortent avec chaque projet), limit | Lecture | 2 |
 | task_get | Une tâche : l'en-tête JSON (champs de task_list, nombre de notes), puis titre, corps et notes dans une seule enveloppe <peer_message kind="task">, une note par ligne `- <at> @<auteur>: <texte>` ; même visibilité que task_list | task_id | Lecture | 2 |
 | task_create | Crée une tâche | title, body, paths[], depends_on[], assignee, verify | Écriture | 2 |
-| task_claim | Réclame une tâche libre de façon atomique | task_id, expected_version | Écriture | 2 |
+| task_claim | Réclame une tâche libre de façon atomique, jamais une tâche du runner | task_id, expected_version | Écriture | 2 |
 | task_update | Change le statut ou l'assigné, ajoute une note, pose ou efface le tag `verify` ; reprend la tâche d'un coéquipier | task_id, patch (status, assignee, note, verify, reason, takeover_note, override_deps), expected_version | Écriture | 2 |
 | handoff | Passe le relais : crée la capsule et l'envoie | to, task_id, summary, done[], todo[], files_touched[], decisions[], open_questions[], commands[], warnings[], branch, last_commit | Écriture | 2 |
 | memory_search | Cherche décisions, contrats et conventions | query, kinds[], include_proposed, limit | Lecture | 2 |
@@ -456,7 +455,7 @@ Deux modes coexistent ; le spike de la phase 0 désigne celui qui sert de défau
 | Jeton personnel (défaut prévu en phase 1) | codetgh setup ou codetgh login obtient le jeton par une connexion dans le navigateur (flux d'appareil, voir ci-dessous) ; la console peut aussi en créer un, passé par --token-stdin. Claude Code le demande à l'activation du plugin (userConfig, valeur sensible) et les hooks le reçoivent dans CLAUDE_PLUGIN_OPTION_CODETGH_TOKEN | Une seule saisie ; fonctionne avec claude -p et en CI | Jeton durable : expiration à 90 jours, rotation, révocable par son propriétaire et par un administrateur |
 | OAuth 2.1 | /mcp ouvre le navigateur pour le serveur MCP ; le CLI utilise un flux d'appareil | Aucun secret à coller ; seul mode qui identifie chaque personne sur claude.ai | Deux connexions : MCP et CLI |
 
-Connexion dans le navigateur (style RFC 8628) : le CLI appelle POST /v1/device/start, public et limité par adresse, avec le nom de la machine (60 caractères au plus). Il reçoit un code d'appareil secret (32 octets aléatoires), un code utilisateur de 8 lettres prises dans BCDFGHJKLMNPQRSTVWXZ (ABCD-EFGH), l'adresse <hub>/console/device, une durée de 10 minutes et un intervalle de 3 s. Il affiche l'adresse et le code, puis interroge POST /v1/device/token : « pending », puis le jeton une seule fois ; refus → 403, code expiré ou déjà utilisé → 404. Dans la console, avec sa session et le jeton CSRF, la personne tape le code, voit le nom de la machine (échappé), puis approuve ou refuse. Le hub ne garde que les empreintes SHA-256 des deux codes, en mémoire, dans un seul processus ; chaque code ne sert qu'une fois. Un code faux compte contre la personne (5 essais) et contre l'adresse (20 essais) sur 10 minutes ; au-delà, même le bon code est refusé. La page montre depuis quand la demande est lancée et dit que le nom de la machine est tapé par qui l'a lancée. Approuver exige une connexion de moins de 10 minutes, comme les autres actions sensibles. L'approbation écrit device.approved dans l'audit. Si l'approbateur n'est plus membre actif quand le CLI interroge, aucun jeton n'est créé (403). Le jeton, créé au moment où le CLI le récupère, est un jeton personnel comme ceux de la console (90 jours, libellé = nom de la machine) et écrit token.created.
+Connexion dans le navigateur (style RFC 8628) : le CLI appelle POST /v1/device/start, public et limité par adresse, avec le nom de la machine (60 caractères au plus). Il reçoit un code d'appareil secret (32 octets aléatoires), un code utilisateur de 8 lettres prises dans BCDFGHJKLMNPQRSTVWXZ (ABCD-EFGH), l'adresse <hub>/console/device, une durée de 10 minutes et un intervalle de 3 s. Il affiche l'adresse et le code, puis interroge POST /v1/device/token : « pending », puis le jeton une seule fois ; refus → 403, code expiré ou déjà utilisé → 404. Dans la console, avec sa session et le jeton CSRF, la personne tape le code, voit le nom de la machine (échappé), puis approuve ou refuse. Le hub ne garde que les empreintes SHA-256 des deux codes, en mémoire, dans un seul processus ; chaque code ne sert qu'une fois. Un code faux compte contre la personne (5 essais) et contre l'adresse (20 essais) sur 10 minutes ; au-delà, même le bon code est refusé. La page montre depuis quand la demande est lancée et dit que le nom de la machine est tapé par qui l'a lancée. Approuver exige une connexion de moins de 10 minutes, comme les autres actions sensibles. L'approbation écrit device.approved dans l'audit, le refus device.denied. Si l'approbateur n'est plus membre actif quand le CLI interroge, aucun jeton n'est créé (403). Le jeton, créé au moment où le CLI le récupère, est un jeton personnel comme ceux de la console (90 jours, libellé = nom de la machine) et écrit token.created.
 
 La référence du manifeste indique que ${user_config.KEY} se substitue dans les headers d'un serveur MCP de plugin, y compris pour une valeur sensitive ; le point 1 de l'annexe C le confirme par un essai. Sinon, le jeton passe par la variable CODETGH_TOKEN, jamais par un nom en ANTHROPIC_*, que Claude Code lit comme vide dans l'adresse et les en-têtes d'un serveur distant.
 
@@ -564,7 +563,7 @@ UserPromptSubmit se déclenche aussi pour les tâches planifiées, les rapports 
 
 ### Paquet de contexte
 
-SessionStart écrit dans additionalContext (10 000 caractères au plus, cible de 1 200 tokens) un résumé en tête duquel figurent les relais et les demandes blocking. Ce résumé ne contient que des données du hub : le texte d'un pair y est remplacé par l'identifiant du message, qui arrive dans l'enveloppe avec le premier prompt. Les champs libres (label, branche, statut) tiennent sur une ligne de 60 caractères au plus. Exemple d'environ 150 tokens :
+SessionStart écrit dans additionalContext (10 000 caractères au plus, cible de 1 200 tokens ; le texte des coéquipiers est coupé sur sa longueur une fois échappé, pour que le paquet tienne et que son enveloppe se ferme toujours) un résumé en tête duquel figurent les relais et les demandes blocking. Ce résumé ne contient que des données du hub : le texte d'un pair y est remplacé par l'identifiant du message, qui arrive dans l'enveloppe avec le premier prompt. Les champs libres (label, branche, statut) tiennent sur une ligne de 60 caractères au plus. Exemple d'environ 150 tokens :
 
 ```
 <codetgh_context team="Acme web" project="acme/webapp" agent="agt_01JC4Z2E7Q" you="Sam">
@@ -588,7 +587,7 @@ Les hooks ne s'exécutent qu'à des moments précis. Pour réveiller une session
 | monitor | Un moniteur de plugin affiche chaque ligne du démon à Claude | À vérifier | Sessions interactives seulement ; pas de ${user_config} dans la commande, le démon lit donc son jeton dans le trousseau ; échéance du moniteur à vérifier |
 | channel | Un pont MCP local déclare la capacité claude/channel | Oui | Aperçu de recherche : lancement avec --channels plugin:codetgh@<place de marché>, connexion claude.ai ou clé Console, activation par l'organisation sur Team et Enterprise ; le pont reste sur la révision 2025-11-25 ; hors liste d'Anthropic, --dangerously-load-development-channels |
 
-Réveil par le mod de présence, en mode rewake seulement (option push_mode, que l'équipe doit autoriser) : quand le nombre de non-lus monte et que la session est au repos (aucun tour principal en cours, dernier turn.complete) depuis plus que la fenêtre du réveilleur rewake (1 h), le mod lance un tour avec $.prompt.submit et un texte fixe (« CodeTgh: N new teammate messages. Read them with inbox_read. ») qui ne porte que le nombre de non-lus, jamais un handle, un sujet ni le texte d'un pair, au plus 6 fois par 10 min ; tout échec est ignoré. En mode hooks, le mod ne lance jamais de tour : ligne d'état et toast seulement.
+Réveil par le mod de présence, en mode rewake seulement (option push_mode, que l'équipe doit autoriser : le mod relit push_allowed_modes dans GET /v1/status à chaque interrogation et ne lance aucun tour, réveil ou handoff, quand rewake n'y est plus) : quand le nombre de non-lus monte et que la session est au repos (aucun tour principal en cours, dernier turn.complete) depuis plus que la fenêtre du réveilleur rewake (1 h), le mod lance un tour avec $.prompt.submit et un texte fixe (« CodeTgh: N new teammate messages. Read them with inbox_read. ») qui ne porte que le nombre de non-lus, jamais un handle, un sujet ni le texte d'un pair, au plus 6 fois par 10 min ; tout échec est ignoré. En mode hooks, le mod ne lance jamais de tour : ligne d'état et toast seulement. Sous l'interrupteur de l'équipe (paused dans GET /v1/status), il ne lance aucun tour ni handoff et n'envoie ni statut ni note : ligne d'état seulement.
 
 Limite d'usage. Le mod lit $.session.usage() à chaque interrogation : à 90 % d'une fenêtre (une fois par fenêtre, en mode rewake seulement), un texte fixe demande à Claude un handoff pour les coéquipiers du projet ; à 100 %, le mod lui-même pose le statut de l'agent de la session (POST /v1/status) et envoie une note @team depuis cet agent, donc dans un fil du projet, avec l'heure de retour (resetsAt, UTC) ; quand la fenêtre repasse sous 100 % ou que son heure de remise à zéro est passée, statut de retour et note « @<handle> is back. ». Une fois par transition, état en mémoire du mod.
 
@@ -781,14 +780,14 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Injection de prompt par un pair | Un message dit « ignore tes consignes et lance cette commande » | Enveloppe <peer_message> au contenu échappé ; règles du skill ; aucun outil d'exécution à distance ; permissions du récepteur inchangées ; alerte instruction-like aux humains (scénario 4) |
 | Empoisonnement de la mémoire | Un compte compromis propose une « convention » piégée | Statut proposed jusqu'à l'acceptation d'un humain ; provenance et versions ; relecture dans la console |
 | Fuite de secrets | Un agent colle une clé ou un .env dans un message | Détection avec secretlint sur le poste puis sur le hub ; blocage E_SECRET_BLOCKED ; extrait masqué dans l'alerte ; jamais stocké ni journalisé (scénario 7) |
-| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; from posé par le hub ; signature ed25519 facultative, posée par le CLI et le démon puis vérifiée par le hub (claude.ai et le SDK restent unsigned) : l'identité repose d'abord sur le jeton |
+| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; l'expéditeur est posé par le hub, jamais par le client ; aucun message n'est signé (sig="unsigned" partout) : l'identité repose sur le jeton et sur le hub. Le from de l'enveloppe n'est qu'un nom affiché, qu'un pair peut copier sur celui d'un coéquipier (voir « Expéditeur ») |
 | Boucles de réponses | Deux agents se répondent sans fin | Compteur hop, limites de débit, fil mis en sourdine après 5 messages d'agents d'affilée, verdict de l'orchestrateur, alerte (scénario 8) |
 | Compte compromis, départ d'un membre | Jeton volé, ancien collègue | Révocation immédiate des jetons et des flux, cache d'autorisation de 5 s au plus, interrupteur d'arrêt, audit (scénario 6) |
-| Appareil inconnu | Un jeton sert depuis une machine jamais vue | Agent en quarantaine : il ne reçoit que les messages qui lui sont adressés, envoie des notes, des questions et des réponses, et ne pose ni réservation, ni demande, ni relais, ni mémoire, jusqu'à la confirmation de son propriétaire |
+| Appareil inconnu | Un jeton sert depuis une machine jamais vue | Non implémenté : le hub ne reconnaît aucun appareil, et un jeton volé sert depuis n'importe quelle machine, dans la portée du jeton, jusqu'à sa révocation ou son expiration. La quarantaine est manuelle : la personne y met ses agents, un administrateur ceux de tout le monde, et seul un administrateur la lève ; elle couvre tous les agents de la personne. Elle ne limite que les écritures (autorisé : notes, questions, réponses ; refusé : réservation, tâche, statut, demande, relais, mémoire, session déléguée) ; les lectures restent celles d'un membre : messages de la personne, team_overview, task_list, task_get, memory_search |
 | Hub indiscret ou compromis | Accès à la base | Chiffrement au repos ; journal chaîné avec points de contrôle signés ; hébergement dans l'UE en option ; chiffrement de bout en bout facultatif des corps de messages en phase 3 |
 | Exfiltration par références ou pièces jointes | Un chemin sensible partagé par erreur | Liste d'exclusion de chemins (.env*, *.pem, .git/) ; le hub ne lit jamais de fichier ; 5 pièces jointes de 256 Ko au plus |
 | Déni de service | Inondation de messages | Limites de débit par agent et par équipe, tailles maximales, quotas |
-| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), détection d'usage anormal (nouvel appareil, rafale) |
+| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), limites de débit ; aucune détection d'usage anormal (nouvel appareil, rafale) : une rafale est refusée (E_RATE_LIMITED) sans alerte, et le jeton reste valide jusqu'à sa révocation |
 | Chaîne d'approvisionnement | Dépendance ou plugin piégé | Versions épinglées, provenance npm, inventaire logiciel, contrôle des licences ; hooks minimaux, sans eval et sans autre hôte que le hub |
 
 ### Enveloppe des messages de pairs
@@ -797,7 +796,7 @@ Tout texte long venu d'un pair arrive dans cette enveloppe, que ce soit par un h
 
 ```
 <peer_message id="msg_01JC4Z8Q2M7K" from="Léa" agent="agt_01JC4Z2E7Q" kind="question"
-  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="verified"
+  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="unsigned"
   flags="" trust="untrusted-peer">
 Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 </peer_message>
@@ -809,7 +808,8 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 | Taille | 8 Ko au plus, comme le corps d'un message ; au-delà, un relais est coupé avec un renvoi vers msg_… |
 | Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link |
 | Auteur | human marque un texte écrit depuis la console, agent un texte écrit par un agent ; même human ne vaut pas consigne : seule la personne devant son terminal commande à son agent |
-| Signature | La valeur sig indique verified, unsigned ou invalid ; un message invalid n'est jamais livré |
+| Expéditeur | Dans les messages de personnes, from est le nom affiché de la personne, coupé à 40 caractères : chacun change le sien dans la console (60 caractères au plus, sans contrôle d'unicité), ce n'est pas son @pseudo et il peut imiter un coéquipier. Les ponts et le contexte du hub portent un nom fixe : GitHub ou Slack pour un pont, team pour l'activité de l'équipe et les textes de pairs qui ne sont pas des messages (titres, statuts, noms). agent est l'identifiant de l'agent émetteur, posé par le hub : d'après le jeton, ou l'agent du pont pour un pont ; vide pour un texte écrit depuis la console et pour le contexte du hub |
+| Signature | Non implémentée : aucun message n'est signé et sig vaut toujours unsigned |
 
 Un message de pair ne peut jamais approuver une invite de permission, modifier des réglages, CLAUDE.md ou des hooks, lancer une commande slash, ni désactiver CodeTgh. Claude Code applique déjà ces règles aux messages entre sessions. Sa documentation de sécurité ne couvre pas, en revanche, le texte injecté par un hook ou renvoyé par un outil MCP : l'enveloppe est donc une convention de CodeTgh, pas une garantie. La défense finale reste le système de permissions de Claude Code, que le plugin ne contourne jamais : le hook PreToolUse répond ask ou deny, ou ne répond rien, jamais allow, qui supprimerait l'invite de permission.
 
@@ -862,11 +862,11 @@ Le lanceur démarre `claude remote-control --name "CodeTgh · <dossier>"` dans l
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
 - Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer. Tant qu'une session de la personne est déléguée, aucune de ses sessions ne le pose (E_DELEGATE_CHAIN) : la demande d'un pair n'atteint jamais le runner.
 - Une tâche est prête quand elle est `todo`, dans ce projet, et que chacune de ses dépendances est `done`, ou en `review` avec une PR (empilement).
-- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`, ou en `review` si elle a une PR. Le runner garde un identifiant stable (`~/.config/codetgh/runner-id`) : redémarré, il reprend ses propres baux. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ».
+- Le runner la prend par un bail de 10 minutes, atomique : de deux runners, un seul gagne. Il renouvelle le bail tant qu'il travaille ; un bail expiré remet la tâche en `todo`, ou en `review` si elle a une PR. Le runner garde un identifiant stable (`~/.config/codetgh/runner-id`) : redémarré, il reprend ses propres baux. Seul le détenteur du bail change la tâche, en suivant les transitions de statut de « Tâches et relais ». Un humain qui change le statut d'une tâche tenue lui retire son bail : le renouvellement suivant échoue et le runner arrête l'agent. Un bail ne se renouvelle et ne se reprend que sur une tâche `claimed`, `in_progress` ou `review`, avant son expiration.
 - Le prompt est fixé par CodeTgh. Le titre et le corps de la tâche y entrent comme données, dans l'enveloppe <peer_message>.
-- La revue prend une tâche en `review` avec une PR et moins de 3 tours, par un bail qui la laisse en `review`. Un agent neuf la relit sans outil d'écriture, sans commit, push, fusion ni revue postée ; le runner poste la revue et suit le verdict. Le runner ne passe jamais une tâche en `done` : c'est la fusion qui le fait. Une PR approuvée (`approved`) n'est plus relue, sauf si un ré-empilement change son code.
+- La revue prend une tâche en `review` avec une PR et moins de 3 tours, par un bail qui la laisse en `review`. Un agent neuf la relit sans outil d'écriture, sans commit, push, fusion ni revue postée ; le runner poste la revue et suit le verdict. Il ne relit que si son worktree est à la pointe de la PR, selon `origin/codetgh/<tâche>` et selon le `headRefOid` de `gh pr view` : un commit poussé par un autre, ou par « Update branch » de GitHub, bloque la tâche. `codetgh run retry` seul retrouverait le même worktree : le propriétaire le supprime d'abord, et la passe suivante le refait depuis la pointe de la PR et relit celle-ci. La fusion automatique passe `--match-head-commit` avec le commit relu. Avant que gh agisse sur le numéro de PR que donne le hub (revue, fusion, changement de base), `gh pr view` doit montrer la PR de la tâche : sur sa branche `codetgh/<tâche>`, dans ce dépôt, pas depuis un fork ; sinon la tâche passe `blocked`. Repris au milieu d'une correction après un redémarrage, l'auteur ne reçoit que la dernière revue du relecteur du runner, gardée sur la machine à côté du worktree, jamais un commentaire de la PR ; sans elle, la tâche passe `blocked`. Le runner ne passe jamais une tâche en `done` : c'est la fusion qui le fait. Une PR approuvée (`approved`) n'est plus relue, sauf si un ré-empilement change son code.
 - Le lien avec GitHub passe par le pont GitHub du hub, signé par HMAC, en métadonnées seulement. Un événement `pull_request` du dépôt du projet dont le numéro et la branche `codetgh/<tâche>` sont ceux d'une tâche du runner est retenu s'il est plus récent, selon la date de GitHub (`closed_at` ou `updated_at`), que le dernier retenu pour cette tâche ; sinon il est ignoré, une livraison rejouée ou en retard comprise. Un `closed` ne déplace la tâche que depuis `review` ou `in_progress` : fusionnée, elle passe `done` avec la note « merged » ; fermée sans fusion, `blocked` avec la note « PR closed without merge ». Une tâche `done` ne change plus ; une réouverture ne rétablit rien, le propriétaire relance par `codetgh run retry`. C'est le hub qui la déplace, hors des transitions de « Tâches et relais », car la fusion est un fait constaté sur GitHub ; l'audit garde la tâche, le numéro de PR, le type d'événement, l'identifiant de livraison et l'empreinte du corps, jamais le corps.
-- Ré-empilement, à chaque passe, pour une tâche en `review` dont la PR est empilée sur la branche d'un parent. Parent fusionné : la PR passe sur la branche par défaut (`gh pr edit --base`, ou l'API REST si `gh pr edit` échoue), puis `git rebase --onto origin/<branche par défaut> <base notée>` dans son worktree. Parent avec de nouveaux commits : le même rebase sur la nouvelle pointe du parent. La base notée est le commit de départ du worktree, gardé en local. Le runner prend un bail `restack`, le verrou de la tâche, contrôle la configuration git avant de pousser, et pousse avec `--force-with-lease` sur la seule branche `codetgh/<tâche>` de la tâche, qui est la sienne : c'est le seul push forcé du runner. Un conflit annule le rebase (`git rebase --abort`), ne pousse rien et passe la tâche `blocked` avec la raison fixe « restack conflict ». Le ré-empilement ne compte pas de tour de revue ; s'il a changé le code, `approved` repasse à faux et la phase de revue relit la PR une fois. Rien n'est ré-empilé ni nettoyé dans un projet en quarantaine. Une tâche `done` perd son worktree, sa branche locale, son verrou et sa base notée, jamais un fichier `.quarantine`.
+- Ré-empilement, à chaque passe, pour une tâche en `review` dont la PR est empilée sur la branche d'un parent. Parent fusionné : la PR passe sur la branche par défaut (`gh pr edit --base`, ou l'API REST si `gh pr edit` échoue), puis `git rebase --onto origin/<branche par défaut> <base notée>` dans son worktree. Parent avec de nouveaux commits : le même rebase sur la nouvelle pointe du parent. La base notée est le commit de départ du worktree, gardé en local. Le runner prend un bail `restack`, le verrou de la tâche, contrôle la configuration git avant de pousser, et pousse avec `--force-with-lease` sur la seule branche `codetgh/<tâche>` de la tâche, qui est la sienne : c'est le seul push forcé du runner. Un conflit annule le rebase (`git rebase --abort`), ne pousse rien et passe la tâche `blocked` avec la raison fixe « restack conflict ». Le ré-empilement ne compte pas de tour de revue ; s'il a changé le code, `approved` repasse à faux et la phase de revue relit la PR une fois. Rien n'est ré-empilé ni nettoyé dans un projet en quarantaine. Une tâche `done` perd son worktree, sa branche locale, son verrou, sa base notée et sa dernière revue, jamais un fichier `.quarantine`.
 - `codetgh run status` montre au propriétaire, par projet, les tâches prêtes, en attente, en cours, en revue (PR et tour), bloquées (un code de raison, jamais le texte d'une note) et finies depuis 24 h. `codetgh run retry <tâche>` remet une tâche `blocked` du runner en `todo`, sans bail, sans assigné et à 0 tour ; il refuse tant qu'un `.quarantine` existe pour ce projet sur la machine. Une tâche relancée qui a une PR retourne en `review`.
 - Chaque agent, auteur ou relecteur, tourne dans un conteneur Docker jetable (`isolation: "docker"`, le défaut de `runner.json`). Avec `isolation: "none"`, il tourne sous l'utilisateur du runner, avec les règles deny et le hook Bash des sessions déléguées, et le runner l'annonce d'un avertissement à chaque démarrage.
 - Les agents tournent en mode `auto`, ou en `bypassPermissions` seulement si `runner.json` le dit et que l'isolation est `docker`.
@@ -932,7 +932,7 @@ Le contrôle s'applique deux fois : sur le poste, par le hook PreToolUse des out
 | Contenu des fichiers du dépôt | Non, hors pièces jointes explicites | Durée des messages |
 | Identifiants Anthropic, clés d'API | Jamais | Sans objet |
 | Jetons CodeTgh | Hachés (SHA-256) sur le hub, trousseau sur le poste | Expiration à 90 jours |
-| Adresses IP et appareils | Oui, pour détecter l'usage anormal | 30 jours |
+| Adresses IP et appareils | Pas pour détecter un usage anormal, qui n'est pas implémenté : seules les sessions de connexion web gardent l'adresse et le navigateur (better-auth) | Aucune purge propre : jusqu'à la déconnexion, la révocation ou l'effacement de la personne |
 | Usage du forfait Claude (pourcentage entier et heure de remise des fenêtres 5 h et 7 jours) | Oui, le dernier relevé par personne | Remplacé à chaque relevé |
 
 Chaque personne peut exporter ses données en JSON et demander leur effacement : ses messages sont supprimés ou rendus anonymes (« ancien membre »), et le lien entre son nom et ses identifiants d'audit est coupé sans rompre la chaîne. Ses notes de tâche (dont celles de reprise) deviennent « [erased] ». La raison de blocage (`blocked_reason`) et le tag `verify` n'ont pas d'auteur propre : ils sont effacés sur les tâches que la personne a créées ou qui lui étaient assignées, et le tag aussi sur celles où elle l'a posé (`verify_set_by`) ; l'export les contient pour ces mêmes tâches. L'hébergement dans l'UE est une option du service hébergé ; en auto-hébergement, l'équipe n'a aucun sous-traitant à déclarer pour CodeTgh.
@@ -965,24 +965,24 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | --- | --- | --- | --- |
 | Connexion et invitation | Se connecter par GitHub, Google ou lien magique ; accepter une invitation. Une personne qui a déjà un compte rejoint l'équipe seulement en ouvrant le lien et en cliquant « Rejoindre » (POST protégé par CSRF) : l'invitation doit être en attente, adressée à son e-mail vérifié, et sert une seule fois ; se connecter ne fait rejoindre aucune équipe. Un membre révoqué revient seulement par une invitation créée après sa révocation, avec le rôle qu'elle donne | Public | 1 |
 | Tableau de bord | Voir la présence, ce qui demande une décision, l'activité récente et l'état de l'interrupteur | Invité (vue limitée) | 1 |
-| Fils | Lire un fil, répondre en tant qu'humain (authored_by à human), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre ; un invité : les fils où il est invité (voir Rôles) | 1 |
-| Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
-| Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents), administrateur (tous) ; un invité voit ses agents, peut les mettre en quarantaine ou les retirer, jamais les confirmer | 1 |
+| Fils | Lire un fil, répondre en tant qu'humain (authored_by à human ; le formulaire n'apparaît que là où la réponse peut aboutir : ni dans le message direct d'autrui, ni dans un fil chiffré), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre ; un invité : les fils où il est invité (voir Rôles) | 1 |
+| Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, journal d'audit altéré ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
+| Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents, sauf confirmer), administrateur (tous ; lui seul lève une quarantaine) ; un invité voit ses agents, peut les mettre en quarantaine ou les retirer, jamais les confirmer | 1 |
 | Projets | Voir les sessions de chaque membre par projet ; « Sessions hors projet » : les sessions lancées hors d'un dépôt lié (sans agents système bridge et a2a ni agent REST cli-…), à rattacher à un projet (audit agent.project_set) | Membre (lecture, rattacher ses sessions), administrateur (rattacher toutes) ; jamais un invité | 2 |
-| Filtre de projet | Sur Fils, Tâches, Projets et Agents, `?project=<id>` (un projet de l'équipe) ou `none` (hors projet) filtre la page ; sans filtre, chaque élément est rangé sous le titre de son projet, « Hors projet » en dernier ; un identifiant inconnu ou d'une autre équipe est ignoré ; les liens de la console gardent le filtre, pages de détail comprises ; le dernier choix reste dans un cookie du navigateur (HttpOnly, SameSite=Lax), qu'un `?project=` explicite remplace et que « Tous les projets » efface ; un invité ne voit jamais la liste des projets ; team_overview et la ligne d'activité du SessionStart nomment le projet de chaque agent, ceux du projet de la session en premier | Comme la page filtrée | 3 |
+| Filtre de projet | Sur Fils, Tâches, Projets et Agents, `?project=<id>` (un projet de l'équipe) ou `none` (hors projet) filtre la page ; sans filtre, chaque élément est rangé sous le titre de son projet, « Hors projet » en dernier ; un identifiant inconnu ou d'une autre équipe est ignoré ; les liens de la console gardent le filtre, pages de détail comprises, et ceux du filtre gardent l'onglet Archives ; le dernier choix reste dans un cookie du navigateur (HttpOnly, SameSite=Lax), qu'un `?project=` explicite remplace et que « Tous les projets » efface ; un invité ne voit jamais la liste des projets, ni leurs noms en titres de sa liste de fils ; team_overview et la ligne d'activité du SessionStart nomment le projet de chaque agent, ceux du projet de la session en premier | Comme la page filtrée | 3 |
 | Délégations | Voir les sessions déléguées, leur projet et les expéditeurs acceptés ; « Couper » retire le mode et fait expirer les demandes non traitées | Membre (ses sessions), administrateur (toutes) | 3 |
 | Jetons | Créer, renouveler et révoquer ses jetons personnels (portée agent) ; la valeur ne s'affiche qu'une fois | Membre ; un invité obtient son jeton par la connexion dans le navigateur | 1 |
 | Connexion d'un terminal (/console/device) | Taper le code affiché par codetgh setup ou codetgh login, voir le nom de la machine, approuver ou refuser ; l'approbation crée un jeton personnel pour la personne connectée, dans son équipe | Invité | 1 |
-| Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle, révoquer ; un membre système (agent externe a2a, pont bridge), reconnu au type de son agent et non à son pseudo, garde son pseudo et son rôle | Administrateur | 1 |
+| Membres et invitations | Inviter par e-mail ou par lien valable 7 jours, choisir le rôle, changer le rôle ou le pseudo, révoquer ; seul un propriétaire change le pseudo ou le rôle d'un propriétaire, ou le révoque, et il l'est encore au moment de l'écriture (verrou des propriétaires) ; un changement de rôle coupe les flux de la personne, qui se reconnectent avec le nouveau rôle ; un membre système (agent externe a2a, pont bridge), reconnu au type de son agent et non à son pseudo, garde son pseudo et son rôle | Administrateur | 1 |
 | Interrupteur d'arrêt | Couper puis rétablir le trafic des agents, avec un motif obligatoire | Administrateur | 1 |
 | Audit | Parcourir et filtrer les événements ; vérifier la chaîne ; exporter en JSON | Administrateur | 1 (liste), 2 (vérification, export) |
 | Réglages | Phase 1 : rétention, motifs de secrets. Phase 2 : claims.enforcement, memory.accept_by, memory.accept_via_mcp, push.allowed_modes, auto_link_projects | Administrateur | 1 et 2 |
 | Réservations | Voir les réservations actives, leur détenteur et leur durée ; en libérer une | Membre (lecture), administrateur (libération) | 2 |
 | Tâches | Voir le tableau par statut ; créer, assigner, suivre l'historique | Membre | 2 |
 | Mémoire | Lire, chercher, épingler ; accepter ou rejeter les éléments proposed en les comparant à la version remplacée | Selon memory.accept_by | 2 |
-| Mes données | Exporter ses données en JSON ; demander leur effacement | Tout membre | 2 |
+| Mes données | Exporter ses données en JSON (audit member.data_exported) ; demander leur effacement ; lier son compte Slack (audit slack.link_code_created, puis slack.linked) | Tout membre | 2 |
 
-Les messages directs ne s'affichent que pour leurs deux participants. Un administrateur peut les ouvrir, et chaque ouverture ajoute un événement à l'audit.
+Les messages directs ne s'affichent que pour leurs deux participants. Un administrateur peut les ouvrir, et chaque ouverture ajoute un événement à l'audit ; la liste des fils ne lui en montre pas le sujet, et il n'y répond pas.
 
 ### Tableau de bord
 
@@ -1008,7 +1008,7 @@ Les messages directs ne s'affichent que pour leurs deux participants. Un adminis
 
 | Sujet | Règle |
 | --- | --- |
-| Session | Cookie HttpOnly, Secure, SameSite=Lax, durée de 12 h glissantes ; la révocation d'un membre ferme ses sessions |
+| Session | Cookie HttpOnly, Secure, SameSite=Lax, durée de 12 h glissantes ; la révocation d'un membre ferme ses sessions ; sans session, une requête htmx reçoit 204 et HX-Redirect vers /login au lieu d'une redirection 302 |
 | CSRF | Jeton lié à la session sur chaque requête qui modifie, envoyé par htmx dans l'en-tête X-CSRF-Token |
 | CSP | default-src 'self', aucun script en ligne ; htmx est servi par le hub et configuré sans eval, sans balises script et sans styles injectés |
 | Contenu des agents | Texte échappé, jamais de HTML ; les liens deviennent du texte avec leur hôte affiché ; les images distantes sont bloquées |
@@ -1093,7 +1093,7 @@ pnpm build       hub, CLI, hook.js et plugin
 | Variable | Rôle | Défaut |
 | --- | --- | --- |
 | CODETGH_PUBLIC_URL | Adresse publique : émetteur OAuth, ressource MCP, liens d'invitation | Obligatoire |
-| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les sessions, chiffre les champs sensibles | Obligatoire |
+| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les cookies de session, chiffre la clé de signature OAuth (table jwks), dérive les jetons CSRF de la console, les secrets des webhooks GitHub, les empreintes des secrets autorisés et, sans CODETGH_AUDIT_KEY, la clé des points de contrôle d'audit ; rotation : docs/DEPLOY.md | Obligatoire |
 | DATABASE_URL | Chaîne de connexion Postgres ; absente, le hub utilise PGlite | PGlite |
 | CODETGH_DATA_DIR | Dossier de PGlite et des pièces jointes | ./data |
 | PORT | Port d'écoute HTTP | 8787 |
@@ -1129,25 +1129,46 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | Léger | Essai ou petit groupe | Un conteneur, PGlite, volume data/ | Un seul processus ; tenue en charge et LISTEN/NOTIFY à valider en phase 0 |
 | Hébergé (après la v1) | Équipes sans serveur | Plusieurs réplicas sans état, Postgres géré, région UE en option | Les réplicas se préviennent par LISTEN/NOTIFY |
 
+Extrait de deploy/compose.yaml, qui fait foi (variables facultatives, bot Discord) : le hub n'est publié que sur 127.0.0.1, derrière le proxy TLS, et Postgres n'a aucun port.
+
 ```
 services:
   hub:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     environment:
       CODETGH_PUBLIC_URL: https://codetgh.example.com
       DATABASE_URL: postgres://codetgh:${POSTGRES_PASSWORD}@db:5432/codetgh
       CODETGH_SECRET: ${CODETGH_SECRET}
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.5
+    pids_limit: 256
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
   db:
-    image: postgres:17
+    image: postgres:17.11-bookworm
     environment:
       POSTGRES_USER: codetgh
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: codetgh
+    user: "999:999"
+    read_only: true
+    tmpfs: [/tmp, /var/run/postgresql]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -1164,7 +1185,7 @@ volumes:
 | Migrations | Appliquées au démarrage sous verrou consultatif Postgres ; chacune reste compatible avec la version précédente du hub |
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |
-| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; rotation documentée |
+| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; la rotation de CODETGH_SECRET (docs/DEPLOY.md) oblige à se reconnecter à la console, à recréer les webhooks GitHub et à réautoriser les empreintes ; le connecteur OAuth obtient un nouveau jeton d'accès par son jeton de rafraîchissement, et se reconnecte s'il ne rafraîchit pas ; elle fixe d'abord CODETGH_AUDIT_KEY à la graine dérivée de l'ancien secret : sinon plus aucun point de contrôle d'audit n'est signé ni vérifié |
 | Image | Construction en plusieurs étapes, utilisateur non root, système de fichiers en lecture seule sauf data/ |
 
 ### Observabilité
@@ -1421,7 +1442,7 @@ La spec retient une hypothèse pour chaque question. L'humain tranche avant la p
 | Relais (handoff) | Passage d'une tâche à un collègue, avec une capsule de contexte |
 | hop | Nombre de messages d'agents consécutifs dans un fil, sans intervention humaine ; au-delà de 6, le fil est mis en sourdine |
 | Enveloppe | Balise <peer_message> qui marque un texte comme venu d'un pair |
-| Quarantaine | État d'un agent inconnu : il ne reçoit que ses propres messages et n'envoie que des notes, des questions et des réponses : ni réservation, ni demande, ni relais, ni mémoire |
+| Quarantaine | État que la personne ou un administrateur pose à la main sur tous les agents d'une personne (jamais automatique, sauf pour un agent A2A externe), levé par un administrateur seul : ils n'envoient que des notes, des questions et des réponses, ni réservation, ni demande, ni relais, ni mémoire ; leurs lectures ne changent pas |
 | Spike | Essai court de bout en bout, pour lever un risque technique avant de construire |
 | CIMD | Client ID Metadata Document : le client OAuth se décrit par un document à une adresse, sans enregistrement préalable |
 | DCR | Dynamic Client Registration : le client s'enregistre lui-même auprès du serveur d'autorisation (RFC 7591) |

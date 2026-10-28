@@ -1,4 +1,4 @@
-import { escapeLine, renderPeerMessage, textFlags } from "@codetgh/guard";
+import { clean, escapeLine, escapeText, renderPeerMessage, textFlags } from "@codetgh/guard";
 import { shortAgentId } from "@codetgh/shared";
 import { projectNameText } from "@codetgh/shared/rest";
 import { and, count, eq, gt, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
@@ -183,6 +183,8 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     you: { handle: p.handle, agent: me?.id ?? null, ...(!opts.compact && { usage: ppl.get(p.user.id)?.usage ?? null }) },
     paused: p.paused,
     agents_paused: p.agentsPaused,
+    // The presence mod starts turns only while the team allows rewake: the member's own push_mode can outlive the setting.
+    push_allowed_modes: ["hooks", ...(p.settings.push_allowed_modes ?? []).filter((m) => m === "rewake")],
     people: [...byPerson, ...offline].flatMap(person),
     ...(!opts.compact && { claims: await liveClaims(db, p, { projectId, limit: opts.limit }) }),
     unread: unread.byKind,
@@ -268,10 +270,21 @@ export async function contextPacket(db: Db, p: Principal, me: Agent | null) {
       ? [`Your tasks: ${tasks.map((t) => `${t.id} (${t.status}) ${t.title.replace(/\s+/g, " ").slice(0, 60)}`).join("; ")}`]
       : []),
   ].join("\n");
-  // Cut the peer text before wrapping it, so the envelope always closes.
+  // Cut the peer text before wrapping it, on its length once escaped as the envelope writes it (" grows 6 times), so the
+  // packet keeps its budget and the envelope always closes.
   const hubText = hub.join("\n");
   const budget = MAX_CONTEXT_CHARS - attrs.length - hubText.length - 700;
-  const peerText = team.length > budget ? `${team.slice(0, budget)}\n[…]` : team;
+  const escaped = (text: string) => escapeText(clean(text)).length;
+  let peerText = team;
+  if (escaped(team) > budget) {
+    let [fit, over] = [0, team.length];
+    while (over - fit > 1) {
+      const mid = Math.floor((fit + over) / 2);
+      if (escaped(`${team.slice(0, mid)}\n[…]`) <= budget) fit = mid;
+      else over = mid;
+    }
+    peerText = `${team.slice(0, fit)}\n[…]`;
+  }
   const envelope = renderPeerMessage(
     {
       id: "team-activity",
