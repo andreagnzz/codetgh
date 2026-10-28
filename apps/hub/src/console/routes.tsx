@@ -529,19 +529,17 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .where(and(eq(thread.id, c.req.param("id") ?? ""), eq(thread.teamId, p.teamId)));
     if (!t) throw new HubError("E_NOT_FOUND", "thread not found");
     const participant = (await participantThreads(p)).some((r) => r.id === t.id);
-    // SPEC: an admin may open a direct thread they are not in, in full, and every opening is audited.
+    // SPEC: an admin may open a direct thread they are not in, in full, and every opening (the page, below) is audited.
     if (!participant) requireMember(p);
     const adminRead = t.kind === "direct" && !participant;
-    if (adminRead) {
-      requireAdmin(p);
-      await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
-    }
+    if (adminRead) requireAdmin(p);
     return { t, adminRead };
   };
 
   consoleApp.get("/threads/:id", async (c) => {
     const { t, adminRead } = await loadThread(c);
     const p = c.get("principal");
+    if (adminRead) await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
     const project = kept(c);
     const rows = await db
       .select({ message, name: user.name })
@@ -586,12 +584,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
-        <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
-          <label>
-            Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
-          </label>
-          <button type="submit">Send</button>
-        </form>
+        {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
+        {!adminRead && !t.encrypted && (
+          <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
+            <label>
+              Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
+            </label>
+            <button type="submit">Send</button>
+          </form>
+        )}
         {t.mutedAt ? (
           <Action post={`/console/threads/${t.id}/reopen`} label="Reopen" />
         ) : (
@@ -603,7 +604,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // A human reply carries authored_by=human, resets the agent streak and reopens a muted thread.
   consoleApp.post("/threads/:id/reply", async (c) => {
-    const { t } = await loadThread(c);
+    const { t, adminRead } = await loadThread(c);
+    if (adminRead) throw new HubError("E_FORBIDDEN", "only participants reply to a direct thread");
     const body = (await form(c)).body ?? "";
     await sendMessage(
       messaging,

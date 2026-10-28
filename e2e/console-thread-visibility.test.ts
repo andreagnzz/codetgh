@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { auditEvent, message } from "../apps/hub/src/db/schema.js";
+import { auditEvent, message, thread } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { consolePost } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -73,6 +74,33 @@ it("lists someone else's direct thread to an admin without its subject, which on
   expect(await threadPage(team.lea.cookie, sent.thread)).toContain("Perf review for Lea");
   expect(await reads()).toHaveLength(1);
   await sam.close();
+});
+
+it("offers the reply form only where a reply can succeed, and logs no admin read for a reply or a mute", async () => {
+  const sam = await mcpClient(hub.url, team.sam.token);
+  const sent = JSON.parse(
+    (await call(sam, "send_message", { to: "@malik", kind: "note", body: "Sam to Malik only", allow_offline: true })).text,
+  );
+  await sam.close();
+  const reads = () =>
+    hub.db
+      .select()
+      .from(auditEvent)
+      .where(and(eq(auditEvent.action, "thread.read_by_admin"), eq(auditEvent.subjectId, sent.thread)));
+  const admin = await threadPage(team.lea.cookie, sent.thread);
+  expect(admin).toContain("Sam to Malik only");
+  expect(admin).not.toContain("reply-body");
+  expect(await reads()).toHaveLength(1);
+  const reply = await consolePost(hub.url, team.lea.cookie, `/console/threads/${sent.thread}/reply`, { body: "Lea joins in" });
+  expect(reply.status).toBe(403);
+  expect(await reply.text()).toContain("only participants reply to a direct thread");
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/threads/${sent.thread}/mute`)).status).toBe(204);
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/threads/${sent.thread}/reopen`)).status).toBe(204);
+  expect(await reads()).toHaveLength(1);
+  expect(await threadPage(team.malik.cookie, sent.thread)).toContain("reply-body");
+  // The console sends plain text, which an end-to-end encrypted thread refuses.
+  await hub.db.update(thread).set({ encrypted: true }).where(eq(thread.id, sent.thread));
+  expect(await threadPage(team.malik.cookie, sent.thread)).not.toContain("reply-body");
 });
 
 const dashboard = async (cookie: string) => (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
