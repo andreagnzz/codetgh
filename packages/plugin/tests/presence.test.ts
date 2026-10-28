@@ -250,6 +250,22 @@ test(
 );
 
 test(
+  "rewake mode: a subagent's or teammate's turn starting while the main loop is idle leaves the session idle",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({});
+    const s = stubs(on, () => ok(reply));
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    await $.turn.start({ text: "", turnId: "s1", agentId: "sub-1" });
+    reply = body({ note: 1 });
+    await s.clock.advance(60 * MIN);
+    expect(s.submitted).toEqual([WAKE(1)]);
+  },
+);
+
+test(
   "hooks mode: never starts a turn, for unread or for a usage limit, but still tells the team at 100 %",
   { options: OPTIONS, timeoutMs: 15_000 },
   async ($, on) => {

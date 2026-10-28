@@ -167,7 +167,8 @@ export const register: Register = (on, options) => {
     return next(e);
   });
   on("turn.start", async (_$, e, next) => {
-    idleSince = undefined;
+    // A subagent's or teammate's turn (agentId) leaves the main loop as it was, as at turn.complete.
+    if (e.agentId === undefined) idleSince = undefined;
     return next(e);
   });
   on("turn.complete", async ($, e, next) => {
