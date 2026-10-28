@@ -60,13 +60,27 @@ describe("console", () => {
     expect(await (await fetch(`${hub.url}/invite/nope`)).text()).toContain("no longer valid");
   });
 
-  it("refuses secret patterns that could hang the hub", async () => {
-    const res = await post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), {
-      retention_days: "90",
-      secret_patterns: "(a+)+$",
-    });
-    expect(res.status).toBe(400);
-  });
+  // A repeated group that holds a quantifier or an alternation backtracks exponentially, at any depth.
+  it.each(["(a+)+$", "((a+))+$", "((\\w+)\\s?)+$", "(?:a|aa)+$", "((a)+)*b", "(\\d*x?){3,}y"])(
+    "refuses the secret pattern %s, which could hang the hub",
+    async (pattern) => {
+      const res = await post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), {
+        retention_days: "90",
+        secret_patterns: pattern,
+      });
+      expect(res.status).toBe(400);
+    },
+  );
+
+  it.each(["ACME-[0-9]{6}", "(ghp|gho)_[A-Za-z0-9]{36}", "key=[(+*)]+", "\\(a+\\)+", "(?:sk|pk)-\\w+"])(
+    "keeps the secret pattern %s",
+    async (pattern) => {
+      const save = async (secret_patterns: string) =>
+        post("/console/settings", team.lea.cookie, await csrf(hub.url, team.lea.cookie), { retention_days: "90", secret_patterns });
+      expect((await save(pattern)).status).toBe(204);
+      await save("");
+    },
+  );
 
   it("offers and stores no strict mode, a setting that did nothing", async () => {
     const html = await (await fetch(`${hub.url}/console/settings`, { headers: { cookie: team.lea.cookie } })).text();
