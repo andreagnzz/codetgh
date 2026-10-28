@@ -1187,15 +1187,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
           rows={rows.map((r) => [
             r.name,
-            <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
-              <label>
-                <span class="sr-only">{_("Handle")}</span>@
-                <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
-              </label>
-              <button type="submit" class="quiet">
-                {_("Rename")}
-              </button>
-            </form>,
+            // Only an owner renames an owner.
+            r.membership.role === "owner" && p.role !== "owner" ? (
+              `@${r.membership.handle}`
+            ) : (
+              <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
+                <label>
+                  <span class="sr-only">{_("Handle")}</span>@
+                  <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
+                </label>
+                <button type="submit" class="quiet">
+                  {_("Rename")}
+                </button>
+              </form>
+            ),
             r.email,
             <Pill>{_(r.membership.role)}</Pill>,
             r.membership.userId !== p.user.id && (

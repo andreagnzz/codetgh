@@ -152,10 +152,12 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
   if (RESERVED_HANDLE.test(handle)) throw new HubError("E_INVALID", "handles starting with bridge- or a2a- are reserved");
   await db.transaction(async (tx) => {
     const [m] = await tx
-      .select({ userId: membership.userId, handle: membership.handle })
+      .select({ userId: membership.userId, handle: membership.handle, role: membership.role })
       .from(membership)
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)));
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
+    // As for roles: an admin who renamed an owner could take the handle, and the messages addressed to it.
+    if (m.role === "owner" && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes an owner's handle");
     await requireHumanMember(tx, p.teamId, m.userId);
     const [taken] = await tx
       .select({ id: membership.id })

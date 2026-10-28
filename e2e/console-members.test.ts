@@ -63,6 +63,24 @@ describe("members", () => {
     expect(after?.handle).toBe("samuel");
   });
 
+  it("keeps an owner's handle from an admin, who could otherwise take it and receive the owner's messages", async () => {
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const [lea] = await hub.db.select().from(membership).where(eq(membership.userId, team.lea.userId));
+    const path = `/console/members/${lea?.id}/handle`;
+    expect((await consolePost(hub.url, team.sam.cookie, path, { handle: "lea-old" })).status).toBe(403);
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, lea?.id ?? ""));
+    expect(after?.handle).toBe("lea");
+    const page = await (await fetch(`${hub.url}/console/members`, { headers: { cookie: team.sam.cookie } })).text();
+    expect(page).not.toContain(`hx-post="${path}"`);
+    expect(await (await fetch(`${hub.url}/console/members`, { headers: { cookie: team.lea.cookie } })).text()).toContain(
+      `hx-post="${path}"`,
+    );
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+  });
+
   it("moves the loop orchestrator setting along when its member gets a new handle", async () => {
     await hub.db
       .update(teamTable)
