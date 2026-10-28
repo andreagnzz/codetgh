@@ -75,9 +75,11 @@ function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "sc
     return a.scope === b.scope;
   if (a.scopeType === "path") return covers(b, a.scope);
   if (b.scopeType === "path") return covers(a, b.scope);
-  // shortcut: glob against glob compares the static bases only; exact overlap needs a glob intersection algorithm.
+  // shortcut: glob against glob compares the static bases only, folder by folder (packages/ui is not under
+  // packages/ui-kit); exact overlap needs a glob intersection algorithm. An empty base is under everything.
   const [x, y] = [picomatch.scan(a.scope).base, picomatch.scan(b.scope).base];
-  return x.startsWith(y) || y.startsWith(x);
+  const under = (s: string, base: string) => base === "" || s === base || s.startsWith(`${base}/`);
+  return under(x, y) || under(y, x);
 }
 
 const minutesLeft = (c: Claim) => Math.max(0, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000));

@@ -121,6 +121,18 @@ describe("claims", () => {
     await lea.close();
   });
 
+  it("compares two globs by folder: packages/ui/** and packages/ui-kit/** do not overlap", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const sam = await mcpClient(hub.url, team.sam.token);
+    expect((await call(lea, "claim", { agent: sessions.lea, scope: ["packages/ui/**"] })).isError).toBe(false);
+    expect((await call(sam, "claim", { agent: sessions.sam, scope: ["packages/ui-kit/**"] })).isError).toBe(false);
+    expect(code(await call(sam, "claim", { agent: sessions.sam, scope: ["packages/ui/button/**"] }))).toBe("E_CLAIM_CONFLICT");
+    expect(code(await call(sam, "claim", { agent: sessions.sam, scope: ["packages/**"] }))).toBe("E_CLAIM_CONFLICT");
+    await call(sam, "claim_release", { agent: sessions.sam, all_mine: true });
+    await lea.close();
+    await sam.close();
+  });
+
   it("puts a 10-minute intent claim on a free file, renews it, and warns others", async () => {
     expect((await preEdit(team.malik.token, "malik-claims", "lib/date.ts")).status).toBe(204);
     const onFile = async () => (await active(sessions.malik ?? "")).filter((c) => c.scope === "lib/date.ts");
