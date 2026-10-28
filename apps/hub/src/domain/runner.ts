@@ -39,6 +39,9 @@ const ready = (p: Principal) =>
     projectOn,
   );
 const unleased = () => or(isNull(task.leaseUntil), lt(task.leaseUntil, new Date()));
+// A lease that still holds: unexpired, on a task the runner may still work on.
+const held = (owner: string) =>
+  and(eq(task.leaseOwner, owner), gt(task.leaseUntil, new Date()), inArray(task.status, ["claimed", "in_progress", "review"]));
 // For the runner's restack: a PR in review, approved or not, and no runner on it.
 const restackable = (p: Principal) =>
   and(
@@ -204,7 +207,7 @@ export async function runnerLeases(db: Db, p: Principal, owner: string) {
   const rows = await db
     .select()
     .from(task)
-    .where(and(eq(task.teamId, p.teamId), eq(task.leaseOwner, owner), gt(task.leaseUntil, new Date())))
+    .where(and(eq(task.teamId, p.teamId), held(owner)))
     .orderBy(asc(task.createdAt))
     .limit(50);
   return { leases: await Promise.all(rows.map((t) => leaseView(db, p, t))) };
@@ -215,7 +218,7 @@ export async function renewLease(db: Db, p: Principal, taskId: string, owner: st
   const [t] = await db
     .update(task)
     .set({ leaseUntil: new Date(Date.now() + LEASE_MS) })
-    .where(and(eq(task.id, taskId), eq(task.teamId, p.teamId), eq(task.leaseOwner, owner)))
+    .where(and(eq(task.id, taskId), eq(task.teamId, p.teamId), held(owner)))
     .returning({ leaseUntil: task.leaseUntil });
   if (!t?.leaseUntil) throw new HubError("E_VERSION_CONFLICT", `this runner no longer holds task ${taskId}: stop working on it`);
   return { lease_until: t.leaseUntil.toISOString() };

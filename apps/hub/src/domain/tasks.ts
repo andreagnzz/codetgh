@@ -296,6 +296,8 @@ export async function updateTask(
       .update(task)
       .set({
         ...(patch.status && { status: patch.status, blockedReason: patch.status === "blocked" ? (reason ?? null) : null }),
+        // A human move of a task a runner holds ends its lease: the runner's next renewal fails and stops its agent.
+        ...(patch.status && patch.status !== current.status && current.leaseOwner !== null && { leaseOwner: null, leaseUntil: null }),
         ...(patch.verify && {
           verifyTag: patch.verify === "none" ? null : patch.verify.tag,
           verifySetBy: patch.verify === "none" ? null : p.user.id,
