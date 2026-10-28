@@ -9,6 +9,7 @@ const body = (unread: Record<string, number>, team: Record<string, unknown> = {}
     you: { handle: "sam", agent: "a-me" },
     paused: false,
     agents_paused: false,
+    push_allowed_modes: ["hooks", "rewake"],
     people: [
       {
         handle: "lea",
@@ -209,6 +210,22 @@ test(
     n = 11;
     await s.clock.advance(30_000);
     expect(s.submitted.at(-1)).toBe(WAKE(11));
+  },
+);
+
+test(
+  "rewake mode: never starts a turn once the team no longer allows rewake, for unread or for a usage limit",
+  { options: { ...OPTIONS, push_mode: "rewake" } },
+  async ($, on) => {
+    const s = stubs(
+      on,
+      () => ok(body({ note: 3 }, { push_allowed_modes: ["hooks"] })),
+      () => [{ kind: "five_hour", percentUsed: 95, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    expect(s.submitted).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 3 unread");
   },
 );
 

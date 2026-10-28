@@ -183,6 +183,8 @@ export async function teamOverview(db: Db, p: Principal, me: Agent | null, opts:
     you: { handle: p.handle, agent: me?.id ?? null, ...(!opts.compact && { usage: ppl.get(p.user.id)?.usage ?? null }) },
     paused: p.paused,
     agents_paused: p.agentsPaused,
+    // The presence mod starts turns only while the team allows rewake: the member's own push_mode can outlive the setting.
+    push_allowed_modes: ["hooks", ...(p.settings.push_allowed_modes ?? []).filter((m) => m === "rewake")],
     people: [...byPerson, ...offline].flatMap(person),
     ...(!opts.compact && { claims: await liveClaims(db, p, { projectId, limit: opts.limit }) }),
     unread: unread.byKind,

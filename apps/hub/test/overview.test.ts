@@ -1,7 +1,7 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { and, eq, inArray, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, auditEvent, claim, project, user } from "../src/db/schema.js";
+import { agent, auditEvent, claim, project, team as teamTable, user } from "../src/db/schema.js";
 import { expireStaleSessions } from "../src/domain/agents.js";
 import { newId } from "../src/ids.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
@@ -222,5 +222,27 @@ describe("teammates' words", () => {
     expect(ov.trust).toMatch(/^untrusted-peer: /);
     const sam = person(ov, "sam");
     expect(sam?.flags).toEqual([]);
+  });
+});
+
+describe("GET /v1/status", () => {
+  it("says whether the team allows rewake, so the presence mod starts no turn the team turned off", async () => {
+    const modes = async () =>
+      (
+        (await (await fetch(`${hub.url}/v1/status`, { headers: { Authorization: `Bearer ${team.malik.token}` } })).json()) as {
+          push_allowed_modes: string[];
+        }
+      ).push_allowed_modes;
+    expect(await modes()).toEqual(["hooks", "rewake"]);
+    const [t] = await hub.db.select().from(teamTable).where(eq(teamTable.id, team.teamId));
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { ...t?.settings, push_allowed_modes: ["hooks"] } })
+      .where(eq(teamTable.id, team.teamId));
+    expect(await modes()).toEqual(["hooks"]);
+    await hub.db
+      .update(teamTable)
+      .set({ settings: t?.settings ?? {} })
+      .where(eq(teamTable.id, team.teamId));
   });
 });

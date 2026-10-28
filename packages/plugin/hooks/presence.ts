@@ -3,6 +3,7 @@ import type { EngineInterface, Register, SessionRateLimit } from "claude-code";
 type Status = {
   you: { handle: string };
   paused?: boolean;
+  push_allowed_modes?: string[];
   people: { handle: string; sessions: unknown[] }[];
   unread: Record<string, number>;
 };
@@ -27,6 +28,8 @@ let handoffFor: string | undefined;
 let limited = false;
 // Only the rewake opt-in (push_mode, allowed by the team) lets the mod start turns; hooks mode never does.
 let rewake = false;
+// The team's allowance as of the last status poll: an admin can turn rewake off after the member chose it.
+let allowed = false;
 
 // Counts only: no handle, status or message text a peer wrote reaches the screen.
 function counts(s: Status) {
@@ -38,7 +41,7 @@ function counts(s: Status) {
 
 // Fixed texts only: at most the unread count, never a peer's handle, subject or words.
 function submit($: EngineInterface, text: string, now: number) {
-  if (!rewake) return false;
+  if (!rewake || !allowed) return false;
   wakes = wakes.filter((t) => now - t < WAKES_WINDOW_MS);
   if (wakes.length >= WAKES) return false;
   wakes.push(now);
@@ -123,6 +126,7 @@ async function refresh($: EngineInterface, url: string, token: string) {
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     s = JSON.parse(res.text) as Status;
+    allowed = Boolean(s.push_allowed_modes?.includes("rewake"));
     const c = counts(s);
     if (unread === 0 && c.unread > 0) $.ui.toast(`CodeTgh: ${c.unread} unread`);
     // Read or expired messages lower the baseline, so a later one still counts as new.
