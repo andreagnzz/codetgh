@@ -156,6 +156,21 @@ describe("members", () => {
     expect(m?.name).toBe("Malik B.");
     expect((await consolePost(hub.url, team.malik.cookie, "/console/me/profile", { name: "" })).status).toBe(400);
   });
+
+  it("ends a member's console stream when their role changes, so a demoted admin stops getting everyone's activity", async () => {
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const stream = await fetch(`${hub.url}/console/stream`, { headers: { cookie: team.sam.cookie } });
+    expect(stream.status).toBe(200);
+    const reader = stream.body?.getReader();
+    const closed = (async () => {
+      while (reader && !(await reader.read()).done);
+    })();
+    const [sam] = await hub.db.select().from(membership).where(eq(membership.userId, team.sam.userId));
+    const started = Date.now();
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${sam?.id}/role`, { role: "member" })).status).toBe(204);
+    await closed;
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });
 
 describe("team", () => {

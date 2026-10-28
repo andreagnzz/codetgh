@@ -277,7 +277,7 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
 
 export async function changeRole(db: Db, p: Principal, membershipId: string, role: Role) {
   requireAdmin(p);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const [m] = await tx
       .select()
       .from(membership)
@@ -291,5 +291,6 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
+    return m.userId;
   });
 }

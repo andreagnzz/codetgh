@@ -1276,7 +1276,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/members/:id/role", async (c) => {
     const role = (await form(c)).role ?? "";
     if (!(ROLES as readonly string[]).includes(role)) throw new HubError("E_INVALID", "unknown role");
-    await changeRole(db, c.get("principal"), c.req.param("id"), role as Role);
+    const p = c.get("principal");
+    const userId = await changeRole(db, p, c.req.param("id"), role as Role);
+    // Their open streams end and reconnect with the new role: a demoted admin stops getting everyone's activity.
+    bus.emit("revoked", { teamId: p.teamId, userId });
     return refresh(c);
   });
 
