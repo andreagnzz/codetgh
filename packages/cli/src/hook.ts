@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL, urlToHttpOptions } from "node:url";
 import { promisify } from "node:util";
-import { repoFingerprint } from "@codetgh/shared/repo";
+import { plainName, repoFingerprint } from "@codetgh/shared/repo";
 
 // Hooks fail open: any error gives at most one warning per session and exit code 0, so Claude keeps working.
 const run = promisify(execFile);
@@ -185,7 +185,6 @@ type SessionReply = {
   linked?: boolean;
   can_link?: boolean;
   status_line?: string;
-  project?: string | null;
 };
 type Repo = { branch: string; fingerprint?: string; name?: string };
 const NOT_LINKED =
@@ -334,7 +333,8 @@ async function cwdChanged(input: Input) {
     if (body.paused) return null;
     if (body.linked === false) return { systemMessage: NOT_LINKED };
     saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
-    return { systemMessage: `CodeTgh: this session is now on ${(body.project ?? repo.name ?? "").replace(/\p{Cc}/gu, "")}` };
+    // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
+    return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "")}` };
   } catch {
     return null;
   }
