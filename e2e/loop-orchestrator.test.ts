@@ -63,7 +63,7 @@ it("lets the team's orchestrator judge a loop, reopen it once, and leaves the se
 
   const last = await loop(team.sam, team.lea);
   const malik = await mcpClient(hub.url, team.malik.token);
-  // The orchestrator now has the loop in its inbox and can read the whole thread.
+  // The orchestrator now has the loop in its inbox: the thread's last messages.
   const inbox = (await call(malik, "inbox_read", { thread: last.thread })).text;
   expect(inbox).toContain("Dates in UTC or local?");
   expect(inbox).toContain("reply 4");
