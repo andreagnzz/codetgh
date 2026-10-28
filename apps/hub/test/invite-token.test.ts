@@ -91,4 +91,13 @@ describe("a pending invitation ends with the admin rights or the token that made
     await revokeMember(hub.db, { teamId: team.teamId, membershipId: malik, actorUserId: team.lea.userId, actorRole: "owner" });
     expect(await pending("later@evil.test")).toEqual([]);
   });
+
+  it("revokes an admin's invitations when they erase themselves", async () => {
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const invite = { email: "after-erase@evil.test", role: "admin" };
+    expect((await consolePost(hub.url, team.sam.cookie, "/console/members/invite", invite)).status).toBeLessThan(400);
+    expect(await pending(invite.email)).toHaveLength(1);
+    expect((await consolePost(hub.url, team.sam.cookie, "/console/me/erase", { confirm: "erase" })).status).toBeLessThan(400);
+    expect(await pending(invite.email)).toEqual([]);
+  });
 });
