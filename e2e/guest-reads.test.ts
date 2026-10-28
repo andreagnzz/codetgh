@@ -45,9 +45,19 @@ it("keeps tasks, memory, claims and the team view from a guest's agent", async (
   // A repository tells a guest nothing, not even that it is a team project: no session there.
   const started = await startSession(hub.url, team.malik.token, "malik-g2", { repo: ACME_REPO });
   expect(started.agent_id).toBeNull();
-  expect(started.context).not.toMatch(/src\/billing|Billing moves/);
   // Their own messages still arrive, in codetgh inbox.
   expect(JSON.stringify(await (await hubRest(hub.url, team.malik.token, "POST", "/v1/inbox", {})).json())).toContain("hello guest");
+
+  // A session started outside a repository is theirs: it reads what is sent to it through MCP, and nothing of the team.
+  const own = await startSession(hub.url, team.malik.token, "malik-g3");
+  expect(own.agent_id).toMatch(/^agt_/);
+  expect(own.context).not.toMatch(/src\/billing|Billing moves/);
+  const lea = await mcpClient(hub.url, team.lea.token);
+  expect((await call(lea, "send_message", { to: `agent:${own.agent_id}`, kind: "note", body: "for your session" })).isError).toBe(false);
+  await lea.close();
+  const read = (await call(malik, "inbox_read", { agent: own.agent_id })).text;
+  expect(read).toContain("for your session");
+  expect(read).not.toContain("team only plan");
 });
 
 it("keeps the same pages and thread actions from a guest in the console", async () => {
