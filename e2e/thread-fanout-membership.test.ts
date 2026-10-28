@@ -21,7 +21,8 @@ const send = (token: string, body: Record<string, unknown>) =>
 const received = async (userId: string) => (await hub.db.select().from(receipt).where(eq(receipt.recipientUserId, userId))).length;
 
 it("fans a thread: address out to the active people of the thread only", async () => {
-  const dm = ((await (await send(team.sam.token, { to: "@lea" })).json()) as { thread: string }).thread;
+  const first = (await (await send(team.sam.token, { to: "@lea" })).json()) as { id: string; thread: string };
+  const dm = first.thread;
   const trio = ((await (await send(team.sam.token, { to: ["@lea", "@malik"] })).json()) as { thread: string }).thread;
   const [samAgent] = await hub.db.select().from(agent).where(eq(agent.userId, team.sam.userId));
 
@@ -37,6 +38,10 @@ it("fans a thread: address out to the active people of the thread only", async (
   expect(((await toDm.json()) as { code: string }).code).toBe("E_INVALID");
   expect((await send(team.lea.token, { to: `thread:${trio}` })).status).toBe(200);
   expect((await send(team.lea.token, { to: `agent:${samAgent?.id}` })).status).toBe(404);
+  // A reply with no to goes to the parent's sender: not once they are gone.
+  const reply = await send(team.lea.token, { reply_to: first.id });
+  expect(reply.status).toBe(400);
+  expect(((await reply.json()) as { code: string }).code).toBe("E_INVALID");
 
   expect(await received(team.sam.userId)).toBe(1);
   expect(await received(team.malik.userId)).toBe(3);

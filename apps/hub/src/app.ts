@@ -385,7 +385,7 @@ export function createApp({
     if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many edit checks: wait and retry", wait);
     const input = await parse(c, PreEditInput);
     const agent = await agentBySession(db, p, input.session_id);
-    const decision = agent ? await preEdit(db, p, agent, input.path) : null;
+    const decision = agent ? await preEdit(deps, p, agent, input.path) : null;
     return decision ? c.json(decision) : c.body(null, 204);
   });
 

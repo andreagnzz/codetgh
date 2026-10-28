@@ -344,7 +344,8 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "task_claim",
     {
-      description: "Take a free task (status todo). Pass the version you read; if someone changed it meanwhile you get E_VERSION_CONFLICT.",
+      description:
+        "Take a free task (status todo). Pass the version you read; if someone changed it meanwhile you get E_VERSION_CONFLICT. Never a runner task: only the runner leases one.",
       inputSchema: TaskClaimInput,
       annotations: WRITE,
     },
@@ -416,7 +417,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           if ((await me(agent)).trustLevel === "quarantined") throw new HubError("E_FORBIDDEN", "this agent is in quarantine");
           if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
           write();
-          return decideMemory(db, p, input, "mcp");
+          return decideMemory(deps, p, input, "mcp");
         }),
     );
   }

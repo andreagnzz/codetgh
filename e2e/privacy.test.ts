@@ -40,6 +40,8 @@ describe("my data", () => {
     expect(data.tasks.map((t: { id: string }) => t.id)).toContain(samTask);
     expect(data.audit.length).toBeGreaterThan(0);
     expect(JSON.stringify(data.tokens)).not.toMatch(/ctgh_|"hash"/);
+    const [exported] = await hub.db.select().from(auditEvent).where(eq(auditEvent.action, "member.data_exported"));
+    expect(exported).toMatchObject({ actorUserId: team.sam.userId, via: "console" });
   });
 
   it("erases a member on request, keeps the threads and the audit chain intact", async () => {

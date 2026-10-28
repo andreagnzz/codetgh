@@ -2,10 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { newKeyPair, newThreadKey, publicKeyOf, wrapKey } from "@codetgh/shared/e2e";
-import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { message, thread, threadKey } from "../apps/hub/src/db/schema.js";
+import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
+import { and, eq, like, sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { agent, message, thread, threadKey } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 import { hubRest } from "./helpers.js";
@@ -96,7 +96,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     ).toBe(404);
   });
 
-  it("refuses to reply with a thread key that opens none of the thread's messages", async () => {
+  it("refuses to reply with a thread key the hub swapped for another one", async () => {
     // A hostile hub wraps a key of its own to Léa's real public key, hoping to read her reply.
     const threadId = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.threadId ?? "";
     const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
@@ -106,12 +106,78 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
     const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("opens no message of this thread");
+    expect(r.out).toContain("not the one this machine saw");
     expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
     await hub.db
       .update(threadKey)
       .set({ wrapped: real?.wrapped ?? "" })
       .where(mine);
+  });
+
+  it("checks a reply's thread key against the one this machine saw, not against a ciphertext from the same hub", async () => {
+    // A database writer wraps a key of its own to Léa's public key and reseals the message under it, so the two agree.
+    const [original] = await hub.db.select().from(message).where(eq(message.id, sentId));
+    const threadId = original?.threadId ?? "";
+    const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
+    const [real] = await hub.db.select().from(threadKey).where(mine);
+    const forged = newThreadKey();
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: wrapKey(forged, publicKeyOf(keyring("lea").get(`${hub.url}#e2e`) ?? "")) })
+      .where(mine);
+    await hub.db
+      .update(message)
+      .set({ body: sealBody("Friday plan: cancelled", forged) })
+      .where(eq(message.id, sentId));
+    const before = await hub.db.select().from(message).where(eq(message.threadId, threadId));
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not the one this machine saw");
+    expect(await hub.db.select().from(message).where(eq(message.threadId, threadId))).toHaveLength(before.length);
+    const inbox = await cli("lea", ["inbox"]);
+    expect(inbox.out).not.toContain("cancelled");
+    expect(inbox.out).toContain(`not showing ${sentId}`);
+    await hub.db
+      .update(threadKey)
+      .set({ wrapped: real?.wrapped ?? "" })
+      .where(mine);
+    await hub.db
+      .update(message)
+      .set({ body: original?.body ?? "" })
+      .where(eq(message.id, sentId));
+  });
+
+  it("replies only from a machine that sent or opened the message", async () => {
+    // Léa's second machine holds her private key, but she never read the message there.
+    const first = keyring("lea");
+    delete keyrings.lea;
+    keyring("lea").set(`${hub.url}#e2e`, first.get(`${hub.url}#e2e`) ?? "");
+    const r = await cli("lea", ["send", "--encrypt", "--reply-to", sentId, "--body", "Friday it is."]).finally(() => {
+      keyrings.lea = first;
+    });
+    expect(r.code).toBe(1);
+    // Inbox never lists a message its sender queued offline, so the error names that case and what still works.
+    expect(r.out).toContain("a message you sent while offline is not recorded");
+    expect(r.out).toContain("reply to a message you opened with codetgh inbox");
+    // The sender's machine saw the key when it sent the message.
+    const own = await cli("sam", ["send", "--encrypt", "--allow-offline", "--reply-to", sentId, "--to", "@lea", "--body", "Yes."]);
+    expect(own.code).toBe(0);
+  });
+
+  it("reports a sent message as sent when the keychain refuses its thread key afterwards", async () => {
+    // A retry would send it twice, under a new idempotency key: the failure only warns.
+    const sam = keyring("sam");
+    const set = sam.set;
+    sam.set = (k, v) => {
+      if (k.includes("#mk:")) throw new Error("keychain locked");
+      set(k, v);
+    };
+    const r = await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--body", "kept on the hub"]).finally(() => {
+      sam.set = set;
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/sent msg_/);
+    expect(r.out).toContain("keychain locked");
   });
 
   it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
@@ -148,11 +214,56 @@ describe("end-to-end encrypted threads (phase 3)", () => {
 
   it("refuses a recipient without a key, and shows MCP readers a placeholder", async () => {
     expect((await cli("sam", ["send", "--encrypt", "--to", "@malik", "--body", "hi"])).code).toBe(1);
+    // Léa's REST agent reads her whole inbox; a call that names no agent never gets it.
+    const [rest] = await hub.db
+      .select({ id: agent.id })
+      .from(agent)
+      .where(and(eq(agent.userId, team.lea.userId), like(agent.sessionId, "cli-%")));
     const lea = await mcpClient(hub.url, team.lea.token);
-    const r = await call(lea, "inbox_read", {});
+    const r = await call(lea, "inbox_read", { agent: rest?.id });
     await lea.close();
     expect(r.text).not.toContain("v1.");
     expect(r.text).toContain("encrypted");
+  });
+
+  it("wraps a new thread's key only for the handles asked for, and refuses a key the hub adds", async () => {
+    // A hostile hub answers the key lookup with the real keys plus one of its own, under a handle never pinned.
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const res = await realFetch(input, init);
+      if (!String(input).startsWith(`${hub.url}/v1/keys?`)) return res;
+      const body = (await res.json()) as { keys: Array<{ handle: string; public_key: string | null }> };
+      body.keys.push({ handle: "@ghost", public_key: publicKeyOf(newKeyPair().privateKey) });
+      return Response.json(body);
+    });
+    const before = await hub.db.select().from(message);
+    const r = await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--body", "for Léa only"]).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not asked for");
+    expect(await hub.db.select().from(message)).toHaveLength(before.length);
+    expect([...keyring("sam").store.keys()].some((k) => k.endsWith("#pin:@ghost"))).toBe(false);
+  });
+
+  it("refuses a handle the hub repeats with a key of its own", async () => {
+    // Léa never pinned Sam's key: a second @sam entry ahead of the real one would be pinned and get the thread key.
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const res = await realFetch(input, init);
+      if (!String(input).startsWith(`${hub.url}/v1/keys?`)) return res;
+      const body = (await res.json()) as { keys: Array<{ handle: string; public_key: string | null }> };
+      body.keys.unshift({ handle: "@sam", public_key: publicKeyOf(newKeyPair().privateKey) });
+      return Response.json(body);
+    });
+    const before = await hub.db.select().from(message);
+    const r = await cli("lea", ["send", "--encrypt", "--allow-offline", "--to", "@sam", "--body", "for Sam only"]).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not asked for");
+    expect(await hub.db.select().from(message)).toHaveLength(before.length);
+    expect(keyring("lea").get(`${hub.url}#pin:@sam`)).toBeNull();
   });
 
   it("pins each recipient's public key, and refuses to seal for a key the hub swapped", async () => {

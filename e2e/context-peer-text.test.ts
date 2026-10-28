@@ -86,3 +86,32 @@ it("names a claim holder by handle everywhere: a display name never reaches the 
     expect(out).not.toContain("pre-approved");
   }
 });
+
+it("cuts the peer text on its escaped length, so the packet keeps its budget and its envelope closes", async () => {
+  // " becomes &quot;: 200 of them in each branch and status, over 10 live sessions, grow 6 times once escaped.
+  const QUOTES = '"'.repeat(200);
+  for (const [who, token] of [
+    ["lea", team.lea.token],
+    ["malik", team.malik.token],
+  ] as const)
+    for (let i = 0; i < 5; i++) {
+      const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+      const res = await fetch(`${hub.url}/v1/agents/session`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ session_id: `${who}-quotes-${i}`, source: "startup", branch: QUOTES }),
+      });
+      const { agent_id } = (await res.json()) as { agent_id: string };
+      // Léa spent her write budget in the tests above: Malik's sessions carry the statuses.
+      if (who === "malik") {
+        const body = JSON.stringify({ agent: agent_id, text: QUOTES });
+        expect((await fetch(`${hub.url}/v1/status`, { method: "POST", headers, body })).status).toBe(204);
+      }
+    }
+
+  const packet = await contextOf("sam-quotes");
+  expect(packet).toContain("&quot;&quot;");
+  expect(packet).toContain("[...]");
+  expect(packet.length).toBeLessThanOrEqual(4800);
+  expect(packet).toMatch(/<\/peer_message>\n<\/codetgh_context>$/);
+});

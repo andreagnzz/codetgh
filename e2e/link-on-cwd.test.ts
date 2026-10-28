@@ -1,4 +1,6 @@
 import { mkdtempSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
@@ -65,6 +67,20 @@ it("does nothing when the new directory is not a repository", async () => {
   expect((await row("sam-home-2"))?.projectId).toBeNull();
 });
 
+it("asks again in the same repository when the hub could not answer", async () => {
+  const env = hookEnv(hub.url, team.malik.token);
+  const start = home();
+  await runHook("session-start", { session_id: "malik-retry", source: "startup", cwd: start }, env);
+  const repo = gitRepo("git@github.com:acme/cwd-retry.git");
+  const cd = { session_id: "malik-retry", cwd: repo, old_cwd: start, new_cwd: repo };
+  expect((await runHook("cwd-changed", cd, { ...env, CLAUDE_PLUGIN_OPTION_CODETGH_URL: "http://127.0.0.1:9" })).out).toBeNull();
+  expect((await row("malik-retry"))?.projectId).toBeNull();
+  const r = await runHook("cwd-changed", cd, env);
+  expect(systemMessage(r)).toBe("CodeTgh: this session is now on cwd-retry");
+  const [prj] = await projectsOf("git@github.com:acme/cwd-retry.git");
+  expect((await row("malik-retry"))?.projectId).toBe(prj?.id);
+});
+
 it("links a guest's session to no repository, linked or not, and says the same line for both", async () => {
   const env = hookEnv(hub.url, team.malik.token);
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
@@ -113,4 +129,54 @@ it("says this repository when nothing of the repository's name is left", async (
   const repo = gitRepo(origin);
   const r = await runHook("cwd-changed", { session_id: "lea-symbols", cwd: repo, old_cwd: start, new_cwd: repo }, env);
   expect(systemMessage(r)).toBe("CodeTgh: this session is now on this repository");
+});
+
+// A hub stand-in that answers every call with one status.
+async function answering(status: number) {
+  const seen: string[] = [];
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      seen.push(req.url ?? "");
+      res.writeHead(status, { "content-type": "application/json" }).end("{}");
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen, server };
+}
+
+it("asks again in the same repository when the hub failed or limited the call", async () => {
+  // Léa again: Sam's write budget is near its burst of 10 here.
+  const env = hookEnv(hub.url, team.lea.token);
+  const start = home();
+  await runHook("session-start", { session_id: "lea-busy", source: "startup", cwd: start }, env);
+  const repo = gitRepo("git@github.com:acme/cwd-busy.git");
+  const cd = { session_id: "lea-busy", cwd: repo, old_cwd: start, new_cwd: repo };
+  for (const status of [503, 429]) {
+    const stub = await answering(status);
+    const r = await runHook("cwd-changed", cd, { ...env, CLAUDE_PLUGIN_OPTION_CODETGH_URL: stub.url });
+    stub.server.close();
+    expect(r.out).toBeNull();
+    expect(stub.seen).toEqual(["/v1/agents/session"]);
+  }
+  expect((await row("lea-busy"))?.projectId).toBeNull();
+  const r = await runHook("cwd-changed", cd, env);
+  expect(systemMessage(r)).toBe("CodeTgh: this session is now on cwd-busy");
+  const [prj] = await projectsOf("git@github.com:acme/cwd-busy.git");
+  expect((await row("lea-busy"))?.projectId).toBe(prj?.id);
+});
+
+it("does not ask again in a repository the hub gave a definite answer for", async () => {
+  const env = hookEnv(hub.url, team.lea.token);
+  const start = home();
+  await runHook("session-start", { session_id: "lea-refused", source: "startup", cwd: start }, env);
+  const repo = gitRepo("git@github.com:acme/cwd-refused.git");
+  const cd = { session_id: "lea-refused", cwd: repo, old_cwd: start, new_cwd: repo };
+  const stub = await answering(404);
+  const r = await runHook("cwd-changed", cd, { ...env, CLAUDE_PLUGIN_OPTION_CODETGH_URL: stub.url });
+  stub.server.close();
+  expect(r.out).toBeNull();
+  expect((await runHook("cwd-changed", cd, env)).out).toBeNull();
+  expect(await projectsOf("git@github.com:acme/cwd-refused.git")).toHaveLength(0);
+  expect((await row("lea-refused"))?.projectId).toBeNull();
 });

@@ -268,6 +268,10 @@ export async function daemon(o: { url: string; token: string; out: (s: string) =
   }
 }
 
+// The thread key of each encrypted message this machine sent or opened, as a hash, kept from the first time it saw it.
+const seenKey = (url: string, messageId: string) => `${url}#mk:${messageId}`;
+const keyHash = (key: Buffer) => createHash("sha256").update(key).digest("base64url");
+
 // Seals a body for an encrypted thread: a new one gets a fresh key wrapped for every participant, a reply reuses its thread's key.
 async function sealForThread(client: CodeTghClient, keyring: Keyring, url: string, m: Omit<Queued, "queued_at">) {
   const privateKey = keyring.get(`${url}#e2e`);
@@ -275,15 +279,17 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
   const { textFlags } = await import("@codetgh/guard");
   const flags = textFlags(m.body).filter((f) => ["instruction-like", "secret-suspect", "external-link"].includes(f));
   if (m.reply_to) {
-    const { wrapped, ciphertext } = await client.threadKey(m.reply_to);
-    const key = unwrapKey(wrapped, privateKey);
-    // Key confirmation: the wrap is anonymous, so a hub could wrap a key of its own; the real one opens the message replied to.
-    try {
-      openBody(ciphertext, key);
-    } catch {
-      throw new Error("the thread key the hub sent opens no message of this thread: not sealing a reply with it");
-    }
-    return { body: sealBody(m.body, key), encrypted: { flags } };
+    // Key confirmation: the wrap is anonymous, so a hub could wrap a key of its own, and seal the message under it too.
+    // Only the key this machine saw for that message proves the hub kept the real one.
+    const seen = keyring.get(seenKey(url, m.reply_to));
+    if (!seen)
+      throw new Error(
+        `this machine never sent or opened ${m.reply_to} (a message you sent while offline is not recorded): reply to a message you opened with codetgh inbox`,
+      );
+    const key = unwrapKey((await client.threadKey(m.reply_to)).wrapped, privateKey);
+    if (keyHash(key) !== seen)
+      throw new Error(`the thread key the hub sent is not the one this machine saw for ${m.reply_to}: not sealing a reply with it`);
+    return { body: sealBody(m.body, key), encrypted: { flags }, key };
   }
   const me = `@${(await client.whoami()).handle}`;
   const handles = [...new Set([...(Array.isArray(m.to) ? m.to : [m.to ?? ""]), me])];
@@ -291,6 +297,9 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
   const { keys } = await client.keys(handles);
   const missing = handles.filter((h) => !keys.find((k) => k.handle === h)?.public_key);
   if (missing.length) throw new Error(`${missing.join(", ")} has no encryption key yet (codetgh keys init)`);
+  // Every handle asked for is there, so any other entry is one the hub added: it would get the thread key too.
+  if (keys.length !== handles.length || keys.some((k) => !handles.includes(k.handle)))
+    throw new Error("the hub sent encryption keys for handles not asked for: not sealing");
   // Trust on first use: a key the hub serves later for the same handle must be the one pinned here.
   for (const k of keys) {
     const pinned = k.handle === me ? publicKeyOf(privateKey) : keyring.get(`${url}#pin:${k.handle}`);
@@ -304,6 +313,7 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
   return {
     body: sealBody(m.body, threadKey),
     encrypted: { flags, keys: keys.map((k) => ({ handle: k.handle, wrapped: wrapKey(threadKey, k.public_key ?? "") })) },
+    key: threadKey,
   };
 }
 
@@ -775,6 +785,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   const quarantine = `${wt}.quarantine`;
   // The commit the task's branch was made on: where a restack replays its commits from.
   const baseFile = `${wt}.base`;
+  // The last review of the runner's own reviewer: what a fix resumed after a restart applies, never a PR comment.
+  const reviewFile = `${wt}.review`;
   let ran = false;
   let swept = true;
   let locked = false;
@@ -1098,6 +1110,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
 
     if (task.pr_number) {
       const pr = task.pr_number;
+      if (!Number.isSafeInteger(pr) || pr < 1) fail("the hub sent a PR number that is not one");
       untouched();
       step = "git worktree add failed";
       // Gone (cleaned up, another machine): back from the PR branch, without tracking, which would write the shared config.
@@ -1105,6 +1118,11 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await git(["-C", dir, "worktree", "prune"]);
         await git(["-C", dir, "worktree", "add", "--no-track", "-B", branch, wt, `origin/${branch}`]);
       }
+      // gh reviews, merges or retargets the hub's number only once it is this task's PR: its branch, in this repository.
+      step = "gh pr view failed";
+      const shown = JSON.parse(await gh(["pr", "view", String(pr), "--json=headRefName,headRefOid,isCrossRepository"]));
+      if (shown?.headRefName !== branch || shown?.isCrossRepository !== false)
+        fail(`PR #${pr} is not this task's: not on ${branch} in this repository`);
       if (job.restack) return await restack(pr, main, job.restack);
       // Retried by the owner after a block: back to review, where the next pass restacks or reviews it.
       if (task.status === "claimed") {
@@ -1113,18 +1131,23 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await update({ status: "review", note: `retried: PR #${pr} back to review` });
         return say(`PR #${pr} back to review`);
       }
-      // Resumed mid-fix: the review is on the PR, posted by this runner. gh does not work in a container: read here.
+      // Resumed mid-fix: the review kept on this machine. The PR's comments are anyone's to write.
       if (task.status !== "review") {
-        step = "gh pr view failed";
-        const last = boxed
-          ? `:\n${await untrusted(`comments-${slug}`, "PR comments", (await gh(["pr", "view", String(pr), "--comments"])).slice(-REVIEW_MAX))}`
-          : `: read it with gh pr view ${pr} --comments`;
-        return await fix(rule("author"), pr, `address the last review on PR #${pr}${last}`);
+        if (!existsSync(reviewFile)) fail("no review from the runner's own reviewer is kept for this fix");
+        const kept = readFileSync(reviewFile, "utf8");
+        return await fix(
+          rule("author"),
+          pr,
+          `address this review:\n${await untrusted(`review-${slug}-${task.review_round}`, "runner reviewer", kept)}`,
+        );
       }
 
       step = "git rev-parse failed";
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
+      // A commit pushed to the PR by someone else, or by GitHub's Update branch, would be approved and merged unread.
+      if (before !== pushed || shown.headRefOid !== before)
+        fail("the worktree is not at the head of the PR (delete the worktree, then run retry)");
       const reviewBase =
         !task.base_branch || task.base_branch === main
           ? main
@@ -1173,7 +1196,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await update({ review_round: round, approved: true, note: "approved by the runner's reviewer" });
         say(`PR #${pr} approved`);
         if (cfg.auto_merge)
-          await gh(["pr", "merge", String(pr), "--merge", "--auto"]).catch((e: Error) => {
+          await gh(["pr", "merge", String(pr), "--merge", "--auto", "--match-head-commit", before]).catch((e: Error) => {
             appendFileSync(log, `\ncodetgh runner: gh pr merge --auto failed: ${e.message}\n`);
             say("gh pr merge --auto failed, see the log");
           });
@@ -1189,6 +1212,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
           .catch((e: Error) => say(`could not tell the owner: ${e.message}`));
         return;
       }
+      writeFileSync(reviewFile, review, { mode: 0o600 });
       await update({
         status: "in_progress",
         review_round: round,
@@ -1306,6 +1330,7 @@ async function cleanUp(dir: string, projectId: string, id: string) {
   await safeGit(["-C", dir, "branch", "-D", `codetgh/${id.toLowerCase()}`]).catch(() => {});
   rmSync(lock, { force: true });
   rmSync(`${wt}.base`, { force: true });
+  rmSync(`${wt}.review`, { force: true });
 }
 
 // One pass: resume the leases this runner held before a restart, lease ready tasks of the projects switched on and
@@ -1983,9 +2008,10 @@ async function claimedInPush(io: Io, creds: { url: string; token: string }) {
   const refs = io.stdin.isTTY ? "" : await readToken(io);
   const files = new Set<string>();
   for (const line of refs.split("\n")) {
-    const [ref, local, , remote] = line.split(" ");
-    // Branches that are pushed, not deleted; a new branch is compared with the default branch it forked from.
-    if (!ref?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
+    const [, local, dst, remote] = line.split(" ");
+    // Branches that are pushed, not deleted, whatever names the local side (HEAD, a sha); a new branch is compared with
+    // the default branch it forked from.
+    if (!dst?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
     let from = remote && !/^0+$/.test(remote) ? remote : "";
     if (!from) {
       let known = "";
@@ -2548,6 +2574,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         process.exitCode = 1;
         return;
       }
+      let threadKey: Buffer | undefined;
       if (opts.encrypt) {
         const sealed = await sealForThread(createClient({ url, token }), await deps.keyring(), url, m).catch((e: Error) => e);
         if (sealed instanceof Error) {
@@ -2555,7 +2582,9 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           process.exitCode = 1;
           return;
         }
-        Object.assign(m, sealed);
+        const { key, ...fields } = sealed;
+        Object.assign(m, fields);
+        threadKey = key;
       }
       const queued = { ...m, queued_at: new Date().toISOString(), hub: url, account: account(token) };
       const r = await postMessage(url, token, queued).catch(() => null);
@@ -2564,6 +2593,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         return io.out("hub unreachable: queued in the outbox (codetgh daemon or codetgh outbox flush sends it)");
       }
       if ("rejected" in r) throw new Error(r.rejected);
+      // The message is on the hub: a keychain failure only warns, since a retry would send it again.
+      if (threadKey)
+        try {
+          (await deps.keyring()).set(seenKey(url, r.id), keyHash(threadKey));
+        } catch (e) {
+          io.err(
+            `WARNING: could not record the thread key of ${r.id} here (${(e as Error).message}): a reply to it from this machine is refused`,
+          );
+        }
       io.out(`sent ${r.id}`);
     });
 
@@ -2577,7 +2615,8 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       if (!url || !token) throw new Error("no hub URL or token: run codetgh login");
       const { messages, envelopes } = await createClient({ url, token }).inbox({ limit: Math.min(Number(opts.limit) || 20, 20) });
       if (!messages.length) return io.out("Inbox empty.");
-      const privateKey = (await deps.keyring()).get(`${url}#e2e`) ?? "";
+      const keyring = await deps.keyring();
+      const privateKey = keyring.get(`${url}#e2e`) ?? "";
       const { renderPeerMessage, textFlags } = await import("@codetgh/guard");
       for (const [n, m] of messages.entries()) {
         io.out(`${m.id} · ${m.kind} · ${m.thread}`);
@@ -2586,12 +2625,21 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
           continue;
         }
         let text: string;
+        let key: Buffer;
         try {
-          text = openBody(m.e2e.ciphertext, unwrapKey(m.e2e.wrapped_key ?? "", privateKey));
+          key = unwrapKey(m.e2e.wrapped_key ?? "", privateKey);
+          text = openBody(m.e2e.ciphertext, key);
         } catch {
           io.out(`(cannot open ${m.id} here: this machine has no key for its thread)`);
           continue;
         }
+        // Kept from the first time, never replaced: a reply checks its thread key against it.
+        const seen = keyring.get(seenKey(url, m.id));
+        if (seen && seen !== keyHash(key)) {
+          io.out(`(not showing ${m.id}: its thread key changed on the hub since this machine opened it)`);
+          continue;
+        }
+        if (!seen) keyring.set(seenKey(url, m.id), keyHash(key));
         // Rendered here, as the hub would: the decrypted text is still a peer's words.
         io.out(
           renderPeerMessage(

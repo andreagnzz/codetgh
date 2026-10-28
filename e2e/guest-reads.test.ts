@@ -99,6 +99,27 @@ it("shows a guest only their own agents on the dashboard", async () => {
   expect(member).toContain("rotating billing keys quietly");
 });
 
+it("lists a guest's threads without project headings, which would name the team's repositories", async () => {
+  const session = await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
+    session_id: "sam-g-thread",
+    repo_fingerprint: "b".repeat(64),
+    repo_name: "acme/ledger-secret",
+  });
+  const { agent_id } = (await session.json()) as { agent_id: string };
+  const sam = await mcpClient(hub.url, team.sam.token);
+  const sent = JSON.parse(
+    (await call(sam, "send_message", { agent: agent_id, to: "@malik", kind: "note", body: "from the ledger", allow_offline: true })).text,
+  );
+  await sam.close();
+  const html = await (await fetch(`${hub.url}/console/threads`, { headers: { cookie: team.malik.cookie } })).text();
+  expect(html).toContain(sent.thread);
+  expect(html).not.toContain("acme/ledger-secret");
+  // A member still sees the threads under their project.
+  expect(await (await fetch(`${hub.url}/console/threads`, { headers: { cookie: team.sam.cookie } })).text()).toContain(
+    "acme/ledger-secret",
+  );
+});
+
 const FORBIDDEN = ["projects", "tasks", "memory", "claims", "delegations", "tokens"];
 it("shows a guest no link to a page that refuses them, and a member every one", async () => {
   const nav = async (cookie: string) => {

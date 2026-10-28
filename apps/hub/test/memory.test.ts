@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { agent, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
+import { agent, alert, auditEvent, membership, memoryItem, team as teamTable } from "../src/db/schema.js";
 import { call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
@@ -141,6 +141,32 @@ describe("team memory", () => {
     }
   });
 
+  it("blocks a decision note holding a secret, over MCP and in the console", async () => {
+    await hub.db
+      .update(teamTable)
+      .set({ settings: { memory_accept_via_mcp: true } })
+      .where(eq(teamTable.id, team.teamId));
+    const sam = await mcpClient(hub.url, team.sam.token);
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const note = `clé ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`;
+    try {
+      const p = json(await call(sam, "memory_propose", { kind: "note", title: "Note test", body: "A plain note." }));
+      expect(code(await call(lea, "memory_accept", { item_id: p.id, decision: "accept", note }))).toBe("E_SECRET_BLOCKED");
+      expect((await decide(team.lea.cookie, p.id, "reject", note)).status).toBe(422);
+      const [still] = await hub.db.select().from(memoryItem).where(eq(memoryItem.id, p.id));
+      expect(still).toMatchObject({ status: "proposed", decisionNote: null });
+      const alerts = await hub.db
+        .select()
+        .from(alert)
+        .where(and(eq(alert.kind, "secret_blocked"), eq(alert.userId, team.lea.userId)));
+      expect(alerts).toHaveLength(2);
+    } finally {
+      await hub.db.update(teamTable).set({ settings: {} }).where(eq(teamTable.id, team.teamId));
+      await sam.close();
+      await lea.close();
+    }
+  });
+
   it("puts pinned and accepted decisions in the session packet", async () => {
     const [current] = await hub.db.select().from(memoryItem).where(eq(memoryItem.status, "accepted"));
     await hub.db
@@ -166,5 +192,54 @@ describe("team memory", () => {
     expect(code(await call(sam, "memory_propose", { kind: "note", title: "x", body: "y" }))).toBe("E_KILL_SWITCH");
     await hub.db.update(teamTable).set({ killSwitchAt: null }).where(eq(teamTable.id, team.teamId));
     await sam.close();
+  });
+
+  it("blocks a secret in refs and stores nothing", async () => {
+    const malik = await mcpClient(hub.url, team.malik.token);
+    const secret = `ghp_${"Zx9Kq2Lm7Np4Rt8Vw1Yb3Cd6Fg0Hj5Ks2Lp"}`;
+    for (const r of [
+      { type: "file", path: secret },
+      { type: "commit", rev: secret },
+    ])
+      expect(code(await call(malik, "memory_propose", { kind: "note", title: "Refs test", body: "Plain body.", refs: [r] }))).toBe(
+        "E_SECRET_BLOCKED",
+      );
+    expect(await hub.db.select().from(memoryItem).where(eq(memoryItem.title, "Refs test"))).toHaveLength(0);
+    const alerts = await hub.db
+      .select()
+      .from(alert)
+      .where(and(eq(alert.kind, "secret_blocked"), eq(alert.userId, team.malik.userId)));
+    expect(alerts).toHaveLength(2);
+    await malik.close();
+  });
+
+  // PGlite runs one transaction at a time: the race needs Postgres (TEST_DATABASE_URL, pnpm test:pg).
+  it.runIf(process.env.TEST_DATABASE_URL)("keeps one accepted version when two competing ones are accepted at once", async () => {
+    const item = (version: number, status: "accepted" | "proposed", supersedesId: string | null) => ({
+      id: `mit_race${version}`,
+      teamId: team.teamId,
+      number: 900,
+      version,
+      kind: "decision" as const,
+      status,
+      title: `Race v${version}`,
+      body: "Two humans decide at once.",
+      supersedesId,
+      proposedByUser: team.sam.userId,
+      authoredBy: "agent" as const,
+    });
+    await hub.db.insert(memoryItem).values(item(1, "accepted", null));
+    let current = "mit_race1";
+    for (let round = 0; round < 5; round++) {
+      const [a, b] = [item(2 + 2 * round, "proposed", current), item(3 + 2 * round, "proposed", current)];
+      await hub.db.insert(memoryItem).values([a, b]);
+      await Promise.all([decide(team.lea.cookie, a.id, "accept"), decide(team.malik.cookie, b.id, "accept")]);
+      const accepted = await hub.db
+        .select()
+        .from(memoryItem)
+        .where(and(eq(memoryItem.number, 900), eq(memoryItem.status, "accepted")));
+      expect(accepted).toHaveLength(1);
+      current = accepted[0]?.id ?? "";
+    }
   });
 });
