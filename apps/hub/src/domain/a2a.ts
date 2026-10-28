@@ -8,7 +8,8 @@ import {
   ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/index.js";
 import { a2aTask, agent, membership, message, receipt, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -148,13 +149,19 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       if (!row) return undefined;
       const task = row.task;
       if (!row.messageId) return task;
+      // The task's questions: the first one, and the follow-ups the agent sent as replies to it.
+      const question = alias(message, "question");
+      const questions = db
+        .select({ id: question.id })
+        .from(question)
+        .where(or(eq(question.id, row.messageId), and(eq(question.replyTo, row.messageId), eq(question.fromAgentId, a.id))));
       const answers = await db
         .select({ message, fromName: user.name })
         .from(message)
         .innerJoin(user, eq(user.id, message.fromUserId))
         // Only replies delivered to the external agent: a reply addressed to a teammate stays inside the team.
         .innerJoin(receipt, and(eq(receipt.messageId, message.id), eq(receipt.recipientUserId, p.user.id)))
-        .where(and(eq(message.teamId, p.teamId), eq(message.replyTo, row.messageId)))
+        .where(and(eq(message.teamId, p.teamId), inArray(message.replyTo, questions)))
         .orderBy(asc(message.createdAt));
       if (!answers.length) return task;
       // Answers come from teammates: the agent gets them in the same escaped envelope as any peer text.
@@ -185,16 +192,26 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
         contextId: rc.contextId,
         status: { state: TaskState.TASK_STATE_SUBMITTED, message: undefined, timestamp: new Date().toISOString() },
         artifacts: [],
-        history: [rc.userMessage],
+        // A follow-up (taskId set): the SDK has already added it to the stored history, after the questions before it.
+        history: rc.task?.history ?? [rc.userMessage],
         metadata: undefined,
       };
       try {
+        // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too.
+        const [first] = rc.task ? await db.select({ messageId: a2aTask.messageId }).from(a2aTask).where(eq(a2aTask.id, task.id)) : [];
         const sent = await sendMessage(
           deps,
           { p, agent: a, via: "rest" },
-          { to: "@team", kind: "question", priority: "normal", refs: [], body: question || "(empty)" },
+          {
+            to: "@team",
+            reply_to: first?.messageId ?? undefined,
+            kind: "question",
+            priority: "normal",
+            refs: [],
+            body: question || "(empty)",
+          },
         );
-        questionOf.set(task.id, sent.id);
+        if (!rc.task) questionOf.set(task.id, sent.id);
       } catch (e) {
         if (!(e instanceof HubError)) throw e;
         task.status = {

@@ -81,6 +81,30 @@ describe("A2A (phase 3)", () => {
     expect(answer.join("\n")).not.toContain("internal: do not tell them");
   });
 
+  it("keeps every question of a task and shows the answer to a follow-up", async () => {
+    const client = await new ClientFactory().createFromUrl(hub.url);
+    const sent = await client.sendMessage(ask("Which Node version do you run?"), auth());
+    const id = "status" in sent ? sent.id : "";
+    const followUp = ask("And which pnpm version?");
+    followUp.message.taskId = id;
+    await client.sendMessage(followUp, auth());
+
+    const [ext] = await hub.db.select().from(agent).where(eq(agent.kind, "a2a"));
+    const [q1] = await hub.db.select().from(message).where(eq(message.body, "Which Node version do you run?"));
+    const [q2] = await hub.db.select().from(message).where(eq(message.body, "And which pnpm version?"));
+    expect(q2).toMatchObject({ fromAgentId: ext?.id, replyTo: q1?.id, threadId: q1?.threadId });
+
+    const lea = await mcpClient(hub.url, team.lea.token);
+    await call(lea, "send_message", { reply_to: q2?.id, kind: "answer", body: "pnpm 12." });
+    await lea.close();
+    const after = await client.getTask({ tenant: "", id, historyLength: 10 }, auth());
+    const texts = (role: Role) =>
+      after.history.filter((m) => m.role === role).flatMap((m) => m.parts.map((p) => (p.content?.$case === "text" ? p.content.value : "")));
+    expect(texts(Role.ROLE_USER)).toEqual(["Which Node version do you run?", "And which pnpm version?"]);
+    expect(texts(Role.ROLE_AGENT).join("\n")).toContain("pnpm 12.");
+    expect(after.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+  });
+
   it("cannot claim, propose memory, create tasks or be trusted", async () => {
     // Its token opens /a2a only: MCP (claims, memory, tasks) and the member REST API refuse it.
     await expect(mcpClient(hub.url, token)).rejects.toThrow();
