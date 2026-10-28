@@ -320,7 +320,7 @@ Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en a
 | task_list | Liste les tâches, filtrées : `{tasks: [{id, title_untrusted, flags, status, version, assignee, verify?, blocked_reason_untrusted?, …}], trust}`, titres échappés sur une ligne de 120 caractères et raison de blocage sur 200, sans enveloppe | status, assignee, include_archived, project (current par défaut : le projet de la session ; un identifiant, ou all ; les tâches sans projet, créées dans la console, sortent avec chaque projet), limit | Lecture | 2 |
 | task_get | Une tâche : l'en-tête JSON (champs de task_list, nombre de notes), puis titre, corps et notes dans une seule enveloppe <peer_message kind="task">, une note par ligne `- <at> @<auteur>: <texte>` ; même visibilité que task_list | task_id | Lecture | 2 |
 | task_create | Crée une tâche | title, body, paths[], depends_on[], assignee, verify | Écriture | 2 |
-| task_claim | Réclame une tâche libre de façon atomique | task_id, expected_version | Écriture | 2 |
+| task_claim | Réclame une tâche libre de façon atomique, jamais une tâche du runner | task_id, expected_version | Écriture | 2 |
 | task_update | Change le statut ou l'assigné, ajoute une note, pose ou efface le tag `verify` ; reprend la tâche d'un coéquipier | task_id, patch (status, assignee, note, verify, reason, takeover_note, override_deps), expected_version | Écriture | 2 |
 | handoff | Passe le relais : crée la capsule et l'envoie | to, task_id, summary, done[], todo[], files_touched[], decisions[], open_questions[], commands[], warnings[], branch, last_commit | Écriture | 2 |
 | memory_search | Cherche décisions, contrats et conventions | query, kinds[], include_proposed, limit | Lecture | 2 |
