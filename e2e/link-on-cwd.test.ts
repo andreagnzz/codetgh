@@ -93,5 +93,5 @@ it("names the local repository, never the hub's project name, when a session joi
 
   const line = systemMessage(await runHook("session-start", { session_id: "sam-hostile-2", source: "startup", cwd: repo }, env));
   expect(line).toMatch(/^CodeTgh ✓ acme peer_message.* · @sam · /);
-  expect(line).not.toMatch(/[<>"\n\u001b]|SYSTEM:/);
+  expect(line).not.toMatch(/[<>"\p{Cc}]|SYSTEM:/u);
 });
