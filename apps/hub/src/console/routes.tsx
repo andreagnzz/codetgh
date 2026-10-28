@@ -484,7 +484,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         rows={of.map((t) => [
           <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
           _(t.kind),
-          t.subject ?? "",
+          // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
+          t.kind === "direct" && !mine.includes(t.id) ? "" : (t.subject ?? ""),
           t.agentStreak,
           <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
           <When at={t.lastMessageAt} lang={_.lang} />,

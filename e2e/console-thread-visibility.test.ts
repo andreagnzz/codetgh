@@ -52,6 +52,29 @@ it("audits an admin's opening of someone else's direct thread once, and gives th
   await sam.close();
 });
 
+it("lists someone else's direct thread to an admin without its subject, which only the audited opening shows", async () => {
+  const sam = await mcpClient(hub.url, team.sam.token);
+  const sent = JSON.parse(
+    (await call(sam, "send_message", { to: "@malik", kind: "note", subject: "Perf review for Lea", body: "b", allow_offline: true })).text,
+  );
+  const reads = () =>
+    hub.db
+      .select()
+      .from(auditEvent)
+      .where(and(eq(auditEvent.action, "thread.read_by_admin"), eq(auditEvent.subjectId, sent.thread)));
+  const list = await (await fetch(`${hub.url}/console/threads`, { headers: { cookie: team.lea.cookie } })).text();
+  expect(list).toContain(sent.thread);
+  expect(list).not.toContain("Perf review for Lea");
+  expect(await reads()).toHaveLength(0);
+  // Its participants still see it in their list.
+  expect(await (await fetch(`${hub.url}/console/threads`, { headers: { cookie: team.malik.cookie } })).text()).toContain(
+    "Perf review for Lea",
+  );
+  expect(await threadPage(team.lea.cookie, sent.thread)).toContain("Perf review for Lea");
+  expect(await reads()).toHaveLength(1);
+  await sam.close();
+});
+
 const dashboard = async (cookie: string) => (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
 
 it("keeps a reply addressed to one person off the other members' activity line", async () => {
