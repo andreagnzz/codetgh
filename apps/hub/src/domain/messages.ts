@@ -607,11 +607,6 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
         expiresAt: expiry ? new Date(Date.now() + expiry) : null,
       })
       .returning();
-    await tx
-      .insert(receipt)
-      .values(
-        [...recipients.values()].map((r) => ({ messageId: id, teamId: p.teamId, recipientUserId: r.userId, recipientAgentId: r.agentId })),
-      );
     if (flags.includes("instruction-like")) {
       await tx.insert(alert).values({
         id: newId("alr"),
@@ -643,6 +638,12 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       subjectId: id,
       data: { kind: input.kind, thread: threadId, recipients: recipients.size, ...(input.delegate && { delegated: true }) },
     });
+    // After the audit's team lock, held until commit: receipt seqs then follow commit order, so the stream never skips one.
+    await tx
+      .insert(receipt)
+      .values(
+        [...recipients.values()].map((r) => ({ messageId: id, teamId: p.teamId, recipientUserId: r.userId, recipientAgentId: r.agentId })),
+      );
     return {
       muted: false as const,
       row: row as typeof message.$inferSelect,
