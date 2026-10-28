@@ -28,11 +28,12 @@ const request = async (token: string, from: string, body: string) => {
   return r.json().question_id as string;
 };
 // What Sam's session is shown: its prompt hook (and rewake waiter), then inbox_read.
-const shown = async (session: string, agentId: string) => {
+const prompt = async (session: string) => {
   const res = await fetch(`${hub.url}/v1/inbox/prompt?session_id=${session}`, { headers: { Authorization: `Bearer ${team.sam.token}` } });
-  const context = res.status === 200 ? ((await res.json()) as { context: string }).context : "";
-  return `${context}\n${(await callOnce(hub.url, team.sam.token, "inbox_read", { agent: agentId })).text}`;
+  return res.status === 200 ? ((await res.json()) as { context: string }).context : "";
 };
+const shown = async (session: string, agentId: string) =>
+  `${await prompt(session)}\n${(await callOnce(hub.url, team.sam.token, "inbox_read", { agent: agentId })).text}`;
 const expired = async (id: string) =>
   ((await hub.db.select().from(message).where(eq(message.id, id)))[0]?.expiresAt?.getTime() ?? Infinity) <= Date.now();
 
@@ -73,6 +74,28 @@ describe("a delegated request is authorized only while the receiver's opt-in hol
     const id = await request(team.lea.token, lea, "task before the end");
     await end(team.sam.token, "sam-end");
     expect(await expired(id)).toBe(true);
+  });
+});
+
+describe("the prompt hook tells a delegate to act only on what it shows", () => {
+  it("adds no « Do it now » when the authorized request did not fit on the page", async () => {
+    const sam = await register(team.sam.token, "sam-footer", ["@lea"]);
+    const malik = await register(team.malik.token, "malik-footer");
+    // Malik is not on the list: his high-priority message comes first and fills the page, Léa's request is left out.
+    const big = await callOnce(hub.url, team.malik.token, "send_message", {
+      agent: malik,
+      to: `agent:${sam}`,
+      kind: "note",
+      priority: "high",
+      body: "&".repeat(1800),
+    });
+    expect(big.isError).toBe(false);
+    const id = await request(team.lea.token, lea, "task that does not fit");
+    const page = await prompt("sam-footer");
+    expect(page).toContain(big.json().id);
+    expect(page).not.toContain(id);
+    expect(page).not.toContain("Do it now");
+    await end(team.sam.token, "sam-footer");
   });
 });
 
