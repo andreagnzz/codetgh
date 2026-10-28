@@ -1,9 +1,10 @@
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bridgeLink, message, team as teamTable } from "../apps/hub/src/db/schema.js";
+import { auditEvent, bridgeLink, message, team as teamTable } from "../apps/hub/src/db/schema.js";
+import { verifyChain } from "../apps/hub/src/domain/audit.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -138,6 +139,18 @@ describe("Slack bridge (phase 3)", () => {
       "application/x-www-form-urlencoded",
     );
     expect(JSON.stringify(await reused.json())).not.toContain("Linked");
+    // Both steps are the member's own actions in the audit, with neither the code nor the Slack account.
+    const audited = await hub.db
+      .select()
+      .from(auditEvent)
+      .where(and(eq(auditEvent.teamId, team.teamId), inArray(auditEvent.action, ["slack.link_code_created", "slack.linked"])))
+      .orderBy(auditEvent.seq);
+    expect(audited.map((e) => [e.action, e.actorUserId])).toEqual([
+      ["slack.link_code_created", team.lea.userId],
+      ["slack.linked", team.lea.userId],
+    ]);
+    expect(JSON.stringify(audited)).not.toMatch(new RegExp(`${code}|U_LEA`));
+    expect(await verifyChain(hub.db, team.teamId)).toBeNull();
 
     const [request] = await hub.db.select().from(message).where(eq(message.body, "Need a review of <PR 7> today"));
     const [link] = await hub.db

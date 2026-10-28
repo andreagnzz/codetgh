@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { INVITE_HEADER } from "../apps/hub/src/auth.js";
-import { alert, membership, receipt, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { alert, auditEvent, membership, receipt, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { createPersonalToken } from "../apps/hub/src/tokens.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -63,7 +63,7 @@ it("lets the team's orchestrator judge a loop, reopen it once, and leaves the se
 
   const last = await loop(team.sam, team.lea);
   const malik = await mcpClient(hub.url, team.malik.token);
-  // The orchestrator now has the loop in its inbox and can read the whole thread.
+  // The orchestrator now has the loop in its inbox: the thread's last messages.
   const inbox = (await call(malik, "inbox_read", { thread: last.thread })).text;
   expect(inbox).toContain("Dates in UTC or local?");
   expect(inbox).toContain("reply 4");
@@ -155,9 +155,9 @@ it("delivers a verdict to the looping members still in the team only", async () 
     secret_patterns: "",
     loop_orchestrator: "sam",
   });
-  const pia = await join("Pia");
+  const sol = await join("Sol");
   const quinn = await join("Quinn");
-  const stuck = await loop(pia, quinn);
+  const stuck = await loop(sol, quinn);
   const [gone] = await hub.db.select().from(membership).where(eq(membership.userId, quinn.userId));
   expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${gone?.id}/revoke`)).status).toBeLessThan(400);
   const received = async (userId: string) => (await hub.db.select().from(receipt).where(eq(receipt.recipientUserId, userId))).length;
@@ -167,10 +167,53 @@ it("delivers a verdict to the looping members still in the team only", async () 
   const verdict = await call(sam, "send_message", {
     kind: "status",
     reply_to: stuck.id,
-    body: "Pia picks the format.",
+    body: "Sol picks the format.",
     loop_verdict: { reopen: true },
   });
   expect(verdict.isError, verdict.text).toBe(false);
   expect(await received(quinn.userId)).toBe(before);
-  expect((await call(await mcpClient(hub.url, pia.token), "inbox_read", { thread: stuck.thread })).text).toContain("Pia picks the format.");
+  expect((await call(await mcpClient(hub.url, sol.token), "inbox_read", { thread: stuck.thread })).text).toContain("Sol picks the format.");
+});
+
+it("hands the orchestrator only the loop of a direct thread, and audits that read like an admin's", async () => {
+  const pia = await join("Pia");
+  const rita = await join("Rita");
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+    retention_days: "90",
+    secret_patterns: "",
+    loop_orchestrator: rita.handle,
+  });
+  const piaClient = await mcpClient(hub.url, pia.token);
+  const first = JSON.parse(
+    (await call(piaClient, "send_message", { to: "@lea", kind: "note", body: "Private context before the loop" })).text,
+  );
+  await piaClient.close();
+  // Léa's own words in the console: the agent streak starts again after them.
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/threads/${first.thread}/reply`, { body: "Lea's own words" })).status).toBe(
+    204,
+  );
+  const stuck = await loop(pia, team.lea, first);
+  const orchestrator = await mcpClient(hub.url, rita.token);
+  const inbox = (await call(orchestrator, "inbox_read", { thread: stuck.thread })).text;
+  await orchestrator.close();
+  expect(inbox).toContain("reply 4");
+  expect(inbox).not.toContain("Private context before the loop");
+  expect(inbox).not.toContain("Lea's own words");
+  const reads = await hub.db
+    .select()
+    .from(auditEvent)
+    .where(and(eq(auditEvent.action, "thread.read_by_orchestrator"), eq(auditEvent.subjectId, stuck.thread)));
+  expect(reads).toHaveLength(1);
+  expect(reads[0]?.actorUserId).toBe(rita.userId);
+
+  // The loop is all it gets: Léa's reply after it reaches Pia, not the orchestrator.
+  expect(
+    (await consolePost(hub.url, team.lea.cookie, `/console/threads/${stuck.thread}/reply`, { body: "Lea after the loop" })).status,
+  ).toBe(204);
+  const piaAgain = await mcpClient(hub.url, pia.token);
+  expect((await call(piaAgain, "inbox_read", { thread: stuck.thread })).text).toContain("Lea after the loop");
+  await piaAgain.close();
+  const later = await mcpClient(hub.url, rita.token);
+  expect((await call(later, "inbox_read", { thread: stuck.thread })).text).not.toContain("Lea after the loop");
+  await later.close();
 });

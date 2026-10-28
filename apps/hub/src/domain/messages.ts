@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { type AnyColumn, and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
+import { type AnyColumn, and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -44,13 +44,23 @@ export const archivedThread = () =>
   sql`(${lt(thread.lastMessageAt, new Date(Date.now() - ARCHIVE_AFTER_MS))} and not exists (select 1 from ${receipt} inner join ${message} on ${message.id} = ${receipt.messageId} where ${message.threadId} = ${thread.id} and ${receipt.readAt} is null))`;
 
 // The people who wrote or received in the thread and are still active members: a revoked person gets nothing new.
-async function threadParticipants(tx: Db, teamId: string, threadId: string) {
-  const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, threadId));
+// A loop orchestrator handed the loop of a direct thread it took no part in (its loop_guard alert names it) got that loop
+// only: the thread's later messages skip it, it reads what is addressed to it.
+async function threadParticipants(tx: Db, teamId: string, t: { id: string; kind: string }) {
+  const senders = await tx.selectDistinct({ userId: message.fromUserId }).from(message).where(eq(message.threadId, t.id));
   const readers = await tx
     .selectDistinct({ userId: receipt.recipientUserId })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
-    .where(eq(message.threadId, threadId));
+    .where(eq(message.threadId, t.id));
+  const handed =
+    t.kind === "direct"
+      ? await tx
+          .select({ recipients: alert.recipients })
+          .from(alert)
+          .where(and(eq(alert.teamId, teamId), eq(alert.threadId, t.id), eq(alert.kind, "loop_guard")))
+      : [];
+  const outside = new Set(handed.flatMap((a) => a.recipients));
   const active = await tx
     .select({ userId: membership.userId })
     .from(membership)
@@ -60,7 +70,7 @@ async function threadParticipants(tx: Db, teamId: string, threadId: string) {
         eq(membership.status, "active"),
         inArray(
           membership.userId,
-          [...senders, ...readers].map((r) => r.userId),
+          [...senders, ...readers].map((r) => r.userId).filter((u) => !outside.has(u)),
         ),
       ),
     );
@@ -126,7 +136,7 @@ async function resolveAddresses(tx: Db, p: Principal, to: string[]) {
       if (!t) throw new HubError("E_NOT_FOUND", `no thread ${a}`);
       await assertCanJoin(tx, p, t, `thread ${a}`);
       threadId = t.id;
-      out.push(...(await threadParticipants(tx, p.teamId, t.id)).map((userId) => ({ userId, agentId: null })));
+      out.push(...(await threadParticipants(tx, p.teamId, t)).map((userId) => ({ userId, agentId: null })));
     } else {
       throw new HubError("E_INVALID", `unknown address ${a}: use @handle, @team, agent:… or thread:…`);
     }
@@ -534,8 +544,9 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       if (t.mutedAt || t.agentStreak >= MAX_AGENT_MESSAGES) {
         if (!t.mutedAt) {
           await tx.update(thread).set({ mutedAt: new Date(), mutedReason: "loop_guard" }).where(eq(thread.id, t.id));
+          const alertId = newId("alr");
           await tx.insert(alert).values({
-            id: newId("alr"),
+            id: alertId,
             teamId: p.teamId,
             kind: "loop_guard",
             threadId: t.id,
@@ -551,19 +562,52 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
             subjectId: t.id,
             data: { reason: "loop_guard" },
           });
-          // The orchestrator gets the thread in its inbox: it becomes a participant and can read it all.
+          // The orchestrator gets the loop in its inbox, its last messages only: what it judges, not the thread's history.
           if (orchestrator && orchestrator.userId !== p.user.id) {
+            const loop = tx
+              .select({ id: message.id })
+              .from(message)
+              .where(eq(message.threadId, t.id))
+              .orderBy(desc(message.createdAt))
+              .limit(MAX_AGENT_MESSAGES);
             const unseen = await tx
               .select({ id: message.id })
               .from(message)
               .leftJoin(receipt, and(eq(receipt.messageId, message.id), eq(receipt.recipientUserId, orchestrator.userId)))
-              .where(and(eq(message.threadId, t.id), isNull(receipt.seq)));
-            if (unseen.length)
+              .where(and(inArray(message.id, loop), ne(message.fromUserId, orchestrator.userId), isNull(receipt.seq)));
+            if (unseen.length) {
+              const [party] =
+                t.kind === "direct"
+                  ? await tx
+                      .select({ id: message.id })
+                      .from(message)
+                      .leftJoin(receipt, and(eq(receipt.messageId, message.id), eq(receipt.recipientUserId, orchestrator.userId)))
+                      .where(and(eq(message.threadId, t.id), or(eq(message.fromUserId, orchestrator.userId), isNotNull(receipt.seq))))
+                      .limit(1)
+                  : [];
               await tx
                 .insert(receipt)
                 .values(
                   unseen.map((m) => ({ messageId: m.id, teamId: p.teamId, recipientUserId: orchestrator.userId, recipientAgentId: null })),
                 );
+              // Someone else's direct thread: a read like an admin's, audited as one.
+              if (t.kind === "direct") {
+                await appendAudit(tx, {
+                  teamId: p.teamId,
+                  actorType: "user",
+                  actorUserId: orchestrator.userId,
+                  via: "system",
+                  action: "thread.read_by_orchestrator",
+                  subjectId: t.id,
+                });
+                // It took no part in the thread before: the alert names it, so the thread's later messages skip it.
+                if (!party)
+                  await tx
+                    .update(alert)
+                    .set({ recipients: [orchestrator.userId] })
+                    .where(eq(alert.id, alertId));
+              }
+            }
           }
           return { muted: true as const, threadId: t.id };
         }
