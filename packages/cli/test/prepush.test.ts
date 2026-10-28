@@ -170,6 +170,17 @@ describe("codetgh claims check-push", () => {
     expect(r.out).toBe("");
   });
 
+  it("checks a push named by HEAD or by a commit, as git push origin HEAD and git push origin <sha>:feature send it", async () => {
+    await fakeHub({ "src/api.ts": [{ handle: "lea", mode: "exclusive" }] });
+    const [, sha] = feature(["src/api.ts"]).split(" ");
+    for (const local of ["HEAD", sha]) {
+      const r = await cli(["claims", "check-push"], `${local} ${sha} refs/heads/feature ${ZERO}\n`);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("src/api.ts");
+      expect(r.out).toContain("@lea (exclusive");
+    }
+  });
+
   it("skips deleted branches and refs that are not branches", async () => {
     await fakeHub({});
     const tip = git(repo, "rev-parse", "HEAD");
@@ -300,6 +311,15 @@ describe.skipIf(process.platform === "win32")("the installed hook", () => {
     const [args, refs] = readFileSync(log, "utf8").split("\n");
     expect(args).toMatch(/^claims check-push origin /);
     expect(refs).toMatch(new RegExp(`^refs/heads/main ${git(repo, "rev-parse", "HEAD")} refs/heads/main ${ZERO}$`));
+  });
+
+  it("names the local ref HEAD on stdin for git push origin HEAD", async () => {
+    await cli(["hooks", "install"]);
+    const log = fakeCodetgh(0);
+    remote();
+    git(repo, "push", "-q", "origin", "HEAD");
+    const [, refs] = readFileSync(log, "utf8").split("\n");
+    expect(refs).toBe(`HEAD ${git(repo, "rev-parse", "HEAD")} refs/heads/main ${ZERO}`);
   });
 
   it("refuses the push when check-push exits 1, and lets it through with --no-verify", async () => {
