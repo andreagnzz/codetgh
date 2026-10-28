@@ -451,7 +451,7 @@ export const REST_ROUTES = {
   createProject: {
     method: "POST",
     path: "/v1/projects",
-    summary: "Create the project of a repository (by its origin fingerprint), or rename it",
+    summary: "Create the project of a repository (by its origin fingerprint); an admin may rename it, a member gets it unchanged",
     body: CreateProjectInput,
     output: ProjectOutput,
   },

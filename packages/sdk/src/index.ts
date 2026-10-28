@@ -87,7 +87,7 @@ export function createClient(opts: { url: string; token: string; fetch?: typeof 
     threadKey: async (messageId: string) => must(await call("threadKey", { message_id: messageId })),
     /** Delivered, read and ack status of a message you sent or received: its one recipient's, or your own, with counts for the others. */
     messageStatus: async (messageId: string) => must(await call("messageStatus", { message_id: messageId })),
-    /** Create the team project of a repository, keyed by its origin fingerprint, or rename it. */
+    /** Create the team project of a repository, keyed by its origin fingerprint; an admin may rename it, a member gets it unchanged. */
     createProject: async (name: string, repoFingerprint: string) =>
       must(await call("createProject", { name, repo_fingerprint: repoFingerprint })),
     /** Invite an email address (admins): the 7-day sign-up link. */

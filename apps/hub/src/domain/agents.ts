@@ -7,6 +7,7 @@ import { agent, membership, project, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
+import { isAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -159,24 +160,45 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
   });
 }
 
+// The session path's rules: no guest, quarantined person or kill switch; a new link needs an admin or canAutoLink; only an
+// admin renames, so a member's call on a linked repository gets its project unchanged.
 export async function createProject(db: Db, p: Principal, input: { name: string; repo_fingerprint: string }) {
+  if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests cannot create projects");
   const name = oneLine(input.name, 100);
   return db.transaction(async (tx) => {
+    if ((await personTrust(tx, p)) === "quarantined") throw new HubError("E_FORBIDDEN", "quarantined members cannot create projects");
+    const columns = { id: project.id, name: project.name };
+    const linked = async () =>
+      (
+        await tx
+          .select(columns)
+          .from(project)
+          .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)))
+      )[0];
+    const audit = (action: string, subjectId: string) =>
+      appendAudit(tx, { teamId: p.teamId, actorType: "user", actorUserId: p.user.id, via: "rest", action, subjectId });
+    const old = await linked();
+    if (old) {
+      if (!isAdmin(p) || old.name === name) return old;
+      await tx.update(project).set({ name }).where(eq(project.id, old.id));
+      await audit("project.renamed", old.id);
+      return { id: old.id, name };
+    }
+    if (!isAdmin(p) && !(await canAutoLink(tx, p)))
+      throw new HubError("E_FORBIDDEN", "auto-linking is off for this team: an admin links this repository");
     const [row] = await tx
       .insert(project)
       .values({ id: newId("prj"), teamId: p.teamId, name, repoFingerprint: input.repo_fingerprint })
-      .onConflictDoUpdate({ target: [project.teamId, project.repoFingerprint], set: { name } })
-      .returning({ id: project.id, name: project.name });
-    if (!row) throw new HubError("E_INVALID", "project not created");
-    await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "rest",
-      action: "project.created",
-      subjectId: row.id,
-    });
+      .onConflictDoNothing()
+      .returning(columns);
+    // Linked by another call in the meantime: that project stands.
+    if (!row) {
+      const won = await linked();
+      if (!won) throw new HubError("E_INVALID", "project not created");
+      return won;
+    }
+    await audit("project.created", row.id);
     return row;
   });
 }
