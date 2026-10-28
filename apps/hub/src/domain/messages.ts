@@ -313,11 +313,9 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
     throw new HubError("E_TOO_LARGE", "body over 8 KB, more than 20 refs or subject over 200 characters: summarize and use a reference");
   }
   // Per agent (SPEC), per person whoever writes (a new session, the console or Slack cannot reset it), and per team.
-  const wait = Math.max(
-    fromAgentId ? limiter.take(fromAgentId) : 0,
-    limiter.take(`user:${p.user.id}`),
-    limiter.take(`team:${p.teamId}`, TEAM_SCALE),
-  );
+  // In that order, up to the first refusal: a send the person's budget refuses takes nothing of the team's.
+  const wait =
+    (fromAgentId ? limiter.take(fromAgentId) : 0) || limiter.take(`user:${p.user.id}`) || limiter.take(`team:${p.teamId}`, TEAM_SCALE);
   if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
 
   // The loop orchestrator is a member the admins named: its agent judges loops the guard muted.
