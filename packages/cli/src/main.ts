@@ -775,6 +775,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
   const quarantine = `${wt}.quarantine`;
   // The commit the task's branch was made on: where a restack replays its commits from.
   const baseFile = `${wt}.base`;
+  // The last review of the runner's own reviewer: what a fix resumed after a restart applies, never a PR comment.
+  const reviewFile = `${wt}.review`;
   let ran = false;
   let swept = true;
   let locked = false;
@@ -1119,13 +1121,15 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await update({ status: "review", note: `retried: PR #${pr} back to review` });
         return say(`PR #${pr} back to review`);
       }
-      // Resumed mid-fix: the review is on the PR, posted by this runner. gh does not work in a container: read here.
+      // Resumed mid-fix: the review kept on this machine. The PR's comments are anyone's to write.
       if (task.status !== "review") {
-        step = "gh pr view failed";
-        const last = boxed
-          ? `:\n${await untrusted(`comments-${slug}`, "PR comments", (await gh(["pr", "view", String(pr), "--comments"])).slice(-REVIEW_MAX))}`
-          : `: read it with gh pr view ${pr} --comments`;
-        return await fix(rule("author"), pr, `address the last review on PR #${pr}${last}`);
+        if (!existsSync(reviewFile)) fail("no review from the runner's own reviewer is kept for this fix");
+        const kept = readFileSync(reviewFile, "utf8");
+        return await fix(
+          rule("author"),
+          pr,
+          `address this review:\n${await untrusted(`review-${slug}-${task.review_round}`, "runner reviewer", kept)}`,
+        );
       }
 
       step = "git rev-parse failed";
@@ -1197,6 +1201,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
           .catch((e: Error) => say(`could not tell the owner: ${e.message}`));
         return;
       }
+      writeFileSync(reviewFile, review, { mode: 0o600 });
       await update({
         status: "in_progress",
         review_round: round,
@@ -1314,6 +1319,7 @@ async function cleanUp(dir: string, projectId: string, id: string) {
   await safeGit(["-C", dir, "branch", "-D", `codetgh/${id.toLowerCase()}`]).catch(() => {});
   rmSync(lock, { force: true });
   rmSync(`${wt}.base`, { force: true });
+  rmSync(`${wt}.review`, { force: true });
 }
 
 // One pass: resume the leases this runner held before a restart, lease ready tasks of the projects switched on and

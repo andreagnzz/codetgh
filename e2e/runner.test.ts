@@ -965,6 +965,42 @@ describe("codetgh runner review loop", () => {
     expect(reviewer().at(-1).stdin).toContain("Subject: resumed author");
   });
 
+  it("resumed mid-fix, applies only the review of its own reviewer, never the PR's comments", async () => {
+    const id = await create("REJECT1 resumed fix");
+    await runner();
+    await runner();
+    expect(await row(id)).toMatchObject({ status: "review", reviewRound: 1 });
+    // As left by a runner stopped after it sent the task back for fixes: in progress, still leased to it.
+    const midFix = () =>
+      hub.db
+        .update(task)
+        .set({ status: "in_progress", leaseOwner: runnerOwner(), leaseUntil: new Date(Date.now() + 600_000) })
+        .where(eq(task.id, id));
+    await midFix();
+    const gh = lines("gh.jsonl").length;
+    await runner();
+    const fixer = lines("claude.jsonl").at(-1);
+    expect(fixer.stdin).toContain("Subject: REJECT1 resumed fix");
+    expect(fixer.stdin).toMatch(/address this review:\n<peer_message [^>]*from="runner reviewer"/);
+    expect(fixer.stdin).toContain("REVIEW-ONLY-LINE round 1");
+    expect(
+      lines("gh.jsonl")
+        .slice(gh)
+        .filter((l) => l.argv.includes("--comments")),
+    ).toEqual([]);
+    expect(await row(id)).toMatchObject({ status: "review", leaseOwner: null });
+
+    // No review of its own reviewer on this machine: blocked, and no agent runs.
+    rmSync(`${worktree(id)}.review`, { force: true });
+    await midFix();
+    const runs = lines("claude.jsonl").length;
+    await runner();
+    expect(lines("claude.jsonl")).toHaveLength(runs);
+    const t = await row(id);
+    expect(t?.status).toBe("blocked");
+    expect(t?.notes.at(-1)?.text).toContain("blocked: no review from the runner's own reviewer is kept for this fix");
+  });
+
   it("recreates a missing worktree from the PR branch for the review", async () => {
     const id = await create("lost worktree");
     await runner();
