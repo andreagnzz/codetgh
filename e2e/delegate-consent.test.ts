@@ -34,6 +34,8 @@ const prompt = async (session: string) => {
 };
 const shown = async (session: string, agentId: string) =>
   `${await prompt(session)}\n${(await callOnce(hub.url, team.sam.token, "inbox_read", { agent: agentId })).text}`;
+const refused = async () =>
+  (await callOnce(hub.url, team.lea.token, "ask_peer", { agent: lea, to: "@sam", kind: "request", question: "after" })).text;
 const expired = async (id: string) =>
   ((await hub.db.select().from(message).where(eq(message.id, id)))[0]?.expiresAt?.getTime() ?? Infinity) <= Date.now();
 
@@ -102,8 +104,6 @@ describe("the prompt hook tells a delegate to act only on what it shows", () => 
 describe("a delegate session ends with its owner's standing", () => {
   const accepts = async (session: string) =>
     (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0]?.acceptRequestsFrom ?? null;
-  const refused = async () =>
-    (await callOnce(hub.url, team.lea.token, "ask_peer", { agent: lea, to: "@sam", kind: "request", question: "after" })).text;
 
   it("stops accepting requests when its owner is quarantined", async () => {
     const sam = await register(team.sam.token, "sam-quarantine", ["@lea"]);
@@ -129,6 +129,36 @@ describe("a delegate session ends with its owner's standing", () => {
     expect((await role("member")).status).toBe(204);
     await end(team.sam.token, "sam-guest");
   });
+});
+
+describe("an opt-in left on a receiver who lost their standing does nothing", () => {
+  // What a role or trust change racing a registration could leave: the opt-in still on the row.
+  const lose = {
+    guest: (lost: boolean) =>
+      hub.db
+        .update(membership)
+        .set({ role: lost ? "guest" : "member" })
+        .where(eq(membership.userId, team.sam.userId)),
+    quarantined: (lost: boolean) =>
+      hub.db
+        .update(agent)
+        .set({ trustLevel: lost ? "quarantined" : "trusted" })
+        .where(eq(agent.userId, team.sam.userId)),
+  };
+  for (const [state, set] of Object.entries(lose))
+    it(`shows no authorized request and routes none to a receiver now ${state}`, async () => {
+      const sam = await register(team.sam.token, `sam-stale-${state}`, ["@lea"]);
+      await request(team.lea.token, lea, `task for a receiver now ${state}`);
+      await set(true);
+      const page = await shown(`sam-stale-${state}`, sam);
+      const again = await refused();
+      await set(false);
+      expect(page).toContain(`task for a receiver now ${state}`);
+      expect(page).not.toContain('authorized="true"');
+      expect(page).not.toContain("Do it now");
+      expect(again).toContain("E_NO_DELEGATE");
+      await end(team.sam.token, `sam-stale-${state}`);
+    });
 });
 
 // Last: Malik leaves the team.

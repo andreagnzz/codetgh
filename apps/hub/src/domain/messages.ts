@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { clean, renderPeerMessage, scanSecrets, textFlags } from "@codetgh/guard";
 import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
+import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
@@ -738,15 +738,18 @@ export const visibleTo = (p: Principal, a: Agent | null) =>
 // Blocking first, then handoffs (they carry the context to resume work), then by priority.
 const PRIORITY_ORDER = sql`case when ${message.priority} = 'blocking' then 0 when ${message.kind} = 'handoff' then 1 when ${message.priority} = 'high' then 2 when ${message.priority} = 'normal' then 3 else 4 end`;
 
+// An active member of the message's team, neither a guest nor in quarantine (agents.ts inGoodStanding).
+const inGoodStanding = (userId: AnyColumn) => sql`exists (select 1 from ${membership} where ${membership.teamId} = ${message.teamId}
+    and ${membership.userId} = ${userId} and ${membership.status} = 'active' and ${membership.role} <> 'guest')
+  and not exists (select 1 from ${agent} where ${agent.teamId} = ${message.teamId} and ${agent.userId} = ${userId}
+    and ${agent.trustLevel} = 'quarantined')`;
+
 // authorized="true" is decided when a request is shown, not when it was sent: it was delegated, the session it went to is
-// live and still accepts its sender, and the sender is still an active member, neither a guest nor in quarantine.
+// live and still accepts its sender, and both the sender and that session's owner are in good standing.
 const authorizedNow = sql<boolean>`${message.delegated}
   and exists (select 1 from ${agent} where ${agent.id} = ${receipt.recipientAgentId} and ${agent.endedAt} is null
     and ${agent.removedAt} is null and ${message.fromUserId} = any(${agent.acceptRequestsFrom}))
-  and exists (select 1 from ${membership} where ${membership.teamId} = ${message.teamId}
-    and ${membership.userId} = ${message.fromUserId} and ${membership.status} = 'active' and ${membership.role} <> 'guest')
-  and not exists (select 1 from ${agent} where ${agent.teamId} = ${message.teamId} and ${agent.userId} = ${message.fromUserId}
-    and ${agent.trustLevel} = 'quarantined')`;
+  and ${inGoodStanding(message.fromUserId)} and ${inGoodStanding(receipt.recipientUserId)}`;
 
 export type InboxItem = { seq: number; message: typeof message.$inferSelect; fromName: string; authorized?: boolean };
 

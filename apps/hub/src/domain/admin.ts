@@ -4,7 +4,7 @@ import type { Db } from "../db/index.js";
 import { agent, alert, membership, personalToken, project, type TeamSettings, team } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
-import { expireDelegated } from "./agents.js";
+import { expireDelegated, lockDelegates } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -161,6 +161,7 @@ export async function resolveAlert(db: Db, p: Principal, alertId: string, status
 
 export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust: "trusted" | "quarantined") {
   await db.transaction(async (tx) => {
+    await lockDelegates(tx, p.teamId);
     const [a] = await tx
       .select()
       .from(agent)
@@ -257,6 +258,7 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
 export async function changeRole(db: Db, p: Principal, membershipId: string, role: Role) {
   requireAdmin(p);
   await db.transaction(async (tx) => {
+    await lockDelegates(tx, p.teamId);
     const [m] = await tx
       .select()
       .from(membership)

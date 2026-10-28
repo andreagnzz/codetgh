@@ -60,6 +60,25 @@ async function personTrust(db: Db, p: Principal) {
   return q ? ("quarantined" as const) : ("trusted" as const);
 }
 
+// An active member, neither a guest nor in quarantine, read now: a principal holds the role its request started with.
+export async function inGoodStanding(db: Db, teamId: string, userId: string) {
+  const [m] = await db
+    .select({ role: membership.role })
+    .from(membership)
+    .where(and(eq(membership.teamId, teamId), eq(membership.userId, userId), eq(membership.status, "active")));
+  const [q] = await db
+    .select({ id: agent.id })
+    .from(agent)
+    .where(and(eq(agent.teamId, teamId), eq(agent.userId, userId), eq(agent.trustLevel, "quarantined")))
+    .limit(1);
+  return Boolean(m && m.role !== "guest" && !q);
+}
+
+// Delegate opt-ins, and the role and trust they depend on (changeRole, setAgentTrust), change one at a time per team.
+// Taken before anything else in the transaction; appendAudit's team lock comes last.
+export const lockDelegates = (tx: Db, teamId: string) =>
+  tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`delegates:${teamId}`}, 0))`);
+
 // Members link a new repository by starting a session in it; never a guest, a quarantined person, or once an admin
 // turned auto_link_projects off.
 export async function canAutoLink(db: Db, p: Principal) {
@@ -72,6 +91,7 @@ export const isLaunch = (source?: string) => !source || source === "startup" || 
 export async function registerSession(db: Db, p: Principal, input: z.infer<typeof AgentSessionInput>) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
+    if (input.accept_requests_from?.length) await lockDelegates(tx, p.teamId);
     let projectId: string | null = null;
     // An unknown repository stays off the hub, unless the session sends its name to link it and may do so.
     if (input.repo_fingerprint) {
@@ -87,7 +107,7 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
     // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
     const asked = [...new Set(input.accept_requests_from ?? [])];
-    if (asked.length && (p.role === "guest" || (await personTrust(tx, p)) === "quarantined"))
+    if (asked.length && !(await inGoodStanding(tx, p.teamId, p.user.id)))
       throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     const accept = asked.length
       ? await tx
@@ -494,7 +514,7 @@ export async function delegateFor(db: Db, p: Principal, from: Agent, handle: str
   await requireNoDelegate(db, p);
   const [row] = from.projectId
     ? await db
-        .select({ id: agent.id })
+        .select({ id: agent.id, userId: agent.userId })
         .from(agent)
         .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
         .where(
@@ -512,7 +532,8 @@ export async function delegateFor(db: Db, p: Principal, from: Agent, handle: str
         .orderBy(desc(agent.lastSeenAt))
         .limit(1)
     : [];
-  if (!row)
+  // An opt-in still set on a guest or a quarantined person (a role change racing a launch) routes nothing.
+  if (!row || !(await inGoodStanding(db, p.teamId, row.userId)))
     throw new HubError(
       "E_NO_DELEGATE",
       `${handle} has no live session on this project that accepts your requests (codetgh start --accept-requests-from @${p.handle}): ask a question instead`,
