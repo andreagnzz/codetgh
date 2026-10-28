@@ -1183,7 +1183,7 @@ volumes:
 | Migrations | Appliquées au démarrage sous verrou consultatif Postgres ; chacune reste compatible avec la version précédente du hub |
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |
-| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; rotation documentée |
+| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; la rotation de CODETGH_SECRET (docs/DEPLOY.md) oblige à se reconnecter à la console et par OAuth, à recréer les webhooks GitHub et à réautoriser les empreintes ; elle fixe d'abord CODETGH_AUDIT_KEY à la graine dérivée de l'ancien secret : sinon plus aucun point de contrôle d'audit n'est signé ni vérifié |
 | Image | Construction en plusieurs étapes, utilisateur non root, système de fichiers en lecture seule sauf data/ |
 
 ### Observabilité
