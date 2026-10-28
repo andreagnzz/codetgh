@@ -342,7 +342,8 @@ export const InvitePage: FC<{
   lang: Lang;
 }> = ({ team, role, email, name, valid, join, lang }) => {
   const _ = (s: string) => t(lang, s);
-  const heading = _("Join {team} on CodeTgh").replace("{team}", team);
+  // A replacer function: a $ in the team name is not a replacement pattern.
+  const heading = _("Join {team} on CodeTgh").replace("{team}", () => team);
   return (
     <PublicLayout lang={lang} title={heading}>
       {valid ? (
@@ -354,7 +355,7 @@ export const InvitePage: FC<{
           {join ? (
             <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
               <input type="hidden" name="csrf" value={join.csrf} />
-              <button type="submit">{_("Join {team}").replace("{team}", team)}</button>
+              <button type="submit">{_("Join {team}").replace("{team}", () => team)}</button>
             </form>
           ) : (
             <>
