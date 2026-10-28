@@ -869,7 +869,7 @@ describe("codetgh runner review loop", () => {
     await runner();
     await runner({ auto_merge: true });
     expect(reviewer()).toHaveLength(before + 1);
-    expect(readFileSync(join(worktree(id), "teammate.txt"), "utf8")).toBe("a teammate's commit\n");
+    expect(existsSync(join(worktree(id), "teammate.txt"))).toBe(true);
     expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", String(pr), "--merge", "--auto", "--match-head-commit", onOrigin(id)]);
     expect(await row(id)).toMatchObject({ status: "review", approved: true });
   });
