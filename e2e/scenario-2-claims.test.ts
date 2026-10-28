@@ -1,4 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -123,6 +125,44 @@ it("checks a file whose name starts with two dots, and leaves a path outside the
   expect((await runHook("pre-edit", edit(join(repo, "../outside.txt")), sam)).out).toBeNull();
 });
 
+it("checks edits against the session's repository, even when the first edit is in another one", async () => {
+  const lea = hookEnv(hub.url, team.lea.token);
+  await runHook("session-start", { session_id: "lea-root", source: "startup", cwd: repo }, lea);
+  const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-root"));
+  const leaMcp = await mcpClient(hub.url, team.lea.token);
+  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["src/index.ts"], mode: "exclusive", ttl_s: 1800 });
+  await leaMcp.close();
+  // A submodule or a folder added with /add-dir: another git repository, with a file at the same relative path.
+  const other = gitRepo("git@github.com:acme/vendored-lib.git");
+  const edit = (session_id: string, file_path: string) => ({
+    session_id,
+    cwd: repo,
+    tool_name: "Edit",
+    tool_input: { file_path, old_string: "a", new_string: "b" },
+  });
+  const samClaims = () =>
+    hub.db
+      .select()
+      .from(claim)
+      .where(and(eq(claim.holderUserId, team.sam.userId), eq(claim.scope, "src/index.ts")));
+
+  const sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "sam-root", source: "startup", cwd: repo }, sam);
+  expect((await runHook("pre-edit", edit("sam-root", join(other, "src/index.ts")), sam)).out).toBeNull();
+  expect(await samClaims()).toEqual([]);
+  const inside = await runHook("pre-edit", edit("sam-root", join(repo, "src/index.ts")), sam);
+  expect((inside.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/src\/index\.ts.*@lea/s);
+
+  // A session started outside any repository takes the one it joins.
+  const malik = hookEnv(hub.url, team.malik.token);
+  const home = mkdtempSync(join(tmpdir(), "codetgh-home-"));
+  await runHook("session-start", { session_id: "malik-root", source: "startup", cwd: home }, malik);
+  await runHook("cwd-changed", { session_id: "malik-root", cwd: repo, old_cwd: home, new_cwd: repo }, malik);
+  expect((await runHook("pre-edit", edit("malik-root", join(other, "src/index.ts")), malik)).out).toBeNull();
+  const joined = await runHook("pre-edit", edit("malik-root", join(repo, "src/index.ts")), malik);
+  expect((joined.out as Out)?.hookSpecificOutput?.permissionDecisionReason ?? "").toMatch(/src\/index\.ts.*@lea/s);
+});
+
 it("reports at the end of a turn a claimed file changed through the shell", async () => {
   const sam = hookEnv(hub.url, team.sam.token);
   await runHook("session-start", { session_id: "sam-shell", source: "startup", cwd: repo }, sam);
@@ -132,6 +172,43 @@ it("reports at the end of a turn a claimed file changed through the shell", asyn
   expect((stop.out as Out)?.systemMessage).toMatch(/api\/users\.ts.*@lea/s);
   // Once per file and claim per session.
   expect((await runHook("stop", { session_id: "sam-shell", cwd: repo }, sam)).out).toBeNull();
+});
+
+it("reads renames in the shell report, and reports a claimed file moved away", async () => {
+  const lea = hookEnv(hub.url, team.lea.token);
+  await runHook("session-start", { session_id: "lea-mv", source: "startup", cwd: repo }, lea);
+  const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-mv"));
+  const leaMcp = await mcpClient(hub.url, team.lea.token);
+  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["lib/legacy.ts", "lib/util.ts"], mode: "exclusive", ttl_s: 1800 });
+  await leaMcp.close();
+  // Another clone of the same repository, with the files committed so git can see them move.
+  const work = gitRepo();
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", work, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "-c", "commit.gpgsign=false", ...args]);
+  for (const f of ["api/old.ts", "lib/util.ts", "lib/legacy.ts"]) {
+    mkdirSync(join(work, f, ".."), { recursive: true });
+    writeFileSync(join(work, f), `${f}\n`);
+  }
+  git("add", ".");
+  git("commit", "-q", "-m", "base");
+  git("mv", "api/old.ts", "api/new.ts");
+  git("mv", "lib/legacy.ts", "lib/modern.ts");
+  writeFileSync(join(work, "lib/util.ts"), "export const changed = true;\n");
+  // Git shows a copy (C) only with status.renames=copies, and only from a file also changed in the index.
+  git("config", "status.renames", "copies");
+  writeFileSync(join(work, "lib/copy.ts"), "lib/util.ts\n");
+  git("add", "lib/util.ts", "lib/copy.ts");
+  // Longer than the hub takes (300): left out, never a reason to drop the report. Git on Windows needs core.longpaths.
+  if (process.platform !== "win32") {
+    mkdirSync(join(work, "x".repeat(150)));
+    writeFileSync(join(work, "x".repeat(150), `${"y".repeat(150)}.ts`), "deep\n");
+  }
+
+  const sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "sam-mv", source: "startup", cwd: work }, sam);
+  const report = (await runHook("stop", { session_id: "sam-mv", cwd: work }, sam)).out as Out;
+  expect(report?.systemMessage).toMatch(/lib\/util\.ts \(@lea, exclusive\)/);
+  expect(report?.systemMessage).toMatch(/lib\/legacy\.ts \(@lea, exclusive\)/);
 });
 
 it("leaves files edited with the editor tools out of the shell report", async () => {

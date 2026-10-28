@@ -476,7 +476,7 @@ From [Hooks reference](https://code.claude.com/docs/en/hooks) § CwdChanged, § 
 - Both events take `command`, `http` and `mcp_tool` hooks, not `prompt` or `agent`.
 - Neither page says whether these events fire under `-p`.
 
-The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository, and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.
+The plugin runs `hook.js cwd-changed` on both (timeout 3): a session registered outside a repository (state `projectless`) registers again from the new directory with the session-start flow (fingerprint, then name and branch on `can_link`), once per repository unless the hub did not answer (timeout, 5xx, 429), and stays on the first project it joins. Tested in `e2e/link-on-cwd.test.ts`.
 
 ### The hub MCP connection drops at every hub restart (observed 2026-10-21, Claude Code 2.1.299–2.1.304)
 

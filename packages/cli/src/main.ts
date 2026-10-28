@@ -1998,9 +1998,10 @@ async function claimedInPush(io: Io, creds: { url: string; token: string }) {
   const refs = io.stdin.isTTY ? "" : await readToken(io);
   const files = new Set<string>();
   for (const line of refs.split("\n")) {
-    const [ref, local, , remote] = line.split(" ");
-    // Branches that are pushed, not deleted; a new branch is compared with the default branch it forked from.
-    if (!ref?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
+    const [, local, dst, remote] = line.split(" ");
+    // Branches that are pushed, not deleted, whatever names the local side (HEAD, a sha); a new branch is compared with
+    // the default branch it forked from.
+    if (!dst?.startsWith("refs/heads/") || !local || /^0+$/.test(local)) continue;
     let from = remote && !/^0+$/.test(remote) ? remote : "";
     if (!from) {
       let known = "";

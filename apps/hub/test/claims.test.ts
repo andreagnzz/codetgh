@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, auditEvent, claim, membership, team as teamTable } from "../src/db/schema.js";
+import { agent, auditEvent, claim, membership, message, receipt, team as teamTable } from "../src/db/schema.js";
 import { compat } from "../src/domain/claims.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -121,6 +121,18 @@ describe("claims", () => {
     await lea.close();
   });
 
+  it("compares two globs by folder: packages/ui/** and packages/ui-kit/** do not overlap", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    const sam = await mcpClient(hub.url, team.sam.token);
+    expect((await call(lea, "claim", { agent: sessions.lea, scope: ["packages/ui/**"] })).isError).toBe(false);
+    expect((await call(sam, "claim", { agent: sessions.sam, scope: ["packages/ui-kit/**"] })).isError).toBe(false);
+    expect(code(await call(sam, "claim", { agent: sessions.sam, scope: ["packages/ui/button/**"] }))).toBe("E_CLAIM_CONFLICT");
+    expect(code(await call(sam, "claim", { agent: sessions.sam, scope: ["packages/**"] }))).toBe("E_CLAIM_CONFLICT");
+    await call(sam, "claim_release", { agent: sessions.sam, all_mine: true });
+    await lea.close();
+    await sam.close();
+  });
+
   it("puts a 10-minute intent claim on a free file, renews it, and warns others", async () => {
     expect((await preEdit(team.malik.token, "malik-claims", "lib/date.ts")).status).toBe(204);
     const onFile = async () => (await active(sessions.malik ?? "")).filter((c) => c.scope === "lib/date.ts");
@@ -130,6 +142,25 @@ describe("claims", () => {
     const other = await preEdit(team.sam.token, "sam-claims", "lib/date.ts");
     expect(other.body?.decision).toBe("warn");
     expect(other.body?.reason).toContain("being edited by @malik (intent");
+  });
+
+  it("tells the holder of a shared claim once when someone edits the file", async () => {
+    const lea = await mcpClient(hub.url, team.lea.token);
+    expect((await call(lea, "claim", { agent: sessions.lea, scope: ["contracts/**"], mode: "shared" })).isError).toBe(false);
+    await lea.close();
+    const notes = () =>
+      hub.db
+        .select({ body: message.body })
+        .from(receipt)
+        .innerJoin(message, eq(message.id, receipt.messageId))
+        .where(
+          and(eq(receipt.recipientAgentId, sessions.lea ?? ""), eq(message.fromAgentId, sessions.sam ?? ""), eq(message.kind, "note")),
+        );
+    expect((await preEdit(team.sam.token, "sam-claims", "contracts/users.md")).body?.decision).not.toBe("ask");
+    expect(await notes()).toEqual([{ body: expect.stringMatching(/contracts\/users\.md.*contracts\/\*\*/) }]);
+    await preEdit(team.sam.token, "sam-claims", "contracts/users.md");
+    await preEdit(team.sam.token, "sam-claims", "contracts/orders.md");
+    expect(await notes()).toHaveLength(1);
   });
 
   it("refuses excluded paths, oversized TTLs and claims outside a project", async () => {
