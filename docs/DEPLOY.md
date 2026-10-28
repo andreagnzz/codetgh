@@ -152,7 +152,7 @@ Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored
    docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
    curl -fsS http://127.0.0.1:8787/readyz
    ```
-6. **After.** Copy `deploy/.env` to the nightly job (its `install` line in [Nightly job](#nightly-job)). In the console, **Audit log › Verify chain** must still say the chain is intact. Each team admin creates the webhook again (**Settings › GitHub › Create the webhook**: new URL and secret) and pastes both into GitHub. A secret value that was allowed is blocked again until an admin allows it from its new alert. OAuth clients get a new access token at their next refresh, or sign in again.
+6. **After.** Copy `deploy/.env` to the nightly job (its `install` line in [Nightly job](#nightly-job)). In the console, **Audit log › Verify chain** must still say the chain is intact. In each team that has a webhook, an admin clicks **Settings › GitHub bridge › Replace the webhook secret**, which shows the new URL and secret once, and pastes both into GitHub; a team without one has nothing to do. A secret value that was allowed is blocked again until an admin allows it from its new alert. OAuth clients get a new access token at their next refresh, or sign in again.
 
 `CODETGH_AUDIT_KEY` itself cannot be rotated: the hub checks every checkpoint against one key.
 
