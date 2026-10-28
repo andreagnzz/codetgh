@@ -1265,7 +1265,7 @@ Les scénarios reprennent Sam et Léa du fil rouge, dans une équipe de test nom
 | Slack | Une alerte ou une demande blocking atteint le canal ; la réponse d'un membre revient avec authored_by à human |
 | A2A | Un agent externe envoie une question ; il reste en quarantaine et ne peut ni réserver ni proposer de mémoire |
 | Chiffrement de bout en bout | Pour les fils concernés, le hub ne stocke que des corps chiffrés ; la détection de secrets s'y fait côté client, et la recherche côté serveur n'y est plus disponible |
-| SSO | Une personne se connecte par le fournisseur d'identité de l'organisation ; la révocation chez ce fournisseur ferme ses sessions |
+| SSO | Une personne se connecte par le fournisseur d'identité de l'organisation ; la révocation chez ce fournisseur ferme ses sessions, et /mcp refuse ses jetons d'accès OAuth émis avant (401) |
 | Pont de canal | Un message démarre un tour dans une session inactive lancée avec le canal ; le texte reste dans l'enveloppe |
 
 ### Critères de la phase 4

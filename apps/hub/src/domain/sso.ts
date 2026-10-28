@@ -41,6 +41,7 @@ export async function backchannelLogout(deps: MessagingDeps, config: Config, tok
     await tx.delete(session).where(eq(session.userId, acc.userId));
     await tx.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, acc.userId));
     await tx.delete(oauthRefreshToken).where(eq(oauthRefreshToken.userId, acc.userId));
+    await tx.update(membership).set({ oauthNotBefore: new Date() }).where(eq(membership.userId, acc.userId));
   });
   for (const m of await db.select({ teamId: membership.teamId }).from(membership).where(eq(membership.userId, acc.userId)))
     bus.emit("revoked", { teamId: m.teamId, userId: acc.userId });

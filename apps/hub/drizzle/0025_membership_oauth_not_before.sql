@@ -1,0 +1,1 @@
+ALTER TABLE "membership" ADD COLUMN "oauth_not_before" timestamp;

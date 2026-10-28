@@ -1,5 +1,5 @@
 import type { Role } from "@codetgh/shared";
-import { and, eq, gt, isNull, ne } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, ne, or } from "drizzle-orm";
 import type { Db } from "./db/index.js";
 import { membership, personalToken, type TeamSettings, team, user } from "./db/schema.js";
 import { HubError } from "./errors.js";
@@ -74,13 +74,22 @@ export async function principalForToken(db: Db, token: string, surface: "member"
   return row ? toPrincipal(row, row.tokenId, "personal_token") : null;
 }
 
-export async function principalForUser(db: Db, userId: string, auth: "oauth" | "console") {
+// issuedAt (an OAuth token's iat, in seconds): a token from before an SSO logout finds no principal.
+export async function principalForUser(db: Db, userId: string, auth: "oauth" | "console", issuedAt?: number) {
   const rows = await db
     .select(columns)
     .from(membership)
     .innerJoin(user, eq(user.id, membership.userId))
     .innerJoin(team, eq(team.id, membership.teamId))
-    .where(and(eq(membership.userId, userId), eq(membership.status, "active")));
+    .where(
+      and(
+        eq(membership.userId, userId),
+        eq(membership.status, "active"),
+        issuedAt === undefined
+          ? undefined
+          : or(isNull(membership.oauthNotBefore), lt(membership.oauthNotBefore, new Date(issuedAt * 1000))),
+      ),
+    );
   if (rows.length > 1) throw new HubError("E_FORBIDDEN", "You belong to several teams: use a personal token created for one team.");
   const [row] = rows;
   return row ? toPrincipal(row, null, auth) : null;
