@@ -24,7 +24,7 @@ afterAll(() => hub.stop());
 const ask = (body: string, taskId = "") => ({
   tenant: "",
   message: {
-    messageId: randomUUID(),
+    messageId: randomUUID() as string,
     contextId: "",
     taskId,
     role: Role.ROLE_USER,

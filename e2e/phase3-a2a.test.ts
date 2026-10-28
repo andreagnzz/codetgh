@@ -23,7 +23,7 @@ const text = (t: string) => ({ content: { $case: "text" as const, value: t }, me
 const ask = (body: string) => ({
   tenant: "",
   message: {
-    messageId: randomUUID(),
+    messageId: randomUUID() as string,
     contextId: "",
     taskId: "",
     role: Role.ROLE_USER,
