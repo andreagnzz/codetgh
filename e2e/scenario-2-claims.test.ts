@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -171,6 +172,39 @@ it("reports at the end of a turn a claimed file changed through the shell", asyn
   expect((stop.out as Out)?.systemMessage).toMatch(/api\/users\.ts.*@lea/s);
   // Once per file and claim per session.
   expect((await runHook("stop", { session_id: "sam-shell", cwd: repo }, sam)).out).toBeNull();
+});
+
+it("reads renames in the shell report, and reports a claimed file moved away", async () => {
+  const lea = hookEnv(hub.url, team.lea.token);
+  await runHook("session-start", { session_id: "lea-mv", source: "startup", cwd: repo }, lea);
+  const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-mv"));
+  const leaMcp = await mcpClient(hub.url, team.lea.token);
+  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["lib/legacy.ts", "lib/util.ts"], mode: "exclusive", ttl_s: 1800 });
+  await leaMcp.close();
+  // Another clone of the same repository, with the files committed so git can see them move.
+  const work = gitRepo();
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", work, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "-c", "commit.gpgsign=false", ...args]);
+  for (const f of ["api/old.ts", "lib/util.ts", "lib/legacy.ts"]) {
+    mkdirSync(join(work, f, ".."), { recursive: true });
+    writeFileSync(join(work, f), `${f}\n`);
+  }
+  git("add", ".");
+  git("commit", "-q", "-m", "base");
+  git("mv", "api/old.ts", "api/new.ts");
+  git("mv", "lib/legacy.ts", "lib/modern.ts");
+  writeFileSync(join(work, "lib/util.ts"), "export const changed = true;\n");
+  // Longer than the hub takes (300): left out, never a reason to drop the report. Git on Windows needs core.longpaths.
+  if (process.platform !== "win32") {
+    mkdirSync(join(work, "x".repeat(150)));
+    writeFileSync(join(work, "x".repeat(150), `${"y".repeat(150)}.ts`), "deep\n");
+  }
+
+  const sam = hookEnv(hub.url, team.sam.token);
+  await runHook("session-start", { session_id: "sam-mv", source: "startup", cwd: work }, sam);
+  const report = (await runHook("stop", { session_id: "sam-mv", cwd: work }, sam)).out as Out;
+  expect(report?.systemMessage).toMatch(/lib\/util\.ts \(@lea, exclusive\)/);
+  expect(report?.systemMessage).toMatch(/lib\/legacy\.ts \(@lea, exclusive\)/);
 });
 
 it("leaves files edited with the editor tools out of the shell report", async () => {

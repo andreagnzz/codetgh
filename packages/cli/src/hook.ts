@@ -531,12 +531,18 @@ async function shellEdits(input: Input) {
   })
     .then((r) => r.stdout)
     .catch(() => "");
-  const changed = status
-    .split("\0")
-    .filter((line) => line.length > 3)
-    .map((line) => line.slice(3))
-    .filter((p) => !(state.touched ?? []).includes(p))
-    .slice(0, 200);
+  // Records, not fields: a rename or a copy (R or C in a status column) is followed by its original path, a field of its
+  // own with no status. Both paths changed.
+  const fields = status.split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const entry = fields[i] ?? "";
+    if (entry.length <= 3) continue;
+    paths.push(entry.slice(3));
+    if (/[RC]/.test(entry.slice(0, 2))) paths.push(fields[++i] ?? "");
+  }
+  // A path the hub refuses (over 300 characters, a backslash) would fail the whole check: leave it out.
+  const changed = paths.filter((p) => p && p.length <= 300 && !p.includes("\\") && !(state.touched ?? []).includes(p)).slice(0, 200);
   if (!changed.length) return null;
   try {
     const res = await hub("/v1/claims/check", {
