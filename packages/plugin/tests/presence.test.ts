@@ -250,6 +250,27 @@ test(
 );
 
 test(
+  "posts no status and no team note at 100 % while the team's kill switch is on",
+  { options: OPTIONS, timeoutMs: 15_000 },
+  async ($, on) => {
+    const s = stubs(
+      on,
+      (e) => {
+        if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+        if (e.method === "POST") return ok("{}");
+        return ok(body({}, { paused: true }));
+      },
+      () => [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    await s.clock.advance(30_000);
+    expect(s.requests.filter((r) => r.method === "POST")).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 0 unread");
+  },
+);
+
+test(
   "rewake mode: a subagent's or teammate's turn starting while the main loop is idle leaves the session idle",
   { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
   async ($, on) => {
