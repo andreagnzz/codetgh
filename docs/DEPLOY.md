@@ -131,7 +131,7 @@ The hub reads one `CODETGH_SECRET` and knows no previous one. Everything derived
 - the audit signing key, when `CODETGH_AUDIT_KEY` is empty: it is derived from the secret, and a new key never signs on top of checkpoints the old one signed (an `audit_tamper` alert, "not signed by this hub"), while **Verify chain** in the console and `codetgh audit verify` fail on every old checkpoint. Step 2 keeps the same key;
 - every team's GitHub webhook secret, and the fingerprints of allowed secrets.
 
-Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored as plain SHA-256 hashes and keep working. The steps assume this guide's Compose and Postgres deployment. After step 3 the old secret is gone: a rotation that fails is undone only by restoring the step-1 dump ([Restore](#restore)) and running steps 4 and 5 again with the new secret. Run from the checkout:
+Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored as plain SHA-256 hashes and keep working. The steps assume this guide's Compose and Postgres deployment. After step 3 the old secret is gone: a rotation that fails is undone only by restoring the step-1 dump ([Restore](#restore), without its last line: the hub stays stopped) and running steps 4 and 5 again with the new secret. Run from the checkout:
 
 1. `codetgh backup`.
 2. **Keep the audit key.** If `CODETGH_AUDIT_KEY` is empty, this writes the seed the hub derives from the current secret into `deploy/.env` (the secret must be unquoted, as `codetgh setup` writes it); it does nothing when the key is already set:
