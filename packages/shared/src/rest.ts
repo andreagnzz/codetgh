@@ -134,7 +134,11 @@ export const KeysQuery = z.object({ handles: z.string().max(500) });
 export const KeysOutput = z.object({ keys: z.array(z.object({ handle: z.string(), public_key: z.string().nullable() })) });
 export const ThreadKeyOutput = z.object({ thread: z.string(), wrapped: z.string(), ciphertext: z.string() });
 export const CreateProjectInput = z.object({
-  name: z.string().trim().min(1).max(100),
+  // Any member sets it, and it reaches command lines, terminals and models: a closed set of characters.
+  name: z
+    .string()
+    .trim()
+    .regex(/^[\p{L}\p{N} ._/-]{1,100}$/u, "a project name is 1 to 100 letters, digits, spaces and . _ - /"),
   repo_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });
 export const ProjectOutput = z.object({ id: z.string(), name: z.string() });

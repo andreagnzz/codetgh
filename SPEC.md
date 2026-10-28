@@ -163,7 +163,7 @@ Le hub stocke douze types d'objets métier, tous rattachés à une équipe ; cha
 | team | Périmètre d'isolation de toutes les données | name, slug, settings (rétention, interrupteur d'arrêt) |
 | user | Une personne, connectée par GitHub, Google ou lien magique | display_name, email, auth_provider |
 | membership | Lien entre un utilisateur et une équipe | role (owner, admin, member, guest), status |
-| project | Un dépôt Git suivi par l'équipe ; créé par codetgh project new ou, si le réglage auto_link_projects le permet (par défaut), à la première session d'un membre dans le dépôt | repo_fingerprint (SHA-256 de l'URL origin normalisée), default_branch |
+| project | Un dépôt Git suivi par l'équipe ; créé par codetgh project new ou, si le réglage auto_link_projects le permet (par défaut), à la première session d'un membre dans le dépôt ; son nom, que tout membre peut choisir, ne prend que 1 à 100 lettres, chiffres, espaces et `. _ - /` (E_INVALID sinon) | repo_fingerprint (SHA-256 de l'URL origin normalisée), default_branch |
 | agent | Une instance de Claude connectée pour un utilisateur | kind (claude-code, claude-ai, agent-sdk, other), label, session_id, trust_level, last_seen_at, branch |
 | thread | Fil de discussion : canal de projet, message direct ou fil de tâche | kind, task_id, muted_until |
 | message | Unité d'échange | kind, priority, body, refs, requires_ack, hop |
