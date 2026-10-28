@@ -340,7 +340,7 @@ async function cwdChanged(input: Input) {
     if (body.linked === false) return { systemMessage: offLine(body) };
     saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
     // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
-    return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "")}` };
+    return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "") || "this repository"}` };
   } catch {
     return null;
   }

@@ -14,4 +14,4 @@ export function normalizeOrigin(origin: string) {
 export const repoFingerprint = (origin: string) => createHash("sha256").update(normalizeOrigin(origin)).digest("hex");
 
 // A local folder or repository name where a command line or a model reads it: a closed set of characters, 60 at most.
-export const plainName = (s: string) => s.replace(/[^A-Za-z0-9 ._-]/g, "").slice(0, 60);
+export const plainName = (s: string) => s.replace(/[^A-Za-z0-9 ._-]/g, "").slice(0, 60).trim();

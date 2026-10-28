@@ -147,4 +147,18 @@ describe("Remote Control launcher", () => {
     expect(argv).toEqual(["remote-control", "--name", "CodeTgh · web appco"]);
     expect(argv.join(" ")).not.toMatch(/["&|^%<>!\n]/);
   });
+
+  it("names the server after the project id when nothing of the folder name is left", async () => {
+    const fake = fakeClaude();
+    const repoDir = join(mkdtempSync(join(tmpdir(), "codetgh-launch-")), "« »");
+    mkdirSync(repoDir);
+    const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
+    writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
+    await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
+    await launcher(config);
+    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    const argv: string[] = JSON.parse(readFileSync(join(fake, "argv"), "utf8"));
+    process.kill(Number(readFileSync(join(fake, "pid"), "utf8")), "SIGKILL");
+    expect(argv).toEqual(["remote-control", "--name", `CodeTgh · ${projectId}`]);
+  });
 });
