@@ -7,7 +7,7 @@ import { verifyChain } from "../src/domain/audit.js";
 import { bridgeAuthor } from "../src/domain/bridges.js";
 import { createGithubHook } from "../src/domain/github.js";
 import { contextPacket } from "../src/domain/overview.js";
-import { createInvitation, setMemberHandle } from "../src/domain/teams.js";
+import { createInvitation, revokeMember, setMemberHandle } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
 import { call, csrf, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -185,6 +185,22 @@ describe("roles", () => {
         .where(eq(membership.id, m?.id ?? ""));
       await expect(changeRole(hub.db, p, m?.id ?? "", "admin")).rejects.toThrow("system member");
     }
+  });
+
+  it("re-reads an owner's role under the owners lock, so two owners demoting or revoking each other leave one owner", async () => {
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.userId, team.sam.userId));
+    const lea = await principalForToken(hub.db, team.lea.token);
+    // Sam's request started while he was still an owner.
+    const sam = await principalForToken(hub.db, team.sam.token);
+    if (!lea || !sam) throw new Error("setup");
+    await changeRole(hub.db, lea, sam.membershipId, "admin");
+    await expect(changeRole(hub.db, sam, lea.membershipId, "admin")).rejects.toThrow("no longer an owner");
+    await expect(
+      revokeMember(hub.db, { teamId: team.teamId, membershipId: lea.membershipId, actorUserId: sam.user.id, actorRole: "owner" }),
+    ).rejects.toThrow("no longer an owner");
+    const [after] = await hub.db.select().from(membership).where(eq(membership.id, lea.membershipId));
+    expect(after).toMatchObject({ role: "owner", status: "active" });
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
   });
 });
 
