@@ -811,10 +811,26 @@ describe("codetgh runner review loop", () => {
     expect(posted.map((l) => l.argv[3])).toEqual(["--approve", "--comment"]);
     expect(posted[1].body).toContain("REVIEW-ONLY-LINE round 1");
     expect(posted[1].body.trim().split("\n").at(-1)).toBe("VERDICT: APPROVE");
-    expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", String(pr), "--merge", "--auto"]);
+    // GitHub merges only the commit the reviewer read.
+    expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", String(pr), "--merge", "--auto", "--match-head-commit", onOrigin(id)]);
     const t = await row(id);
     expect(t).toMatchObject({ status: "review", reviewRound: 1, leaseOwner: null });
     expect(t?.notes.at(-1)?.text).toBe("approved by the runner's reviewer");
+  });
+
+  it("reviews, approves and merges nothing when someone else pushed to the PR since the runner's last commit", async () => {
+    const id = await create("moved head");
+    await runner();
+    const pr = (await row(id))?.prNumber ?? 0;
+    const before = reviewer().length;
+    pushToOrigin(`codetgh/${slug(id)}`, "teammate.txt", "never reviewed\n");
+    await runner({ auto_merge: true });
+    expect(reviewer()).toHaveLength(before);
+    expect(reviews(pr)).toHaveLength(0);
+    expect(lines("gh.jsonl").filter((l) => l.argv[1] === "merge" && l.argv[2] === String(pr))).toHaveLength(0);
+    const t = await row(id);
+    expect(t).toMatchObject({ status: "blocked", approved: false });
+    expect(t?.notes.at(-1)?.text).toContain("blocked: the worktree is not at the head of the PR");
   });
 
   it("sends requested changes to the author in the same worktree, pushes the fix, and approves on round 2", async () => {

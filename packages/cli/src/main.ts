@@ -1125,6 +1125,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       step = "git rev-parse failed";
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
+      // A commit pushed to the PR by someone else, or by GitHub's Update branch, would be approved and merged unread.
+      if (before !== pushed) fail("the worktree is not at the head of the PR");
       const reviewBase =
         !task.base_branch || task.base_branch === main
           ? main
@@ -1173,7 +1175,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
         await update({ review_round: round, approved: true, note: "approved by the runner's reviewer" });
         say(`PR #${pr} approved`);
         if (cfg.auto_merge)
-          await gh(["pr", "merge", String(pr), "--merge", "--auto"]).catch((e: Error) => {
+          await gh(["pr", "merge", String(pr), "--merge", "--auto", "--match-head-commit", before]).catch((e: Error) => {
             appendFileSync(log, `\ncodetgh runner: gh pr merge --auto failed: ${e.message}\n`);
             say("gh pr merge --auto failed, see the log");
           });

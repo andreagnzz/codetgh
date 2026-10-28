@@ -222,7 +222,7 @@ Setup, once:
      "cpus": 2
    }
    ```
-   `memory` and `cpus` cap each container. `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
+   `memory` and `cpus` cap each container. `max_agents` counts every agent on this machine. `permission_mode: "bypassPermissions"` and `auto_merge: true` (`gh pr merge --merge --auto --match-head-commit <reviewed commit>` once the reviewer approves) are opt-ins. An agent that runs past `job_timeout_min` is stopped and its task is `blocked`.
 4. **Optional routing.** `.codetgh/routing.json`, committed on the default branch, picks `--model` and `--effort` with ordered rules; the first match wins. The runner reads it from `origin/HEAD`, never from a worktree:
    ```json
    { "rules": [{ "match": { "role": "reviewer" }, "model": "opus" }, { "match": { "role": "author" }, "model": "sonnet", "effort": "medium" }] }
