@@ -190,7 +190,7 @@ From the runner's machine, with the owner's login:
 codetgh run status [--project <id>]   ready, waiting, in progress, review (PR, round), blocked (reason), done in 24 h
 codetgh run retry <task>              a blocked runner task back to todo, its lease and rounds cleared
 ```
-`run retry` refuses while that project has a `.quarantine`: inspect the worktree and the clone's git config, remove the marker, then retry. A retried task with a PR goes back to review, where the next pass restacks or reviews it. The blocked reasons are codes: `runner_error` (see the log), `review_rounds`, `restack_conflict`, `pr_closed`, `quarantined`, `other`.
+`run retry` refuses while that project has a `.quarantine`: inspect the worktree and the clone's git config, remove the marker, then retry. A retried task with a PR goes back to review, where the next pass restacks or reviews it. A task blocked because "the worktree is not at the head of the PR" (someone else pushed to it, GitHub's **Update branch** included) would find the same worktree and block again: delete `~/.config/codetgh/worktrees/<project>/<task>` first, then retry; the next pass makes the worktree again from the PR's head and reviews that. The blocked reasons are codes: `runner_error` (see the log), `review_rounds`, `restack_conflict`, `pr_closed`, `quarantined`, `other`.
 
 It is bounded like the launcher:
 - it runs on the owner's machine with the owner's token, and the hub only says *on* or *off* and which task to take;

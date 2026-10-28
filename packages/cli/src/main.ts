@@ -1136,7 +1136,8 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
       // A commit pushed to the PR by someone else, or by GitHub's Update branch, would be approved and merged unread.
-      if (before !== pushed || shown.headRefOid !== before) fail("the worktree is not at the head of the PR");
+      if (before !== pushed || shown.headRefOid !== before)
+        fail("the worktree is not at the head of the PR (delete the worktree, then run retry)");
       const reviewBase =
         !task.base_branch || task.base_branch === main
           ? main

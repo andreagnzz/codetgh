@@ -835,19 +835,35 @@ describe("codetgh runner review loop", () => {
     expect(t?.notes.at(-1)?.text).toBe("approved by the runner's reviewer");
   });
 
-  it("reviews, approves and merges nothing when someone else pushed to the PR since the runner's last commit", async () => {
+  it("reviews, approves and merges nothing when someone else pushed to the PR since the runner's last commit, until the owner deletes the worktree and retries", async () => {
     const id = await create("moved head");
     await runner();
     const pr = (await row(id))?.prNumber ?? 0;
     const before = reviewer().length;
-    pushToOrigin(`codetgh/${slug(id)}`, "teammate.txt", "never reviewed\n");
+    pushToOrigin(`codetgh/${slug(id)}`, "teammate.txt", "a teammate's commit\n");
     await runner({ auto_merge: true });
     expect(reviewer()).toHaveLength(before);
     expect(reviews(pr)).toHaveLength(0);
     expect(lines("gh.jsonl").filter((l) => l.argv[1] === "merge" && l.argv[2] === String(pr))).toHaveLength(0);
     const t = await row(id);
     expect(t).toMatchObject({ status: "blocked", approved: false });
-    expect(t?.notes.at(-1)?.text).toContain("blocked: the worktree is not at the head of the PR");
+    expect(t?.notes.at(-1)?.text).toContain("blocked: the worktree is not at the head of the PR (delete the worktree, then run retry)");
+
+    // A retry alone finds the same worktree: blocked again.
+    await cli(["run", "retry", id]);
+    await runner();
+    await runner({ auto_merge: true });
+    expect(reviewer()).toHaveLength(before);
+    expect((await row(id))?.status).toBe("blocked");
+    // Deleted, the worktree is made again from the PR's head, and that is what is reviewed and merged.
+    rmSync(worktree(id), { recursive: true, force: true });
+    await cli(["run", "retry", id]);
+    await runner();
+    await runner({ auto_merge: true });
+    expect(reviewer()).toHaveLength(before + 1);
+    expect(readFileSync(join(worktree(id), "teammate.txt"), "utf8")).toBe("a teammate's commit\n");
+    expect(lines("gh.jsonl").at(-1).argv).toEqual(["pr", "merge", String(pr), "--merge", "--auto", "--match-head-commit", onOrigin(id)]);
+    expect(await row(id)).toMatchObject({ status: "review", approved: true });
   });
 
   it("acts on the hub's PR number only once gh shows this task's PR: on its branch, at the worktree's commit, in this repository", async () => {
