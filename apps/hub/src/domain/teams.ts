@@ -278,9 +278,19 @@ export async function acceptInvitations(db: Db, user: { id: string; name: string
       const slug = slugify(user.name);
       const base = RESERVED_HANDLE.test(slug) ? `member-${slug}` : slug;
       let handle = base;
-      for (let i = 2; taken.has(handle); i++) handle = `${base}-${i}`;
       const id = newId("mem");
-      await tx.insert(membership).values({ id, teamId: inv.teamId, userId: user.id, role: inv.role, handle }).onConflictDoNothing();
+      // A concurrent sign-up can commit the same handle after the read above: the next free one is taken then.
+      for (let i = 2; ; i++) {
+        if (!taken.has(handle)) {
+          const [row] = await tx
+            .insert(membership)
+            .values({ id, teamId: inv.teamId, userId: user.id, role: inv.role, handle })
+            .onConflictDoNothing({ target: [membership.teamId, membership.handle] })
+            .returning({ id: membership.id });
+          if (row) break;
+        }
+        handle = `${base}-${i}`;
+      }
       await tx.update(invitation).set({ acceptedAt: new Date(), acceptedUserId: user.id }).where(eq(invitation.id, inv.id));
       await appendAudit(tx, {
         teamId: inv.teamId,
