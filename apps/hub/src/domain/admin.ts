@@ -175,7 +175,7 @@ export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust
       .update(agent)
       .set({ trustLevel: trust, ...(trust === "quarantined" && { acceptRequestsFrom: null }) })
       .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, a.userId), ne(agent.kind, "a2a")))
-      .returning({ id: agent.id });
+      .returning({ id: agent.id, userId: agent.userId });
     if (trust === "quarantined") await expireDelegated(tx, rows);
     await appendAudit(tx, { ...byUser(p), action: `agent.${trust}`, subjectId: a.id });
   });
@@ -274,7 +274,7 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
         .update(agent)
         .set({ acceptRequestsFrom: null })
         .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, m.userId), isNotNull(agent.acceptRequestsFrom)))
-        .returning({ id: agent.id });
+        .returning({ id: agent.id, userId: agent.userId });
       await expireDelegated(tx, rows);
     }
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });

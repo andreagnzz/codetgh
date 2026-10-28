@@ -353,7 +353,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .update(agent)
       .set({ endedAt: now })
       .where(and(eq(agent.userId, m.userId), eq(agent.teamId, input.teamId), isNull(agent.endedAt)))
-      .returning({ id: agent.id });
+      .returning({ id: agent.id, userId: agent.userId });
     await expireDelegated(tx, ended);
     await releaseFor(tx, { teamId: input.teamId, userId: m.userId }, "revoked", false);
     // shortcut: one team per person in phase 1, so console sessions and OAuth grants are dropped globally.

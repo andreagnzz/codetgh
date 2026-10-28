@@ -160,6 +160,12 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       !launched && {
         acceptRequestsFrom: sql`case when ${agent.projectId} is not distinct from ${input.repo_fingerprint ? projectId : agent.projectId} then ${agent.acceptRequestsFrom} else null end`,
       };
+    // Read before the upsert changes it: only a session that was a delegate has requests to expire.
+    const [before] = await tx
+      .select({ accept: agent.acceptRequestsFrom })
+      .from(agent)
+      .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, input.session_id)))
+      .for("update");
     const [row] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
@@ -169,6 +175,8 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       })
       .returning();
     if (!row) throw new HubError("E_INVALID", "agent registration failed");
+    // A launch without the option, or with a list that leaves a sender out, ends what that sender handed the session.
+    if (before?.accept) await expireDelegated(tx, [row], row.acceptRequestsFrom ?? []);
     await appendAudit(tx, {
       teamId: p.teamId,
       actorType: "agent",
@@ -248,12 +256,17 @@ export async function setAgentsPaused(db: Db, p: Principal, paused: boolean) {
 
 // SessionEnd, or a session the hub stopped seeing: the row stays for the audit, it only leaves routing and listings.
 async function endAgents(tx: Db, where: SQL | undefined) {
+  // Found before the update clears their list: only delegate sessions have requests to expire.
+  const delegates = await tx
+    .select({ id: agent.id, userId: agent.userId })
+    .from(agent)
+    .where(and(where, isNull(agent.endedAt), isNotNull(agent.acceptRequestsFrom)));
   const rows = await tx
     .update(agent)
     .set({ endedAt: new Date(), acceptRequestsFrom: null })
     .where(and(where, isNull(agent.endedAt)))
     .returning({ id: agent.id, teamId: agent.teamId });
-  await expireDelegated(tx, rows);
+  await expireDelegated(tx, delegates);
   // Intent claims end with the session; exclusive and shared claims run until their TTL.
   for (const row of rows) await releaseFor(tx, { agentId: row.id }, "session_end", true);
   return rows;
@@ -513,9 +526,8 @@ export async function requireNoDelegate(db: Db, p: Principal) {
 }
 
 // A request handed to a delegate session and not done yet expires once the session no longer accepts its sender, as on « Couper ».
-export async function expireDelegated(tx: Db, agents: Array<{ id: string }>, accepted: string[] = []) {
-  const ids = agents.map((a) => a.id);
-  if (!ids.length) return;
+export async function expireDelegated(tx: Db, agents: Array<{ id: string; userId: string }>, accepted: string[] = []) {
+  if (!agents.length) return;
   await tx
     .update(message)
     .set({ expiresAt: new Date() })
@@ -529,7 +541,17 @@ export async function expireDelegated(tx: Db, agents: Array<{ id: string }>, acc
           tx
             .select({ id: receipt.messageId })
             .from(receipt)
-            .where(and(inArray(receipt.recipientAgentId, ids), isNull(receipt.readAt))),
+            // By recipient user first, so receipt_recipient_idx (recipient_user_id, read_at) finds the unread ones.
+            .where(
+              and(
+                inArray(receipt.recipientUserId, [...new Set(agents.map((a) => a.userId))]),
+                isNull(receipt.readAt),
+                inArray(
+                  receipt.recipientAgentId,
+                  agents.map((a) => a.id),
+                ),
+              ),
+            ),
         ),
       ),
     );

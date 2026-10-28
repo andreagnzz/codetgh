@@ -60,7 +60,6 @@ import {
   canAutoLink,
   createProject,
   endSession,
-  expireDelegated,
   expireStaleSessions,
   isLaunch,
   registerSession,
@@ -282,8 +281,6 @@ export function createApp({
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
     takeWrite(limiter, p.user.id);
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
-    // A launch without the option, or with a list that leaves a sender out, ends what that sender handed the session.
-    if (agent) await expireDelegated(db, [agent], agent.acceptRequestsFrom ?? []);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session. A guest is told why in a
     // word about them, the same whether or not the repository is linked.
     if (!p.paused && !agent)
