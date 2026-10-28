@@ -155,6 +155,9 @@ export function createApp({
   device = new DeviceAuth(),
 }: Deps) {
   const app = new Hono<Env>();
+  // Behind Docker and Funnel the socket is the gateway: without a trusted proxy, every client shares the sign-in limits.
+  if (process.env.NODE_ENV === "production" && !config.trustedProxy)
+    logger.warn("CODETGH_TRUSTED_PROXY is unset: behind a proxy, every client shares the sign-in limits (docs/DEPLOY.md)");
   // A driver error carries the query's parameters, message text included: log its name only.
   app.onError((e, c) => {
     if (e instanceof HTTPException) return e.getResponse(); // bodyLimit's 413 and the like

@@ -24,6 +24,7 @@ Hardening, as set in `deploy/compose.yaml`:
   ```
   docker network inspect codetgh_default --format '{{(index .IPAM.Config 0).Gateway}}'
   ```
+  The gateway can change when the network is recreated (`docker compose down`, then `up`): run the command again and update the value. The hub logs a warning at start when the variable is unset.
 - Open to anyone who reaches the hub: the login page, the browser sign-in start (`/v1/device/start`, limited per address), and OAuth client registration (the claude.ai connector registers itself this way). Creating an account still needs an invitation for that email.
 
 ## First start

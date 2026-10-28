@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
 import { agent, claim, membership, personalToken, session, task, team as teamTable, thread, user } from "../src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
@@ -40,6 +40,19 @@ describe("client address", () => {
     const ips = (await hub.db.select({ ip: session.ipAddress }).from(session).where(eq(session.userId, team.sam.userId))).map((r) => r.ip);
     expect(ips.length).toBeGreaterThan(1);
     expect(ips).not.toContain("203.0.113.9");
+  });
+
+  // Behind Docker and Funnel the socket is the gateway: without a trusted proxy, every client shares the sign-in limits.
+  it("warns at start, in production, when no proxy is trusted", async () => {
+    const logs = async (trustedProxy?: string) => {
+      const lines: string[] = [];
+      vi.stubEnv("NODE_ENV", "production");
+      const prod = await startHub({ logLines: lines, config: { trustedProxy } }).finally(() => vi.unstubAllEnvs());
+      await prod.stop();
+      return lines.join("\n");
+    };
+    expect(await logs()).toContain("CODETGH_TRUSTED_PROXY");
+    expect(await logs("172.18.0.1")).not.toContain("CODETGH_TRUSTED_PROXY");
   });
 });
 
