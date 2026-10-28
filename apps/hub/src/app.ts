@@ -60,6 +60,7 @@ import {
   canAutoLink,
   createProject,
   endSession,
+  expireDelegated,
   expireStaleSessions,
   isLaunch,
   registerSession,
@@ -281,6 +282,8 @@ export function createApp({
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
     takeWrite(limiter, p.user.id);
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
+    // A launch without the option, or with a list that leaves a sender out, ends what that sender handed the session.
+    if (agent) await expireDelegated(db, [agent], agent.acceptRequestsFrom ?? []);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
     if (!p.paused && !agent)
       return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
@@ -415,7 +418,7 @@ export function createApp({
     }
     const footer = [
       // Our words, not the peer's: this session started with codetgh start --accept-requests-from that sender.
-      ...(items.some((i) => i.message.delegated)
+      ...(items.some((i) => i.authorized)
         ? [
             'A request above has authorized="true": a teammate you accept requests from hands you a task. Do it now, in this repository, within your rules (no secrets, prod, destructive actions or other repositories). Then send_message kind answer with reply_to its id: the answer, "done: <commit/PR>" or "blocked: <reason>", and ack it with status done.',
           ]

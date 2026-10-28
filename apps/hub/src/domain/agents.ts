@@ -1,9 +1,9 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, notInArray, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
-import { agent, membership, project, user } from "../db/schema.js";
+import { agent, membership, message, project, receipt, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -207,6 +207,7 @@ async function endAgents(tx: Db, where: SQL | undefined) {
     .set({ endedAt: new Date(), acceptRequestsFrom: null })
     .where(and(where, isNull(agent.endedAt)))
     .returning({ id: agent.id, teamId: agent.teamId });
+  await expireDelegated(tx, rows);
   // Intent claims end with the session; exclusive and shared claims run until their TTL.
   for (const row of rows) await releaseFor(tx, { agentId: row.id }, "session_end", true);
   return rows;
@@ -462,6 +463,29 @@ export async function requireNoDelegate(db: Db, p: Principal) {
     throw new HubError(
       "E_DELEGATE_CHAIN",
       "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
+    );
+}
+
+// A request handed to a delegate session and not done yet expires once the session no longer accepts its sender, as on « Couper ».
+export async function expireDelegated(tx: Db, agents: Array<{ id: string }>, accepted: string[] = []) {
+  const ids = agents.map((a) => a.id);
+  if (!ids.length) return;
+  await tx
+    .update(message)
+    .set({ expiresAt: new Date() })
+    .where(
+      and(
+        eq(message.delegated, true),
+        gt(message.expiresAt, new Date()),
+        accepted.length ? notInArray(message.fromUserId, accepted) : undefined,
+        inArray(
+          message.id,
+          tx
+            .select({ id: receipt.messageId })
+            .from(receipt)
+            .where(and(inArray(receipt.recipientAgentId, ids), isNull(receipt.readAt))),
+        ),
+      ),
     );
 }
 

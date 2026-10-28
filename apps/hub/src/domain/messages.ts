@@ -738,7 +738,17 @@ export const visibleTo = (p: Principal, a: Agent | null) =>
 // Blocking first, then handoffs (they carry the context to resume work), then by priority.
 const PRIORITY_ORDER = sql`case when ${message.priority} = 'blocking' then 0 when ${message.kind} = 'handoff' then 1 when ${message.priority} = 'high' then 2 when ${message.priority} = 'normal' then 3 else 4 end`;
 
-export type InboxItem = { seq: number; message: typeof message.$inferSelect; fromName: string };
+// authorized="true" is decided when a request is shown, not when it was sent: it was delegated, the session it went to is
+// live and still accepts its sender, and the sender is still an active member, neither a guest nor in quarantine.
+const authorizedNow = sql<boolean>`${message.delegated}
+  and exists (select 1 from ${agent} where ${agent.id} = ${receipt.recipientAgentId} and ${agent.endedAt} is null
+    and ${agent.removedAt} is null and ${message.fromUserId} = any(${agent.acceptRequestsFrom}))
+  and exists (select 1 from ${membership} where ${membership.teamId} = ${message.teamId}
+    and ${membership.userId} = ${message.fromUserId} and ${membership.status} = 'active' and ${membership.role} <> 'guest')
+  and not exists (select 1 from ${agent} where ${agent.teamId} = ${message.teamId} and ${agent.userId} = ${message.fromUserId}
+    and ${agent.trustLevel} = 'quarantined')`;
+
+export type InboxItem = { seq: number; message: typeof message.$inferSelect; fromName: string; authorized?: boolean };
 
 export async function unread(
   db: Db,
@@ -747,7 +757,7 @@ export async function unread(
   opts: { thread?: string; kinds?: string[]; afterSeq?: number; limit: number; byPriority?: boolean },
 ) {
   const rows = await db
-    .select({ seq: receipt.seq, message, fromName: user.name })
+    .select({ seq: receipt.seq, message, fromName: user.name, authorized: authorizedNow })
     .from(receipt)
     .innerJoin(message, eq(message.id, receipt.messageId))
     .innerJoin(user, eq(user.id, message.fromUserId))
@@ -836,7 +846,7 @@ export const envelope = (i: InboxItem) =>
       authoredBy: i.message.authoredBy,
       sentAt: i.message.createdAt,
       flags: i.message.flags,
-      authorized: i.message.delegated,
+      authorized: i.authorized,
     },
     i.message.subject,
     i.message.encrypted ? ENCRYPTED_PLACEHOLDER : i.message.body,
