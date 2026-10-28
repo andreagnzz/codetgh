@@ -179,4 +179,15 @@ it("hands the orchestrator only the loop of a direct thread, and audits that rea
     .where(and(eq(auditEvent.action, "thread.read_by_orchestrator"), eq(auditEvent.subjectId, stuck.thread)));
   expect(reads).toHaveLength(1);
   expect(reads[0]?.actorUserId).toBe(rita.userId);
+
+  // The loop is all it gets: Léa's reply after it reaches Pia, not the orchestrator.
+  expect(
+    (await consolePost(hub.url, team.lea.cookie, `/console/threads/${stuck.thread}/reply`, { body: "Lea after the loop" })).status,
+  ).toBe(204);
+  const piaAgain = await mcpClient(hub.url, pia.token);
+  expect((await call(piaAgain, "inbox_read", { thread: stuck.thread })).text).toContain("Lea after the loop");
+  await piaAgain.close();
+  const later = await mcpClient(hub.url, rita.token);
+  expect((await call(later, "inbox_read", { thread: stuck.thread })).text).not.toContain("Lea after the loop");
+  await later.close();
 });
