@@ -63,6 +63,24 @@ describe("members", () => {
     expect(after?.handle).toBe("samuel");
   });
 
+  it("keeps an owner's handle from an admin, who could otherwise take it and receive the owner's messages", async () => {
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const [lea] = await hub.db.select().from(membership).where(eq(membership.userId, team.lea.userId));
+    const path = `/console/members/${lea?.id}/handle`;
+    expect((await consolePost(hub.url, team.sam.cookie, path, { handle: "lea-old" })).status).toBe(403);
+    const [after] = await hub.db
+      .select()
+      .from(membership)
+      .where(eq(membership.id, lea?.id ?? ""));
+    expect(after?.handle).toBe("lea");
+    const page = await (await fetch(`${hub.url}/console/members`, { headers: { cookie: team.sam.cookie } })).text();
+    expect(page).not.toContain(`hx-post="${path}"`);
+    expect(await (await fetch(`${hub.url}/console/members`, { headers: { cookie: team.lea.cookie } })).text()).toContain(
+      `hx-post="${path}"`,
+    );
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+  });
+
   it("moves the loop orchestrator setting along when its member gets a new handle", async () => {
     await hub.db
       .update(teamTable)
@@ -137,6 +155,21 @@ describe("members", () => {
     const [m] = await hub.db.select().from(user).where(eq(user.id, team.malik.userId));
     expect(m?.name).toBe("Malik B.");
     expect((await consolePost(hub.url, team.malik.cookie, "/console/me/profile", { name: "" })).status).toBe(400);
+  });
+
+  it("ends a member's console stream when their role changes, so a demoted admin stops getting everyone's activity", async () => {
+    await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
+    const stream = await fetch(`${hub.url}/console/stream`, { headers: { cookie: team.sam.cookie } });
+    expect(stream.status).toBe(200);
+    const reader = stream.body?.getReader();
+    const closed = (async () => {
+      while (reader && !(await reader.read()).done);
+    })();
+    const [sam] = await hub.db.select().from(membership).where(eq(membership.userId, team.sam.userId));
+    const started = Date.now();
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${sam?.id}/role`, { role: "member" })).status).toBe(204);
+    await closed;
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });
 

@@ -75,9 +75,11 @@ function overlaps(a: { scopeType: ScopeType; scope: string }, b: Pick<Claim, "sc
     return a.scope === b.scope;
   if (a.scopeType === "path") return covers(b, a.scope);
   if (b.scopeType === "path") return covers(a, b.scope);
-  // shortcut: glob against glob compares the static bases only; exact overlap needs a glob intersection algorithm.
+  // shortcut: glob against glob compares the static bases only, folder by folder (packages/ui is not under
+  // packages/ui-kit); exact overlap needs a glob intersection algorithm. An empty base is under everything.
   const [x, y] = [picomatch.scan(a.scope).base, picomatch.scan(b.scope).base];
-  return x.startsWith(y) || y.startsWith(x);
+  const under = (s: string, base: string) => base === "" || s === base || s.startsWith(`${base}/`);
+  return under(x, y) || under(y, x);
 }
 
 const minutesLeft = (c: Claim) => Math.max(0, Math.ceil((c.expiresAt.getTime() - Date.now()) / 60_000));
@@ -363,18 +365,25 @@ export async function checkPaths(db: Db, p: Principal, projectId: string | null,
 export type PreEditDecision = { decision: "warn" | "ask"; reason: string };
 
 // One round trip for the PreToolUse hook. Never answers "allow": the permission system stays in charge.
-export async function preEdit(db: Db, p: Principal, a: Agent, path: string): Promise<PreEditDecision | null> {
+export async function preEdit(deps: MessagingDeps, p: Principal, a: Agent, path: string): Promise<PreEditDecision | null> {
   if (p.paused || !a.projectId || isExcluded(path) || a.trustLevel === "quarantined" || p.role === "guest") return null;
   // Older teams may have stored off (now warn) or block (now ask).
   const decision = p.settings.claims_enforcement === "warn" || p.settings.claims_enforcement === "off" ? "warn" : "ask";
-  return db.transaction(async (tx) => {
+  const result = await deps.db.transaction(async (tx): Promise<{ answer: PreEditDecision | null; notify: Holder[] }> => {
     await lock(tx, p.teamId);
     const others = (await othersLive(tx, p, a.projectId)).filter((h) => covers(h, path));
     const conflicts = others.filter((h) => compat("intent", h.mode) === "conflict");
     if (conflicts.length) {
       const reason = `${path} is claimed by ${conflicts.map((h) => describe(h, decision === "ask")).join("; ")}. Wait, or write to them (send_message to ${conflicts.map((h) => `@${h.handle}`).join(", ")})?`;
-      return { decision, reason };
+      return { answer: { decision, reason }, notify: [] };
     }
+    // Shared holders depend on this file: told once per agent, like createClaims does.
+    const notify = others.filter((h) => compat("intent", h.mode) === "notify" && !h.notifiedAgents.includes(a.id));
+    for (const h of notify)
+      await tx
+        .update(claim)
+        .set({ notifiedAgents: sql`array_append(${claim.notifiedAgents}, ${a.id})` })
+        .where(eq(claim.id, h.id));
     // No conflict: renew this agent's covering claims, or announce the edit with a short intent claim.
     const mine = await tx
       .select()
@@ -419,8 +428,23 @@ export async function preEdit(db: Db, p: Principal, a: Agent, path: string): Pro
       ...(intents.length ? [`${path} is also being edited by ${intents.map((h) => describe(h)).join("; ")}.`] : []),
       ...(recent?.length ? [`${path}: ${recent.join("; ")}.`] : []),
     ];
-    return warnings.length ? { decision: "warn", reason: warnings.join(" ") } : null;
+    return { answer: warnings.length ? { decision: "warn", reason: warnings.join(" ") } : null, notify };
   });
+  for (const h of result.notify) {
+    await sendMessage(
+      deps,
+      { p, agent: a, via: "rest" },
+      {
+        to: `agent:${h.holderAgentId}`,
+        kind: "note",
+        body: `I am editing ${path}, which your shared claim on ${h.scope} covers.`,
+        priority: "normal",
+        refs: [],
+        allow_offline: true,
+      },
+    ).catch(() => {});
+  }
+  return result.answer;
 }
 
 export async function releaseClaims(db: Db, p: Principal, a: Agent, input: { claim_ids?: string[]; all_mine?: boolean }) {

@@ -35,8 +35,10 @@ export const Layout: FC<{
   lang: Lang;
   filter?: ProjectFilter;
   keep?: string;
+  // On the Archives tab, the filter links stay on it.
+  archived?: boolean;
   children?: Child;
-}> = ({ p, csrf, title, path, lang, filter, keep, children }) => {
+}> = ({ p, csrf, title, path, lang, filter, keep, archived, children }) => {
   const _ = (s: string) => t(lang, s);
   const admin = p.role === "owner" || p.role === "admin";
   const current = (href: string) =>
@@ -96,7 +98,7 @@ export const Layout: FC<{
                   (pr) => (
                     <>
                       <a
-                        href={`${path}?project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
+                        href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
                         aria-current={pr.id === filter.selected ? "page" : undefined}
                       >
                         {pr.name}
@@ -340,7 +342,8 @@ export const InvitePage: FC<{
   lang: Lang;
 }> = ({ team, role, email, name, valid, join, lang }) => {
   const _ = (s: string) => t(lang, s);
-  const heading = _("Join {team} on CodeTgh").replace("{team}", team);
+  // A replacer function: a $ in the team name is not a replacement pattern.
+  const heading = _("Join {team} on CodeTgh").replace("{team}", () => team);
   return (
     <PublicLayout lang={lang} title={heading}>
       {valid ? (
@@ -352,7 +355,7 @@ export const InvitePage: FC<{
           {join ? (
             <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
               <input type="hidden" name="csrf" value={join.csrf} />
-              <button type="submit">{_("Join {team}").replace("{team}", team)}</button>
+              <button type="submit">{_("Join {team}").replace("{team}", () => team)}</button>
             </form>
           ) : (
             <>

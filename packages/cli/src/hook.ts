@@ -46,7 +46,7 @@ type State = {
   tried?: string;
   // The hub's agent for this session: MCP calls carry no session, so the pre-tool-use hook names it.
   agent?: string;
-  // The git root the session started in, for codetgh doctor (root is only known once a file is edited).
+  // The git root the session started in: the edit hooks check paths against it, and codetgh doctor reads it.
   startRoot?: string;
 };
 
@@ -323,25 +323,37 @@ async function cwdChanged(input: Input) {
   if (!url || !token || !input.session_id) return null;
   const state = loadState(input.session_id);
   if (!state.projectless) return null;
-  const repo = await repoAt(input.new_cwd ?? input.directory);
+  const dir = input.new_cwd ?? input.directory;
+  const [repo, top] = await Promise.all([repoAt(dir), git(dir, ["rev-parse", "--show-toplevel"])]);
   // Each cd inside one repository fires again: ask the hub once per repository.
   if (!repo.fingerprint || repo.fingerprint === state.tried) return null;
   saveState(input.session_id, { tried: repo.fingerprint });
+  // The edit hooks check paths against the repository the session joins.
+  let root = top;
+  try {
+    root = realpathSync.native(top);
+  } catch {}
   try {
     const registered = await register({ ...input, source: "cwd-changed" }, repo, BUDGET_MS);
-    if ("status" in registered) return null;
+    if ("status" in registered) {
+      // A 5xx or a 429 says nothing about this repository: the next cd in it asks again.
+      if (registered.status >= 500 || registered.status === 429) saveState(input.session_id, { tried: undefined });
+      return null;
+    }
     // The hub links the agent in the same transaction that creates the project: count it as linked.
     if ("lateLink" in registered) {
-      saveState(input.session_id, { projectless: false });
+      saveState(input.session_id, { projectless: false, root });
       return null;
     }
     const { body } = registered;
     if (body.paused) return null;
     if (body.linked === false) return { systemMessage: offLine(body) };
-    saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
+    saveState(input.session_id, { projectless: false, root, ...(body.agent_id && { agent: body.agent_id }) });
     // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
     return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "") || "this repository"}` };
   } catch {
+    // No answer in time: the same.
+    saveState(input.session_id, { tried: undefined });
     return null;
   }
 }
@@ -438,6 +450,8 @@ async function repoPath(input: Input, state: State) {
   try {
     dir = realpathSync.native(dir);
   } catch {}
+  // The repository the session started in, never the first one edited in (a submodule, a folder added with /add-dir).
+  if (!state.root && state.startRoot) state.root = state.startRoot;
   if (!state.root) {
     const top = await git(dir, ["rev-parse", "--show-toplevel"]);
     if (!top) return null;
@@ -524,12 +538,18 @@ async function shellEdits(input: Input) {
   })
     .then((r) => r.stdout)
     .catch(() => "");
-  const changed = status
-    .split("\0")
-    .filter((line) => line.length > 3)
-    .map((line) => line.slice(3))
-    .filter((p) => !(state.touched ?? []).includes(p))
-    .slice(0, 200);
+  // Records, not fields: a rename or a copy (R or C in a status column) is followed by its original path, a field of its
+  // own with no status. Both paths changed.
+  const fields = status.split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const entry = fields[i] ?? "";
+    if (entry.length <= 3) continue;
+    paths.push(entry.slice(3));
+    if (/[RC]/.test(entry.slice(0, 2))) paths.push(fields[++i] ?? "");
+  }
+  // A path the hub refuses (over 300 characters, a backslash) would fail the whole check: leave it out.
+  const changed = paths.filter((p) => p && p.length <= 300 && !p.includes("\\") && !(state.touched ?? []).includes(p)).slice(0, 200);
   if (!changed.length) return null;
   try {
     const res = await hub("/v1/claims/check", {
