@@ -126,7 +126,7 @@ Reading the diff is the point: this step turns files your user can write into fi
 ## Rotate CODETGH_SECRET
 
 The hub reads one `CODETGH_SECRET` and knows no previous one. Everything derived from it changes with it:
-- console sign-ins: better-auth signs the session cookies with it, so everyone signs in again;
+- console sign-ins: better-auth signs the session cookies with it, and the console derives its CSRF tokens from it, so everyone signs in again;
 - OAuth for `/mcp` (the claude.ai connector): better-auth keeps its JWT signing key in the `jwks` table, encrypted with the secret, and refuses to sign once it cannot decrypt that key, so the rows must go (step 4);
 - the audit signing key, when `CODETGH_AUDIT_KEY` is empty: it is derived from the secret, and a new key never signs on top of checkpoints the old one signed (an `audit_tamper` alert, "not signed by this hub"), while **Verify chain** in the console and `codetgh audit verify` fail on every old checkpoint. Step 2 keeps the same key;
 - every team's GitHub webhook secret, and the fingerprints of allowed secrets.
@@ -143,7 +143,7 @@ Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored
    docker compose -f deploy/compose.yaml --env-file deploy/.env stop hub
    sed -i "s|^CODETGH_SECRET=.*|CODETGH_SECRET=$(openssl rand -base64 32)|" deploy/.env
    ```
-4. **Drop the OAuth signing key**; the hub makes a new one when it next signs:
+4. **Drop the OAuth signing key** before the hub starts: a refresh served with the new secret and the old key fails and spends the client's refresh token. The hub makes a new key when it next signs:
    ```
    docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db psql -U codetgh -d codetgh -c 'delete from jwks'
    ```
@@ -152,7 +152,7 @@ Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored
    docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
    curl -fsS http://127.0.0.1:8787/readyz
    ```
-6. **After.** Copy `deploy/.env` to the nightly job (its `install` line in [Nightly job](#nightly-job)). In the console, **Audit log › Verify chain** must still say the chain is intact. In each team that has a webhook, an admin clicks **Settings › GitHub bridge › Replace the webhook secret**, which shows the new URL and secret once, and pastes both into GitHub; a team without one has nothing to do. A secret value that was allowed is blocked again until an admin allows it from its new alert. OAuth clients get a new access token at their next refresh, or sign in again.
+6. **After.** Copy `deploy/.env` to the nightly job (its `install` line in [Nightly job](#nightly-job)). In the console, **Audit log › Verify chain** must still say the chain is intact. In each team that has a webhook, an admin clicks **Settings › GitHub bridge › Replace the webhook secret**, which shows the new URL and secret once, and pastes both into GitHub; a team without one has nothing to do. A secret value that was allowed is blocked again until an admin allows it from its new alert. An OAuth access token signed by the old key gets 401 on `/mcp`; the client's refresh token still works and gets a new one (see `docs/FACTS.md`), and a client that does not refresh signs in again.
 
 `CODETGH_AUDIT_KEY` itself cannot be rotated: the hub checks every checkpoint against one key.
 
