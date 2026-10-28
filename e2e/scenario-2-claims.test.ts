@@ -194,6 +194,10 @@ it("reads renames in the shell report, and reports a claimed file moved away", a
   git("mv", "api/old.ts", "api/new.ts");
   git("mv", "lib/legacy.ts", "lib/modern.ts");
   writeFileSync(join(work, "lib/util.ts"), "export const changed = true;\n");
+  // Git shows a copy (C) only with status.renames=copies, and only from a file also changed in the index.
+  git("config", "status.renames", "copies");
+  writeFileSync(join(work, "lib/copy.ts"), "lib/util.ts\n");
+  git("add", "lib/util.ts", "lib/copy.ts");
   // Longer than the hub takes (300): left out, never a reason to drop the report. Git on Windows needs core.longpaths.
   if (process.platform !== "win32") {
     mkdirSync(join(work, "x".repeat(150)));
