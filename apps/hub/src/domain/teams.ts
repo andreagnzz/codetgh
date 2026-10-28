@@ -375,7 +375,11 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .update(personalToken)
       .set({ revokedAt: now })
       .where(and(eq(personalToken.userId, m.userId), eq(personalToken.teamId, input.teamId), isNull(personalToken.revokedAt)));
-    await endPendingInvitations(tx, input.teamId, eq(invitation.invitedBy, m.userId));
+    await endPendingInvitations(
+      tx,
+      { teamId: input.teamId, actorType: "user", actorUserId: input.actorUserId, via: "console" },
+      eq(invitation.invitedBy, m.userId),
+    );
     await tx
       .update(agent)
       .set({ endedAt: now })
