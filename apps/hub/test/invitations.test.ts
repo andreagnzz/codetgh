@@ -117,7 +117,7 @@ it("gives the next free handle when another sign-up takes the same one between t
   // The trigger plays a second Alex whose sign-up commits @alex just before this one inserts it.
   await hub.db.insert(user).values({ id: "usr_race", name: "Alex", email: "alex.one@acme.test" });
   await hub.db.execute(
-    sql.raw(`create function race_alex() returns trigger language plpgsql as $$ begin
+    sql.raw(`create or replace function race_alex() returns trigger language plpgsql as $$ begin
       insert into membership (id, team_id, user_id, role, handle) values ('mem_race', new.team_id, 'usr_race', 'member', new.handle);
       return new; end $$`),
   );
@@ -125,13 +125,16 @@ it("gives the next free handle when another sign-up takes the same one between t
     sql.raw(`create trigger race_alex before insert on membership for each row
       when (new.handle = 'alex' and new.id <> 'mem_race') execute function race_alex()`),
   );
-  const { token } = await invite(team.teamId, "alex.two@acme.test", "member");
-  const { user: alex } = await hub.auth.api.signUpEmail({
-    body: { name: "Alex", email: "alex.two@acme.test", password: "alex-password-123" },
-    headers: new Headers({ [INVITE_HEADER]: token }),
-  });
-  await hub.db.execute(sql.raw("drop trigger race_alex on membership"));
-  await hub.db.execute(sql.raw("drop function race_alex"));
-  expect(await inTeam("usr_race")).toMatchObject({ handle: "alex" });
-  expect(await inTeam(alex.id)).toMatchObject({ status: "active", handle: "alex-2" });
+  try {
+    const { token } = await invite(team.teamId, "alex.two@acme.test", "member");
+    const { user: alex } = await hub.auth.api.signUpEmail({
+      body: { name: "Alex", email: "alex.two@acme.test", password: "alex-password-123" },
+      headers: new Headers({ [INVITE_HEADER]: token }),
+    });
+    expect(await inTeam("usr_race")).toMatchObject({ handle: "alex" });
+    expect(await inTeam(alex.id)).toMatchObject({ status: "active", handle: "alex-2" });
+  } finally {
+    await hub.db.execute(sql.raw("drop trigger if exists race_alex on membership"));
+    await hub.db.execute(sql.raw("drop function if exists race_alex"));
+  }
 });
