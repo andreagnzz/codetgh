@@ -1110,7 +1110,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       }
       // gh reviews, merges or retargets the hub's number only once it is this task's PR: its branch, in this repository.
       step = "gh pr view failed";
-      const shown = JSON.parse(await gh(["pr", "view", String(pr), "--json=headRefName,isCrossRepository"]));
+      const shown = JSON.parse(await gh(["pr", "view", String(pr), "--json=headRefName,headRefOid,isCrossRepository"]));
       if (shown?.headRefName !== branch || shown?.isCrossRepository !== false)
         fail(`PR #${pr} is not this task's: not on ${branch} in this repository`);
       if (job.restack) return await restack(pr, main, job.restack);
@@ -1136,7 +1136,7 @@ async function runJob(client: CodeTghClient, cfg: RunnerSettings, project: strin
       const before = await git(["-C", wt, "rev-parse", "HEAD"]);
       const pushed = await git(["-C", dir, "rev-parse", `origin/${branch}`]);
       // A commit pushed to the PR by someone else, or by GitHub's Update branch, would be approved and merged unread.
-      if (before !== pushed) fail("the worktree is not at the head of the PR");
+      if (before !== pushed || shown.headRefOid !== before) fail("the worktree is not at the head of the PR");
       const reviewBase =
         !task.base_branch || task.base_branch === main
           ? main

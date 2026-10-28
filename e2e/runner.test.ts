@@ -182,10 +182,12 @@ if (argv[0] === "pr" && argv[1] === "list") {
   const prs = existsSync(open) ? [{ ...own, ...JSON.parse(readFileSync(open, "utf8")) }] : [];
   console.log(JSON.stringify(prs.map((p) => Object.fromEntries(fields.map((f) => [f, p[f]])))));
 }
-// pr view --json: the PR of the worktree's branch, from this repository, unless pr-view says otherwise.
+// pr view --json: the PR of the worktree's branch, at its head on origin, from this repository, unless pr-view says otherwise.
 const view = join(dir, "pr-view");
 if (argv[0] === "pr" && argv[1] === "view" && argv.some((a) => a.startsWith("--json="))) {
-  const own = { headRefName: execFileSync("git", ["branch", "--show-current"], { encoding: "utf8" }).trim(), isCrossRepository: false };
+  const headRefName = execFileSync("git", ["branch", "--show-current"], { encoding: "utf8" }).trim();
+  const headRefOid = execFileSync("git", ["rev-parse", "origin/" + headRefName], { encoding: "utf8" }).trim();
+  const own = { headRefName, headRefOid, isCrossRepository: false };
   const pr = existsSync(view) ? { ...own, ...JSON.parse(readFileSync(view, "utf8")) } : own;
   const fields = argv.find((a) => a.startsWith("--json=")).slice(7).split(",");
   console.log(JSON.stringify(Object.fromEntries(fields.map((f) => [f, pr[f]]))));
@@ -848,7 +850,7 @@ describe("codetgh runner review loop", () => {
     expect(t?.notes.at(-1)?.text).toContain("blocked: the worktree is not at the head of the PR");
   });
 
-  it("acts on the hub's PR number only once gh shows this task's PR: on its branch, in this repository", async () => {
+  it("acts on the hub's PR number only once gh shows this task's PR: on its branch, at the worktree's commit, in this repository", async () => {
     const id = await create("foreign PR");
     await runner();
     const before = { reviews: reviewer().length, gh: lines("gh.jsonl").length };
@@ -856,6 +858,7 @@ describe("codetgh runner review loop", () => {
     for (const [values, why] of [
       [{ headRefName: "feature/someone-else" }, "is not this task's"],
       [{ isCrossRepository: true }, "is not this task's"],
+      [{ headRefOid: "0".repeat(40) }, "not at the head of the PR"],
       [null, "a PR number that is not one"],
     ] as const) {
       if (values) writeFileSync(view, JSON.stringify(values));
