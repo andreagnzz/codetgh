@@ -24,6 +24,8 @@ import { envelope, MAX_BODY_BYTES, type MessagingDeps, sendMessage } from "./mes
 // the messages a task keeps (the SDK stores a follow-up before the hub sends it, refused or not).
 const MAX_TASKS_PER_AGENT = 200;
 const MAX_HISTORY = 10;
+// The caller chooses the ids of its messages and the context id that every follow-up repeats.
+const MAX_ID = 128;
 
 // An external agent is a guest of the team whose only agent is quarantined for good: it may ask and answer, nothing else.
 export async function createExternalAgent(db: Db, p: Principal, name: string) {
@@ -91,9 +93,13 @@ const textOf = (m: Message) =>
     .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
     .join("\n")
     .trim();
-// What a task keeps of a message: its text, cut at the message limit; no other part, no metadata, no extension.
+// What a task keeps of a message: its role, its text cut at the message limit, its id cut at MAX_ID; no other part, no
+// metadata, no extension.
 const kept = (m: Message): Message => ({
-  ...m,
+  messageId: m.messageId.slice(0, MAX_ID),
+  contextId: m.contextId,
+  taskId: m.taskId,
+  role: m.role,
   parts: [textPart(Buffer.from(textOf(m)).subarray(0, MAX_BODY_BYTES).toString())],
   metadata: undefined,
   extensions: [],
@@ -221,6 +227,8 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
         metadata: undefined,
       };
       try {
+        // The SDK refuses a follow-up whose context id differs from its task's: refused here, a long one is never stored.
+        if (rc.contextId.length > MAX_ID) throw new HubError("E_INVALID", `contextId over ${MAX_ID} characters`);
         const sent = await sendMessage(
           deps,
           { p, agent: a, via: "rest" },

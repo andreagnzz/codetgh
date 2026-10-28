@@ -94,6 +94,7 @@ describe("A2A (phase 3)", () => {
     const client = await new ClientFactory().createFromUrl(hub.url);
     const padded = ask("Do you have a status page?");
     padded.message.metadata = { padding: "x".repeat(60_000) } as unknown as typeof padded.message.metadata;
+    padded.message.messageId = "m".repeat(50_000);
     const sent = await client.sendMessage(padded, auth());
     const id = "status" in sent ? sent.id : "";
     const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
@@ -110,6 +111,18 @@ describe("A2A (phase 3)", () => {
         .select()
         .from(a2aTask)
         .where(eq(a2aTask.id, "status" in refused ? refused.id : "")),
+    ).toEqual([]);
+
+    // Every follow-up repeats the context id the caller chose: a long one is refused, never stored.
+    const longContext = ask("Do you have a sandbox?");
+    longContext.message.contextId = "c".repeat(50_000);
+    const noContext = await client.sendMessage(longContext, auth());
+    expect("status" in noContext && noContext.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+    expect(
+      await hub.db
+        .select()
+        .from(a2aTask)
+        .where(eq(a2aTask.id, "status" in noContext ? noContext.id : "")),
     ).toEqual([]);
   });
 

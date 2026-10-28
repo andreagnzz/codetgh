@@ -50,3 +50,14 @@ it("keeps at most 10 messages in a task's history, however many follow-ups are r
   const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
   expect(row?.task.history.length).toBeLessThanOrEqual(10);
 });
+
+it("keeps a follow-up's message id at a bounded length", async () => {
+  const client = await new ClientFactory().createFromUrl(hub.url);
+  const sent = await client.sendMessage(ask("Do you ship on Fridays?"), auth());
+  const id = "status" in sent ? sent.id : "";
+  const followUp = ask("And on holidays?", id);
+  followUp.message.messageId = "m".repeat(50_000);
+  await client.sendMessage(followUp, auth());
+  const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
+  expect(JSON.stringify(row?.task).length).toBeLessThan(2_000);
+});
