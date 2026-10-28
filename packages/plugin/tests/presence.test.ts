@@ -3,7 +3,7 @@ import type { HttpResponse, On, SessionRateLimit, SessionUsage } from "claude-co
 import { type Engine, expect, mock, test } from "claude-code/testing";
 
 const OPTIONS = { codetgh_url: "https://hub.example.com/", codetgh_token: "ctg_secret_token" };
-const body = (unread: Record<string, number>) =>
+const body = (unread: Record<string, number>, team: Record<string, unknown> = {}) =>
   JSON.stringify({
     team: "Acme",
     you: { handle: "sam", agent: "a-me" },
@@ -24,6 +24,7 @@ const body = (unread: Record<string, number>) =>
     claims: [],
     unread,
     blocking_message_ids: [],
+    ...team,
   });
 
 type Fetch = { url: string; method?: string; headers?: Record<string, string>; body?: string };
@@ -208,6 +209,26 @@ test(
     n = 11;
     await s.clock.advance(30_000);
     expect(s.submitted.at(-1)).toBe(WAKE(11));
+  },
+);
+
+test(
+  "rewake mode: never starts a turn while the team's kill switch is on, for unread or for a usage limit",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({}, { paused: true });
+    const s = stubs(
+      on,
+      () => ok(reply),
+      () => [{ kind: "five_hour", percentUsed: 95, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    reply = body({ note: 2 }, { paused: true });
+    await s.clock.advance(60 * MIN);
+    expect(s.submitted).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 2 unread");
   },
 );
 

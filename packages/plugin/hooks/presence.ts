@@ -1,6 +1,11 @@
 import type { EngineInterface, Register, SessionRateLimit } from "claude-code";
 
-type Status = { you: { handle: string }; people: { handle: string; sessions: unknown[] }[]; unread: Record<string, number> };
+type Status = {
+  you: { handle: string };
+  paused?: boolean;
+  people: { handle: string; sessions: unknown[] }[];
+  unread: Record<string, number>;
+};
 
 // The Stop hook's rewake waiter gives up after this (REWAKE_BUDGET_MS in hook.ts); after it, only the mod can wake the session.
 const REWAKE_MS = 3_540_000;
@@ -124,6 +129,7 @@ async function refresh($: EngineInterface, url: string, token: string) {
     const before = Math.min(seen ?? 0, c.unread);
     seen = seen === undefined ? undefined : before;
     if (
+      !s.paused &&
       c.unread > before &&
       idleSince !== undefined &&
       (!waiter || now - idleSince >= REWAKE_MS) &&
@@ -138,7 +144,8 @@ async function refresh($: EngineInterface, url: string, token: string) {
     $.ui.status(undefined);
     return;
   }
-  if (live) await limits($, url, token, s.you.handle, now, live);
+  // Under the team's kill switch every other path stops: no turn, no handoff prompt, no team note.
+  if (live && !s.paused) await limits($, url, token, s.you.handle, now, live);
 }
 
 export const register: Register = (on, options) => {
