@@ -198,4 +198,34 @@ describe("team memory", () => {
     expect(alerts).toHaveLength(2);
     await malik.close();
   });
+
+  // PGlite runs one transaction at a time: the race needs Postgres (TEST_DATABASE_URL, pnpm test:pg).
+  it.runIf(process.env.TEST_DATABASE_URL)("keeps one accepted version when two competing ones are accepted at once", async () => {
+    const item = (version: number, status: "accepted" | "proposed", supersedesId: string | null) => ({
+      id: `mit_race${version}`,
+      teamId: team.teamId,
+      number: 900,
+      version,
+      kind: "decision" as const,
+      status,
+      title: `Race v${version}`,
+      body: "Two humans decide at once.",
+      supersedesId,
+      proposedByUser: team.sam.userId,
+      authoredBy: "agent" as const,
+    });
+    await hub.db.insert(memoryItem).values(item(1, "accepted", null));
+    let current = "mit_race1";
+    for (let round = 0; round < 5; round++) {
+      const [a, b] = [item(2 + 2 * round, "proposed", current), item(3 + 2 * round, "proposed", current)];
+      await hub.db.insert(memoryItem).values([a, b]);
+      await Promise.all([decide(team.lea.cookie, a.id, "accept"), decide(team.malik.cookie, b.id, "accept")]);
+      const accepted = await hub.db
+        .select()
+        .from(memoryItem)
+        .where(and(eq(memoryItem.number, 900), eq(memoryItem.status, "accepted")));
+      expect(accepted).toHaveLength(1);
+      current = accepted[0]?.id ?? "";
+    }
+  });
 });

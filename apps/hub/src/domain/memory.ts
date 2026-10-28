@@ -115,6 +115,8 @@ export async function decideMemory(
   // The note is shown to the whole team on the item's page.
   if (input.note) await assertNoSecrets(deps, { p, agent: null, via }, input.note);
   return deps.db.transaction(async (tx) => {
+    // The proposals' lock: two competing versions accepted at once would each supersede only the old one and both stay accepted.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`memory:${p.teamId}`}, 0))`);
     const [item] = await tx
       .select()
       .from(memoryItem)
