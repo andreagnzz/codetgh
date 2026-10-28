@@ -409,15 +409,16 @@ async function preToolUse(input: Input) {
   };
 }
 
-// PreToolUse on Bash, delegate sessions (codetgh start --accept-requests-from) and runner jobs (CODETGH_RUNNER=1) only:
-// no network, never "allow". Exit 2 blocks the call and hands the reason to Claude, which replies "blocked: …".
+// PreToolUse on Bash, Monitor and PowerShell, which all take their shell command in `command` (docs/FACTS.md), in delegate
+// sessions (codetgh start --accept-requests-from) and runner jobs (CODETGH_RUNNER=1) only: no network, never "allow".
+// Exit 2 blocks the call and hands the reason to Claude, which replies "blocked: …".
 async function preBash(input: Input) {
   const runner = process.env.CODETGH_RUNNER === "1";
   if (!process.env.CODETGH_ACCEPT_REQUESTS_FROM && !runner) return null;
   const command = (input.tool_input as { command?: unknown } | undefined)?.command;
-  if (typeof command !== "string") return null;
   const { delegateBlock } = await import("@codetgh/guard");
-  const reason = delegateBlock(command);
+  // Fails closed here: a call with no command to check (a Monitor WebSocket watch, an input shape we do not know) is refused.
+  const reason = typeof command === "string" ? delegateBlock(command) : "it has no command this check can read";
   if (!reason) return null;
   process.stderr.write(
     runner
