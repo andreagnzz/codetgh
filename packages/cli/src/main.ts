@@ -29,7 +29,7 @@ import { type CodeTghClient, CodeTghError, createClient } from "@codetgh/sdk";
 import { SendMessageInput, shortAgentId } from "@codetgh/shared";
 import { type AuditRecord, type Checkpoint, verifyAudit } from "@codetgh/shared/audit";
 import { newKeyPair, newThreadKey, openBody, publicKeyOf, sealBody, unwrapKey, wrapKey } from "@codetgh/shared/e2e";
-import { repoFingerprint } from "@codetgh/shared/repo";
+import { plainName, repoFingerprint } from "@codetgh/shared/repo";
 import { DeviceStartOutput, DeviceTokenOutput, MySessions, REVIEW_ROUNDS, RoutingRules, RunnerConfig } from "@codetgh/shared/rest";
 import { Command } from "commander";
 import spawn from "cross-spawn";
@@ -376,7 +376,8 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       // It exited (an untrusted folder, a lost login...): report why, then try again on this pass.
       await client.launcherReport({ project_id: t.project_id, running: false, error: run.lastError || "Remote Control exited" });
     }
-    const name = `CodeTgh · ${t.project_name.replace(/\p{Cc}/gu, "").slice(0, 60)}`;
+    // Local data only: on Windows claude is a .cmd that cmd.exe parses again, so no hub text may reach this command line.
+    const name = `CodeTgh · ${plainName(basename(dir)) || plainName(t.project_id)}`;
     // remote-control takes no --settings: the plugin goes on at local scope, for this user in this repository only.
     const on = await exec("claude", ["plugin", "enable", "codetgh@codetgh", "--scope", "local", "--json"], {
       timeout: 30_000,

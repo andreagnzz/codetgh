@@ -855,7 +855,7 @@ Hors des sessions déléguées, deux programmes du propriétaire lancent quelque
 - Ils ne sont actifs que pour les projets que le propriétaire a allumés dans la console (page Projets, bouton par projet). L'éteindre arrête le travail à la passe suivante.
 - Le hub n'exécute jamais rien. Il ne dit que *quoi* : tel projet allumé ou éteint, telle tâche à prendre. Il n'envoie ni chemin ni commande. La commande est fixée dans le CLI, donc un hub compromis peut allumer ou éteindre un projet listé, et rien d'autre.
 
-Le lanceur démarre `claude remote-control` dans le dossier du projet et rapporte ce qui tourne.
+Le lanceur démarre `claude remote-control --name "CodeTgh · <dossier>"` dans le dossier du projet et rapporte ce qui tourne. Le nom vient du nom local du dossier, réduit à `[A-Za-z0-9 ._-]` et 60 caractères (l'identifiant du projet s'il n'en reste rien), jamais du nom de projet du hub : sous Windows, `claude.cmd` repasse sa ligne de commande à cmd.exe.
 
 Le runner prend des tâches de la file du projet et les fait faire par `claude -p`, chacune dans son propre worktree git, jamais dans le checkout principal :
 - Il ne prend que les tâches qui portent `runner = true`. Seul un propriétaire ou un administrateur pose ce drapeau à la création de la tâche (`task_create`). Un membre ou un invité ne le peut pas (E_FORBIDDEN), et aucun message de pair, relais ou pont ne peut le poser ni le changer.

@@ -139,7 +139,7 @@ The launcher lets the team owner start Claude Code sessions on this machine from
 It is bounded on purpose:
 - it runs on the owner's machine with the owner's token;
 - the hub only says *on* or *off* for a project;
-- the folder comes from a local list, and the command is always `claude remote-control --name "CodeTgh · <project>"`;
+- the folder comes from a local list, and the command is always `claude remote-control --name "CodeTgh · <folder>"`, named after the local folder, never after the hub's project name;
 - a project missing from the list is refused, and the console says so.
 
 Setup, once:
