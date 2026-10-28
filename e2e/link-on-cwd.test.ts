@@ -65,15 +65,20 @@ it("does nothing when the new directory is not a repository", async () => {
   expect((await row("sam-home-2"))?.projectId).toBeNull();
 });
 
-it("does not link a guest's session to a repository nobody linked, and says to ask an admin", async () => {
+it("links a guest's session to no repository, linked or not, and says the same line for both", async () => {
   const env = hookEnv(hub.url, team.malik.token);
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
   const start = home();
   await runHook("session-start", { session_id: "malik-home", source: "startup", cwd: start }, env);
   const repo = gitRepo("git@github.com:client-under-nda/cwd-app.git");
   const r = await runHook("cwd-changed", { session_id: "malik-home", cwd: repo, old_cwd: start, new_cwd: repo }, env);
+  const teamRepo = gitRepo("git@github.com:acme/webapp.git");
+  const linked = await runHook("cwd-changed", { session_id: "malik-home", cwd: teamRepo, old_cwd: repo, new_cwd: teamRepo }, env);
   await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
-  expect(systemMessage(r)).toMatch(/not a team project yet/);
+  expect(systemMessage(r)).toBe(
+    "CodeTgh: a guest has no CodeTgh session inside a repository; read your messages with codetgh inbox or in the console.",
+  );
+  expect(linked.out).toEqual(r.out);
   expect(await projectsOf("git@github.com:client-under-nda/cwd-app.git")).toHaveLength(0);
   expect((await row("malik-home"))?.projectId).toBeNull();
 });

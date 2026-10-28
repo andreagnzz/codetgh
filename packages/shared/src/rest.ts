@@ -54,6 +54,8 @@ export const SessionStarted = z.object({
   linked: z.boolean(),
   // Unlinked: true when this caller may link the repository by sending its repo_name.
   can_link: z.boolean().optional(),
+  // Unlinked: "guest" when the caller is a guest, whom no repository puts in a session. Nothing about the repository.
+  unlinked_reason: z.enum(["guest"]).optional(),
   status_line: z.string().optional(),
   // The session's project name, null outside a project.
   project: z.string().nullable().optional(),

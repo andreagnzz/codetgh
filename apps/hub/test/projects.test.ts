@@ -139,7 +139,8 @@ describe("POST /v1/agents/session for a guest", () => {
     await setRole(hub, team.malik.userId, "member");
     expect(refused).toEqual([403, 403]);
     expect(linked).toEqual(unlinked);
-    expect(JSON.stringify(linked)).not.toContain("acme");
+    // It says why in a word about the caller, never about the repository.
+    expect(linked).toEqual({ agent_id: null, paused: false, context: "", linked: false, can_link: false, unlinked_reason: "guest" });
     expect(await hub.db.select().from(agent).where(eq(agent.sessionId, "malik-linked"))).toEqual([]);
   });
 

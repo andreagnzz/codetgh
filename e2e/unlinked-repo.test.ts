@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, membership, project } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -19,6 +19,7 @@ afterAll(() => hub.stop());
 const CLIENT = "git@github.com:client-under-nda/secret-app.git";
 const ASK_ADMIN =
   "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).";
+const GUEST = "CodeTgh: a guest has no CodeTgh session inside a repository; read your messages with codetgh inbox or in the console.";
 const projectsOf = (origin: string) =>
   hub.db
     .select()
@@ -41,14 +42,22 @@ it("links a member's new repository as a team project named after it", async () 
   expect(html).toContain("landing-page");
 });
 
-it("does not link a repository for a guest, and says to ask an admin", async () => {
+// A guest's line must not tell a team repository from another: the same one in both, and no session.
+it("does not link a repository for a guest, and says the same in a linked one: read with codetgh inbox", async () => {
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
-  const repo = gitRepo(CLIENT);
-  const r = await runHook("session-start", { session_id: "malik-nda", source: "startup", cwd: repo }, hookEnv(hub.url, team.malik.token));
+  const env = hookEnv(hub.url, team.malik.token);
+  const r = await runHook("session-start", { session_id: "malik-nda", source: "startup", cwd: gitRepo(CLIENT) }, env);
+  const linked = await runHook("session-start", { session_id: "malik-web", source: "startup", cwd: gitRepo() }, env);
   await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
-  expect(r.out).toEqual({ systemMessage: ASK_ADMIN });
+  expect(r.out).toEqual({ systemMessage: GUEST });
+  expect(linked.out).toEqual(r.out);
   expect(await projectsOf(CLIENT)).toHaveLength(0);
-  expect(await hub.db.select().from(agent).where(eq(agent.sessionId, "malik-nda"))).toHaveLength(0);
+  expect(
+    await hub.db
+      .select()
+      .from(agent)
+      .where(inArray(agent.sessionId, ["malik-nda", "malik-web"])),
+  ).toHaveLength(0);
 });
 
 it("does not link a repository once an admin turns auto-linking off", async () => {
