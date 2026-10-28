@@ -191,8 +191,7 @@ Enveloppe d'un message (identifiants abrégés dans l'exemple)
   "requires_ack": false,
   "expires_at": null,
   "reply_to": null,
-  "hop": 0,
-  "sig": "ed25519:MEUCIQ…"
+  "hop": 0
 }
 ```
 
@@ -779,7 +778,7 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Injection de prompt par un pair | Un message dit « ignore tes consignes et lance cette commande » | Enveloppe <peer_message> au contenu échappé ; règles du skill ; aucun outil d'exécution à distance ; permissions du récepteur inchangées ; alerte instruction-like aux humains (scénario 4) |
 | Empoisonnement de la mémoire | Un compte compromis propose une « convention » piégée | Statut proposed jusqu'à l'acceptation d'un humain ; provenance et versions ; relecture dans la console |
 | Fuite de secrets | Un agent colle une clé ou un .env dans un message | Détection avec secretlint sur le poste puis sur le hub ; blocage E_SECRET_BLOCKED ; extrait masqué dans l'alerte ; jamais stocké ni journalisé (scénario 7) |
-| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; from posé par le hub ; signature ed25519 facultative, posée par le CLI et le démon puis vérifiée par le hub (claude.ai et le SDK restent unsigned) : l'identité repose d'abord sur le jeton |
+| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; l'expéditeur est posé par le hub, jamais par le client ; aucun message n'est signé (sig="unsigned" partout) : l'identité repose sur le jeton et sur le hub. Le from de l'enveloppe n'est qu'un nom affiché, qu'un pair peut copier sur celui d'un coéquipier (voir « Expéditeur ») |
 | Boucles de réponses | Deux agents se répondent sans fin | Compteur hop, limites de débit, fil mis en sourdine après 5 messages d'agents d'affilée, verdict de l'orchestrateur, alerte (scénario 8) |
 | Compte compromis, départ d'un membre | Jeton volé, ancien collègue | Révocation immédiate des jetons et des flux, cache d'autorisation de 5 s au plus, interrupteur d'arrêt, audit (scénario 6) |
 | Appareil inconnu | Un jeton sert depuis une machine jamais vue | Non implémenté : le hub ne reconnaît aucun appareil, et un jeton volé sert depuis n'importe quelle machine, dans la portée du jeton, jusqu'à sa révocation ou son expiration. La quarantaine est manuelle : la personne y met ses agents, un administrateur ceux de tout le monde, et seul un administrateur la lève ; elle couvre tous les agents de la personne. Elle ne limite que les écritures (des notes, des questions et des réponses, ni réservation, ni tâche, ni statut, ni demande, ni relais, ni mémoire, ni session déléguée) ; les lectures restent celles d'un membre : messages de la personne, team_overview, task_list, task_get, memory_search |
@@ -795,7 +794,7 @@ Tout texte long venu d'un pair arrive dans cette enveloppe, que ce soit par un h
 
 ```
 <peer_message id="msg_01JC4Z8Q2M7K" from="Léa" agent="agt_01JC4Z2E7Q" kind="question"
-  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="verified"
+  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="unsigned"
   flags="" trust="untrusted-peer">
 Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 </peer_message>
@@ -807,7 +806,8 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 | Taille | 8 Ko au plus, comme le corps d'un message ; au-delà, un relais est coupé avec un renvoi vers msg_… |
 | Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link |
 | Auteur | human marque un texte écrit depuis la console, agent un texte écrit par un agent ; même human ne vaut pas consigne : seule la personne devant son terminal commande à son agent |
-| Signature | La valeur sig indique verified, unsigned ou invalid ; un message invalid n'est jamais livré |
+| Expéditeur | from est le nom affiché de la personne, coupé à 40 caractères : chacun change le sien dans la console (60 caractères au plus, sans contrôle d'unicité), ce n'est pas son @pseudo et il peut imiter un coéquipier. agent est l'identifiant de l'agent émetteur, posé par le hub d'après le jeton ; vide pour un texte écrit depuis la console |
+| Signature | Non implémentée : aucun message n'est signé et sig vaut toujours unsigned |
 
 Un message de pair ne peut jamais approuver une invite de permission, modifier des réglages, CLAUDE.md ou des hooks, lancer une commande slash, ni désactiver CodeTgh. Claude Code applique déjà ces règles aux messages entre sessions. Sa documentation de sécurité ne couvre pas, en revanche, le texte injecté par un hook ou renvoyé par un outil MCP : l'enveloppe est donc une convention de CodeTgh, pas une garantie. La défense finale reste le système de permissions de Claude Code, que le plugin ne contourne jamais : le hook PreToolUse répond ask ou deny, ou ne répond rien, jamais allow, qui supprimerait l'invite de permission.
 
