@@ -219,7 +219,7 @@ Un claim annonce qu'un agent travaille sur un chemin (src/api/users.ts), un glob
 | Mode | Sens | Posé par |
 | --- | --- | --- |
 | exclusive | Je modifie ces fichiers, ne les touchez pas | L'agent, par l'outil claim |
-| intent | Je compte y toucher ; réservation légère de 10 minutes | Le hook avant une édition (auto-claim) |
+| intent | Je compte y toucher ; réservation légère de 10 minutes ; 100 au plus par personne, à part des 100 réservations explicites (au-delà, l'édition n'est plus annoncée) ; POST /v1/claims/pre-edit a son propre débit par personne, quatre fois celui des messages | Le hook avant une édition (auto-claim) |
 | shared | Je dépends de ces fichiers ; prévenez-moi s'ils changent | L'agent, par l'outil claim |
 
 | Demandée (ligne) · en place (colonne) | exclusive | intent | shared |

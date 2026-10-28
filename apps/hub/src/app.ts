@@ -377,6 +377,9 @@ export function createApp({
   // PreToolUse on Edit/Write: 204 means no decision, so Claude Code's permission flow runs unchanged.
   v1.post("/claims/pre-edit", async (c) => {
     const p = c.get("principal");
+    // Every Edit and Write asks, under the team's claims lock: room for several busy sessions of one person, not for a loop.
+    const wait = limiter.take(`pre-edit:${p.user.id}`, 4);
+    if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many edit checks: wait and retry", wait);
     const input = await parse(c, PreEditInput);
     const agent = await agentBySession(db, p, input.session_id);
     const decision = agent ? await preEdit(db, p, agent, input.path) : null;
