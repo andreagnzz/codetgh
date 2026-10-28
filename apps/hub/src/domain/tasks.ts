@@ -99,7 +99,12 @@ export async function createTask(
   // The owner's machine runs a runner task's text through claude -p: only an owner or an admin flags one.
   if (input.runner && !isAdmin(p)) throw new HubError("E_FORBIDDEN", "only an owner or an admin can flag a task for the runner");
   // A teammate's request to an admin's delegate session must not reach the owner's runner (as sendMessage refuses a request).
-  if (input.runner) await requireNoDelegate(deps.db, p);
+  if (input.runner)
+    await requireNoDelegate(
+      deps.db,
+      p,
+      "a runner task cannot be created while you have a live delegate session: create it once that session ends (or you turn it off in the console)",
+    );
   // The runner picks tasks by project; a task created outside one would never run.
   if (input.runner && !a?.projectId)
     throw new HubError("E_INVALID", "a runner task needs a project: create it from a session in the project's repository");

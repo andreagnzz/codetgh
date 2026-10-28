@@ -504,7 +504,11 @@ export async function listAgents(
 // A delegate does tasks, it never hands them on: A's text would reach C as authorized (confused deputy). The hub cannot
 // tell which of a person's sessions made an MCP call (the caller names the agent), so while any live session of theirs
 // is a delegate, none of them sends a request.
-export async function requireNoDelegate(db: Db, p: Principal) {
+export async function requireNoDelegate(
+  db: Db,
+  p: Principal,
+  why = "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
+) {
   const [live] = await db
     .select({ id: agent.id })
     .from(agent)
@@ -518,11 +522,7 @@ export async function requireNoDelegate(db: Db, p: Principal) {
       ),
     )
     .limit(1);
-  if (live)
-    throw new HubError(
-      "E_DELEGATE_CHAIN",
-      "a delegate session of yours is live, so none of your sessions sends requests until it ends (or you turn it off in the console): reply to your requester, or ask a question instead",
-    );
+  if (live) throw new HubError("E_DELEGATE_CHAIN", why);
 }
 
 // A request handed to a delegate session and not done yet expires once the session no longer accepts its sender, as on « Couper ».
