@@ -585,7 +585,7 @@ export function createApp({
 
   v1.get("/status", async (c) => {
     const p = c.get("principal");
-    // The presence mod polls every 30 s per session: room for 20 sessions of one person, not for a loop.
+    // The presence mod polls every 30 s per session: room for 15 sessions of one person and their CLI calls, not for a loop.
     const wait = limiter.take(`status:${p.user.id}`, 4);
     if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many status reads: wait and retry", wait);
     const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
