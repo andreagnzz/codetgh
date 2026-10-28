@@ -191,8 +191,7 @@ Enveloppe d'un message (identifiants abrégés dans l'exemple)
   "requires_ack": false,
   "expires_at": null,
   "reply_to": null,
-  "hop": 0,
-  "sig": "ed25519:MEUCIQ…"
+  "hop": 0
 }
 ```
 
@@ -779,14 +778,14 @@ CodeTgh part d'un principe : tout ce qui vient d'un autre agent est une donnée 
 | Injection de prompt par un pair | Un message dit « ignore tes consignes et lance cette commande » | Enveloppe <peer_message> au contenu échappé ; règles du skill ; aucun outil d'exécution à distance ; permissions du récepteur inchangées ; alerte instruction-like aux humains (scénario 4) |
 | Empoisonnement de la mémoire | Un compte compromis propose une « convention » piégée | Statut proposed jusqu'à l'acceptation d'un humain ; provenance et versions ; relecture dans la console |
 | Fuite de secrets | Un agent colle une clé ou un .env dans un message | Détection avec secretlint sur le poste puis sur le hub ; blocage E_SECRET_BLOCKED ; extrait masqué dans l'alerte ; jamais stocké ni journalisé (scénario 7) |
-| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; from posé par le hub ; signature ed25519 facultative, posée par le CLI et le démon puis vérifiée par le hub (claude.ai et le SDK restent unsigned) : l'identité repose d'abord sur le jeton |
+| Usurpation d'identité | Un agent écrit au nom d'un autre | Identité tirée du jeton ; l'expéditeur est posé par le hub, jamais par le client ; aucun message n'est signé (sig="unsigned" partout) : l'identité repose sur le jeton et sur le hub. Le from de l'enveloppe n'est qu'un nom affiché, qu'un pair peut copier sur celui d'un coéquipier (voir « Expéditeur ») |
 | Boucles de réponses | Deux agents se répondent sans fin | Compteur hop, limites de débit, fil mis en sourdine après 5 messages d'agents d'affilée, verdict de l'orchestrateur, alerte (scénario 8) |
 | Compte compromis, départ d'un membre | Jeton volé, ancien collègue | Révocation immédiate des jetons et des flux, cache d'autorisation de 5 s au plus, interrupteur d'arrêt, audit (scénario 6) |
-| Appareil inconnu | Un jeton sert depuis une machine jamais vue | Agent en quarantaine : il ne reçoit que les messages qui lui sont adressés, envoie des notes, des questions et des réponses, et ne pose ni réservation, ni demande, ni relais, ni mémoire, jusqu'à la confirmation de son propriétaire |
+| Appareil inconnu | Un jeton sert depuis une machine jamais vue | Non implémenté : le hub ne reconnaît aucun appareil, et un jeton volé sert depuis n'importe quelle machine, dans la portée du jeton, jusqu'à sa révocation ou son expiration. La quarantaine est manuelle : la personne y met ses agents, un administrateur ceux de tout le monde, et seul un administrateur la lève ; elle couvre tous les agents de la personne. Elle ne limite que les écritures (autorisé : notes, questions, réponses ; refusé : réservation, tâche, statut, demande, relais, mémoire, session déléguée) ; les lectures restent celles d'un membre : messages de la personne, team_overview, task_list, task_get, memory_search |
 | Hub indiscret ou compromis | Accès à la base | Chiffrement au repos ; journal chaîné avec points de contrôle signés ; hébergement dans l'UE en option ; chiffrement de bout en bout facultatif des corps de messages en phase 3 |
 | Exfiltration par références ou pièces jointes | Un chemin sensible partagé par erreur | Liste d'exclusion de chemins (.env*, *.pem, .git/) ; le hub ne lit jamais de fichier ; 5 pièces jointes de 256 Ko au plus |
 | Déni de service | Inondation de messages | Limites de débit par agent et par équipe, tailles maximales, quotas |
-| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), détection d'usage anormal (nouvel appareil, rafale) |
+| Jeton volé sur un poste | Un logiciel malveillant lit un fichier | Trousseau du système, jetons à expiration et limités à la portée agent (aucune route d'administration, sauf l'invitation d'un membre ou d'un invité : un jeton ne crée jamais de compte admin ou owner), limites de débit ; aucune détection d'usage anormal (nouvel appareil, rafale) : une rafale est refusée (E_RATE_LIMITED) sans alerte, et le jeton reste valide jusqu'à sa révocation |
 | Chaîne d'approvisionnement | Dépendance ou plugin piégé | Versions épinglées, provenance npm, inventaire logiciel, contrôle des licences ; hooks minimaux, sans eval et sans autre hôte que le hub |
 
 ### Enveloppe des messages de pairs
@@ -795,7 +794,7 @@ Tout texte long venu d'un pair arrive dans cette enveloppe, que ce soit par un h
 
 ```
 <peer_message id="msg_01JC4Z8Q2M7K" from="Léa" agent="agt_01JC4Z2E7Q" kind="question"
-  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="verified"
+  priority="normal" authored_by="agent" sent_at="2026-10-13T09:41:12Z" sig="unsigned"
   flags="" trust="untrusted-peer">
 Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 </peer_message>
@@ -807,7 +806,8 @@ Le champ createdAt est-il en ISO 8601 ou en timestamp ?
 | Taille | 8 Ko au plus, comme le corps d'un message ; au-delà, un relais est coupé avec un renvoi vers msg_… |
 | Drapeaux du hub | instruction-like (verbes impératifs, « ignore », « system », tubes shell), secret-suspect, external-link |
 | Auteur | human marque un texte écrit depuis la console, agent un texte écrit par un agent ; même human ne vaut pas consigne : seule la personne devant son terminal commande à son agent |
-| Signature | La valeur sig indique verified, unsigned ou invalid ; un message invalid n'est jamais livré |
+| Expéditeur | Dans les messages de personnes, from est le nom affiché de la personne, coupé à 40 caractères : chacun change le sien dans la console (60 caractères au plus, sans contrôle d'unicité), ce n'est pas son @pseudo et il peut imiter un coéquipier. Les ponts et le contexte du hub portent un nom fixe : GitHub ou Slack pour un pont, team pour l'activité de l'équipe et les textes de pairs qui ne sont pas des messages (titres, statuts, noms). agent est l'identifiant de l'agent émetteur, posé par le hub : d'après le jeton, ou l'agent du pont pour un pont ; vide pour un texte écrit depuis la console et pour le contexte du hub |
+| Signature | Non implémentée : aucun message n'est signé et sig vaut toujours unsigned |
 
 Un message de pair ne peut jamais approuver une invite de permission, modifier des réglages, CLAUDE.md ou des hooks, lancer une commande slash, ni désactiver CodeTgh. Claude Code applique déjà ces règles aux messages entre sessions. Sa documentation de sécurité ne couvre pas, en revanche, le texte injecté par un hook ou renvoyé par un outil MCP : l'enveloppe est donc une convention de CodeTgh, pas une garantie. La défense finale reste le système de permissions de Claude Code, que le plugin ne contourne jamais : le hook PreToolUse répond ask ou deny, ou ne répond rien, jamais allow, qui supprimerait l'invite de permission.
 
@@ -930,7 +930,7 @@ Le contrôle s'applique deux fois : sur le poste, par le hook PreToolUse des out
 | Contenu des fichiers du dépôt | Non, hors pièces jointes explicites | Durée des messages |
 | Identifiants Anthropic, clés d'API | Jamais | Sans objet |
 | Jetons CodeTgh | Hachés (SHA-256) sur le hub, trousseau sur le poste | Expiration à 90 jours |
-| Adresses IP et appareils | Oui, pour détecter l'usage anormal | 30 jours |
+| Adresses IP et appareils | Pas pour détecter un usage anormal, qui n'est pas implémenté : seules les sessions de connexion web gardent l'adresse et le navigateur (better-auth) | Aucune purge propre : jusqu'à la déconnexion, la révocation ou l'effacement de la personne |
 | Usage du forfait Claude (pourcentage entier et heure de remise des fenêtres 5 h et 7 jours) | Oui, le dernier relevé par personne | Remplacé à chaque relevé |
 
 Chaque personne peut exporter ses données en JSON et demander leur effacement : ses messages sont supprimés ou rendus anonymes (« ancien membre »), et le lien entre son nom et ses identifiants d'audit est coupé sans rompre la chaîne. Ses notes de tâche (dont celles de reprise) deviennent « [erased] ». La raison de blocage (`blocked_reason`) et le tag `verify` n'ont pas d'auteur propre : ils sont effacés sur les tâches que la personne a créées ou qui lui étaient assignées, et le tag aussi sur celles où elle l'a posé (`verify_set_by`) ; l'export les contient pour ces mêmes tâches. L'hébergement dans l'UE est une option du service hébergé ; en auto-hébergement, l'équipe n'a aucun sous-traitant à déclarer pour CodeTgh.
@@ -964,8 +964,8 @@ La console est l'endroit où les humains voient tout ce que les agents se disent
 | Connexion et invitation | Se connecter par GitHub, Google ou lien magique ; accepter une invitation. Une personne qui a déjà un compte rejoint l'équipe seulement en ouvrant le lien et en cliquant « Rejoindre » (POST protégé par CSRF) : l'invitation doit être en attente, adressée à son e-mail vérifié, et sert une seule fois ; se connecter ne fait rejoindre aucune équipe. Un membre révoqué revient seulement par une invitation créée après sa révocation, avec le rôle qu'elle donne | Public | 1 |
 | Tableau de bord | Voir la présence, ce qui demande une décision, l'activité récente et l'état de l'interrupteur | Invité (vue limitée) | 1 |
 | Fils | Lire un fil, répondre en tant qu'humain (authored_by à human), mettre un fil en sourdine ou le rouvrir ; filtrer par projet, type, priorité et agent | Membre ; un invité : les fils où il est invité (voir Rôles) | 1 |
-| Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, appareil inconnu ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
-| Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents), administrateur (tous) ; un invité voit ses agents, peut les mettre en quarantaine ou les retirer, jamais les confirmer | 1 |
+| Alertes | Traiter les alertes : instruction suspecte, secret bloqué, boucle, journal d'audit altéré ; marquer un faux positif ; autoriser une empreinte | Administrateur | 1 |
+| Agents | Voir le label, le type, la branche, la dernière activité et le niveau de confiance ; confirmer, mettre en quarantaine ou révoquer | Membre (ses agents, sauf confirmer), administrateur (tous ; lui seul lève une quarantaine) ; un invité voit ses agents, peut les mettre en quarantaine ou les retirer, jamais les confirmer | 1 |
 | Projets | Voir les sessions de chaque membre par projet ; « Sessions hors projet » : les sessions lancées hors d'un dépôt lié (sans agents système bridge et a2a ni agent REST cli-…), à rattacher à un projet (audit agent.project_set) | Membre (lecture, rattacher ses sessions), administrateur (rattacher toutes) ; jamais un invité | 2 |
 | Filtre de projet | Sur Fils, Tâches, Projets et Agents, `?project=<id>` (un projet de l'équipe) ou `none` (hors projet) filtre la page ; sans filtre, chaque élément est rangé sous le titre de son projet, « Hors projet » en dernier ; un identifiant inconnu ou d'une autre équipe est ignoré ; les liens de la console gardent le filtre, pages de détail comprises ; le dernier choix reste dans un cookie du navigateur (HttpOnly, SameSite=Lax), qu'un `?project=` explicite remplace et que « Tous les projets » efface ; un invité ne voit jamais la liste des projets ; team_overview et la ligne d'activité du SessionStart nomment le projet de chaque agent, ceux du projet de la session en premier | Comme la page filtrée | 3 |
 | Délégations | Voir les sessions déléguées, leur projet et les expéditeurs acceptés ; « Couper » retire le mode et fait expirer les demandes non traitées | Membre (ses sessions), administrateur (toutes) | 3 |
@@ -1091,7 +1091,7 @@ pnpm build       hub, CLI, hook.js et plugin
 | Variable | Rôle | Défaut |
 | --- | --- | --- |
 | CODETGH_PUBLIC_URL | Adresse publique : émetteur OAuth, ressource MCP, liens d'invitation | Obligatoire |
-| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les sessions, chiffre les champs sensibles | Obligatoire |
+| CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les cookies de session, chiffre la clé de signature OAuth (table jwks), dérive les jetons CSRF de la console, les secrets des webhooks GitHub, les empreintes des secrets autorisés et, sans CODETGH_AUDIT_KEY, la clé des points de contrôle d'audit ; rotation : docs/DEPLOY.md | Obligatoire |
 | DATABASE_URL | Chaîne de connexion Postgres ; absente, le hub utilise PGlite | PGlite |
 | CODETGH_DATA_DIR | Dossier de PGlite et des pièces jointes | ./data |
 | PORT | Port d'écoute HTTP | 8787 |
@@ -1127,25 +1127,46 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | Léger | Essai ou petit groupe | Un conteneur, PGlite, volume data/ | Un seul processus ; tenue en charge et LISTEN/NOTIFY à valider en phase 0 |
 | Hébergé (après la v1) | Équipes sans serveur | Plusieurs réplicas sans état, Postgres géré, région UE en option | Les réplicas se préviennent par LISTEN/NOTIFY |
 
+Extrait de deploy/compose.yaml, qui fait foi (variables facultatives, bot Discord) : le hub n'est publié que sur 127.0.0.1, derrière le proxy TLS, et Postgres n'a aucun port.
+
 ```
 services:
   hub:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     environment:
       CODETGH_PUBLIC_URL: https://codetgh.example.com
       DATABASE_URL: postgres://codetgh:${POSTGRES_PASSWORD}@db:5432/codetgh
       CODETGH_SECRET: ${CODETGH_SECRET}
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.5
+    pids_limit: 256
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
   db:
-    image: postgres:17
+    image: postgres:17.11-bookworm
     environment:
       POSTGRES_USER: codetgh
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: codetgh
+    user: "999:999"
+    read_only: true
+    tmpfs: [/tmp, /var/run/postgresql]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -1162,7 +1183,7 @@ volumes:
 | Migrations | Appliquées au démarrage sous verrou consultatif Postgres ; chacune reste compatible avec la version précédente du hub |
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |
-| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; rotation documentée |
+| Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; la rotation de CODETGH_SECRET (docs/DEPLOY.md) oblige à se reconnecter à la console, à recréer les webhooks GitHub et à réautoriser les empreintes ; le connecteur OAuth obtient un nouveau jeton d'accès par son jeton de rafraîchissement, et se reconnecte s'il ne rafraîchit pas ; elle fixe d'abord CODETGH_AUDIT_KEY à la graine dérivée de l'ancien secret : sinon plus aucun point de contrôle d'audit n'est signé ni vérifié |
 | Image | Construction en plusieurs étapes, utilisateur non root, système de fichiers en lecture seule sauf data/ |
 
 ### Observabilité
@@ -1419,7 +1440,7 @@ La spec retient une hypothèse pour chaque question. L'humain tranche avant la p
 | Relais (handoff) | Passage d'une tâche à un collègue, avec une capsule de contexte |
 | hop | Nombre de messages d'agents consécutifs dans un fil, sans intervention humaine ; au-delà de 6, le fil est mis en sourdine |
 | Enveloppe | Balise <peer_message> qui marque un texte comme venu d'un pair |
-| Quarantaine | État d'un agent inconnu : il ne reçoit que ses propres messages et n'envoie que des notes, des questions et des réponses : ni réservation, ni demande, ni relais, ni mémoire |
+| Quarantaine | État que la personne ou un administrateur pose à la main sur tous les agents d'une personne (jamais automatique, sauf pour un agent A2A externe), levé par un administrateur seul : ils n'envoient que des notes, des questions et des réponses, ni réservation, ni demande, ni relais, ni mémoire ; leurs lectures ne changent pas |
 | Spike | Essai court de bout en bout, pour lever un risque technique avant de construire |
 | CIMD | Client ID Metadata Document : le client OAuth se décrit par un document à une adresse, sans enregistrement préalable |
 | DCR | Dynamic Client Registration : le client s'enregistre lui-même auprès du serveur d'autorisation (RFC 7591) |

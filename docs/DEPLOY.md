@@ -123,6 +123,39 @@ Reading the diff is the point: this step turns files your user can write into fi
   docker compose -f deploy/compose.yaml --env-file deploy/.env start hub
   ```
 
+## Rotate CODETGH_SECRET
+
+The hub reads one `CODETGH_SECRET` and knows no previous one. Everything derived from it changes with it:
+- console sign-ins: better-auth signs the session cookies with it, and the console derives its CSRF tokens from it, so everyone signs in again;
+- OAuth for `/mcp` (the claude.ai connector): better-auth keeps its JWT signing key in the `jwks` table, encrypted with the secret, and refuses to sign once it cannot decrypt that key, so the rows must go (step 4);
+- the audit signing key, when `CODETGH_AUDIT_KEY` is empty: it is derived from the secret, and a new key never signs on top of checkpoints the old one signed (an `audit_tamper` alert, "not signed by this hub"), while **Verify chain** in the console and `codetgh audit verify` fail on every old checkpoint. Step 2 keeps the same key;
+- every team's GitHub webhook secret, and the fingerprints of allowed secrets.
+
+Personal tokens (CLI, plugin, hooks, A2A agents) and invitation links are stored as plain SHA-256 hashes and keep working. The steps assume this guide's Compose and Postgres deployment. After step 3 the old secret is gone: a rotation that fails is undone only by restoring the step-1 dump ([Restore](#restore), without its last line: the hub stays stopped) and running steps 4 and 5 again with the new secret. Run from the checkout:
+
+1. `codetgh backup`.
+2. **Keep the audit key.** If `CODETGH_AUDIT_KEY` is empty, this writes the seed the hub derives from the current secret into `deploy/.env` (the secret must be unquoted, as `codetgh setup` writes it); it does nothing when the key is already set:
+   ```
+   node -e 'const fs=require("node:fs"),{hkdfSync}=require("node:crypto");const f=process.argv[1],t=fs.readFileSync(f,"utf8");if(/^CODETGH_AUDIT_KEY=./m.test(t))process.exit(0);const seed=Buffer.from(hkdfSync("sha256",t.match(/^CODETGH_SECRET=(.*)$/m)[1],"","codetgh audit checkpoint v1",32)).toString("base64");fs.writeFileSync(f,`${t.replace(/^CODETGH_AUDIT_KEY=$\n?/m,"").trimEnd()}\nCODETGH_AUDIT_KEY=${seed}\n`)' deploy/.env
+   ```
+3. **New secret**, hub stopped:
+   ```
+   docker compose -f deploy/compose.yaml --env-file deploy/.env stop hub
+   sed -i "s|^CODETGH_SECRET=.*|CODETGH_SECRET=$(openssl rand -base64 32)|" deploy/.env
+   ```
+4. **Drop the OAuth signing key** before the hub starts: a refresh served with the new secret and the old key fails and spends the client's refresh token. The hub makes a new key when it next signs:
+   ```
+   docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db psql -U codetgh -d codetgh -c 'delete from jwks'
+   ```
+5. **Start**, and wait for ready:
+   ```
+   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
+   curl -fsS http://127.0.0.1:8787/readyz
+   ```
+6. **After.** Copy `deploy/.env` to the nightly job (its `install` line in [Nightly job](#nightly-job)). In the console, **Audit log › Verify chain** must still say the chain is intact. In each team that has a webhook, an admin clicks **Settings › GitHub bridge › Replace the webhook secret**, which shows the new URL and secret once, and pastes both into GitHub; a team without one has nothing to do. A secret value that was allowed is blocked again until an admin allows it from its new alert. An OAuth access token signed by the old key gets 401 on `/mcp`; the client's refresh token still works and gets a new one (see `docs/FACTS.md`), and a client that does not refresh signs in again.
+
+`CODETGH_AUDIT_KEY` itself cannot be rotated: the hub checks every checkpoint against one key.
+
 ## Stop
 
 ```
