@@ -34,11 +34,11 @@ export async function requireNotBridge(db: Db, teamId: string, userId: string) {
 }
 
 // A pending invitation ends with the admin rights or the token that made it: a cut-off access must not return through a link.
-export const endPendingInvitations = (db: Db, teamId: string, madeBy: SQL) =>
+export const endPendingInvitations = (db: Db, teamId: string, ...madeBy: SQL[]) =>
   db
     .update(invitation)
     .set({ revokedAt: new Date() })
-    .where(and(eq(invitation.teamId, teamId), isNull(invitation.acceptedAt), isNull(invitation.revokedAt), madeBy));
+    .where(and(eq(invitation.teamId, teamId), isNull(invitation.acceptedAt), isNull(invitation.revokedAt), ...madeBy));
 
 export const isAdmin = (p: Principal) => p.role === "owner" || p.role === "admin";
 
@@ -285,6 +285,8 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
     if (role === "member" || role === "guest") await endPendingInvitations(tx, p.teamId, eq(invitation.invitedBy, m.userId));
+    else if (m.role === "owner" && role === "admin")
+      await endPendingInvitations(tx, p.teamId, eq(invitation.invitedBy, m.userId), eq(invitation.role, "owner"));
     await appendAudit(tx, { ...byUser(p), action: "member.role_changed", subjectId: m.id, data: { role } });
   });
 }

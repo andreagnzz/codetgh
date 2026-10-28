@@ -92,6 +92,18 @@ describe("a pending invitation ends with the admin rights or the token that made
     expect(await pending("later@evil.test")).toEqual([]);
   });
 
+  it("revokes an owner's owner invitations when they become an admin, and keeps their admin ones", async () => {
+    const sam = await membershipOf(team.sam.userId);
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.id, sam));
+    const owner = { email: "second-owner@evil.test", role: "owner" };
+    const admin = { email: "still-admin@ok.test", role: "admin" };
+    for (const invite of [owner, admin])
+      expect((await consolePost(hub.url, team.sam.cookie, "/console/members/invite", invite)).status).toBeLessThan(400);
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${sam}/role`, { role: "admin" })).status).toBeLessThan(400);
+    expect(await pending(owner.email)).toEqual([]);
+    expect(await pending(admin.email)).toHaveLength(1);
+  });
+
   it("revokes an admin's invitations when they erase themselves", async () => {
     await hub.db.update(membership).set({ role: "admin" }).where(eq(membership.userId, team.sam.userId));
     const invite = { email: "after-erase@evil.test", role: "admin" };
