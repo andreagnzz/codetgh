@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { INVITE_HEADER } from "../apps/hub/src/auth.js";
-import { alert, membership, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { alert, auditEvent, membership, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
 import { createPersonalToken } from "../apps/hub/src/tokens.js";
 import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
@@ -147,4 +147,36 @@ it("does not hand the orchestrator role to a newcomer who takes the handle of a 
   expect(code(r), r.text).toBe("E_FORBIDDEN");
   const [t] = await hub.db.select().from(thread).where(eq(thread.id, stuck.thread));
   expect(t?.mutedAt).not.toBeNull();
+});
+
+it("hands the orchestrator only the loop of a direct thread, and audits that read like an admin's", async () => {
+  const pia = await join("Pia");
+  const rita = await join("Rita");
+  await consolePost(hub.url, team.lea.cookie, "/console/settings", {
+    retention_days: "90",
+    secret_patterns: "",
+    loop_orchestrator: rita.handle,
+  });
+  const piaClient = await mcpClient(hub.url, pia.token);
+  const first = JSON.parse(
+    (await call(piaClient, "send_message", { to: "@lea", kind: "note", body: "Private context before the loop" })).text,
+  );
+  await piaClient.close();
+  // Léa's own words in the console: the agent streak starts again after them.
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/threads/${first.thread}/reply`, { body: "Lea's own words" })).status).toBe(
+    204,
+  );
+  const stuck = await loop(pia, team.lea, first);
+  const orchestrator = await mcpClient(hub.url, rita.token);
+  const inbox = (await call(orchestrator, "inbox_read", { thread: stuck.thread })).text;
+  await orchestrator.close();
+  expect(inbox).toContain("reply 4");
+  expect(inbox).not.toContain("Private context before the loop");
+  expect(inbox).not.toContain("Lea's own words");
+  const reads = await hub.db
+    .select()
+    .from(auditEvent)
+    .where(and(eq(auditEvent.action, "thread.read_by_orchestrator"), eq(auditEvent.subjectId, stuck.thread)));
+  expect(reads).toHaveLength(1);
+  expect(reads[0]?.actorUserId).toBe(rita.userId);
 });

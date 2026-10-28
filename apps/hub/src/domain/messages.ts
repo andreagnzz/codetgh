@@ -540,19 +540,36 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
             subjectId: t.id,
             data: { reason: "loop_guard" },
           });
-          // The orchestrator gets the thread in its inbox: it becomes a participant and can read it all.
+          // The orchestrator gets the loop in its inbox, its last messages only: what it judges, not the thread's history.
           if (orchestrator && orchestrator.userId !== p.user.id) {
+            const loop = tx
+              .select({ id: message.id })
+              .from(message)
+              .where(eq(message.threadId, t.id))
+              .orderBy(desc(message.createdAt))
+              .limit(MAX_AGENT_MESSAGES);
             const unseen = await tx
               .select({ id: message.id })
               .from(message)
               .leftJoin(receipt, and(eq(receipt.messageId, message.id), eq(receipt.recipientUserId, orchestrator.userId)))
-              .where(and(eq(message.threadId, t.id), isNull(receipt.seq)));
-            if (unseen.length)
+              .where(and(inArray(message.id, loop), ne(message.fromUserId, orchestrator.userId), isNull(receipt.seq)));
+            if (unseen.length) {
               await tx
                 .insert(receipt)
                 .values(
                   unseen.map((m) => ({ messageId: m.id, teamId: p.teamId, recipientUserId: orchestrator.userId, recipientAgentId: null })),
                 );
+              // Someone else's direct thread: a read like an admin's, audited as one.
+              if (t.kind === "direct")
+                await appendAudit(tx, {
+                  teamId: p.teamId,
+                  actorType: "user",
+                  actorUserId: orchestrator.userId,
+                  via: "system",
+                  action: "thread.read_by_orchestrator",
+                  subjectId: t.id,
+                });
+            }
           }
           return { muted: true as const, threadId: t.id };
         }
