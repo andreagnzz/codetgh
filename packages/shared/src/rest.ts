@@ -134,16 +134,17 @@ export const KeysQuery = z.object({ handles: z.string().max(500) });
 export const KeysOutput = z.object({ keys: z.array(z.object({ handle: z.string(), public_key: z.string().nullable() })) });
 export const ThreadKeyOutput = z.object({ thread: z.string(), wrapped: z.string(), ciphertext: z.string() });
 export const CreateProjectInput = z.object({
-  // Any member sets it, and it reaches command lines, terminals and models: a closed set of characters (letters with their
-  // combining marks, so a decomposed accent is one too).
+  // Any member sets it, and it reaches command lines, terminals and models: a closed set of characters. NFC first, so a
+  // decomposed accent is its precomposed letter; a mark with no such letter (or an invisible one) is refused.
   name: z
     .string()
     .trim()
-    .regex(/^[\p{L}\p{M}\p{N} ._/-]{1,100}$/u, "a project name is 1 to 100 letters, digits, spaces and . _ - /"),
+    .normalize("NFC")
+    .regex(/^[\p{L}\p{N} ._/-]{1,100}$/u, "a project name is 1 to 100 letters, digits, spaces and . _ - /"),
   repo_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });
 // A name stored before that rule may hold anything: cut down to the same set wherever it is shown.
-export const projectNameText = (name: string) => name.replace(/[^\p{L}\p{M}\p{N} ._/-]/gu, "");
+export const projectNameText = (name: string) => name.normalize("NFC").replace(/[^\p{L}\p{N} ._/-]/gu, "");
 export const ProjectOutput = z.object({ id: z.string(), name: z.string() });
 export const InviteInput = z.object({
   email: z.string().max(254),
