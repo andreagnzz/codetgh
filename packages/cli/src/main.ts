@@ -300,15 +300,22 @@ async function sealForThread(client: CodeTghClient, keyring: Keyring, url: strin
 }
 
 // A one-line banner. Teal only: the brand keeps Mint for dark backgrounds, and a terminal's background is unknown.
+// Its colour is the one escape sequence the CLI prints: written straight to the terminal, past printable.
 function banner(io: Io, what: string) {
-  const color = process.stdout.isTTY && !process.env.NO_COLOR;
-  const teal = (s: string) => (color ? `\x1b[1;38;5;30m${s}\x1b[0m` : s);
-  io.out(`${teal("CodeTgh")} ${what} · Plusieurs Claude Code, une même ligne.`);
+  const line = (name: string) => `${name} ${what} · Plusieurs Claude Code, une même ligne.`;
+  if (process.stdout.isTTY && !process.env.NO_COLOR) process.stdout.write(`${line("\x1b[1;38;5;30mCodeTgh\x1b[0m")}\n`);
+  else io.out(line("CodeTgh"));
 }
 
-// Peer text and hub names on a terminal: CSI and ESC sequences and control characters out, newlines and tabs kept.
+// The terminal: everything the CLI prints goes through printable, since peer text and hub names may hold CSI and ESC
+// sequences and control characters. Newlines and tabs stay.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: escape sequences are what it removes
 const printable = (s: string) => s.replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[@-_]|[^\P{Cc}\n\t]/gu, "");
+export const terminalIo = (): Io => ({
+  out: (s) => console.log(printable(s)),
+  err: (s) => console.error(printable(s)),
+  stdin: process.stdin,
+});
 
 // codetgh launcher: the Remote Control servers it started, by project id, for the life of this process.
 const launched = new Map<string, { child: ChildProcess; lastError: string }>();
@@ -357,14 +364,14 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       if (run) {
         stopServer(run.child);
         launched.delete(t.project_id);
-        io.out(`${printable(t.project_name)}: Remote Control stopped`);
+        io.out(`${t.project_name}: Remote Control stopped`);
       }
       await client.launcherReport({ project_id: t.project_id, running: false });
       continue;
     }
     const dir = Object.hasOwn(projects, t.project_id) ? projects[t.project_id] : undefined;
     if (typeof dir !== "string" || !dir) {
-      io.out(`${printable(t.project_name)}: ${NOT_LISTED}; add "${t.project_id}": "/path/to/the/repository" to it`);
+      io.out(`${t.project_name}: ${NOT_LISTED}; add "${t.project_id}": "/path/to/the/repository" to it`);
       await client.launcherReport({ project_id: t.project_id, running: false, error: NOT_LISTED });
       continue;
     }
@@ -384,9 +391,7 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       cwd: dir,
     }).then(() => true, inGoalState);
     if (!on)
-      io.out(
-        `${printable(t.project_name)}: the CodeTgh plugin is not on there: cd ${dir} && claude plugin enable codetgh@codetgh --scope local`,
-      );
+      io.out(`${t.project_name}: the CodeTgh plugin is not on there: cd ${dir} && claude plugin enable codetgh@codetgh --scope local`);
     const child = spawn("claude", ["remote-control", "--name", name], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
     const entry = { child, lastError: "" };
     child.stderr?.on("data", (d: Buffer) => {
@@ -397,7 +402,7 @@ async function launcherPass(client: CodeTghClient, projects: Record<string, stri
       entry.lastError = e.message;
     });
     launched.set(t.project_id, entry);
-    io.out(`${printable(t.project_name)}: Remote Control started in ${dir}`);
+    io.out(`${t.project_name}: Remote Control started in ${dir}`);
     await client.launcherReport({ project_id: t.project_id, running: true });
   }
 }
@@ -1313,14 +1318,14 @@ async function runnerPass(client: CodeTghClient, cfg: RunnerSettings, io: Io, he
       continue;
     }
     if (!dir) {
-      io.out(`${printable(t.project_name)}: ${RUNNER_NOT_LISTED}; add "${t.project_id}": "/path/to/the/clone" to it`);
+      io.out(`${t.project_name}: ${RUNNER_NOT_LISTED}; add "${t.project_id}": "/path/to/the/clone" to it`);
       await client.runnerReport({ project_id: t.project_id, running: 0, error: RUNNER_NOT_LISTED });
       continue;
     }
     const start = (lease: Lease, what: string, restack?: Job["restack"]) => {
       const job: Job = { projectId: t.project_id, stopped: false, done: Promise.resolve(), restack };
       jobs.set(lease.task.id, job);
-      io.out(`${printable(t.project_name)}: ${lease.task.id} ${what}`);
+      io.out(`${t.project_name}: ${lease.task.id} ${what}`);
       job.done = runJob(client, cfg, t.project_id, lease, io, job);
     };
     for (const lease of held) if (lease.task.project_id === t.project_id && !jobs.has(lease.task.id)) start(lease, "resumed");
@@ -1566,7 +1571,7 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
   const who = await saveLogin(deps.keyring, url, token).catch((e: Error) => {
     throw new Error(`${e.message}: run codetgh setup again`);
   });
-  io.out(printable(`ok   logged in as ${who.user.name} (@${who.handle}) in ${who.team.name}`));
+  io.out(`ok   logged in as ${who.user.name} (@${who.handle}) in ${who.team.name}`);
 
   step("Claude Code plugin");
   const marketplace = `${url}/plugin/marketplace.json`;
@@ -1682,7 +1687,7 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       tokenOk = who !== null;
       check(
         who !== null,
-        who ? printable(`token: ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}`) : "token refused by the hub",
+        who ? `token: ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}` : "token refused by the hub",
         "run codetgh login --url <hub address> again and confirm in the browser",
       );
     }
@@ -2156,12 +2161,12 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         : `${current ? `${current.trimEnd()}\n\n` : ""}${block}\n`;
       if (next !== current) writeFileSync(md, next);
 
-      io.out(`project "${printable(created.name)}" ready. Commit .claude/settings.json and CLAUDE.md, then send this to your teammates:`);
+      io.out(`project "${created.name}" ready. Commit .claude/settings.json and CLAUDE.md, then send this to your teammates:`);
       io.out("");
-      io.out(`Join our CodeTgh project "${printable(created.name)}":`);
+      io.out(`Join our CodeTgh project "${created.name}":`);
       io.out(`1. Install the command: npm install -g ${url}/cli/codetgh.tgz`);
       io.out(`2. Run: codetgh setup   (pick "member", hub ${url}, and the invitation link from your email)`);
-      io.out(`3. In ${printable(created.name)}, launch Claude with: codetgh start`);
+      io.out(`3. In ${created.name}, launch Claude with: codetgh start`);
       if (!valid) for (const line of manual) io.out(line);
       io.out("No invitation yet? Ask an admin: codetgh invite <email>");
     });
@@ -2255,7 +2260,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const token = opts.tokenStdin ? await readToken(io) : await browserToken(io, url);
       if (!token.startsWith("ctgh_")) throw new Error("this does not look like a CodeTgh token (ctgh_…)");
       const who = await saveLogin(deps.keyring, url, token);
-      io.out(printable(`Logged in as ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}.`));
+      io.out(`Logged in as ${who.user.name} (@${who.handle}, ${who.role}) in ${who.team.name}.`);
       io.out("Next: codetgh setup installs the Claude Code plugin; codetgh doctor checks everything.");
     });
 
@@ -2406,7 +2411,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       const shown = (await client.runnerTargets()).targets.filter((t) => !opts.project || t.project_id === opts.project);
       if (opts.project && !shown.length) throw new Error(`${opts.project} is not a runner project: switch its runner on in the console`);
       for (const t of shown) {
-        io.out(`${printable(t.project_name)} (${t.project_id})${t.desired ? "" : ", runner off"}`);
+        io.out(`${t.project_name} (${t.project_id})${t.desired ? "" : ", runner off"}`);
         const { tasks } = await client.runnerStatus(t.project_id);
         type Row = (typeof tasks)[number];
         const groups: Array<[string, (x: Row) => boolean, (x: Row) => string]> = [
@@ -2434,7 +2439,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         const files = quarantines(t.project_id);
         if (files.length)
           throw new Error(
-            `${printable(t.project_name)} has a quarantined worktree (${files.join(", ")}): inspect it and the clone's git config, then remove the .quarantine file before a retry`,
+            `${t.project_name} has a quarantined worktree (${files.join(", ")}): inspect it and the clone's git config, then remove the .quarantine file before a retry`,
           );
       }
       await client.runnerRetry(id);
@@ -2569,7 +2574,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       for (const [n, m] of messages.entries()) {
         io.out(`${m.id} · ${m.kind} · ${m.thread}`);
         if (!m.e2e) {
-          io.out(printable(envelopes[n] ?? ""));
+          io.out(envelopes[n] ?? "");
           continue;
         }
         let text: string;
@@ -2581,22 +2586,20 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         }
         // Rendered here, as the hub would: the decrypted text is still a peer's words.
         io.out(
-          printable(
-            renderPeerMessage(
-              {
-                id: m.id,
-                from: m.e2e.from,
-                agent: m.e2e.agent,
-                kind: m.kind,
-                priority: m.priority,
-                authoredBy: m.e2e.authored_by,
-                sentAt: new Date(m.sent_at),
-                // The sender's flags, and ours: a sender that skipped the scan gets flagged here anyway.
-                flags: [...new Set([...m.e2e.flags, ...textFlags(text)])],
-              },
-              null,
-              text,
-            ),
+          renderPeerMessage(
+            {
+              id: m.id,
+              from: m.e2e.from,
+              agent: m.e2e.agent,
+              kind: m.kind,
+              priority: m.priority,
+              authoredBy: m.e2e.authored_by,
+              sentAt: new Date(m.sent_at),
+              // The sender's flags, and ours: a sender that skipped the scan gets flagged here anyway.
+              flags: [...new Set([...m.e2e.flags, ...textFlags(text)])],
+            },
+            null,
+            text,
           ),
         );
       }
@@ -2857,7 +2860,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
 
 // npm starts the CLI through a symlink (bin/codetgh): compare real paths.
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
-  const io: Io = { out: (s) => console.log(s), err: (s) => console.error(s), stdin: process.stdin };
+  const io = terminalIo();
   try {
     await program({ keyring: osKeyring, io }).parseAsync(process.argv);
   } catch (e) {
