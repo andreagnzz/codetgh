@@ -35,7 +35,8 @@ it("rate-limits a person's console replies with the budget of their messages", a
   const lea = await mcpClient(hub.url, team.lea.token);
   const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "note", body: "hello", allow_offline: true })).text);
   const statuses: number[] = [];
-  for (let i = 0; i < 12; i++)
+  // Until the budget runs out: each post also loads a console page, so the bucket refills meanwhile.
+  for (let i = 0; i < 60 && !statuses.includes(429); i++)
     statuses.push((await consolePost(hub.url, team.lea.cookie, `/console/threads/${sent.thread}/reply`, { body: `reply ${i}` })).status);
   expect(statuses.slice(0, 8)).toEqual(Array(8).fill(204));
   expect(statuses).toContain(429);
