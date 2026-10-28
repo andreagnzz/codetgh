@@ -3,12 +3,13 @@ import type { HttpResponse, On, SessionRateLimit, SessionUsage } from "claude-co
 import { type Engine, expect, mock, test } from "claude-code/testing";
 
 const OPTIONS = { codetgh_url: "https://hub.example.com/", codetgh_token: "ctg_secret_token" };
-const body = (unread: Record<string, number>) =>
+const body = (unread: Record<string, number>, team: Record<string, unknown> = {}) =>
   JSON.stringify({
     team: "Acme",
     you: { handle: "sam", agent: "a-me" },
     paused: false,
     agents_paused: false,
+    push_allowed_modes: ["hooks", "rewake"],
     people: [
       {
         handle: "lea",
@@ -24,6 +25,7 @@ const body = (unread: Record<string, number>) =>
     claims: [],
     unread,
     blocking_message_ids: [],
+    ...team,
   });
 
 type Fetch = { url: string; method?: string; headers?: Record<string, string>; body?: string };
@@ -208,6 +210,79 @@ test(
     n = 11;
     await s.clock.advance(30_000);
     expect(s.submitted.at(-1)).toBe(WAKE(11));
+  },
+);
+
+test(
+  "rewake mode: never starts a turn once the team no longer allows rewake, for unread or for a usage limit",
+  { options: { ...OPTIONS, push_mode: "rewake" } },
+  async ($, on) => {
+    const s = stubs(
+      on,
+      () => ok(body({ note: 3 }, { push_allowed_modes: ["hooks"] })),
+      () => [{ kind: "five_hour", percentUsed: 95, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    expect(s.submitted).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 3 unread");
+  },
+);
+
+test(
+  "rewake mode: never starts a turn while the team's kill switch is on, for unread or for a usage limit",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({}, { paused: true });
+    const s = stubs(
+      on,
+      () => ok(reply),
+      () => [{ kind: "five_hour", percentUsed: 95, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    reply = body({ note: 2 }, { paused: true });
+    await s.clock.advance(60 * MIN);
+    expect(s.submitted).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 2 unread");
+  },
+);
+
+test(
+  "posts no status and no team note at 100 % while the team's kill switch is on",
+  { options: OPTIONS, timeoutMs: 15_000 },
+  async ($, on) => {
+    const s = stubs(
+      on,
+      (e) => {
+        if (e.url.includes("/v1/whoami")) return ok(JSON.stringify({ handle: "sam", agent: { id: "agt_1", label: "sam@x" } }));
+        if (e.method === "POST") return ok("{}");
+        return ok(body({}, { paused: true }));
+      },
+      () => [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T05:00:00.000Z" }],
+    );
+    await start($);
+    await s.clock.advance(1);
+    await s.clock.advance(30_000);
+    expect(s.requests.filter((r) => r.method === "POST")).toEqual([]);
+    expect(s.shown.at(-1)).toBe("CodeTgh · 2 online · 0 unread");
+  },
+);
+
+test(
+  "rewake mode: a subagent's or teammate's turn starting while the main loop is idle leaves the session idle",
+  { options: { ...OPTIONS, push_mode: "rewake" }, timeoutMs: 15_000 },
+  async ($, on) => {
+    let reply = body({});
+    const s = stubs(on, () => ok(reply));
+    await start($);
+    await s.clock.advance(1);
+    await turn($, "t1");
+    await $.turn.start({ text: "", turnId: "s1", agentId: "sub-1" });
+    reply = body({ note: 1 });
+    await s.clock.advance(60 * MIN);
+    expect(s.submitted).toEqual([WAKE(1)]);
   },
 );
 

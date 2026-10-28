@@ -1,4 +1,6 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { eq } from "drizzle-orm";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { membership, message, team as teamTable } from "../src/db/schema.js";
 import { createExternalAgent } from "../src/domain/a2a.js";
@@ -7,7 +9,7 @@ import { verifyChain } from "../src/domain/audit.js";
 import { bridgeAuthor } from "../src/domain/bridges.js";
 import { createGithubHook } from "../src/domain/github.js";
 import { contextPacket } from "../src/domain/overview.js";
-import { createInvitation, setMemberHandle } from "../src/domain/teams.js";
+import { createInvitation, revokeMember, setMemberHandle } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
 import { call, csrf, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -30,6 +32,14 @@ describe("console", () => {
   it("redirects to /login without a session", async () => {
     const res = await fetch(`${hub.url}/console`, { redirect: "manual" });
     expect(res.status).toBe(302);
+  });
+
+  it("sends an htmx request without a session to /login with HX-Redirect, which htmx follows instead of swapping", async () => {
+    const res = await fetch(`${hub.url}/console/kill-switch`, { method: "POST", headers: { "HX-Request": "true" }, redirect: "manual" });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("hx-redirect")).toBe("/login");
+    expect(res.headers.get("location")).toBeNull();
+    expect((await fetch(`${hub.url}/console/kill-switch`, { method: "POST", redirect: "manual" })).status).toBe(302);
   });
 
   it("serves pages under a self-only CSP with no inline script", async () => {
@@ -184,6 +194,59 @@ describe("roles", () => {
         .set({ handle: `legacy-${m?.handle}` })
         .where(eq(membership.id, m?.id ?? ""));
       await expect(changeRole(hub.db, p, m?.id ?? "", "admin")).rejects.toThrow("system member");
+    }
+  });
+
+  it("re-reads an owner's role under the owners lock, so two owners demoting or revoking each other leave one owner", async () => {
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.userId, team.sam.userId));
+    const lea = await principalForToken(hub.db, team.lea.token);
+    // Sam's request started while he was still an owner.
+    const sam = await principalForToken(hub.db, team.sam.token);
+    if (!lea || !sam) throw new Error("setup");
+    await changeRole(hub.db, lea, sam.membershipId, "admin");
+    await expect(changeRole(hub.db, sam, lea.membershipId, "admin")).rejects.toThrow("no longer an owner");
+    await expect(
+      revokeMember(hub.db, { teamId: team.teamId, membershipId: lea.membershipId, actorUserId: sam.user.id, actorRole: "owner" }),
+    ).rejects.toThrow("no longer an owner");
+    const [after] = await hub.db.select().from(membership).where(eq(membership.id, lea.membershipId));
+    expect(after).toMatchObject({ role: "owner", status: "active" });
+    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+  });
+});
+
+// Postgres only (pnpm test:pg): PGlite runs one transaction at a time, so it cannot hold a lock while the hub waits on it.
+describe.runIf(process.env.TEST_DATABASE_URL)("owners lock", () => {
+  it("holds an owner change while another one is in progress, then refuses it on the role that one left", async () => {
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.userId, team.sam.userId));
+    const lea = await principalForToken(hub.db, team.lea.token);
+    const sam = await principalForToken(hub.db, team.sam.token);
+    if (!lea || !sam) throw new Error("setup");
+    const holder = new pg.Client({ connectionString: hub.config.databaseUrl });
+    await holder.connect();
+    try {
+      // Léa demoting Sam, caught between the owners lock and its commit.
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`owners:${team.teamId}`]);
+      await holder.query("update membership set role = 'admin' where id = $1", [sam.membershipId]);
+      let answered = false;
+      const demoting = changeRole(hub.db, sam, lea.membershipId, "admin");
+      demoting.then(
+        () => {
+          answered = true;
+        },
+        () => {
+          answered = true;
+        },
+      );
+      await sleep(500);
+      expect(answered).toBe(false);
+      await holder.query("commit");
+      await expect(demoting).rejects.toThrow("no longer an owner");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.id, lea.membershipId));
+      await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
     }
   });
 });

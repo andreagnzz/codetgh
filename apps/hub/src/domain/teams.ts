@@ -8,7 +8,7 @@ import { newId } from "../ids.js";
 import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
-import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge } from "./admin.js";
+import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge, requireOwnerNow } from "./admin.js";
 import { expireDelegated } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
@@ -153,10 +153,12 @@ export async function setMemberHandle(db: Db, p: Principal, membershipId: string
   if (RESERVED_HANDLE.test(handle)) throw new HubError("E_INVALID", "handles starting with bridge- or a2a- are reserved");
   await db.transaction(async (tx) => {
     const [m] = await tx
-      .select({ userId: membership.userId, handle: membership.handle })
+      .select({ userId: membership.userId, handle: membership.handle, role: membership.role })
       .from(membership)
       .where(and(eq(membership.id, membershipId), eq(membership.teamId, p.teamId)));
     if (!m) throw new HubError("E_NOT_FOUND", "member not found");
+    // As for roles: an admin who renamed an owner could take the handle, and the messages addressed to it.
+    if (m.role === "owner" && p.role !== "owner") throw new HubError("E_FORBIDDEN", "only an owner changes an owner's handle");
     await requireHumanMember(tx, p.teamId, m.userId);
     const [taken] = await tx
       .select({ id: membership.id })
@@ -342,6 +344,7 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
     if (!m || m.status !== "active") throw new HubError("E_NOT_FOUND", "member not found");
     await requireNotBridge(tx, input.teamId, m.userId);
     if (m.role === "owner" && input.actorRole !== "owner") throw new HubError("E_FORBIDDEN", "an admin cannot revoke an owner");
+    if (m.role === "owner") await requireOwnerNow(tx, input.teamId, input.actorUserId);
     if (m.userId === input.actorUserId) throw new HubError("E_FORBIDDEN", "you cannot revoke yourself");
     const now = new Date();
     await tx.update(membership).set({ status: "revoked", revokedAt: now, revokedBy: input.actorUserId }).where(eq(membership.id, m.id));

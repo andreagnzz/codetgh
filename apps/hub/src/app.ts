@@ -379,7 +379,7 @@ export function createApp({
     const p = c.get("principal");
     const input = await parse(c, PreEditInput);
     const agent = await agentBySession(db, p, input.session_id);
-    const decision = agent ? await preEdit(db, p, agent, input.path) : null;
+    const decision = agent ? await preEdit(deps, p, agent, input.path) : null;
     return decision ? c.json(decision) : c.body(null, 204);
   });
 

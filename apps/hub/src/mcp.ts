@@ -344,7 +344,8 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
   server.registerTool(
     "task_claim",
     {
-      description: "Take a free task (status todo). Pass the version you read; if someone changed it meanwhile you get E_VERSION_CONFLICT.",
+      description:
+        "Take a free task (status todo). Pass the version you read; if someone changed it meanwhile you get E_VERSION_CONFLICT. Never a runner task: only the runner leases one.",
       inputSchema: TaskClaimInput,
       annotations: WRITE,
     },
