@@ -2577,7 +2577,15 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
         return io.out("hub unreachable: queued in the outbox (codetgh daemon or codetgh outbox flush sends it)");
       }
       if ("rejected" in r) throw new Error(r.rejected);
-      if (threadKey) (await deps.keyring()).set(seenKey(url, r.id), keyHash(threadKey));
+      // The message is on the hub: a keychain failure only warns, since a retry would send it again.
+      if (threadKey)
+        try {
+          (await deps.keyring()).set(seenKey(url, r.id), keyHash(threadKey));
+        } catch (e) {
+          io.err(
+            `WARNING: could not record the thread key of ${r.id} here (${(e as Error).message}): a reply to it from this machine is refused`,
+          );
+        }
       io.out(`sent ${r.id}`);
     });
 

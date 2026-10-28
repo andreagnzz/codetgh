@@ -164,6 +164,22 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect(own.code).toBe(0);
   });
 
+  it("reports a sent message as sent when the keychain refuses its thread key afterwards", async () => {
+    // A retry would send it twice, under a new idempotency key: the failure only warns.
+    const sam = keyring("sam");
+    const set = sam.set;
+    sam.set = (k, v) => {
+      if (k.includes("#mk:")) throw new Error("keychain locked");
+      set(k, v);
+    };
+    const r = await cli("sam", ["send", "--encrypt", "--allow-offline", "--to", "@lea", "--body", "kept on the hub"]).finally(() => {
+      sam.set = set;
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/sent msg_/);
+    expect(r.out).toContain("keychain locked");
+  });
+
   it("keeps the subject and refs of an encrypted message out of the hub's clear text", async () => {
     await expect(cli("sam", ["send", "--encrypt", "--to", "@lea", "--subject", "users table migration", "--body", "x"])).rejects.toThrow(
       "no subject",
