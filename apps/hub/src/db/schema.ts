@@ -54,8 +54,6 @@ export const membership = pgTable(
     revokedBy: text("revoked_by"),
     // codetgh pause: the member's own agents stop sending; the person can still write from the console.
     agentsPausedAt: timestamp("agents_paused_at"),
-    // SSO back-channel logout: /mcp refuses the OAuth access tokens (stateless JWTs) issued until then.
-    oauthNotBefore: timestamp("oauth_not_before"),
     // The presence mod's latest Claude plan usage, per person: whole percents and reset times, nothing else.
     usageFiveHour: integer("usage_five_hour"),
     usageFiveHourReset: timestamp("usage_five_hour_reset"),

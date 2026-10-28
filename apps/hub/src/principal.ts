@@ -85,9 +85,7 @@ export async function principalForUser(db: Db, userId: string, auth: "oauth" | "
       and(
         eq(membership.userId, userId),
         eq(membership.status, "active"),
-        issuedAt === undefined
-          ? undefined
-          : or(isNull(membership.oauthNotBefore), lt(membership.oauthNotBefore, new Date(issuedAt * 1000))),
+        issuedAt === undefined ? undefined : or(isNull(user.oauthNotBefore), lt(user.oauthNotBefore, new Date(issuedAt * 1000))),
       ),
     );
   if (rows.length > 1) throw new HubError("E_FORBIDDEN", "You belong to several teams: use a personal token created for one team.");

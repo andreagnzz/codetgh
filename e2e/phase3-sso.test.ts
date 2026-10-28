@@ -3,8 +3,8 @@ import type { AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { user } from "../apps/hub/src/db/schema.js";
-import { createInvitation } from "../apps/hub/src/domain/teams.js";
+import { membership, user } from "../apps/hub/src/db/schema.js";
+import { createInvitation, createTeam, joinWithInvitation, revokeMember } from "../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
 
 // A minimal OpenID provider: discovery, authorize, token, userinfo, JWKS, and it signs what it sends.
@@ -137,7 +137,7 @@ describe("SSO with the organization's OpenID provider (phase 3)", () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
-  it("refuses on /mcp the OAuth access tokens issued before the logout, and takes the ones issued after", async () => {
+  it("refuses on /mcp the OAuth access tokens issued before the logout, also once the person joins a team again", async () => {
     const [nina] = await hub.db.select({ id: user.id }).from(user).where(eq(user.email, "nina@acme.test"));
     // An access token as the hub issues it for /mcp: signed with its key, stateless until it expires.
     const accessToken = async () => {
@@ -178,5 +178,21 @@ describe("SSO with the organization's OpenID provider (phase 3)", () => {
     expect(await initialize(before)).toBe(401);
     await nextSecond();
     expect(await initialize(await accessToken())).toBe(200);
+    // Revoked from Acme web, Nina joins another team through an invitation: a new membership, the same person.
+    const [m] = await hub.db
+      .select({ id: membership.id })
+      .from(membership)
+      .where(eq(membership.userId, nina?.id ?? ""));
+    await revokeMember(hub.db, { teamId: team.teamId, membershipId: m?.id ?? "", actorUserId: team.lea.userId, actorRole: "owner" });
+    const other = await createTeam(hub.db, "Other team");
+    const invite = await createInvitation(hub.db, {
+      teamId: other,
+      email: "nina@acme.test",
+      role: "member",
+      invitedBy: null,
+      via: "system",
+    });
+    await joinWithInvitation(hub.db, { id: nina?.id ?? "", name: "Nina", email: "nina@acme.test", emailVerified: true }, invite.token);
+    expect(await initialize(before)).toBe(401);
   });
 });
