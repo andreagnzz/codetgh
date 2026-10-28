@@ -500,7 +500,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Threads",
       <>
         <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
-        {f.selected || rows.length === 0
+        {/* A guest never sees the team's projects, their names as headings included. */}
+        {f.selected || rows.length === 0 || p.role === "guest"
           ? table(rows)
           : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
               <section aria-labelledby={`p-${g.id}`}>
