@@ -9,6 +9,7 @@ import type { Mailer } from "../mailer.js";
 import type { Principal } from "../principal.js";
 import { hashToken } from "../tokens.js";
 import { byUser, RESERVED_HANDLE, requireAdmin, requireHumanMember, requireNotBridge, requireOwnerNow } from "./admin.js";
+import { expireDelegated } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -351,10 +352,12 @@ export async function revokeMember(db: Db, input: { teamId: string; membershipId
       .update(personalToken)
       .set({ revokedAt: now })
       .where(and(eq(personalToken.userId, m.userId), eq(personalToken.teamId, input.teamId), isNull(personalToken.revokedAt)));
-    await tx
+    const ended = await tx
       .update(agent)
       .set({ endedAt: now })
-      .where(and(eq(agent.userId, m.userId), eq(agent.teamId, input.teamId), isNull(agent.endedAt)));
+      .where(and(eq(agent.userId, m.userId), eq(agent.teamId, input.teamId), isNull(agent.endedAt)))
+      .returning({ id: agent.id, userId: agent.userId });
+    await expireDelegated(tx, ended);
     await releaseFor(tx, { teamId: input.teamId, userId: m.userId }, "revoked", false);
     // shortcut: one team per person in phase 1, so console sessions and OAuth grants are dropped globally.
     await tx.delete(session).where(eq(session.userId, m.userId));
