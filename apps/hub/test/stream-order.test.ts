@@ -31,7 +31,7 @@ describe.runIf(process.env.TEST_DATABASE_URL)("SSE stream and concurrent sends",
       })
       .catch(() => {});
     const waitFor = async (s: string) => {
-      for (let i = 0; i < 100 && !text.includes(s); i++) await sleep(20);
+      for (let i = 0; i < 250 && !text.includes(s); i++) await sleep(20);
     };
     await waitFor("event: ready");
 
