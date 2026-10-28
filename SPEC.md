@@ -1127,25 +1127,46 @@ Au moins un moyen de connexion (GitHub, Google ou SMTP) est obligatoire. Sur le 
 | Léger | Essai ou petit groupe | Un conteneur, PGlite, volume data/ | Un seul processus ; tenue en charge et LISTEN/NOTIFY à valider en phase 0 |
 | Hébergé (après la v1) | Équipes sans serveur | Plusieurs réplicas sans état, Postgres géré, région UE en option | Les réplicas se préviennent par LISTEN/NOTIFY |
 
+Extrait de deploy/compose.yaml, qui fait foi (variables facultatives, bot Discord) : le hub n'est publié que sur 127.0.0.1, derrière le proxy TLS, et Postgres n'a aucun port.
+
 ```
 services:
   hub:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     environment:
       CODETGH_PUBLIC_URL: https://codetgh.example.com
       DATABASE_URL: postgres://codetgh:${POSTGRES_PASSWORD}@db:5432/codetgh
       CODETGH_SECRET: ${CODETGH_SECRET}
+    user: "1000:1000"
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.5
+    pids_limit: 256
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
   db:
-    image: postgres:17
+    image: postgres:17.11-bookworm
     environment:
       POSTGRES_USER: codetgh
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: codetgh
+    user: "999:999"
+    read_only: true
+    tmpfs: [/tmp, /var/run/postgresql]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
