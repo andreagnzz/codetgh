@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { agent, project, team as teamTable } from "../../../apps/hub/src/db/schema.js";
 import { type Hub, setRole, startHub } from "../../../apps/hub/test/harness.js";
 import { consolePost, fakeCommand, gitRepo, hookEnv, runHook } from "../../../e2e/helpers.js";
@@ -91,6 +91,27 @@ it("checks the hub, the token, Claude Code, the plugin and its hooks on one scre
   expect(code).toBe(0);
   // Not a terminal here: the banner has no color codes.
   expect(out.split("\n")[0]).toBe("CodeTgh doctor · Plusieurs Claude Code, une même ligne.");
+});
+
+// The one escape sequence the CLI prints on purpose: it goes straight to the terminal, past the filter of its io.
+it("keeps the banner's colour on a terminal", async () => {
+  fakeClaude("2.1.296", [installedPlugin()]);
+  const tty = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  const noColor = process.env.NO_COLOR;
+  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+  delete process.env.NO_COLOR;
+  const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  let written: string[] = [];
+  try {
+    await doctor(hub.url, team.lea.token);
+    written = write.mock.calls.map((c) => String(c[0]));
+  } finally {
+    write.mockRestore();
+    if (tty) Object.defineProperty(process.stdout, "isTTY", tty);
+    else delete (process.stdout as { isTTY?: boolean }).isTTY;
+    if (noColor !== undefined) process.env.NO_COLOR = noColor;
+  }
+  expect(written).toContain("\x1b[1;38;5;30mCodeTgh\x1b[0m doctor · Plusieurs Claude Code, une même ligne.\n");
 });
 
 it("with the hub stopped, says so quickly and what to do", async () => {

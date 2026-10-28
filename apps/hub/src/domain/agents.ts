@@ -7,6 +7,7 @@ import { agent, membership, message, project, receipt, user } from "../db/schema
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
+import { isAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -92,9 +93,16 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   return db.transaction(async (tx) => {
     if (input.accept_requests_from?.length) await lockDelegates(tx, p.teamId);
+    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
+    // Refused before the repository is looked at, so the refusal is the same whether or not it is linked.
+    const asked = [...new Set(input.accept_requests_from ?? [])];
+    if (asked.length && !(await inGoodStanding(tx, p.teamId, p.user.id)))
+      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     let projectId: string | null = null;
     // An unknown repository stays off the hub, unless the session sends its name to link it and may do so.
     if (input.repo_fingerprint) {
+      // A guest sees only their own threads: to them every repository is unknown, so the answer never tells a linked one.
+      if (p.role === "guest") return null;
       const [row] = await tx
         .select({ id: project.id })
         .from(project)
@@ -105,10 +113,6 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       else return null;
     }
     const label = oneLine(input.label ?? `${p.handle}@${input.branch ?? input.kind}`);
-    // The session is always the token's own (keyed by its user); the senders are resolved here, never trusted from the body.
-    const asked = [...new Set(input.accept_requests_from ?? [])];
-    if (asked.length && !(await inGoodStanding(tx, p.teamId, p.user.id)))
-      throw new HubError("E_FORBIDDEN", "guests and quarantined members cannot run a delegate session");
     const accept = asked.length
       ? await tx
           .select({ userId: membership.userId })
@@ -179,24 +183,46 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
   });
 }
 
+// The session path's rules (no guest, quarantined person or kill switch; a new link needs canAutoLink), except that an admin
+// links a new repository even with auto_link_projects off. Only an admin renames: a member's call on a linked repository
+// gets its project unchanged.
 export async function createProject(db: Db, p: Principal, input: { name: string; repo_fingerprint: string }) {
+  if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests cannot create projects");
   const name = oneLine(input.name, 100);
   return db.transaction(async (tx) => {
+    if ((await personTrust(tx, p)) === "quarantined") throw new HubError("E_FORBIDDEN", "quarantined members cannot create projects");
+    const columns = { id: project.id, name: project.name };
+    const linked = async () =>
+      (
+        await tx
+          .select(columns)
+          .from(project)
+          .where(and(eq(project.teamId, p.teamId), eq(project.repoFingerprint, input.repo_fingerprint)))
+      )[0];
+    const audit = (action: string, subjectId: string) =>
+      appendAudit(tx, { teamId: p.teamId, actorType: "user", actorUserId: p.user.id, via: "rest", action, subjectId });
+    const old = await linked();
+    if (old) {
+      if (!isAdmin(p) || old.name === name) return old;
+      await tx.update(project).set({ name }).where(eq(project.id, old.id));
+      await audit("project.renamed", old.id);
+      return { id: old.id, name };
+    }
+    if (!isAdmin(p) && !(await canAutoLink(tx, p)))
+      throw new HubError("E_FORBIDDEN", "auto-linking is off for this team: an admin links this repository");
     const [row] = await tx
       .insert(project)
       .values({ id: newId("prj"), teamId: p.teamId, name, repoFingerprint: input.repo_fingerprint })
-      .onConflictDoUpdate({ target: [project.teamId, project.repoFingerprint], set: { name } })
-      .returning({ id: project.id, name: project.name });
-    if (!row) throw new HubError("E_INVALID", "project not created");
-    await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "rest",
-      action: "project.created",
-      subjectId: row.id,
-    });
+      .onConflictDoNothing()
+      .returning(columns);
+    // Linked by another call in the meantime: that project stands.
+    if (!row) {
+      const won = await linked();
+      if (!won) throw new HubError("E_INVALID", "project not created");
+      return won;
+    }
+    await audit("project.created", row.id);
     return row;
   });
 }

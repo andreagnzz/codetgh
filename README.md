@@ -79,7 +79,7 @@ You talk to your Claude in plain words; it calls the CodeTgh tools.
 ## Start a group project
 
 1. **Invite your teammates.** Run `codetgh invite friend@example.com` to get a sign-up link valid for 7 days.
-2. **Open the repository with CodeTgh.** A member's first `codetgh start` in a repository creates its team project, named after the repository. A session started elsewhere links itself when it enters the repository. Run `codetgh project new "Billing"` there if you want to choose the name.
+2. **Open the repository with CodeTgh.** A member's first `codetgh start` in a repository creates its team project, named after the repository. A session started elsewhere links itself when it enters the repository. Run `codetgh project new "Billing"` there if you want to choose the name; once the project exists, only an admin renames it.
 3. **Commit** the files that command writes: `.claude/settings.json` (the hub's plugin marketplace) and `CLAUDE.md`.
 4. **Share the message** it prints. Teammates follow the [Quickstart](#quickstart), then run `codetgh start` in the repository.
 5. **Check.** `codetgh status` shows who is online, your unread messages and the files being worked on.
