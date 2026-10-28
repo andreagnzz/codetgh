@@ -109,6 +109,40 @@ describe("a delegated request is authorized only while the receiver's opt-in hol
   });
 });
 
+describe("a request sent under an earlier opt-in is never authorized by a later one", () => {
+  // What an expiry missed by a race would leave: the old request still pending.
+  const missed = (id: string) =>
+    hub.db
+      .update(message)
+      .set({ expiresAt: new Date(Date.now() + 600_000) })
+      .where(eq(message.id, id));
+  const authorized = (page: string, id: string) => new RegExp(`<peer_message id="${id}"[^>]*authorized="true"`).test(page);
+  // Malik sends: the loop guard caps the requests between two people, and Léa sends most of this file's.
+  const rearmed = async (session: string, between: () => Promise<unknown>) => {
+    const malik = await register(team.malik.token, "malik-rearm");
+    const sam = await register(team.sam.token, session, ["@malik"]);
+    const old = await request(team.malik.token, malik, `task under the first opt-in of ${session}`);
+    await between();
+    await missed(old);
+    await register(team.sam.token, session, ["@malik"], "resume");
+    await missed(old);
+    const fresh = await request(team.malik.token, malik, `task under the second opt-in of ${session}`);
+    const page = await shown(session, sam);
+    await end(team.sam.token, session);
+    return { old: authorized(page, old), fresh: authorized(page, fresh), shownOld: page.includes(old) };
+  };
+
+  it("after a registration without the option", async () => {
+    const r = await rearmed("sam-rearm", () => register(team.sam.token, "sam-rearm", undefined, "resume"));
+    expect(r).toMatchObject({ shownOld: true, old: false, fresh: true });
+  });
+
+  it("after the session ends and resumes", async () => {
+    const r = await rearmed("sam-rearm-end", () => end(team.sam.token, "sam-rearm-end"));
+    expect(r).toMatchObject({ shownOld: true, old: false, fresh: true });
+  });
+});
+
 describe("the prompt hook tells a delegate to act only on what it shows", () => {
   it("adds no « Do it now » when the authorized request did not fit on the page", async () => {
     const sam = await register(team.sam.token, "sam-footer", ["@lea"]);

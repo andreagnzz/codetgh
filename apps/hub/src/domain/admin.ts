@@ -173,7 +173,7 @@ export async function setAgentTrust(db: Db, p: Principal, agentId: string, trust
     // The whole person: a new session must not be a way out (agents.ts personTrust). Nor a delegate session already live.
     const rows = await tx
       .update(agent)
-      .set({ trustLevel: trust, ...(trust === "quarantined" && { acceptRequestsFrom: null }) })
+      .set({ trustLevel: trust, ...(trust === "quarantined" && { acceptRequestsFrom: null, delegateSince: null }) })
       .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, a.userId), ne(agent.kind, "a2a")))
       .returning({ id: agent.id, userId: agent.userId });
     if (trust === "quarantined") await expireDelegated(tx, rows);
@@ -192,7 +192,7 @@ export async function removeAgent(db: Db, p: Principal, agentId: string) {
     if (a.userId !== p.user.id) requireAdmin(p);
     await tx
       .update(agent)
-      .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date(), acceptRequestsFrom: null })
+      .set({ removedAt: new Date(), endedAt: a.endedAt ?? new Date(), acceptRequestsFrom: null, delegateSince: null })
       .where(eq(agent.id, a.id));
     await expireDelegated(tx, [a]);
     await releaseFor(tx, { agentId: a.id }, "session_end", true);
@@ -209,7 +209,7 @@ export async function stopDelegate(db: Db, p: Principal, agentId: string) {
       .where(and(eq(agent.id, agentId), eq(agent.teamId, p.teamId), isNotNull(agent.acceptRequestsFrom)));
     if (!a) throw new HubError("E_NOT_FOUND", "no delegate session");
     if (a.userId !== p.user.id) requireAdmin(p);
-    await tx.update(agent).set({ acceptRequestsFrom: null }).where(eq(agent.id, a.id));
+    await tx.update(agent).set({ acceptRequestsFrom: null, delegateSince: null }).where(eq(agent.id, a.id));
     await expireDelegated(tx, [a]);
     await appendAudit(tx, { ...byUser(p), action: "agent.delegate_stopped", subjectId: a.id });
   });
@@ -235,7 +235,7 @@ export async function setAgentProject(db: Db, p: Principal, agentId: string, pro
       .where(and(eq(project.id, projectId), eq(project.teamId, p.teamId)));
     if (!prj) throw new HubError("E_NOT_FOUND", "project not found");
     // Delegate mode was granted for one project: moving the session ends it.
-    await tx.update(agent).set({ projectId: prj.id, acceptRequestsFrom: null }).where(eq(agent.id, a.id));
+    await tx.update(agent).set({ projectId: prj.id, acceptRequestsFrom: null, delegateSince: null }).where(eq(agent.id, a.id));
     await expireDelegated(tx, [a]);
     await appendAudit(tx, { ...byUser(p), action: "agent.project_set", subjectId: a.id, data: { project_id: prj.id } });
   });
@@ -272,7 +272,7 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     if (role === "guest") {
       const rows = await tx
         .update(agent)
-        .set({ acceptRequestsFrom: null })
+        .set({ acceptRequestsFrom: null, delegateSince: null })
         .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, m.userId), isNotNull(agent.acceptRequestsFrom)))
         .returning({ id: agent.id, userId: agent.userId });
       await expireDelegated(tx, rows);

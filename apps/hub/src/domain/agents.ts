@@ -1,6 +1,6 @@
 import type { AgentSessionInput } from "@codetgh/shared";
 import { CreateProjectInput } from "@codetgh/shared/rest";
-import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, notInArray, or, type SQL, sql } from "drizzle-orm";
+import { and, arrayContains, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Db } from "../db/index.js";
 import { agent, membership, message, project, receipt, user } from "../db/schema.js";
@@ -160,13 +160,13 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
       !launched && {
         acceptRequestsFrom: sql`case when ${agent.projectId} is not distinct from ${input.repo_fingerprint ? projectId : agent.projectId} then ${agent.acceptRequestsFrom} else null end`,
       };
-    // Read before the upsert changes it: only a session that was a delegate has requests to expire.
+    // Read before the upsert changes it, locked: a new opt-in is told apart from the one in place.
     const [before] = await tx
       .select({ accept: agent.acceptRequestsFrom })
       .from(agent)
       .where(and(eq(agent.teamId, p.teamId), eq(agent.userId, p.user.id), eq(agent.sessionId, input.session_id)))
       .for("update");
-    const [row] = await tx
+    const [upserted] = await tx
       .insert(agent)
       .values({ id: newId("agt"), teamId: p.teamId, userId: p.user.id, sessionId: input.session_id, ...values })
       .onConflictDoUpdate({
@@ -174,9 +174,20 @@ export async function registerSession(db: Db, p: Principal, input: z.infer<typeo
         set: { ...(input.repo_fingerprint ? values : kept), ...keep },
       })
       .returning();
-    if (!row) throw new HubError("E_INVALID", "agent registration failed");
-    // A launch without the option, or with a list that leaves a sender out, ends what that sender handed the session.
-    if (before?.accept) await expireDelegated(tx, [row], row.acceptRequestsFrom ?? []);
+    if (!upserted) throw new HubError("E_INVALID", "agent registration failed");
+    let row = upserted;
+    // Another list, or none: a new opt-in starts now, on the database's clock as message.created_at is. What was sent under
+    // the earlier one is never authorized again (messages.ts authorizedNow), and expires.
+    const list = (l: string[] | null | undefined) => (l ? [...l].sort().join() : null);
+    if (list(before?.accept) !== list(row.acceptRequestsFrom)) {
+      const [restarted] = await tx
+        .update(agent)
+        .set({ delegateSince: row.acceptRequestsFrom ? sql`clock_timestamp()` : null })
+        .where(eq(agent.id, row.id))
+        .returning();
+      row = restarted ?? row;
+      await expireDelegated(tx, [row]);
+    }
     await appendAudit(tx, {
       teamId: p.teamId,
       actorType: "agent",
@@ -256,14 +267,15 @@ export async function setAgentsPaused(db: Db, p: Principal, paused: boolean) {
 
 // SessionEnd, or a session the hub stopped seeing: the row stays for the audit, it only leaves routing and listings.
 async function endAgents(tx: Db, where: SQL | undefined) {
-  // Found before the update clears their list: only delegate sessions have requests to expire.
+  // Found, and locked, before the update clears their list: only delegate sessions have requests to expire.
   const delegates = await tx
     .select({ id: agent.id, userId: agent.userId })
     .from(agent)
-    .where(and(where, isNull(agent.endedAt), isNotNull(agent.acceptRequestsFrom)));
+    .where(and(where, isNull(agent.endedAt), isNotNull(agent.acceptRequestsFrom)))
+    .for("update");
   const rows = await tx
     .update(agent)
-    .set({ endedAt: new Date(), acceptRequestsFrom: null })
+    .set({ endedAt: new Date(), acceptRequestsFrom: null, delegateSince: null })
     .where(and(where, isNull(agent.endedAt)))
     .returning({ id: agent.id, teamId: agent.teamId });
   await expireDelegated(tx, delegates);
@@ -526,7 +538,7 @@ export async function requireNoDelegate(
 }
 
 // A request handed to a delegate session and not done yet expires once the session no longer accepts its sender, as on « Couper ».
-export async function expireDelegated(tx: Db, agents: Array<{ id: string; userId: string }>, accepted: string[] = []) {
+export async function expireDelegated(tx: Db, agents: Array<{ id: string; userId: string }>) {
   if (!agents.length) return;
   await tx
     .update(message)
@@ -535,7 +547,6 @@ export async function expireDelegated(tx: Db, agents: Array<{ id: string; userId
       and(
         eq(message.delegated, true),
         gt(message.expiresAt, new Date()),
-        accepted.length ? notInArray(message.fromUserId, accepted) : undefined,
         inArray(
           message.id,
           tx
