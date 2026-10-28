@@ -96,7 +96,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     ).toBe(404);
   });
 
-  it("refuses to reply with a thread key that opens none of the thread's messages", async () => {
+  it("refuses to reply with a thread key the hub swapped for another one", async () => {
     // A hostile hub wraps a key of its own to Léa's real public key, hoping to read her reply.
     const threadId = (await hub.db.select().from(message).where(eq(message.id, sentId)))[0]?.threadId ?? "";
     const mine = and(eq(threadKey.threadId, threadId), eq(threadKey.userId, team.lea.userId));
@@ -239,6 +239,26 @@ describe("end-to-end encrypted threads (phase 3)", () => {
     expect(r.out).toContain("not asked for");
     expect(await hub.db.select().from(message)).toHaveLength(before.length);
     expect([...keyring("sam").store.keys()].some((k) => k.endsWith("#pin:@ghost"))).toBe(false);
+  });
+
+  it("refuses a handle the hub repeats with a key of its own", async () => {
+    // Léa never pinned Sam's key: a second @sam entry ahead of the real one would be pinned and get the thread key.
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const res = await realFetch(input, init);
+      if (!String(input).startsWith(`${hub.url}/v1/keys?`)) return res;
+      const body = (await res.json()) as { keys: Array<{ handle: string; public_key: string | null }> };
+      body.keys.unshift({ handle: "@sam", public_key: publicKeyOf(newKeyPair().privateKey) });
+      return Response.json(body);
+    });
+    const before = await hub.db.select().from(message);
+    const r = await cli("lea", ["send", "--encrypt", "--allow-offline", "--to", "@sam", "--body", "for Sam only"]).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("not asked for");
+    expect(await hub.db.select().from(message)).toHaveLength(before.length);
+    expect(keyring("lea").get(`${hub.url}#pin:@sam`)).toBeNull();
   });
 
   it("pins each recipient's public key, and refuses to seal for a key the hub swapped", async () => {
