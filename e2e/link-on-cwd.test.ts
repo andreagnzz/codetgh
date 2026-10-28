@@ -106,10 +106,11 @@ it("says this repository when nothing of the repository's name is left", async (
   await hub.db
     .insert(project)
     .values({ id: "prj_symbols", teamId: team.teamId, name: "symbols", repoFingerprint: repoFingerprint(origin) });
-  const env = hookEnv(hub.url, team.sam.token);
+  // Léa, whose write budget the tests above leave whole: Sam's is near its burst of 10 here.
+  const env = hookEnv(hub.url, team.lea.token);
   const start = home();
-  await runHook("session-start", { session_id: "sam-symbols", source: "startup", cwd: start }, env);
+  await runHook("session-start", { session_id: "lea-symbols", source: "startup", cwd: start }, env);
   const repo = gitRepo(origin);
-  const r = await runHook("cwd-changed", { session_id: "sam-symbols", cwd: repo, old_cwd: start, new_cwd: repo }, env);
+  const r = await runHook("cwd-changed", { session_id: "lea-symbols", cwd: repo, old_cwd: start, new_cwd: repo }, env);
   expect(systemMessage(r)).toBe("CodeTgh: this session is now on this repository");
 });
