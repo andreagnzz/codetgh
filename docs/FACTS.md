@@ -270,7 +270,7 @@ Measured on the VPS:
 - Without a terminal, in a folder never trusted: `Error: Workspace not trusted. Please run claude in <dir> first to review and accept the workspace trust dialog.` (exit 1).
 - One server per folder: `Error: This folder is already served by a terminal claude remote-control on this device. Stop it first.`
 
-CodeTgh therefore only starts `claude remote-control --name "CodeTgh · <project>"` in folders the owner listed and trusted by hand.
+CodeTgh therefore only starts `claude remote-control --name "CodeTgh · <folder>"` in folders the owner listed and trusted by hand, the name taken from the local folder (`[A-Za-z0-9 ._-]`, 60 characters), never from the hub.
 
 ### PreToolUse `ask` and `deny` under bypassPermissions (2026-10-14, Claude Code 2.1.296, Linux)
 

@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL, urlToHttpOptions } from "node:url";
 import { promisify } from "node:util";
-import { repoFingerprint } from "@codetgh/shared/repo";
+import { plainName, repoFingerprint } from "@codetgh/shared/repo";
 
 // Hooks fail open: any error gives at most one warning per session and exit code 0, so Claude keeps working.
 const run = promisify(execFile);
@@ -184,12 +184,17 @@ type SessionReply = {
   paused: boolean;
   linked?: boolean;
   can_link?: boolean;
+  unlinked_reason?: "guest";
   status_line?: string;
-  project?: string | null;
 };
 type Repo = { branch: string; fingerprint?: string; name?: string };
 const NOT_LINKED =
   "CodeTgh: this repository is not a team project yet, so CodeTgh stays off here. Ask an admin to link it with: codetgh project new <name> (run in the repository).";
+// The hub answers a guest the same in any repository, linked or not: so does this line.
+const offLine = (body: SessionReply) =>
+  body.unlinked_reason === "guest"
+    ? "CodeTgh: a guest has no CodeTgh session inside a repository; read your messages with codetgh inbox or in the console."
+    : NOT_LINKED;
 
 async function repoAt(cwd: string | undefined): Promise<Repo> {
   const [branch, origin] = await Promise.all([git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]), git(cwd, ["remote", "get-url", "origin"])]);
@@ -286,7 +291,7 @@ async function sessionStart(input: Input) {
     if (body.linked === false) {
       if (input.session_id) saveState(input.session_id, { unlinked: true });
       // Said once at start so the person knows CodeTgh is off on purpose, not broken.
-      return input.source === "startup" || input.source === "resume" ? { systemMessage: NOT_LINKED } : null;
+      return input.source === "startup" || input.source === "resume" ? { systemMessage: offLine(body) } : null;
     }
     if (input.session_id)
       saveState(input.session_id, {
@@ -332,9 +337,10 @@ async function cwdChanged(input: Input) {
     }
     const { body } = registered;
     if (body.paused) return null;
-    if (body.linked === false) return { systemMessage: NOT_LINKED };
+    if (body.linked === false) return { systemMessage: offLine(body) };
     saveState(input.session_id, { projectless: false, ...(body.agent_id && { agent: body.agent_id }) });
-    return { systemMessage: `CodeTgh: this session is now on ${(body.project ?? repo.name ?? "").replace(/\p{Cc}/gu, "")}` };
+    // The local name, never the hub's: a project name is any member's text, and this line reaches the model.
+    return { systemMessage: `CodeTgh: this session is now on ${plainName(repo.name ?? "") || "this repository"}` };
   } catch {
     return null;
   }

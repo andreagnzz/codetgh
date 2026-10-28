@@ -54,6 +54,8 @@ export const SessionStarted = z.object({
   linked: z.boolean(),
   // Unlinked: true when this caller may link the repository by sending its repo_name.
   can_link: z.boolean().optional(),
+  // Unlinked: "guest" when the caller is a guest, whom no repository puts in a session. Nothing about the repository.
+  unlinked_reason: z.enum(["guest"]).optional(),
   status_line: z.string().optional(),
   // The session's project name, null outside a project.
   project: z.string().nullable().optional(),
@@ -134,9 +136,17 @@ export const KeysQuery = z.object({ handles: z.string().max(500) });
 export const KeysOutput = z.object({ keys: z.array(z.object({ handle: z.string(), public_key: z.string().nullable() })) });
 export const ThreadKeyOutput = z.object({ thread: z.string(), wrapped: z.string(), ciphertext: z.string() });
 export const CreateProjectInput = z.object({
-  name: z.string().trim().min(1).max(100),
+  // Any member sets it, and it reaches command lines, terminals and models: a closed set of characters. NFC first, so a
+  // decomposed accent is its precomposed letter; a mark with no such letter (or an invisible one) is refused.
+  name: z
+    .string()
+    .trim()
+    .normalize("NFC")
+    .regex(/^[\p{L}\p{N} ._/-]{1,100}$/u, "a project name is 1 to 100 letters, digits, spaces and . _ - /"),
   repo_fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });
+// A name stored before that rule may hold anything: cut down to the same set wherever it is shown.
+export const projectNameText = (name: string) => name.normalize("NFC").replace(/[^\p{L}\p{N} ._/-]/gu, "");
 export const ProjectOutput = z.object({ id: z.string(), name: z.string() });
 export const InviteInput = z.object({
   email: z.string().max(254),
@@ -447,7 +457,7 @@ export const REST_ROUTES = {
   createProject: {
     method: "POST",
     path: "/v1/projects",
-    summary: "Create the project of a repository (by its origin fingerprint), or rename it",
+    summary: "Create the project of a repository (by its origin fingerprint); an admin may rename it, a member gets it unchanged",
     body: CreateProjectInput,
     output: ProjectOutput,
   },

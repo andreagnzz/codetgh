@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
@@ -42,6 +42,7 @@ if (process.argv[2] === "plugin") {
   process.exit(0);
 }
 writeFileSync(join(dir, "args"), process.argv.slice(2).join(" "));
+writeFileSync(join(dir, "argv"), JSON.stringify(process.argv.slice(2)));
 writeFileSync(join(dir, "cwd"), process.cwd());
 writeFileSync(join(dir, "pid"), String(process.pid));
 setTimeout(() => {}, 300_000);
@@ -127,5 +128,37 @@ describe("Remote Control launcher", () => {
     writeFileSync(config, JSON.stringify({ projects: {} }));
     expect(await launcher(config)).toContain("not in this machine's launcher list");
     expect(await projectsPage()).toContain("not in this machine&#39;s launcher list");
+  });
+
+  // On Windows claude is a .cmd that cmd.exe parses again: no text from the hub may reach its command line.
+  it("names the server after its local folder, never after the hub's project name", async () => {
+    await hub.db.update(project).set({ name: 'x" & calc | ^ %PATH% <a> !b!\nnext' }).where(eq(project.id, projectId));
+    const fake = fakeClaude();
+    const repoDir = join(mkdtempSync(join(tmpdir(), "codetgh-launch-")), "web app&co");
+    mkdirSync(repoDir);
+    const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
+    writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
+    await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
+    await launcher(config);
+    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    await hub.db.update(project).set({ name: "acme" }).where(eq(project.id, projectId));
+    const argv: string[] = JSON.parse(readFileSync(join(fake, "argv"), "utf8"));
+    process.kill(Number(readFileSync(join(fake, "pid"), "utf8")), "SIGKILL");
+    expect(argv).toEqual(["remote-control", "--name", "CodeTgh · web appco"]);
+    expect(argv.join(" ")).not.toMatch(/["&|^%<>!\n]/);
+  });
+
+  it("names the server after the project id when nothing of the folder name is left", async () => {
+    const fake = fakeClaude();
+    const repoDir = join(mkdtempSync(join(tmpdir(), "codetgh-launch-")), "« »");
+    mkdirSync(repoDir);
+    const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
+    writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
+    await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
+    await launcher(config);
+    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    const argv: string[] = JSON.parse(readFileSync(join(fake, "argv"), "utf8"));
+    process.kill(Number(readFileSync(join(fake, "pid"), "utf8")), "SIGKILL");
+    expect(argv).toEqual(["remote-control", "--name", `CodeTgh · ${projectId}`]);
   });
 });

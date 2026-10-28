@@ -281,9 +281,17 @@ export function createApp({
     if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
     takeWrite(limiter, p.user.id);
     const agent = p.paused ? null : await registerSession(db, p, parsed.data);
-    // An unknown repository: say so and store nothing, so the hooks stay quiet in that session.
+    // An unknown repository: say so and store nothing, so the hooks stay quiet in that session. A guest is told why in a
+    // word about them, the same whether or not the repository is linked.
     if (!p.paused && !agent)
-      return c.json({ agent_id: null, paused: false, context: "", linked: false, can_link: await canAutoLink(db, p) });
+      return c.json({
+        agent_id: null,
+        paused: false,
+        context: "",
+        linked: false,
+        can_link: await canAutoLink(db, p),
+        ...(p.role === "guest" && { unlinked_reason: "guest" as const }),
+      });
     bus.emit("presence", { teamId: p.teamId });
     const [prj] = agent?.projectId ? await db.select({ name: project.name }).from(project).where(eq(project.id, agent.projectId)) : [];
     return c.json({
