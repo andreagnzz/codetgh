@@ -46,7 +46,7 @@ type State = {
   tried?: string;
   // The hub's agent for this session: MCP calls carry no session, so the pre-tool-use hook names it.
   agent?: string;
-  // The git root the session started in, for codetgh doctor (root is only known once a file is edited).
+  // The git root the session started in: the edit hooks check paths against it, and codetgh doctor reads it.
   startRoot?: string;
 };
 
