@@ -832,7 +832,7 @@ Côté hub :
 Côté session :
 - `start` lance Claude Code en mode `auto`, jamais en `bypassPermissions`. Le classifieur de Claude Code examine chaque action risquée.
 - `start` ajoute des règles deny, actives dans tous les modes : lecture de `.env*`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws` ; `git push --force`, `git push -f` ; `rm -rf`. Elles comparent la commande telle qu'écrite : `cat .env` ou `git push origin +main` leur échappent.
-- Le hook PreToolUse du plugin sur les outils qui lancent une commande shell (Bash, Monitor, PowerShell), dans une session déléguée seulement, bloque (code 2, avec la raison) quatre sortes de commandes, et tout appel dont il ne peut pas lire la commande (une veille WebSocket de Monitor). Il tourne sans réseau, en moins de 3 s.
+- Le hook PreToolUse du plugin sur les outils qui lancent une commande shell (Bash, Monitor, PowerShell), dans une session déléguée ou un job du runner (`CODETGH_RUNNER=1`) seulement, bloque (code 2, avec la raison) quatre sortes de commandes, et tout appel dont il ne peut pas lire la commande (une veille WebSocket de Monitor). Il tourne sans réseau, en moins de 3 s.
   - Celles qui nomment l'un de ces chemins.
   - Celles qui forcent un push : `--force`, `-f`, `--force-with-lease`, `+refspec`.
   - Celles qui construisent leur commande à l'exécution : `eval`, `sh -c` avec une variable, `base64 -d |`, une substitution par `printf`.
