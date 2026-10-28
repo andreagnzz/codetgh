@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { RateLimiter } from "../src/domain/limits.js";
 import { consolePost } from "../../../e2e/helpers.js";
+import { RateLimiter } from "../src/domain/limits.js";
 import { call, mcpClient, startHub } from "./harness.js";
 
 describe("rate limiter (30/min, 600/h, burst 10)", () => {
