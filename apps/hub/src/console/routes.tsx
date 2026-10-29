@@ -106,6 +106,7 @@ import {
   memoryLabel,
   type Names,
   NewTaskForm,
+  refusal,
   TaskBoard,
   TaskDetail,
   TaskPill,
@@ -1431,6 +1432,18 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return { names, threads };
   };
 
+  // The refusals of the audit, memory, claims and tasks forms in the reader's words (records.tsx); the code and the status
+  // stay the hub's.
+  const reworded = async <T,>(c: Context<Env>, step: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await step();
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      const words = refusal(e, tr(c));
+      throw words ? new HubError(e.code, words, e.retryAfterS) : e;
+    }
+  };
+
   consoleApp.get("/audit", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
@@ -1481,7 +1494,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
-    requireAdmin(p);
+    await reworded(c, () => requireAdmin(p));
     await writeCheckpoint(db, p.teamId, auditKey);
     return c.html(<VerifyResult r={await verifyTeamAudit(db, p.teamId, auditKey.publicKey)} _={tr(c)} />);
   });
@@ -1764,15 +1777,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/memory/:id/decide", async (c) => {
-    const f = await form(c);
-    if (f.decision !== "accept" && f.decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
-    await decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
+    const { decision, note } = await form(c);
+    if (decision !== "accept" && decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
+    await reworded(c, () => decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision, note }, "console"));
     bus.emit("attention", { teamId: c.get("principal").teamId });
     return refresh(c);
   });
 
   consoleApp.post("/memory/:id/pin", async (c) => {
-    await setPinned(db, c.get("principal"), c.req.param("id"), (await form(c)).pinned === "true");
+    const pinned = (await form(c)).pinned === "true";
+    await reworded(c, () => setPinned(db, c.get("principal"), c.req.param("id"), pinned));
     return refresh(c);
   });
 
@@ -1811,8 +1825,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/claims/:id/release", async (c) => {
     const p = c.get("principal");
-    requireAdmin(p);
-    await adminReleaseClaim(db, p, c.req.param("id"));
+    await reworded(c, () => {
+      requireAdmin(p);
+      return adminReleaseClaim(db, p, c.req.param("id"));
+    });
     return refresh(c);
   });
 
@@ -1890,8 +1906,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
 
   consoleApp.post("/tasks", async (c) => {
-    const input = parsed(TaskCreateInput.safeParse(filled(await form(c))));
-    await createTask(messaging, c.get("principal"), null, input);
+    const f = filled(await form(c));
+    await reworded(c, () => createTask(messaging, c.get("principal"), null, parsed(TaskCreateInput.safeParse(f))));
     return refresh(c);
   });
 
@@ -1985,8 +2001,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/tasks/:id", async (c) => {
     const { expected_version, ...patch } = filled(await form(c));
-    const input = parsed(TaskUpdateInput.safeParse({ task_id: c.req.param("id"), expected_version: Number(expected_version), patch }));
-    await updateTask(messaging, c.get("principal"), null, input);
+    await reworded(c, () =>
+      updateTask(
+        messaging,
+        c.get("principal"),
+        null,
+        parsed(TaskUpdateInput.safeParse({ task_id: c.req.param("id"), expected_version: Number(expected_version), patch })),
+      ),
+    );
     return refresh(c);
   });
 

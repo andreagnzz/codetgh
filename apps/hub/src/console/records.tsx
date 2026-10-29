@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
-import { TASK_STATUSES, type TaskStatus } from "@codetgh/shared";
+import { type ErrorCode, TASK_STATUSES, type TaskStatus } from "@codetgh/shared";
 import { diffLines } from "diff";
 import type { Child, FC } from "hono/jsx";
 import type { auditEvent, claim, memoryItem, task } from "../db/schema.js";
@@ -839,3 +839,33 @@ export const TaskUpdateForm: FC<{ t: Task; moves: TaskStatus[]; _: Tr }> = ({ t,
     </form>
   </Panel>
 );
+
+// ---- Refusals ----
+
+// The hub words these refusals for agents, with ids and tool names: the screens' forms say what happened and what to do, by
+// the error's code and the reason's pattern. Any other reason shows as the hub wrote it, through i18n.
+const REFUSALS: Array<[ErrorCode, RegExp, string]> = [
+  ["E_FORBIDDEN", /^admins only$/, "Only admins can do this. Ask an admin of your team."],
+  ["E_FORBIDDEN", /^your role cannot (decide on|pin) team memory$/, "Your role can't do this on this hub. Ask an admin of your team."],
+  ["E_FORBIDDEN", / is assigned to someone else/, "This task is assigned to someone else. Ask them, or ask an admin to reassign it."],
+  ["E_VERSION_CONFLICT", /^task /, "Someone changed this task since you opened it. Reload the page, then save again."],
+  ["E_NOT_FOUND", /^no member (?<handle>\S+)$/, "Nobody in the team has the handle {handle}. Check it, or leave it empty."],
+  ["E_NOT_FOUND", /^no active claim with this id$/, "This claim has already ended. Reload the page."],
+  [
+    "E_INVALID",
+    /^this item (is already|was decided meanwhile)/,
+    "Someone already decided on this item. Reload the page to see the decision.",
+  ],
+  ["E_INVALID", /must match pattern \/\^@/, "Write a handle like @lea: an @, then lowercase letters, digits or dashes."],
+  ["E_INVALID", /^patch needs /, "Nothing to save. Choose a status or someone to assign it to, or write a note."],
+  ["E_INVALID", /^reason goes with status blocked$/, "A reason goes with Blocked only. Choose Blocked, or leave Why it's blocked empty."],
+  ["E_INVALID", /^blocked needs a reason/, "Say why the task is blocked, in 200 characters at most."],
+  ["E_INVALID", /^blocked by .+: finish them first$/, "This task waits for others that aren't done. Finish them first."],
+];
+export const refusal = (e: { code: ErrorCode; message: string }, _: Tr) => {
+  for (const [code, pattern, words] of REFUSALS) {
+    const m = e.code === code ? e.message.match(pattern) : null;
+    if (m) return fill(_(words), { ...m.groups });
+  }
+  return null;
+};

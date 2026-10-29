@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { consolePost } from "../../../e2e/helpers.js";
+import { consolePost, csrfToken } from "../../../e2e/helpers.js";
 import { auditEvent, claim, memoryItem, project, task } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub } from "./harness.js";
@@ -38,6 +38,22 @@ const post = async (cookie: string, path: string, form: Record<string, string> =
   const res = await consolePost(hub.url, cookie, path, form);
   if (res.status >= 400) throw new Error(`${path}: ${res.status} ${await res.text()}`);
   return res;
+};
+// A form sent as htmx sends it: the hub answers a refusal with its reason alone, which console.js shows under the form.
+const refused = async (cookie: string, path: string, form: Record<string, string>, lang = "en") => {
+  const res = await fetch(`${hub.url}${path}`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "X-CSRF-Token": await csrfToken(hub.url, cookie),
+      "content-type": "application/x-www-form-urlencoded",
+      origin: hub.url,
+      "HX-Request": "true",
+      "accept-language": lang,
+    },
+    body: new URLSearchParams(form).toString(),
+  });
+  return { status: res.status, text: (await res.text()).replaceAll("&#39;", "'") };
 };
 
 beforeAll(async () => {
@@ -430,5 +446,51 @@ describe("tasks", () => {
     const after = main(await page(`/console/tasks/${ids.blocked}`, team.lea.cookie));
     expect(after).toContain('<p class="banner-body">Waiting for the credentials of the new host</p>');
     expect(after).toContain("blocked because: Waiting for the credentials of the new host");
+  });
+});
+
+describe("refusals", () => {
+  it("says what happened and what to do, in the reader's words, never the ids and tools the hub gives agents", async () => {
+    const conflict = await refused(team.lea.cookie, `/console/tasks/${ids.doing}`, { expected_version: "1", note: "Done too." });
+    expect(conflict.status).toBe(409);
+    expect(conflict.text).toContain("Someone changed this task since you opened it. Reload the page, then save again.");
+    expect(conflict.text).not.toContain("task_list");
+    expect(conflict.text).not.toContain(ids.doing);
+    const unknown = await refused(team.lea.cookie, "/console/tasks", { title: "Write the notes", assignee: "@nobody" });
+    expect(unknown.status).toBe(404);
+    expect(unknown.text).toContain("Nobody in the team has the handle @nobody. Check it, or leave it empty.");
+    const typed = await refused(team.lea.cookie, "/console/tasks", { title: "Write the notes", assignee: "lea" });
+    expect(typed.text).toContain("Write a handle like @lea: an @, then lowercase letters, digits or dashes.");
+    const version = (
+      await hub.db
+        .select()
+        .from(task)
+        .where(eq(task.id, ids.doing ?? ""))
+    )[0]?.version;
+    const nothing = await refused(team.lea.cookie, `/console/tasks/${ids.doing}`, { expected_version: String(version) });
+    expect(nothing.text).toContain("Nothing to save. Choose a status or someone to assign it to, or write a note.");
+    const reason = await refused(team.lea.cookie, `/console/tasks/${ids.doing}`, {
+      expected_version: String(version),
+      reason: "x",
+      note: "Waiting",
+    });
+    expect(reason.text).toContain("A reason goes with Blocked only. Choose Blocked, or leave Why it's blocked empty.");
+    const gone = await refused(team.lea.cookie, "/console/claims/clm_01NOSUCHCLAIM0000000000000/release", {});
+    expect(gone.status).toBe(404);
+    expect(gone.text).toContain("This claim has already ended. Reload the page.");
+    const decided = await refused(team.lea.cookie, `/console/memory/${ids.d1}/decide`, { decision: "accept" });
+    expect(decided.text).toContain("Someone already decided on this item. Reload the page to see the decision.");
+    const member = await refused(team.sam.cookie, "/console/audit/verify", {});
+    expect(member.status).toBe(403);
+    expect(member.text).toContain("Only admins can do this. Ask an admin of your team.");
+  });
+
+  it("reads in French", async () => {
+    const unknown = await refused(team.lea.cookie, "/console/tasks", { title: "Écrire les notes", assignee: "@nobody" }, "fr");
+    expect(unknown.text).toContain("Personne dans l'équipe n'a le pseudo @nobody. Vérifie-le, ou laisse le champ vide.");
+    const conflict = await refused(team.lea.cookie, `/console/tasks/${ids.doing}`, { expected_version: "1", note: "x" }, "fr");
+    expect(conflict.text).toContain(
+      "Quelqu'un a modifié cette tâche depuis que tu l'as ouverte. Recharge la page, puis enregistre à nouveau.",
+    );
   });
 });

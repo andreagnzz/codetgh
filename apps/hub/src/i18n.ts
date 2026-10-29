@@ -574,6 +574,28 @@ const FR: Record<string, string> = {
   "Needed for Blocked, and only then.": "Nécessaire pour Bloquée, et seulement dans ce cas.",
   "To change it, choose Blocked and write the new reason.": "Pour le changer, choisis Bloquée et écris le nouveau motif.",
   "Added to the history, for the whole team.": "Ajoutée à l'historique, pour toute l'équipe.",
+  // Refusals of the four screens' forms.
+  "Only admins can do this. Ask an admin of your team.": "Seuls les admins peuvent faire ça. Demande à un admin de ton équipe.",
+  "Your role can't do this on this hub. Ask an admin of your team.":
+    "Ton rôle ne le permet pas sur ce hub. Demande à un admin de ton équipe.",
+  "This task is assigned to someone else. Ask them, or ask an admin to reassign it.":
+    "Cette tâche est attribuée à quelqu'un d'autre. Demande-lui, ou demande à un admin de la réattribuer.",
+  "Someone changed this task since you opened it. Reload the page, then save again.":
+    "Quelqu'un a modifié cette tâche depuis que tu l'as ouverte. Recharge la page, puis enregistre à nouveau.",
+  "Nobody in the team has the handle {handle}. Check it, or leave it empty.":
+    "Personne dans l'équipe n'a le pseudo {handle}. Vérifie-le, ou laisse le champ vide.",
+  "This claim has already ended. Reload the page.": "Cette réservation a déjà pris fin. Recharge la page.",
+  "Someone already decided on this item. Reload the page to see the decision.":
+    "Quelqu'un a déjà décidé pour cet élément. Recharge la page pour voir la décision.",
+  "Write a handle like @lea: an @, then lowercase letters, digits or dashes.":
+    "Écris un pseudo comme @lea : un @, puis des minuscules, des chiffres ou des tirets.",
+  "Nothing to save. Choose a status or someone to assign it to, or write a note.":
+    "Rien à enregistrer. Choisis un état ou une personne à qui l'attribuer, ou écris une note.",
+  "A reason goes with Blocked only. Choose Blocked, or leave Why it's blocked empty.":
+    "Un motif ne va qu'avec Bloquée. Choisis Bloquée, ou laisse vide « Pourquoi elle est bloquée ».",
+  "Say why the task is blocked, in 200 characters at most.": "Dis pourquoi la tâche est bloquée, en 200 caractères au plus.",
+  "This task waits for others that aren't done. Finish them first.":
+    "Cette tâche attend d'autres tâches qui ne sont pas terminées. Termine-les d'abord.",
   // ---- End of batch 6. ----
 };
 
