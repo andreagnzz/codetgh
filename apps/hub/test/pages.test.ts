@@ -199,8 +199,10 @@ describe("shell", () => {
 
   it("names the live state, holds the toast region and the confirmation dialog, in French for a French reader", async () => {
     const page = await html(team.lea.cookie, "/console", "fr");
+    // Hidden until console.js follows the stream, and a live region only once it is open: no "Connecting" left on screen
+    // without the script, and no announcement on every page load.
     expect(page).toContain(
-      '<p class="live" role="status" data-state="connecting" data-live="En direct" data-lost="Reconnexion…">Connexion…</p>',
+      '<p class="live" hidden="" data-state="connecting" data-live="En direct" data-lost="Reconnexion…" data-offline="Hors ligne depuis {time}">Connexion…</p>',
     );
     expect(page).toContain('<div class="toasts" role="status"></div>');
     expect(page).toContain('<dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">');

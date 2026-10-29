@@ -118,8 +118,15 @@ export const Layout: FC<{
               <p class="team" title={p.teamName}>
                 {p.teamName}
               </p>
-              {/* console.js follows the live connection (htmx sse events); the words come from here. */}
-              <p class="live" role="status" data-state="connecting" data-live={_("Live")} data-lost={_("Reconnecting…")}>
+              {/* console.js follows the live connection (htmx sse events) and shows this once it runs; the words come from here. */}
+              <p
+                class="live"
+                hidden
+                data-state="connecting"
+                data-live={_("Live")}
+                data-lost={_("Reconnecting…")}
+                data-offline={_("Offline since {time}")}
+              >
                 {_("Connecting…")}
               </p>
               <details class="account">

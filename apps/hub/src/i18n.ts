@@ -289,6 +289,7 @@ const FR: Record<string, string> = {
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
   Unread: "Non lu",
+  "Offline since {time}": "Hors ligne depuis {time}",
   "Stop agent traffic…": "Couper le trafic des agents…",
   "Stop agent traffic?": "Couper le trafic des agents\u202f?",
   "Agents can't send messages or claim files until an admin resumes agent traffic.":

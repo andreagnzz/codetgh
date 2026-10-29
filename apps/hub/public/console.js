@@ -207,15 +207,34 @@
   clocks();
   document.body.addEventListener("htmx:afterSettle", clocks);
 
-  // The live state in the top bar follows the stream; its words come from the page (data-live, data-lost).
+  // The live state in the top bar follows the stream; its words come from the page (data-live, data-lost, data-offline). It
+  // shows once this script runs, and becomes a live region after the first connection, so a page load announces nothing.
+  // Three failed attempts in a row, or a closed stream, read as offline since the connection was lost.
   const live = document.querySelector(".live");
+  if (live) live.hidden = false;
+  let failures = 0;
+  let lostAt = null;
   const state = (s) => {
     if (!live || live.dataset.state === s) return;
     live.dataset.state = s;
-    live.textContent = live.dataset[s] ?? "";
+    const at = new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(
+      lostAt ?? new Date(),
+    );
+    live.textContent = (live.dataset[s] ?? "").replace("{time}", at);
   };
-  document.body.addEventListener("htmx:sseOpen", () => state("live"));
-  document.body.addEventListener("htmx:sseError", () => state("lost"));
+  document.body.addEventListener("htmx:sseOpen", () => {
+    failures = 0;
+    lostAt = null;
+    state("live");
+    live?.setAttribute("role", "status");
+  });
+  const lost = (closed) => {
+    lostAt ??= new Date();
+    failures += 1;
+    state(closed || failures >= 3 ? "offline" : "lost");
+  };
+  document.body.addEventListener("htmx:sseError", () => lost(false));
+  document.body.addEventListener("htmx:sseClose", () => lost(true));
 
   // Menus (account, small-screen menu, row menus, project filter) close on Escape, focus back on their button. The floating
   // ones also close on a click outside them, and when the keyboard leaves them, so they never cover the next stop. A focus

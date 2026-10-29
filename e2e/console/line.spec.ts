@@ -50,3 +50,16 @@ test("a refused action shows its reason under the form; the skip link comes firs
   await expect(page.locator(".field-error")).toHaveText("type erase to confirm");
   await expect(page.locator(".field-error")).toHaveAttribute("role", "alert");
 });
+
+test("the live state: shown by console.js, a live region only once connected, offline after three failed attempts", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  const live = page.locator(".live");
+  await expect(live).toHaveText("Live");
+  await expect(live).toHaveAttribute("role", "status");
+  await page.route("**/console/stream", (route) => route.abort());
+  await page.reload();
+  // Never connected on this load: the words change, nothing is announced, and it ends with the time it was lost.
+  await expect(live).toHaveText(/^Offline since \d\d:\d\d$/, { timeout: 20_000 });
+  await expect(live).toHaveAttribute("data-state", "offline");
+  await expect(live).not.toHaveAttribute("role", "status");
+});

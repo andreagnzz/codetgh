@@ -382,8 +382,15 @@ summary::-webkit-details-marker {
 .live[data-state="lost"] {
   color: var(--warning);
 }
-.live[data-state="lost"]::before {
+.live[data-state="lost"]::before,
+.live[data-state="offline"]::before {
   background: currentColor;
+}
+.live[data-state="offline"] {
+  color: var(--error);
+}
+.live[hidden] {
+  display: none;
 }
 .account,
 .row-menu,
