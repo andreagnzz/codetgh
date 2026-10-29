@@ -405,7 +405,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             </ul>
             {isAdmin(p) && (
               <>
-                <h3>{_("Kill switch")}</h3>
+                <h3 id="agent-traffic">{_("Kill switch")}</h3>
                 {p.paused ? (
                   <form hx-post="/console/kill-switch/resume" hx-swap="none">
                     <label>
