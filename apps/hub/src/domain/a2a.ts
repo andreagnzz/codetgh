@@ -19,7 +19,14 @@ import { createPersonalToken } from "../tokens.js";
 import { byUser, requireAdmin } from "./admin.js";
 import { type Agent, oneLine } from "./agents.js";
 import { appendAudit } from "./audit.js";
-import { envelope, type MessagingDeps, sendMessage } from "./messages.js";
+import { envelope, MAX_BODY_BYTES, type MessagingDeps, sendMessage } from "./messages.js";
+
+// The lowest-trust caller writes to the database every team shares: a cap on its tasks, the oldest go first, and on
+// the messages a task keeps (the SDK stores a follow-up before the hub sends it, refused or not).
+const MAX_TASKS_PER_AGENT = 200;
+const MAX_HISTORY = 10;
+// The caller chooses the ids of its messages and the context id that every follow-up repeats.
+const MAX_ID = 128;
 
 // An external agent is a guest of the team whose only agent is quarantined for good: it may ask and answer, nothing else.
 export async function createExternalAgent(db: Db, p: Principal, name: string) {
@@ -82,6 +89,24 @@ const agentMessage = (task: Pick<Task, "id" | "contextId">, id: string, value: s
   referenceTaskIds: [],
 });
 
+const textOf = (m: Message) =>
+  m.parts
+    .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
+    .join("\n")
+    .trim();
+// What a task keeps of a message: its role, its text cut at the message limit, its id cut at MAX_ID; no other part, no
+// metadata, no extension.
+const kept = (m: Message): Message => ({
+  messageId: m.messageId.slice(0, MAX_ID),
+  contextId: m.contextId,
+  taskId: m.taskId,
+  role: m.role,
+  parts: [textPart(Buffer.from(textOf(m)).subarray(0, MAX_BODY_BYTES).toString())],
+  metadata: undefined,
+  extensions: [],
+  referenceTaskIds: [],
+});
+
 type Caller = { p: Principal; agent: Agent };
 
 export function a2aServer(deps: MessagingDeps, publicUrl: string) {
@@ -135,10 +160,26 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       const { p, agent: a } = caller(ctx);
       const messageId = questionOf.get(task.id) ?? null;
       questionOf.delete(task.id);
+      // A refused send leaves nothing behind: the failed task is in the caller's answer.
+      if (!messageId && task.status?.state === TaskState.TASK_STATE_FAILED) return;
+      const stored = { ...task, history: task.history.slice(-MAX_HISTORY).map(kept) };
       await db
         .insert(a2aTask)
-        .values({ id: task.id, teamId: p.teamId, agentId: a.id, messageId, task })
-        .onConflictDoUpdate({ target: a2aTask.id, set: { task } });
+        .values({ id: task.id, teamId: p.teamId, agentId: a.id, messageId, task: stored })
+        .onConflictDoUpdate({ target: a2aTask.id, set: { task: stored } });
+      const over = await db
+        .select({ id: a2aTask.id })
+        .from(a2aTask)
+        .where(eq(a2aTask.agentId, a.id))
+        .orderBy(desc(a2aTask.createdAt))
+        .offset(MAX_TASKS_PER_AGENT);
+      if (over.length)
+        await db.delete(a2aTask).where(
+          inArray(
+            a2aTask.id,
+            over.map((r) => r.id),
+          ),
+        );
     },
     async load(taskId, ctx) {
       const { p, agent: a } = caller(ctx);
@@ -183,10 +224,7 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
   const executor: AgentExecutor = {
     async execute(rc, bus) {
       const { p, agent: a } = caller(rc.context);
-      const question = rc.userMessage.parts
-        .map((part) => (part.content?.$case === "text" ? part.content.value : ""))
-        .join("\n")
-        .trim();
+      const question = textOf(rc.userMessage);
       const task: Task = {
         id: rc.taskId,
         contextId: rc.contextId,
@@ -197,6 +235,8 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
         metadata: undefined,
       };
       try {
+        // The SDK refuses a follow-up whose context id differs from its task's: refused here, a long one is never stored.
+        if (rc.contextId.length > MAX_ID) throw new HubError("E_INVALID", `contextId over ${MAX_ID} characters`);
         // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too.
         const [first] = rc.task ? await db.select({ messageId: a2aTask.messageId }).from(a2aTask).where(eq(a2aTask.id, task.id)) : [];
         const sent = await sendMessage(

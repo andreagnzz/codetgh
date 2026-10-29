@@ -4,7 +4,7 @@ import type { MessageKind, SendMessage } from "@codetgh/shared";
 import { isSealed, isWrapped } from "@codetgh/shared/e2e";
 import { type AnyColumn, and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, max, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
+import { a2aTask, agent, alert, membership, message, receipt, team, thread, threadKey, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
@@ -18,10 +18,11 @@ export type MessagingDeps = { db: Db; bus: Bus; limiter: RateLimiter; secret: st
 type Recipient = { userId: string; agentId: string | null };
 type Author = { p: Principal; agent: Agent | null; via: "mcp" | "rest" | "console" };
 
-const MAX_BODY_BYTES = 8192;
+export const MAX_BODY_BYTES = 8192;
 // Ciphertext of an 8 KB body: base64url of IV + text + tag, with its format prefix.
 const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
+const TEAM_SCALE = 10; // a team sends as much as ten busy people
 const MAX_SUBJECT = 200;
 const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before the loop guard mutes it
 // Agent messages between two people, all threads, both ways. shortcut: fixed numbers; a team setting if teams need more.
@@ -321,11 +322,11 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
   ) {
     throw new HubError("E_TOO_LARGE", "body over 8 KB, more than 20 refs or subject over 200 characters: summarize and use a reference");
   }
-  if (fromAgentId) {
-    // Per agent (SPEC) and per user, so new sessions cannot reset the budget.
-    const wait = Math.max(limiter.take(fromAgentId), limiter.take(`user:${p.user.id}`));
-    if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
-  }
+  // Per agent (SPEC), per person whoever writes (a new session, the console or Slack cannot reset it), and per team.
+  // In that order, up to the first refusal: a send the person's budget refuses takes nothing of the team's.
+  const wait =
+    (fromAgentId ? limiter.take(fromAgentId) : 0) || limiter.take(`user:${p.user.id}`) || limiter.take(`team:${p.teamId}`, TEAM_SCALE);
+  if (wait > 0) throw new HubError("E_RATE_LIMITED", "rate limit reached", wait);
 
   // The loop orchestrator is a member the admins named: its agent judges loops the guard muted.
   const [orchestrator] = p.settings.loop_orchestrator
@@ -744,11 +745,13 @@ export const sentView = (m: Awaited<ReturnType<typeof sendMessage>>) => ({
   reach: m.reach,
 });
 
-// Retention: messages older than the team's setting go, receipts with them (FK cascade); threads, memory and audit stay.
+// Retention: messages older than the team's setting go, receipts with them (FK cascade), and the external agents' A2A
+// tasks those messages stood for; threads, memory and audit stay.
 export async function purgeMessages(db: Db) {
   for (const t of await db.select({ id: team.id, settings: team.settings }).from(team)) {
     const cutoff = new Date(Date.now() - (t.settings.retention_days ?? 90) * 86_400_000);
     await db.delete(message).where(and(eq(message.teamId, t.id), lt(message.createdAt, cutoff)));
+    await db.delete(a2aTask).where(and(eq(a2aTask.teamId, t.id), lt(a2aTask.createdAt, cutoff)));
   }
 }
 

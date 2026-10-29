@@ -1,6 +1,6 @@
 {
-  "id": "d0f708b8-bca6-4d00-aa66-8135e3df2655",
-  "prevId": "c65820ca-26e2-4749-8d87-baf7ed27b2b5",
+  "id": "32c68159-4fdf-460b-aa77-a2358efed370",
+  "prevId": "bd884fb8-5f2e-4098-9743-d8289b0d6b9b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1311,12 +1311,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "oauth_not_before": {
-          "name": "oauth_not_before",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "usage_five_hour": {
           "name": "usage_five_hour",
           "type": "integer",
@@ -1473,6 +1467,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "flags": {
+          "name": "flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         },
         "refs": {
           "name": "refs",
@@ -2446,6 +2446,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "flags": {
+          "name": "flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",

@@ -1,5 +1,5 @@
 {
-  "id": "c65820ca-26e2-4749-8d87-baf7ed27b2b5",
+  "id": "bd884fb8-5f2e-4098-9743-d8289b0d6b9b",
   "prevId": "88ee1a12-9433-471a-9f78-79d4cb07f0de",
   "version": "7",
   "dialect": "postgresql",
@@ -997,12 +997,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "invited_by_token": {
-          "name": "invited_by_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp",
@@ -1467,6 +1461,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "flags": {
+          "name": "flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         },
         "refs": {
           "name": "refs",
@@ -2440,6 +2440,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "flags": {
+          "name": "flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",

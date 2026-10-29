@@ -251,7 +251,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <p class="meta">{tr(c)("Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
     );
   // ?before= of the Older link: rows created or last updated before that time.
-  const olderThan = (c: Context<Env>, col: typeof alert.createdAt | typeof memoryItem.createdAt | typeof thread.lastMessageAt) => {
+  const olderThan = (
+    c: Context<Env>,
+    col: typeof alert.createdAt | typeof memoryItem.createdAt | typeof thread.lastMessageAt | typeof message.createdAt,
+  ) => {
     const before = c.req.query("before");
     return before && !Number.isNaN(Date.parse(before)) ? lt(col, new Date(before)) : undefined;
   };
@@ -547,23 +550,28 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     if (adminRead) await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
     const project = kept(c);
-    const rows = await db
+    // The latest page, oldest first; Older goes back. A thread grows with every reply: never load all of it.
+    const found = await db
       .select({ message, name: user.name })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
-      .where(adminRead ? eq(message.threadId, t.id) : and(eq(message.threadId, t.id), sentOrReceivedBy(db, p)))
-      .orderBy(message.createdAt);
+      .where(and(eq(message.threadId, t.id), adminRead ? undefined : sentOrReceivedBy(db, p), olderThan(c, message.createdAt)))
+      .orderBy(desc(message.createdAt))
+      .limit(PAGE + 1);
+    const rows = found.slice(0, PAGE).reverse();
+    const first = rows[0];
     const state = t.mutedAt ? (t.mutedReason === "human" ? "muted by a person" : "muted (loop guard)") : "open";
-    // Every refresh of an admin read would be audited as a new opening: that page stays still.
-    const live = adminRead
-      ? {}
-      : {
-          "hx-get": withProject(`/console/threads/${t.id}`, project),
-          "hx-select": "main",
-          "hx-target": "main",
-          "hx-swap": "outerHTML",
-          "hx-trigger": "sse:activity",
-        };
+    // Every refresh of an admin read would be audited as a new opening, and an older page is not the latest: those stay still.
+    const live =
+      adminRead || c.req.query("before")
+        ? {}
+        : {
+            "hx-get": withProject(`/console/threads/${t.id}`, project),
+            "hx-select": "main",
+            "hx-target": "main",
+            "hx-swap": "outerHTML",
+            "hx-trigger": "sse:activity",
+          };
     return page(
       c,
       t.subject ?? `Thread ${t.id}`,
@@ -590,6 +598,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ])}
           empty={tr(c)("Nothing yet.")}
         />
+        {found.length > PAGE && first && (
+          <a
+            href={`/console/threads/${t.id}?${project ? `project=${encodeURIComponent(project)}&` : ""}before=${encodeURIComponent(first.message.createdAt.toISOString())}`}
+          >
+            {tr(c)("Older")}
+          </a>
+        )}
         {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
         {!adminRead && !t.encrypted && (
           <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">

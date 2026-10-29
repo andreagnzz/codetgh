@@ -1,6 +1,6 @@
 import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { alert, auditEvent, memoryItem, thread } from "../apps/hub/src/db/schema.js";
+import { alert, auditEvent, memoryItem, message, thread } from "../apps/hub/src/db/schema.js";
 import { appendAudit } from "../apps/hub/src/domain/audit.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
 
@@ -74,6 +74,31 @@ it("pages threads: no Older link at exactly 50, and one row on the next page at 
   const next = await get(older(first) ?? "/missing");
   expect(next).toContain("thr_50");
   expect(next).not.toContain("thr_49");
+});
+
+it("pages a thread: its latest 50 messages, oldest first, and the 51st on the next page", async () => {
+  await hub.db.insert(thread).values({ id: "thr_long", teamId: team.teamId, kind: "team", createdByUser: team.lea.userId });
+  const row = (i: number) => ({
+    id: `msg_long${i}`,
+    teamId: team.teamId,
+    threadId: "thr_long",
+    fromUserId: team.lea.userId,
+    authoredBy: "human" as const,
+    kind: "note",
+    priority: "normal",
+    to: ["@team"],
+    body: `message number ${i}.`,
+    createdAt: ago(i),
+  });
+  await hub.db.insert(message).values(Array.from({ length: 50 }, (_, i) => row(i)));
+  expect(older(await get("/console/threads/thr_long"))).toBeUndefined();
+  await hub.db.insert(message).values(row(50));
+  const first = await get("/console/threads/thr_long");
+  expect(first).not.toContain("message number 50.");
+  expect(first.indexOf("message number 49.")).toBeLessThan(first.indexOf("message number 0."));
+  const next = await get(older(first) ?? "/missing");
+  expect(next).toContain("message number 50.");
+  expect(next).not.toContain("message number 49.");
 });
 
 it("pages the audit log: no Older link at exactly 50, and one row on the next page at 51", async () => {

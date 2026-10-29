@@ -374,6 +374,8 @@ export const task = pgTable(
     projectId: text("project_id"),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
+    // What the hub saw in the title and body at creation; null for a task created before it kept them.
+    flags: text("flags").array(),
     status: text("status", { enum: ["todo", "claimed", "in_progress", "blocked", "review", "done", "cancelled"] })
       .notNull()
       .default("todo"),
@@ -425,6 +427,8 @@ export const memoryItem = pgTable(
       .default("proposed"),
     title: text("title").notNull(),
     body: text("body").notNull(),
+    // What the hub saw in the title and body when it was proposed; null for an item proposed before it kept them.
+    flags: text("flags").array(),
     refs: jsonb("refs").$type<unknown[]>().notNull().default([]),
     branch: text("branch"),
     supersedesId: text("supersedes_id"),

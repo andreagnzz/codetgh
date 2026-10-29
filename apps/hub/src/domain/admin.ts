@@ -8,7 +8,27 @@ import { expireDelegated, lockDelegates } from "./agents.js";
 import { type AuditInput, appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
-const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/;
+// A group repeated by +, * or {…} that holds a quantifier or an alternation, at any depth: (a+)+, ((a+))+ and (a|aa)+
+// backtrack exponentially. A scan, so no nesting hides one; escapes and character classes are literal text.
+function repeatsAmbiguousGroup(pattern: string) {
+  const open: boolean[] = [];
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i] ?? "";
+    if (c === "\\") i++;
+    else if (c === "[") {
+      // A class ends at the first ] not escaped.
+      for (i++; i < pattern.length && pattern[i] !== "]"; i++) if (pattern[i] === "\\") i++;
+    } else if (c === "(") open.push(false);
+    else if (c === ")") {
+      const ambiguous = open.pop();
+      if (ambiguous && /[+*{]/.test(pattern[i + 1] ?? "")) return true;
+      if (ambiguous && open.length) open[open.length - 1] = true;
+    } else if ("+*{|".includes(c) || (c === "?" && pattern[i - 1] !== "(")) {
+      if (open.length) open[open.length - 1] = true;
+    }
+  }
+  return false;
+}
 
 // Handles are addresses (@handle): lowercase letters, digits and dashes; bridge- and a2a- belong to the hub's own members.
 export const RESERVED_HANDLE = /^(bridge|a2a)-/;
@@ -122,10 +142,10 @@ export async function updateSettings(
     } catch {
       throw new HubError("E_INVALID", `invalid pattern: ${pattern}`);
     }
-    // Patterns run on every message on the event loop: refuse nested quantifiers like (a+)+ (catastrophic backtracking).
-    // shortcut: heuristic check; switch to a linear-time engine (re2) if teams need richer patterns.
-    if (pattern.length > 200 || NESTED_QUANTIFIER.test(pattern))
-      throw new HubError("E_INVALID", `pattern too long or with nested quantifiers: ${pattern}`);
+    // Patterns run on every message on the event loop: refuse the forms that backtrack exponentially.
+    // shortcut: heuristic check, blind to polynomial chains like .*.*.*; switch to a linear-time engine (re2) if teams need richer patterns.
+    if (pattern.length > 200 || repeatsAmbiguousGroup(pattern))
+      throw new HubError("E_INVALID", `pattern too long, or with a repeated group holding a quantifier or |: ${pattern}`);
   }
   await db.transaction(async (tx) => {
     // The Slack bot is shared by the hub: one team's admin must not aim its posts at another team's channel.

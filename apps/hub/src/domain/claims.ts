@@ -36,6 +36,9 @@ function scopeType(scope: string): ScopeType {
   return picomatch.scan(scope).isGlob ? "glob" : "path";
 }
 
+// picomatch reads a leading ! as "every path but this": a negated glob reaches every file of the project but a few.
+const negated = (scope: string) => picomatch.scan(scope).negated;
+
 // A glob with no directory in front of ** (or a bare *) reaches every file of the project.
 const coversProject = (scope: string) => {
   const glob = scope.replace(/^\.\//, "");
@@ -52,13 +55,13 @@ export const globTooComplex = (scope: string) =>
   (scope.match(/\*+/g)?.length ?? 0) > 2 || (scope.match(/[{,]/g)?.length ?? 0) > 6 || /\{[^}]*\{|[()|]/.test(scope);
 
 const matchers = new Map<string, ((path: string) => boolean) | null>();
-// A stored scope over the limits (claimed before they existed, or written straight to the table) matches nothing: it
+// A stored scope over the limits or negated (claimed before they existed, or written straight to the table) matches nothing: it
 // blocks nobody, which is the safe side for a claim that is advisory (the permission prompt stays), whereas matching
 // it could stall every teammate, and reading it as a prefix would block the whole project. It ends with its ttl.
 function matcher(scope: string) {
   let m = matchers.get(scope);
   if (m === undefined) {
-    m = globTooComplex(scope) ? null : picomatch(scope, { dot: true });
+    m = globTooComplex(scope) || negated(scope) ? null : picomatch(scope, { dot: true });
     if (matchers.size >= 500) matchers.clear();
     matchers.set(scope, m);
   }
@@ -196,6 +199,18 @@ export async function liveClaims(db: Db, p: Principal, opts: { projectId?: strin
   }));
 }
 
+// The person's claims that are neither released nor expired.
+const live = (p: Principal) =>
+  and(eq(claim.teamId, p.teamId), eq(claim.holderUserId, p.user.id), isNull(claim.releasedAt), gt(claim.expiresAt, new Date()));
+
+const intentsHeld = async (tx: Db, p: Principal) =>
+  (
+    await tx
+      .select({ n: count() })
+      .from(claim)
+      .where(and(live(p), eq(claim.mode, "intent")))
+  )[0]?.n ?? 0;
+
 function guard(p: Principal, a: Agent) {
   if (p.paused) throw new HubError("E_KILL_SWITCH", "CodeTgh is paused by an admin");
   if (p.role === "guest") throw new HubError("E_FORBIDDEN", "guests cannot claim");
@@ -219,6 +234,8 @@ export async function createClaims(
         "E_INVALID",
         `${s.scope} is too complex: at most 2 wildcards (* or **), braces and commas totalling 6, no nested braces`,
       );
+    if (s.scopeType === "glob" && negated(s.scope))
+      throw new HubError("E_INVALID", `${s.scope}: a negated glob is not claimable, claim the paths you work on`);
     if (s.scopeType === "glob" && coversProject(s.scope))
       throw new HubError(
         "E_INVALID",
@@ -229,12 +246,14 @@ export async function createClaims(
   await assertNoSecrets(deps, { p, agent: a, via: "mcp" }, [reason ?? "", ...input.scope].join("\n"));
   const result = await deps.db.transaction(async (tx) => {
     await lock(tx, p.teamId);
-    // Every check matches against all live claims: cap what one person can hold.
-    const [held] = await tx
-      .select({ n: count() })
+    // Every check matches against all live claims: cap what one person can hold. The edit hook's intent claims have a
+    // cap of their own (preEdit), and a scope this agent already holds is renewed, not added.
+    const held = await tx
+      .select({ scope: claim.scope, agentId: claim.holderAgentId })
       .from(claim)
-      .where(and(eq(claim.teamId, p.teamId), eq(claim.holderUserId, p.user.id), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())));
-    if ((held?.n ?? 0) + scopes.length > MAX_LIVE_CLAIMS)
+      .where(and(live(p), ne(claim.mode, "intent")));
+    const added = scopes.filter((s) => !held.some((h) => h.agentId === a.id && h.scope === s.scope)).length;
+    if (held.length + added > MAX_LIVE_CLAIMS)
       throw new HubError("E_TOO_LARGE", `more than ${MAX_LIVE_CLAIMS} live claims: release some with claim_release`);
     const others = await othersLive(tx, p, a.projectId);
     const warnings: string[] = [];
@@ -397,7 +416,8 @@ export async function preEdit(deps: MessagingDeps, p: Principal, a: Agent, path:
           .update(claim)
           .set({ expiresAt: new Date(Date.now() + c.ttlS * 1000) })
           .where(eq(claim.id, c.id));
-    } else {
+    } else if ((await intentsHeld(tx, p)) < MAX_LIVE_CLAIMS) {
+      // Past the cap the edit is not announced; the answer below stays the same.
       const id = newId("clm");
       await tx.insert(claim).values({
         id,
