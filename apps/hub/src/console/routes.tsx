@@ -1147,7 +1147,6 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Sign in a terminal",
       <div class="device">
-        <p class="lede">{_("When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.")}</p>
         <section class="panel">
           <form hx-post="/console/device" hx-target="#device">
             <Field
@@ -1175,6 +1174,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {/* A polite live region from the first render: the check panel and the answers swapped in are announced. */}
         <div id="device" aria-live="polite" />
       </div>,
+      undefined,
+      {
+        head: <p class="lede">{_("When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.")}</p>,
+      },
     );
   });
   const deviceInput = async (c: Context<Env>) => {

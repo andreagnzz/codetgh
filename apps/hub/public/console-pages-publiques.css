@@ -146,8 +146,29 @@
 .device {
   max-width: 36rem;
 }
+/* The page's description is the page header's meta line, under the title. */
+.page-head:has(+ .device) > .page-meta > .lede {
+  margin: 0;
+}
 .device .panel {
   margin-bottom: var(--sp-6);
+}
+/* While the hub answers, the form keeps its words at full contrast: only Continue dims and turns, as on the sign-in page,
+   and the region below shows the loading bar. */
+.device form[aria-busy="true"] {
+  opacity: 1;
+}
+.device form[aria-busy="true"] button[type="submit"] {
+  opacity: 0.6;
+}
+/* Once a check or its answer shows, Continue is spent: it steps down to secondary, and Approve is the one primary. */
+.device:has(#device > *) form button[type="submit"] {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--border-strong);
+}
+.device:has(#device > *) form button[type="submit"]:is(:hover, :active) {
+  background: var(--surface-inset);
 }
 .device .field > input {
   width: min(100%, 16rem);
@@ -168,7 +189,10 @@
 :not(pre) > code.user-code {
   padding: 0 var(--sp-2);
 }
-/* The time is a value like the others, not a caption. */
+/* The facts' rules span the panel; the time is a value like the others, not a caption. */
+.device .facts {
+  max-width: none;
+}
 .device .facts dd time {
   color: inherit;
   font-size: inherit;
