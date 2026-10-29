@@ -315,6 +315,44 @@ const FR: Record<string, string> = {
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
+  // A session, on Agents, Projects and Delegations. Online, Idle, External, Prompts off and Quarantined are batch 2's keys.
+  Paused: "En pause",
+  Push: "Poussée",
+  "Not reported": "Non transmis",
+  Bridge: "Pont",
+  "Other client": "Autre client",
+  // Agents.
+  "Every session connected to the team, by project. Quarantine a session that misbehaves, remove one nobody uses.":
+    "Toutes les sessions connectées à l'équipe, par projet. Mets en quarantaine une session qui se comporte mal, retire celle que personne n'utilise.",
+  "Your sessions on this hub, by project.": "Tes sessions sur ce hub, par projet.",
+  "Lift quarantine": "Lever la quarantaine",
+  "Actions for {session}": "Actions pour {session}",
+  "Quarantine {name}?": "Mettre {name} en quarantaine\u202f?",
+  "All of their sessions can then send only notes, questions and answers: no claims, tasks, requests, handoffs or team memory, and no delegation. Only an admin lifts it.":
+    "Toutes ses sessions ne pourront plus envoyer que des notes, des questions et des réponses\u00a0: ni réservation, ni tâche, ni demande, ni relais, ni mémoire d'équipe, ni délégation. Seul un admin la lève.",
+  "Remove {session}?": "Retirer {session}\u202f?",
+  "The session leaves every list and its claims are released. Its messages stay in their threads. If it resumes, it comes back.":
+    "La session quitte toutes les listes et ses réservations sont libérées. Ses messages restent dans leurs fils. Si elle reprend, elle revient.",
+  "{session} removed.": "{session} retirée.",
+  "External agents": "Agents externes",
+  "Remove the external agent {name}?": "Retirer l'agent externe {name}\u202f?",
+  "Its token stops working at once. Its messages stay in their threads.":
+    "Son jeton cesse aussitôt de fonctionner. Ses messages restent dans leurs fils.",
+  "External agent {name} removed.": "Agent externe {name} retiré.",
+  "No sessions yet.": "Aucune session pour l'instant.",
+  "Sessions appear here once someone sets up CodeTgh, then starts Claude Code with it in a team repository.":
+    "Les sessions apparaissent ici dès que quelqu'un installe CodeTgh, puis lance Claude Code avec lui dans un dépôt de l'équipe.",
+  "Copy codetgh setup": "Copier codetgh setup",
+  "Copy codetgh start": "Copier codetgh start",
+  "No sessions in {project}.": "Aucune session dans {project}.",
+  "No sessions outside a project.": "Aucune session hors projet.",
+  "Add an external agent": "Ajouter un agent externe",
+  Add: "Ajouter",
+  "Copy the token now.": "Copie le jeton maintenant.",
+  "It is shown once. Give these two lines to the external agent's operator.":
+    "Il n'est affiché qu'une fois. Donne ces deux lignes à la personne qui fait tourner l'agent externe.",
+  "Copy the two lines": "Copier les deux lignes",
+  "It appears to the team as {handle}.": "L'équipe le voit sous le pseudo {handle}.",
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----

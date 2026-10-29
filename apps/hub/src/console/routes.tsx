@@ -77,11 +77,17 @@ import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
+import { AgentsTable, ExternalTable, NoSessions } from "./agents.js";
 import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
-  Bypass,
+  Banner,
+  Chip,
+  CodeBlock,
+  Collapsible,
+  EmptyState,
+  Field,
   InvitePage,
   Layout,
   Line,
@@ -751,82 +757,74 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       userId: isAdmin(p) ? undefined : p.user.id,
       where: onProject(agent.projectId, f),
     });
-    const table = (of: typeof rows) => (
-      <Table
-        lang={tr(c).lang}
-        head={[
-          _("Who"),
-          _("Label"),
-          _("Project"),
-          _("Kind"),
-          _("Branch"),
-          _("Push"),
-          _("Permissions"),
-          _("Claude Code"),
-          _("Last seen"),
-          _("Trust"),
-          _("Actions"),
-        ]}
-        empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
-        rows={of.map((r) => [
-          r.name,
-          // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
-          <>
-            {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-          </>,
-          r.project ?? "",
-          r.agent.kind,
-          r.agent.branch ?? "",
-          r.agent.pushMode ?? "",
-          r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
-          r.agent.clientVersion ?? "",
-          <>
-            <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-          </>,
-          <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
-          <>
-            {r.agent.trustLevel === "trusted" ? (
-              <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
-            ) : r.agent.kind === "a2a" ? (
-              _("external: always quarantined")
-            ) : (
-              <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
-            )}{" "}
-            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="tertiary" />
-          </>,
-        ])}
-      />
-    );
+    const sessions = rows.filter((r) => r.agent.kind !== "a2a");
+    const external = rows.filter((r) => r.agent.kind === "a2a");
+    const chosen = f.projects.find((pr) => pr.id === f.selected)?.name;
+    const table = (of: typeof rows, caption?: string) => <AgentsTable rows={of} _={_} admin={isAdmin(p)} caption={caption} />;
     return page(
       c,
       "Agents",
       <>
-        {f.selected || rows.length === 0
-          ? table(rows)
-          : byProject(f, rows, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {table(g.rows)}
-              </section>
-            ))}
-        {capped(c, rows.length, rows[0]?.total)}
-        {isAdmin(p) && (
-          <>
-            <h2>{_("External agent (A2A)")}</h2>
-            <p>
+        {sessions.length === 0 ? (
+          f.selected ? (
+            <EmptyState
+              title={chosen ? _("No sessions in {project}.").replace("{project}", () => chosen) : _("No sessions outside a project.")}
+              action={<a href="/console/agents?project=">{_("All projects")}</a>}
+            />
+          ) : (
+            <NoSessions _={_} />
+          )
+        ) : f.selected ? (
+          table(sessions, chosen ?? _("Outside a project"))
+        ) : (
+          byProject(f, sessions, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`p-${g.id}`}>
+              <h2 id={`p-${g.id}`}>{g.name}</h2>
+              {table(g.rows, g.name)}
+            </section>
+          ))
+        )}
+        {external.length > 0 && (
+          <section aria-labelledby="external-h">
+            <h2 id="external-h">{_("External agents")}</h2>
+            <p class="lede">
               {_("An external agent can ask the team questions and read the answers. It stays in quarantine: no claims, memory or tasks.")}
             </p>
-            <form hx-post="/console/agents/a2a" hx-target="#a2a-result">
-              <label>
-                {_("Name")} <input name="name" required maxlength={60} />
-              </label>
-              <button type="submit">{_("Create")}</button>
-            </form>
-            <div id="a2a-result" />
-          </>
+            <ExternalTable rows={external} _={_} />
+          </section>
         )}
+        {capped(c, rows.length, rows[0]?.total)}
       </>,
       f,
+      {
+        head: (
+          <p class="lede list-lede">
+            {_(
+              isAdmin(p)
+                ? "Every session connected to the team, by project. Quarantine a session that misbehaves, remove one nobody uses."
+                : "Your sessions on this hub, by project.",
+            )}
+          </p>
+        ),
+        actions: isAdmin(p) ? (
+          <div class="add-external">
+            <Collapsible summary={_("Add an external agent")}>
+              <p>
+                {_(
+                  "An external agent can ask the team questions and read the answers. It stays in quarantine: no claims, memory or tasks.",
+                )}
+              </p>
+              <form hx-post="/console/agents/a2a" hx-target="#a2a-result">
+                <Field id="a2a-name" label={_("Name")} lang={_.lang}>
+                  <input id="a2a-name" name="name" required maxlength={60} autocomplete="off" />
+                </Field>
+                <button type="submit">{_("Add")}</button>
+              </form>
+              <div id="a2a-result" />
+            </Collapsible>
+          </div>
+        ) : undefined,
+      },
     );
   });
 
@@ -957,14 +955,25 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/agents/a2a", async (c) => {
     requireFresh(c);
+    const _ = tr(c);
     const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "");
     c.header("Cache-Control", "no-store");
     return c.html(
-      <Result>
-        <p>Give these to the external agent's operator. The token is shown once.</p>
-        <pre>{`Agent Card: ${config.publicUrl}/.well-known/agent-card.json\nAuthorization: Bearer ${created.token}`}</pre>
-        <p>It appears to the team as {created.handle}.</p>
-      </Result>,
+      <>
+        <Banner tone="warn" title={_("Copy the token now.")}>
+          {_("It is shown once. Give these two lines to the external agent's operator.")}
+        </Banner>
+        <CodeBlock
+          lang={_.lang}
+          code={`Agent Card: ${config.publicUrl}/.well-known/agent-card.json\nAuthorization: Bearer ${created.token}`}
+          copyLabel={_("Copy the two lines")}
+        />
+        <p>
+          {_("It appears to the team as {handle}.")
+            .split("{handle}")
+            .map((part, i) => (i ? [<Chip>{created.handle}</Chip>, part] : part))}
+        </p>
+      </>,
     );
   });
 

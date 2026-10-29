@@ -1,2 +1,127 @@
 /* Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this file; the tokens, base and
    components are in console.css. */
+
+/* The page's description sits in the header's meta line, which already spaces it. */
+.list-lede {
+  margin: 0;
+}
+
+/* Agents: the external agent's form opens under the page header and across it, instead of squeezing beside the title. */
+.page-actions:has(> .add-external > details[open]) {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: var(--sp-4);
+}
+.add-external {
+  flex: 1;
+  min-width: 0;
+}
+.add-external > details[open] {
+  margin: 0;
+}
+/* In the panel, whose paragraphs are muted, a refusal keeps the error color. */
+.add-external .field-error {
+  color: var(--error);
+}
+#a2a-result:not(:empty) {
+  margin-top: var(--sp-6);
+}
+#a2a-result > :last-child {
+  margin-bottom: 0;
+}
+
+/* A session: the person and the label they would type, then its short id; machine values in mono. */
+.session-cell p,
+.session-state p,
+.setting {
+  margin: 0;
+  max-width: none;
+}
+.session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  min-width: 0;
+}
+.session-name {
+  font-weight: 500;
+}
+.session-head .chip {
+  min-width: 0;
+}
+.machine {
+  font-family: var(--mono);
+  font-size: 0.9286em; /* 13 px in 14 px text */
+  overflow-wrap: anywhere;
+}
+.meta .machine {
+  font-size: 1em;
+}
+.not-reported,
+.state-off {
+  color: var(--text-muted);
+}
+.state-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 20px;
+}
+.setting {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+/* Every project's table has the same columns at the same widths, so the groups line up as one table. */
+.agents-table table {
+  table-layout: fixed;
+}
+@media (min-width: 640px) {
+  .agents-table.sessions th:nth-child(1) {
+    width: 28%;
+  }
+  .agents-table.sessions th:nth-child(2) {
+    width: 18%;
+  }
+  .agents-table.sessions th:nth-child(3) {
+    width: 20%;
+  }
+  .agents-table.sessions th:nth-child(4),
+  .agents-table.sessions th:nth-child(5) {
+    width: 12%;
+  }
+  /* External agents: their state spans the setup columns, which do not apply to them. */
+  .agents-table.external th:nth-child(1) {
+    width: 28%;
+  }
+  .agents-table.external th:nth-child(2) {
+    width: 62%;
+  }
+}
+/* A phone drops what a session did not report, as it drops an empty cell, and puts the session's "…" in the corner of its
+   record instead of on a line of its own. */
+@media (max-width: 639px) {
+  .agents-table td:has(> .cell > .not-reported:only-child) {
+    display: none;
+  }
+  .agents-table:is(.sessions, .external) tr {
+    position: relative;
+  }
+  .agents-table:is(.sessions, .external) td.primary-cell {
+    padding-right: calc(32px + var(--sp-2));
+  }
+  .agents-table:is(.sessions, .external) td.actions-cell {
+    position: absolute;
+    top: var(--sp-2);
+    right: 0;
+    padding: 0;
+  }
+  .agents-table:is(.sessions, .external) .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
+}
