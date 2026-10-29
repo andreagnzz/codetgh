@@ -71,13 +71,23 @@ h3.rule::before {
     grid-row: 1 / span 2;
   }
 }
-/* A live refresh that takes its time: the bar sweeps in the gap above the region, not across its first heading. */
+/* A live refresh that takes its time: the bar sweeps in the gap above the region, not across its first heading. Under
+   reduced motion the words "Loading…" start the still bar, out of the grid so nothing moves, and like the bar they show
+   only once the wait lasts. */
 .overview[aria-busy="true"]::before {
   top: calc(-1 * var(--sp-3));
 }
-/* The region says "Loading…" in words under reduced motion: across the whole grid. */
 .overview > .loading-text {
-  grid-column: 1 / -1;
+  position: absolute;
+  top: calc(-1 * (var(--sp-3) + var(--sp-2)));
+  left: 0;
+  margin: 0;
+  padding-right: var(--sp-2);
+  background: var(--surface);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  opacity: 0;
+  animation: appear 1ms var(--loading-after) forwards;
 }
 /* A live refresh that fails: console.js writes the hub's words after the region; they show above it, where the eye is. */
 main:has(> #live + .field-error) {

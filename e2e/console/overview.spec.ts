@@ -75,6 +75,42 @@ for (const lang of ["en", "fr"] as const)
     await page.goto(`${hub.url}/lang/en?next=/console`);
   });
 
+for (const width of [360, 1280])
+  test(`reduced motion, ${width} px: a slow live refresh says Loading in words above the region, and nothing moves`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 900 });
+    await signIn(page, hub.url, team.lea);
+    const boxes = () =>
+      page.evaluate(() =>
+        ["h1", "#live", ".needs", ".line-section", ".presence", "#live > .loading-text"].map(
+          (s) => document.querySelector(s)?.getBoundingClientRect().toJSON() as DOMRect,
+        ),
+      );
+    const before = await boxes();
+    let release = () => {};
+    await page.route("**/console", async (route) => {
+      if (!route.request().headers()["hx-request"]) return route.continue();
+      await new Promise<void>((done) => {
+        release = done;
+      });
+      await route.continue();
+    });
+    await page.evaluate(() =>
+      (window as unknown as { htmx: { trigger: (e: Element, n: string) => void } }).htmx.trigger(
+        document.getElementById("live") as Element,
+        "sse:activity",
+      ),
+    );
+    await expect(page.locator("#live > .loading-text")).toHaveCSS("opacity", "1");
+    const [title, region, needs, line, presence, words] = await boxes();
+    expect([needs, line, presence]).toEqual(before.slice(2, 5));
+    // The words sit in the gap between the title and the region.
+    expect(words?.top).toBeGreaterThanOrEqual(title?.bottom ?? 0);
+    expect(words?.bottom).toBeLessThanOrEqual(region?.top ?? 0);
+    release();
+    await expect(page.locator("#live")).not.toHaveAttribute("aria-busy", "true");
+  });
+
 test("a message that arrives live keeps the keyboard on the row it was on", async ({ page }) => {
   await signIn(page, hub.url, team.lea);
   const row = page.locator(".wire-text").nth(2);
