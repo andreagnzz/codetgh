@@ -86,9 +86,13 @@
   gap: var(--sp-1);
 }
 
-/* Every project's table has the same columns at the same widths, so the groups line up as one table. */
+/* Every project's table has the same columns at the same widths, so the groups line up as one table. A header wraps inside
+   its column rather than running into the next one. */
 .agents-table table {
   table-layout: fixed;
+}
+.agents-table th {
+  white-space: normal;
 }
 @media (min-width: 640px) {
   .agents-table.sessions th:nth-child(1) {
@@ -115,9 +119,11 @@
     width: 26%;
   }
   .agents-table.delegations th:nth-child(2) {
-    width: 20%;
+    width: 16%;
   }
-  .agents-table.delegations th:nth-child(3),
+  .agents-table.delegations th:nth-child(3) {
+    width: 24%;
+  }
   .agents-table.delegations th:nth-child(4) {
     width: 18%;
   }

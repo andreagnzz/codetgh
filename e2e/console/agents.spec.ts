@@ -116,6 +116,32 @@ test("delegations, wide: turning one off asks first, and Escape gives the keyboa
   await expect(off).toBeFocused();
 });
 
+for (const [lang, width] of [
+  ["en", 640],
+  ["en", 768],
+  ["fr", 768],
+] as const)
+  test(`${width} px, ${lang}: every column header stays inside its column`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signIn(page, hub.url, team.lea);
+    await page.context().addCookies([{ name: "lang", value: lang, url: hub.url }]);
+    for (const path of ["/console/agents", "/console/delegations"]) {
+      await page.goto(`${hub.url}${path}`);
+      // A header's words end before the gap that parts it from the next column.
+      const spilled = await page.evaluate(() =>
+        [...document.querySelectorAll("th")]
+          .filter((th) => {
+            const words = document.createRange();
+            words.selectNodeContents(th);
+            const gap = Number.parseFloat(getComputedStyle(th).paddingRight);
+            return words.getBoundingClientRect().right > th.getBoundingClientRect().right - gap + 0.5;
+          })
+          .map((th) => th.textContent),
+      );
+      expect(spilled, path).toEqual([]);
+    }
+  });
+
 for (const lang of ["en", "fr"])
   test(`phone, ${lang}: no page of the batch scrolls sideways at 360 px`, async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
