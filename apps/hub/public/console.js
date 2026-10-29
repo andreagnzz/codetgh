@@ -226,6 +226,15 @@
   mark(false);
   document.body.addEventListener("htmx:afterSettle", () => mark(true));
 
+  // A live refresh opens again the disclosures that were open in what it replaces (those with an id).
+  let opened = [];
+  document.body.addEventListener("htmx:beforeSwap", (e) => {
+    opened = [...(e.detail.target?.querySelectorAll("details[open][id]") ?? [])].map((d) => d.id);
+  });
+  document.body.addEventListener("htmx:afterSwap", () => {
+    for (const id of opened) document.getElementById(id)?.setAttribute("open", "");
+  });
+
   // Absolute times: the hub writes them in its own time zone, the reader gets them in theirs, in the same format: the clock
   // alone for a time from today, the day and month before it on another day.
   const clocks = () => {

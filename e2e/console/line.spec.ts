@@ -100,3 +100,18 @@ test("a live refresh the hub refuses keeps what the page shows and says from whe
   await expect(page.locator("#live + .field-error")).toHaveAttribute("role", "alert");
   await expect(page.locator(".wire-row")).toHaveCount(1);
 });
+
+test("a live refresh opens again the disclosures that were open", async ({ page }) => {
+  // A disclosure with an id at the top of the live region, in the page and in each refresh of it.
+  await page.route("**/console", async (route) => {
+    const res = await route.fetch();
+    const { "content-length": _, "content-encoding": __, ...headers } = res.headers();
+    const fold = '<details id="fold" class="disclosure"><summary>More</summary><p>Inside</p></details>';
+    await route.fulfill({ status: res.status(), headers, body: (await res.text()).replace(/(<div id="live"[^>]*>)/, `$1${fold}`) });
+  });
+  await signIn(page, hub.url, team.lea);
+  await page.locator("#fold > summary").click();
+  await send("second");
+  await expect(page.locator(".wire-row")).toHaveCount(2);
+  await expect(page.locator("#fold")).toHaveAttribute("open", "");
+});
