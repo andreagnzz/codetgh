@@ -78,6 +78,7 @@ test("sign-in: the button says it waits on the hub, and an unreachable hub is sa
   await page.goto(`${hub.url}/login`);
   await submit(page, team.lea.password);
   await expect(page.locator("#error")).toHaveText("The hub does not answer. Check your connection, then try again.");
+  await expect(page.locator("#login [aria-invalid]")).toHaveCount(0);
   await expect(page.locator("#login button[type=submit]")).not.toHaveAttribute("aria-busy", "true");
 });
 
@@ -96,6 +97,8 @@ test("sign-in: too many tries in a row is said in the reader's words, not the hu
   await page.goto(`${hub.url}/login`);
   await submit(page, "wrong-password-123");
   await expect(page.locator("#login #error[role=alert]")).toHaveText("Too many tries. Wait a few seconds, then try again.");
+  // Nothing typed is wrong: no field turns invalid.
+  await expect(page.locator("#login [aria-invalid]")).toHaveCount(0);
   await page.locator("details.disclosure > summary").click();
   await page.locator("#magic-link input[name=email]").fill("ines@acme.test");
   await page.locator("#magic-link button[type=submit]").click();

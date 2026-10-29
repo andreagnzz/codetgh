@@ -990,11 +990,12 @@ function said({ res, data }) {
   const why = data.message || data.error_description;
   return words[data.code || data.error] || (why ? words.said.replace("{reason}", () => why) : words.generic);
 }
-// A message under what it is about, with its icon; the fields that point at a refusal turn invalid with it.
-function show(out, text, ok) {
+// A message under what it is about, with its icon; the fields that point at a refusal of what was typed turn invalid with it
+// (not when the hub is out of reach or asks to wait).
+function show(out, text, ok, typed = !ok) {
   out.className = ok ? "field-done" : "field-error";
   out.replaceChildren(document.getElementById(ok ? "done-icon" : "error-icon").content.firstElementChild.cloneNode(true), text);
-  if (!ok) for (const f of document.querySelectorAll("[aria-describedby~=" + out.id + "]")) f.setAttribute("aria-invalid", "true");
+  if (typed) for (const f of document.querySelectorAll("[aria-describedby~=" + out.id + "]")) f.setAttribute("aria-invalid", "true");
 }
 // The control that sent a request is busy until the hub answers; a hub out of reach is said in words.
 async function send(control, out, path, body, headers = {}) {
@@ -1005,7 +1006,7 @@ async function send(control, out, path, body, headers = {}) {
     const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, credentials: "include", body: JSON.stringify(body) });
     return { res, data: await res.json().catch(() => ({})) };
   } catch {
-    show(out, words.offline);
+    show(out, words.offline, false, false);
   } finally {
     control.removeAttribute("aria-busy");
   }
@@ -1018,7 +1019,7 @@ async function post(control, path, body) {
   if (next) location.href = next;
   else if (r.res.ok) location.href = next || "/console";
   else {
-    show(error, said(r));
+    show(error, said(r), false, r.res.status !== 429);
     return true;
   }
   return false;
@@ -1026,13 +1027,13 @@ async function post(control, path, body) {
 for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
   const r = await send(button, error, "/api/auth/sign-in/social", { provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") });
   if (r?.data.url) location.href = r.data.url;
-  else if (r) show(error, r.data.code || r.data.message ? said(r) : words.unavailable);
+  else if (r) show(error, r.data.code || r.data.message ? said(r) : words.unavailable, false, false);
 });
 document.getElementById("magic-link")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const out = document.getElementById("link-result");
   const r = await send(e.target.querySelector("[type=submit]"), out, "/api/auth/sign-in/magic-link", { email: new FormData(e.target).get("email"), callbackURL: next || (q ? "/login?" + q : "/console") });
-  if (r) show(out, r.res.ok ? words.sent : r.res.status === 429 ? words.slow : words.unsent, r.res.ok);
+  if (r) show(out, r.res.ok ? words.sent : r.res.status === 429 ? words.slow : words.unsent, r.res.ok, !r.res.ok && r.res.status !== 429);
 });
 document.getElementById("login")?.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1044,7 +1045,7 @@ document.getElementById("invite-signup")?.addEventListener("submit", async (e) =
   const f = new FormData(e.target);
   const r = await send(e.target.querySelector("[type=submit]"), error, "/api/auth/sign-up/email", { name: f.get("name"), email: f.get("email"), password: f.get("password") }, { "x-codetgh-invite": location.pathname.split("/").pop() });
   if (r?.res.ok) location.href = e.target.dataset.next;
-  else if (r) show(error, said(r));
+  else if (r) show(error, said(r), false, r.res.status !== 429);
 });
 // A refused consent request is spent: Allow steps down to secondary, so it no longer invites a retry.
 for (const b of document.querySelectorAll("[data-consent]")) {
