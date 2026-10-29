@@ -165,7 +165,7 @@ export const LoginPage = ({
           </summary>
           <form id="magic-link">
             <label>
-              {_("Email")}{" "}
+              {_("Email for the link")}{" "}
               <input name="email" type="email" required autocomplete="email" spellcheck={false} aria-describedby="link-result" />
             </label>
             <p id="link-result" role="status" />

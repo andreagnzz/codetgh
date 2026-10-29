@@ -108,7 +108,8 @@ test("sign-in with the keyboard: providers, the form, then the folded emailed li
     expect(await tab(page)).toBe(name);
   await page.keyboard.press("Enter");
   await expect(page.locator("details.disclosure")).toHaveAttribute("open", "");
-  expect(await tab(page)).toBe("Email");
+  // Its own name, so a screen reader moving by fields tells it from the sign-in form's Email.
+  expect(await tab(page)).toBe("Email for the link");
   await page.keyboard.type("ines@acme.test");
   await page.keyboard.press("Enter");
   // The same answer whether or not the address has an account: the page never tells who is a member.
