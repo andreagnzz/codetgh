@@ -51,6 +51,7 @@ describe("components", () => {
         ["b", "2"],
       ],
       empty: "None",
+      lang: "fr",
       caption: "Tokens",
       sort: { column: 1, dir: "descending" },
       numeric: [1],
@@ -59,13 +60,31 @@ describe("components", () => {
     });
     expect(html).toContain('<caption class="sr-only">Tokens</caption>');
     expect(html).toMatch(/<th scope="col" class="num" aria-sort="descending">Uses<svg/);
-    expect(html).toContain('<tr class="unread">');
-    expect(html).toContain('<tr aria-current="true">');
+    // An unread row says so in words to a screen reader, not only by the weight of its title.
+    expect(html).toContain('<tr class="unread"><td data-label="Label"><div class="cell"><span class="sr-only">Non lu </span>a</div></td>');
+    expect(html).toContain('<tr aria-current="true"><td data-label="Label"><div class="cell">b</div></td>');
     expect(html).toContain('<td data-label="Uses" class="num">');
-    expect(await render(Table, { head: ["Label"], rows: [], empty: "No tokens yet." })).toBe('<p class="empty">No tokens yet.</p>');
-    const empty = await render(Table, { head: ["Label"], rows: [], empty: jsx(EmptyState, { title: "No tokens yet." }) });
+    expect(await render(Table, { head: ["Label"], rows: [], empty: "No tokens yet.", lang: "en" })).toBe(
+      '<p class="empty">No tokens yet.</p>',
+    );
+    const empty = await render(Table, { head: ["Label"], rows: [], empty: jsx(EmptyState, { title: "No tokens yet." }), lang: "en" });
     expect(empty).toContain('<div class="empty-state">');
     expect(empty).not.toContain("<table");
+  });
+
+  it("table: the primary cell leads a stacked record, the actions column has a hidden header and no label", async () => {
+    const html = await render(Table, {
+      head: ["Label", "Created", "Actions"],
+      rows: [["lea laptop", "28 Oct", "Rename"]],
+      empty: "None",
+      lang: "en",
+      primary: 0,
+      actions: true,
+    });
+    expect(html).toContain('<td data-label="Label" class="primary-cell">');
+    expect(html).toContain('<td data-label="Created">');
+    expect(html).toContain('<th scope="col" class="actions-cell"><span class="sr-only">Actions</span></th>');
+    expect(html).toContain('<td data-label="Actions" class="actions-cell">');
   });
 
   it("pager and tabs: named navigation, the current tab marked", async () => {

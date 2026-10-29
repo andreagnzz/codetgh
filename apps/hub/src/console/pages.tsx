@@ -238,27 +238,37 @@ const ProjectMenu: FC<{ filter: ProjectFilter; path: string; archived?: boolean;
 
 // Every value below is rendered by JSX, which escapes text: agent-written strings never become HTML.
 // A dense table. The caption names it for screen readers when the page title already says it; the column the rows are
-// ordered by says so with aria-sort and an arrow; numbers line up on the right. With no rows, the empty state replaces the
-// whole table, headers included.
+// ordered by says so with aria-sort and an arrow; numbers line up on the right; an unread row says so in words too. Under
+// 640 px each row is a record: the primary cell on its own line, the other cells with their labels (empty ones dropped),
+// then the actions, whose column header is read but not shown. With no rows, the empty state replaces the whole table,
+// headers included.
 export const Table: FC<{
   head: string[];
   rows: Child[][];
   empty: string | JSX.Element;
+  lang: Lang;
   caption?: string;
   sort?: { column: number; dir: "ascending" | "descending" };
   numeric?: number[];
+  primary?: number;
+  actions?: boolean;
   current?: number;
   unread?: number[];
-}> = ({ head, rows, empty, caption, sort, numeric = [], current, unread = [] }) =>
-  rows.length ? (
+}> = ({ head, rows, empty, lang, caption, sort, numeric = [], primary, actions, current, unread = [] }) => {
+  if (!rows.length) return typeof empty === "string" ? <p class="empty">{empty}</p> : empty;
+  const last = head.length - 1;
+  const kind = (i: number) =>
+    [numeric.includes(i) && "num", i === primary && "primary-cell", actions && i === last && "actions-cell"].filter(Boolean).join(" ") ||
+    undefined;
+  return (
     <div class="table-wrap">
       <table>
         {caption && <caption class="sr-only">{caption}</caption>}
         <thead>
           <tr>
             {head.map((h, i) => (
-              <th scope="col" class={numeric.includes(i) ? "num" : undefined} aria-sort={sort?.column === i ? sort.dir : undefined}>
-                {h}
+              <th scope="col" class={kind(i)} aria-sort={sort?.column === i ? sort.dir : undefined}>
+                {actions && i === last ? <span class="sr-only">{h}</span> : h}
                 {sort?.column === i && <Icon name={sort.dir === "ascending" ? "arrow-up" : "arrow-down"} />}
               </th>
             ))}
@@ -268,8 +278,11 @@ export const Table: FC<{
           {rows.map((r, n) => (
             <tr aria-current={current === n ? "true" : undefined} class={unread.includes(n) ? "unread" : undefined}>
               {r.map((cell, i) => (
-                <td data-label={head[i]} class={numeric.includes(i) ? "num" : undefined}>
-                  <div class="cell">{cell}</div>
+                <td data-label={head[i]} class={kind(i)}>
+                  <div class="cell">
+                    {i === (primary ?? 0) && unread.includes(n) && <span class="sr-only">{`${t(lang, "Unread")} `}</span>}
+                    {cell}
+                  </div>
                 </td>
               ))}
             </tr>
@@ -277,11 +290,8 @@ export const Table: FC<{
         </tbody>
       </table>
     </div>
-  ) : typeof empty === "string" ? (
-    <p class="empty">{empty}</p>
-  ) : (
-    empty
   );
+};
 
 // "‹ Newer" and "Older ›" around a long list, with how much of it shows.
 export const Pager: FC<{ lang: Lang; newer?: string; older?: string; shown?: number; total?: number }> = ({

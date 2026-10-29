@@ -209,10 +209,13 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
         Showing data from 21:40.
       </Banner>
       <Table
+        lang={lang}
         caption="Personal tokens"
-        head={["Label", "Created", "Uses", "State", ""]}
+        head={["Label", "Created", "Uses", "State", "Actions"]}
         sort={{ column: 1, dir: "descending" }}
         numeric={[2]}
+        primary={0}
+        actions
         current={1}
         unread={[0]}
         rows={[
@@ -276,6 +279,7 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
       <h3>Loading</h3>
       <div aria-busy="true">
         <Table
+          lang={lang}
           head={["Who", "Branch"]}
           rows={[
             ["Sam", <Chip>sam@feat/login-errors</Chip>],
@@ -287,6 +291,7 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
       </div>
       <h3>Empty</h3>
       <Table
+        lang={lang}
         head={["Label", "Created"]}
         rows={[]}
         empty={

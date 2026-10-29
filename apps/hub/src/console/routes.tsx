@@ -505,6 +505,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const last = rows.at(-1);
     const table = (of: typeof rows) => (
       <Table
+        lang={tr(c).lang}
         head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
         rows={of.map((t) => [
           <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
@@ -599,6 +600,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           {t.kind} thread · {state} · agent streak {t.agentStreak}
         </p>
         <Table
+          lang={tr(c).lang}
           head={["From", "Kind", "Message", "Sent"]}
           rows={rows.map(({ message: m, name }) => [
             `${name}${m.authoredBy === "agent" ? " (agent)" : ""}`,
@@ -685,6 +687,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Alerts",
       <>
         <Table
+          lang={tr(c).lang}
           head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
           empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
           rows={rows.map(({ alert: a, name }) => [
@@ -731,6 +734,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     });
     const table = (of: typeof rows) => (
       <Table
+        lang={tr(c).lang}
         head={[
           _("Who"),
           _("Label"),
@@ -968,6 +972,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <>
         <p>{_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}</p>
         <Table
+          lang={tr(c).lang}
           head={[_("Who"), _("Label"), _("Project"), _("Accepts requests from"), _("Last seen"), _("Actions")]}
           empty={_("No delegate session. A member starts one with codetgh start --accept-requests-from @handle.")}
           rows={rows.map((r) => [
@@ -1078,6 +1083,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </form>
         <div id="new-token" />
         <Table
+          lang={tr(c).lang}
           head={["Label", "Created", "Expires", "Actions"]}
           rows={rows.map((t) => [
             t.label,
@@ -1219,6 +1225,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <div id="invite-result" />
         <h2>{_("Invitations")}</h2>
         <Table
+          lang={tr(c).lang}
           head={[_("Email"), _("Role"), _("Sent"), _("Expires"), _("Actions")]}
           rows={invites.map((i) => [
             i.email,
@@ -1231,6 +1238,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         />
         <h2>{_("Members")}</h2>
         <Table
+          lang={tr(c).lang}
           head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
           rows={rows.map((r) => [
             r.name,
@@ -1349,6 +1357,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         <div id="verify-result" />
         <Table
+          lang={tr(c).lang}
           head={["#", "At", "Actor", "Via", "Action", "Subject", "Hash"]}
           rows={rows.map((e) => [
             e.seq,
@@ -1566,6 +1575,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ))}
         </nav>
         <Table
+          lang={tr(c).lang}
           head={["Ref", "Version", "Kind", "Status", "Title", "Proposed by", "When"]}
           rows={rows.map(({ item, name }) => [
             memoryRef(item),
@@ -1666,6 +1676,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Claims",
       <>
         <Table
+          lang={tr(c).lang}
           head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
           rows={rows.map((r) => [
             r.claim.scope,
@@ -1721,6 +1732,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {s} ({countOf(s, projectId)})
               </Heading>
               <Table
+                lang={tr(c).lang}
                 head={["Title", "Assignee", "Version", "Updated"]}
                 rows={of.map((r) => [
                   <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
@@ -1808,9 +1820,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         <pre>{t.body}</pre>
         <h2>Notes</h2>
-        <Table head={["When", "Note"]} rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])} empty={tr(c)("Nothing yet.")} />
+        <Table
+          lang={tr(c).lang}
+          head={["When", "Note"]}
+          rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])}
+          empty={tr(c)("Nothing yet.")}
+        />
         <h2>History</h2>
         <Table
+          lang={tr(c).lang}
           head={["#", "Action", "Via", "At"]}
           rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])}
           empty={tr(c)("Nothing yet.")}

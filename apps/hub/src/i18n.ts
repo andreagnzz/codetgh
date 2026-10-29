@@ -288,6 +288,7 @@ const FR: Record<string, string> = {
   optional: "facultatif",
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
+  Unread: "Non lu",
   // ---- End of the foundations block. ----
 
   // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----

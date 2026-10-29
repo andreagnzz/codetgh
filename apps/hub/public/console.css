@@ -925,6 +925,11 @@ td {
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A row's direct action and its menu stay on one line. */
+td.actions-cell {
+  white-space: nowrap;
 }
 td button {
   margin: 2px var(--sp-2) 2px 0;
@@ -1026,6 +1031,20 @@ tr.unread .row-link {
     content: attr(data-label);
     font-size: var(--fs-caption);
     color: var(--text-muted);
+  }
+  /* The primary cell leads the record and the actions close it, both without a label; an empty cell is dropped. */
+  td:is(.primary-cell, .actions-cell) {
+    display: block;
+  }
+  td:is(.primary-cell, .actions-cell)::before {
+    content: none;
+  }
+  td.actions-cell {
+    padding-top: var(--sp-2);
+    white-space: normal;
+  }
+  td:has(> .cell:empty) {
+    display: none;
   }
   /* Actions sit on the left of a record: a row menu opens to the right. */
   .row-menu .pop {
