@@ -15,18 +15,26 @@
   min-height: 24px;
 }
 
-/* Agents: the external agent's form opens under the page header and across it, instead of squeezing beside the title. */
+/* Agents: the external agent's form opens under the page header and across it, after the header's last row, instead of
+   squeezing beside the title. */
 .page-actions:has(> .add-external > details[open]) {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: -1;
   margin-top: var(--sp-4);
 }
 .add-external {
   flex: 1;
   min-width: 0;
 }
-.add-external > details[open] {
+.add-external > details {
   margin: 0;
+}
+/* Beside the title, the 40 px button overhangs the 32 px title line by 4 px on each side instead of growing the row: the
+   title sits where it does on Projects and Delegations. */
+@media (min-width: 640px) {
+  .page-actions:has(> .add-external > details:not([open])) {
+    margin-block: -4px;
+  }
 }
 /* In the panel, whose paragraphs are muted, a refusal keeps the error color. */
 .add-external .field-error {
