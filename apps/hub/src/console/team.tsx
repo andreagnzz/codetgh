@@ -29,6 +29,18 @@ export const reworded =
     throw e instanceof HubError && said ? new HubError(e.code, _(said)) : e;
   };
 
+// A sentence with a command in it: the command in mono, as typed in a terminal.
+const withCommand = (sentence: string, command: string) => {
+  const [before, after] = sentence.split("{command}");
+  return (
+    <>
+      {before}
+      <code>{command}</code>
+      {after}
+    </>
+  );
+};
+
 // The page header's form: folded behind its button, open across the header.
 const HeadForm: FC<{ summary: string; open?: boolean; children?: Child }> = ({ summary, open, children }) => (
   <div class="head-form">
@@ -163,7 +175,15 @@ export const Invitations: FC<{ _: Tr; rows: InvitationRow[] }> = ({ _, rows }) =
           done={named(_("Invitation for {email} revoked."), { email: i.email })}
         />,
       ])}
-      empty={_("No pending invitations. Invite someone with the form above, or run codetgh invite <email>.")}
+      empty={
+        <EmptyState
+          title={_("No pending invitations.")}
+          icon="terminal"
+          action={<CodeBlock command code="codetgh invite <email>" lang={_.lang} copyLabel={_("Copy the invite command")} />}
+        >
+          {_("Use Invite a member, or run this in a terminal:")}
+        </EmptyState>
+      }
     />
   </section>
 );
@@ -424,7 +444,7 @@ const CLAIMS: Record<(typeof CLAIM_ENFORCEMENT)[number], [string, string]> = {
 const ACCEPT_BY = { member: "Members, admins and owners", admin: "Admins and owners", owner: "Owners only" } as const;
 
 // A checkbox and, under its label, what it changes.
-const Check: FC<{ name: string; checked: boolean; label: string; help: string }> = ({ name, checked, label, help }) => (
+const Check: FC<{ name: string; checked: boolean; label: string; help: Child }> = ({ name, checked, label, help }) => (
   <div class="check">
     <label>
       <input type="checkbox" name={name} value="on" checked={checked} aria-describedby={`${name}-help`} /> {label}
@@ -453,7 +473,6 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
   auditKey,
 }) => {
   const claims = ["warn", "off"].includes(s.claims_enforcement ?? "") ? "warn" : "ask";
-  const [before, after] = _("To check an audit export offline, pass this key to {command}.").split("{command}");
   return (
     <div class="team-settings">
       <Panel title={_("Team")}>
@@ -500,7 +519,7 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
             name="auto_link_projects"
             checked={s.auto_link_projects !== false}
             label={_("Link a new repository when a member starts a session in it")}
-            help={_("Otherwise an admin runs codetgh project new.")}
+            help={withCommand(_("Otherwise an admin runs {command}."), "codetgh project new")}
           />
           <Field
             id="loop-orchestrator"
@@ -631,11 +650,7 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
         <div id="github-hook" />
       </Panel>
       <Panel title={_("Audit public key")}>
-        <p>
-          {before}
-          <code>{"codetgh audit verify <file> --public-key"}</code>
-          {after}
-        </p>
+        <p>{withCommand(_("To check an audit export offline, pass this key to {command}."), "codetgh audit verify <file> --public-key")}</p>
         <p class="meta">
           {_("Key id")} <code translate="no">{auditKey.keyId}</code>
         </p>

@@ -128,6 +128,18 @@ describe("members", () => {
     expect(ines).toContain(">Revoke…</button>");
   });
 
+  it("with no pending invitation, says so and gives the command to copy beside the page's button", async () => {
+    const fresh = await startHub();
+    const t = await fresh.seed();
+    const html = main(await (await fetch(`${fresh.url}/console/members`, { headers: { cookie: t.lea.cookie } })).text());
+    await fresh.stop();
+    const pending = section(html, "invitations-h");
+    expect(pending).toContain('<p class="empty-title">No pending invitations.</p>');
+    expect(pending).toContain("Use Invite a member, or run this in a terminal:");
+    expect(pending).toMatch(/<div class="code" data-kind="command">\s*<pre>\s*<code translate="no">codetgh invite &lt;email&gt;<\/code>/);
+    expect(pending).toContain('aria-label="Copy the invite command"');
+  });
+
   it("folds the invitation form under the page header: labelled fields, the roles in words, the length in days", async () => {
     const html = main(await page("/console/members", team.lea.cookie));
     const head = html.slice(html.indexOf('<div class="page-head">'), html.indexOf("Pending invitations"));
@@ -284,7 +296,8 @@ describe("settings", () => {
     expect(form).toContain('<option value="owner">Owners only</option>');
     for (const name of ["memory_accept_via_mcp", "auto_link_projects", "push_rewake"])
       expect(form).toMatch(new RegExp(`<input type="checkbox" name="${name}" value="on"[^>]*aria-describedby="${name}-help"`));
-    expect(form).toContain("Otherwise an admin runs codetgh project new.");
+    // A command in a help line is a machine value: in mono.
+    expect(form).toContain("Otherwise an admin runs <code>codetgh project new</code>.");
     expect(form).not.toMatch(/<label[^>]*>[^<]*\(/);
     expect(form).toMatch(/name="retention_days"[^>]*>\s*<span>days<\/span>/);
     expect(form).toContain('name="secret_patterns"');

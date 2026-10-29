@@ -30,7 +30,7 @@ describe("console empty states say what to do", () => {
     expect(await get("/console/threads", team.lea.cookie)).toContain("No threads yet. A thread starts with the first message");
     expect(await get("/console/agents", team.lea.cookie)).toContain("No agent yet. Agents appear here once someone runs codetgh setup");
     expect(await get("/console/alerts", team.lea.cookie)).toContain("No alerts. Messages that look like instructions");
-    expect(await get("/console/members", team.lea.cookie)).toContain("No pending invitations. Invite someone with the form above");
+    expect(await get("/console/members", team.lea.cookie)).toContain("No pending invitations.");
   });
 
   it("in French when the browser asks for it", async () => {

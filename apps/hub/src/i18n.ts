@@ -347,6 +347,9 @@ const FR: Record<string, string> = {
   "Its link stops working at once. You can invite them again later.":
     "Son lien cesse de fonctionner tout de suite. Tu pourras inviter cette personne de nouveau plus tard.",
   "Invitation for {email} revoked.": "Invitation de {email} révoquée.",
+  "No pending invitations.": "Aucune invitation en attente.",
+  "Use Invite a member, or run this in a terminal:": "Utilise Inviter un membre, ou lance ceci dans un terminal\u00a0:",
+  "Copy the invite command": "Copier la commande d'invitation",
   "Team members": "Membres de l'équipe",
   Joined: "Arrivée",
   You: "Toi",
@@ -435,7 +438,7 @@ const FR: Record<string, string> = {
   "Claude Code then asks the person each time. claude.ai and the Agent SDK can't guarantee that.":
     "Claude Code demande alors à la personne à chaque fois. claude.ai et l'Agent SDK ne peuvent pas le garantir.",
   "Link a new repository when a member starts a session in it": "Lier un nouveau dépôt quand un membre y ouvre une session",
-  "Otherwise an admin runs codetgh project new.": "Sinon, un admin lance codetgh project new.",
+  "Otherwise an admin runs {command}.": "Sinon, un admin lance {command}.",
   "Allow rewake push": "Autoriser le réveil",
   "An idle Claude Code session wakes up when a message arrives. Each member also turns it on in the plugin.":
     "Une session Claude Code inactive se réveille à l'arrivée d'un message. Chaque membre l'active aussi dans le plugin.",
