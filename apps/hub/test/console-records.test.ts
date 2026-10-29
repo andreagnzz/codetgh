@@ -377,6 +377,8 @@ describe("tasks", () => {
     expect(form).toMatch(/<textarea id="task-body" name="body" maxlength="8000"/);
     expect(form).toContain("A handle like @lea. Leave it empty for nobody.");
     expect(form).toMatch(/<input id="task-assignee" name="assignee"/);
+    // The help gives the example: a placeholder would read as a value already there.
+    expect(form.slice(0, form.indexOf("</form>"))).not.toContain("placeholder");
     expect(form).toContain('<button type="submit" class="primary">Create task</button>');
   });
 

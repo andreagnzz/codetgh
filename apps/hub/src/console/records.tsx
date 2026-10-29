@@ -690,14 +690,7 @@ export const NewTaskForm: FC<{ _: Tr }> = ({ _ }) => (
       <textarea id="task-body" name="body" maxlength={8000} rows={4} />
     </Field>
     <Field id="task-assignee" label={_("Assigned to")} lang={_.lang} optional help={_("A handle like @lea. Leave it empty for nobody.")}>
-      <input
-        id="task-assignee"
-        name="assignee"
-        autocomplete="off"
-        spellcheck={false}
-        placeholder="@lea"
-        {...fieldAria("task-assignee", { help: true })}
-      />
+      <input id="task-assignee" name="assignee" autocomplete="off" spellcheck={false} {...fieldAria("task-assignee", { help: true })} />
     </Field>
     <button type="submit" class="primary">
       {_("Create task")}
