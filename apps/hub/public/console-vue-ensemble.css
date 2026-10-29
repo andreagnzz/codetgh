@@ -1,33 +1,24 @@
 /* Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this file; the tokens, base and components are in
-   console.css. Until it restyles its screens, the rules below keep today's overview markup (presence is also on Projects). */
-.dash {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: var(--sp-8);
-  align-items: start;
+   console.css. The overview: what needs a person, the line with its lanes, presence (also on Projects) and agent traffic. */
+
+/* Sections: a heading with a note on its right ("Last 24 h", "3 online"). */
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+  margin-bottom: var(--sp-3);
 }
-.dash h2:first-child {
-  margin-top: 0;
-}
-.dash-side > section + section {
-  border-top: 1px solid var(--border);
-  margin-top: var(--sp-6);
-  padding-top: var(--sp-2);
-}
-@media (max-width: 1023px) {
-  .dash {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.todo {
-  list-style: none;
-  padding: 0;
+.section-head h2 {
   margin: 0;
 }
-.todo li {
-  padding: var(--sp-2) 0;
-  border-bottom: 1px solid var(--border);
-  overflow-wrap: anywhere;
+.section-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
 /* A rule that carries meaning, with its words in it: what is below is offline. */
 h3.rule {
@@ -48,6 +39,378 @@ h3.rule::after {
 }
 h3.rule::before {
   flex: 0 0 var(--sp-4);
+}
+
+/* Overview: one column, in the order of the page (what needs me, the line, presence, agent traffic); from 1280 px what needs
+   me and the line on the left, presence and agent traffic in a column beside them. */
+.overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-8);
+  align-items: start;
+}
+.overview h2 {
+  margin: 0 0 var(--sp-3);
+}
+.overview-side {
+  display: grid;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+@media (min-width: 1280px) {
+  .overview {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: auto 1fr;
+    column-gap: var(--sp-12);
+  }
+  .needs {
+    grid-column: 1;
+  }
+  .overview-side {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+/* The region says "Loading…" in words under reduced motion: across the whole grid. */
+.overview > .loading-text {
+  grid-column: 1 / -1;
+}
+/* A live refresh that fails: console.js writes the hub's words after the region; they show above it, where the eye is. */
+main:has(> #live + .field-error) {
+  display: flex;
+  flex-direction: column;
+}
+main:has(> #live + .field-error) > .page-head {
+  order: -2;
+}
+main > #live + .field-error {
+  order: -1;
+  max-width: none;
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--error);
+  border-radius: var(--r-md);
+  background: var(--error-soft);
+}
+
+/* What needs me: one link per row, a sentence with its count, the way to act on it. */
+.needs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden; /* the rows' hover keeps the list's corners */
+}
+.needs-list > li + li {
+  border-top: 1px solid var(--border);
+}
+.needs-list a {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: center;
+  min-height: 48px;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--hover);
+}
+.needs-list a:hover {
+  background: var(--surface-inset);
+}
+.needs-list a:focus-visible {
+  outline-offset: -2px;
+}
+.needs-list a[data-tone="warn"] > .icon:first-child {
+  color: var(--warning);
+}
+.needs-list .dot {
+  justify-self: center;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-muted);
+  border-radius: var(--r-full);
+}
+.need-text {
+  overflow-wrap: anywhere;
+}
+.need-text strong {
+  font-weight: 500;
+}
+.need-more {
+  color: var(--text-muted);
+}
+.need-more time {
+  font-size: inherit;
+  line-height: inherit;
+}
+.need-go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.needs-list a:hover .need-go {
+  color: var(--text);
+}
+
+/* The line. Lanes: 14 px apart on phones (six at most), 24 px from 640 px, 48 px from 1280 px, narrowing to 32 px past six
+   people, so the lanes never take more than 288 px of the column. The count comes from data-lanes (no inline style). */
+.lanes {
+  --lanes: 1;
+  --pitch: 14px;
+  --gutter: calc(var(--lanes) * var(--pitch) + var(--sp-3));
+}
+.lanes[data-lanes="2"] {
+  --lanes: 2;
+}
+.lanes[data-lanes="3"] {
+  --lanes: 3;
+}
+.lanes[data-lanes="4"] {
+  --lanes: 4;
+}
+.lanes[data-lanes="5"] {
+  --lanes: 5;
+}
+.lanes[data-lanes="6"] {
+  --lanes: 6;
+}
+.lanes[data-lanes="7"] {
+  --lanes: 7;
+}
+.lanes[data-lanes="8"] {
+  --lanes: 8;
+}
+.lanes[data-lanes="9"] {
+  --lanes: 9;
+}
+.lanes[data-lanes="10"] {
+  --lanes: 10;
+}
+/* The names stay in view while the line scrolls. */
+.lane-heads {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.lane-caption {
+  margin: 0;
+  padding-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.lane-names {
+  display: none;
+}
+.wire {
+  display: block;
+  width: calc(var(--lanes) * var(--pitch));
+  overflow: visible;
+}
+.wire.narrow {
+  display: none;
+}
+.wire.heads {
+  height: 24px;
+}
+.line {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wire-row {
+  position: relative;
+  padding-left: var(--gutter);
+}
+.wire-row > .wire {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+}
+/* A lane is a person: a rule that carries information, so the strong border. */
+.wire .lane {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+/* The accent belongs to wires between two people. A message to the whole thread or team stays gray: a thin bus, a tick on
+   every other lane, and the sender's mark. */
+.wire .link,
+.wire .caret {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wire .bus {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.wire .tick {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.wire .end {
+  fill: var(--accent);
+}
+.wire.heads .caret {
+  stroke: var(--text-muted);
+}
+/* A row: who wrote to whom and when, then the kind, the thread's subject and the priority; the whole row opens the thread. */
+.wire-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "who when" "what what";
+  column-gap: var(--sp-3);
+  margin-left: calc(-1 * var(--sp-2));
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--hover);
+}
+.wire-who strong {
+  font-weight: 500;
+}
+.wire-text:hover {
+  background: var(--surface-inset);
+}
+.wire-text:hover strong {
+  text-decoration: underline;
+}
+.wire-text:focus-visible {
+  outline-offset: 0;
+}
+.wire-who {
+  grid-area: who;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wire-text time {
+  grid-area: when;
+  line-height: 20px;
+}
+/* The subject tells threads apart: it wraps, two lines at most, rather than losing its end on a phone. */
+.wire-what {
+  grid-area: what;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.line-more {
+  margin: var(--sp-3) 0 0;
+}
+.line-more.phone {
+  display: none;
+}
+/* The one expressive motion of the console: a new message traces its wire from the sender, once, in 300 ms. */
+.fresh .wire :is(.link, .bus) {
+  transform-box: fill-box;
+  animation: trace 300ms ease-out;
+}
+@keyframes trace {
+  from {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh .wire :is(.link, .bus) {
+    animation: none;
+  }
+}
+/* Phones: six lanes at most, the ten newest messages, then the way to the rest. */
+@media (max-width: 639px) {
+  .lanes[data-narrow] {
+    --lanes: 6;
+  }
+  .lanes[data-narrow] .wire.wide {
+    display: none;
+  }
+  .lanes[data-narrow] .wire.narrow {
+    display: block;
+  }
+  .wire-row.later {
+    display: none;
+  }
+  /* Who to whom takes the first line whole; the time goes beside the subject. */
+  .wire-text {
+    grid-template-areas: "who who" "what when";
+  }
+  .wire-text time {
+    align-self: start;
+    line-height: 16px;
+  }
+  .line-more.phone {
+    display: block;
+  }
+  .need-go span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+/* From 640 px each handle is printed above its caret. Lanes take turns on two rows (three past six people), so a name gets
+   the width of two lanes (three) before it is cut: row k starts (k + 1/2 - rows/2) lanes from the first caret's lane. */
+@media (min-width: 640px) {
+  .lanes {
+    --pitch: 24px;
+  }
+  .lane-caption {
+    display: none;
+  }
+  .lane-names {
+    --rows: 2;
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding-top: var(--sp-1);
+    color: var(--text-muted);
+    font: var(--fs-caption) / 16px var(--mono);
+  }
+  .lane-names[data-rows="3"] {
+    --rows: 3;
+  }
+  .lane-row {
+    display: flex;
+    margin-left: calc((0.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .lane-row + .lane-row {
+    margin-left: calc((1.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .lane-row + .lane-row + .lane-row {
+    margin-left: calc((2.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .lane-name {
+    flex: none;
+    width: calc(var(--rows) * var(--pitch));
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (min-width: 1280px) {
+  .lanes {
+    --pitch: clamp(32px, 288px / var(--lanes), 48px);
+  }
 }
 
 /* Presence: the name, the session, the state; what the session says it does; the exceptions on their own line. */
@@ -103,51 +466,31 @@ h3.rule::before {
 .person form {
   margin-top: var(--sp-2);
 }
+.people-more {
+  margin: var(--sp-3) 0 0;
+}
+.line-more a,
+.people-more a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  font-weight: 500;
+}
 
-/* The activity line: a wire per message, sender caret to recipient caret, in the accent color. */
-.line {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+/* Agent traffic: a calm section while it flows; stopped, a straight error rule on its left, beside the page banner. */
+.traffic h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
-.wire-row {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: var(--sp-3);
-  align-items: start;
-  padding: var(--sp-1) 0;
+.traffic[data-tone="danger"] {
+  padding-left: var(--sp-4);
+  border-left: 2px solid var(--error);
 }
-.wire-row p {
-  margin: 0;
+.traffic:where([data-tone="danger"]) h2 .icon,
+.traffic-state {
+  color: var(--error);
 }
-.wire {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.wire .link {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-}
-.line.archived .wire {
-  stroke: var(--text-muted);
-}
-.line.archived .wire-who {
-  color: var(--text-muted);
-}
-/* The one expressive motion of the console: a new message traces its wire in 300 ms. */
-.fresh .wire .link {
-  animation: trace 300ms ease-out;
-}
-@keyframes trace {
-  from {
-    stroke-dashoffset: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .fresh .wire .link {
-    animation: none;
-  }
+.traffic form > :last-child {
+  margin-bottom: 0;
 }

@@ -50,7 +50,7 @@ test("handle a suspicious message: escaped text, quarantine the sender", async (
   await sam.close();
 
   await signIn(page, hub.url, team.lea);
-  await expect(page.getByText("instruction_like")).toBeVisible();
+  await expect(page.getByText("looks like an instruction")).toBeVisible();
   await page.goto(`${hub.url}/console/alerts`);
   await expect(page.getByText("<script>rm -rf</script>", { exact: false })).toBeVisible();
   expect(await page.locator("script:not([src])").count()).toBe(0);
@@ -105,7 +105,7 @@ test("validate a decision: proposed by an agent, accepted by a human, in the nex
   await sam.close();
 
   await signIn(page, hub.url, team.lea);
-  await page.getByRole("link", { name: /Team memory to validate: 1/ }).click();
+  await page.getByRole("link", { name: /1 memory proposal waits for a decision/ }).click();
   await page.getByRole("link", { name: "Dates in ISO 8601" }).click();
   await expect(page.getByText("Every API returns ISO 8601 dates.")).toBeVisible();
   await page.getByLabel("Note").fill("agreed in standup");

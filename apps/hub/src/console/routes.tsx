@@ -73,6 +73,7 @@ import {
 } from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
+import { Icon } from "../icons.js";
 import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
@@ -82,8 +83,13 @@ import {
   Action,
   ArchiveTabs,
   Bypass,
+  CodeBlock,
+  counted,
+  Field,
   InvitePage,
   Layout,
+  LINE_CAP,
+  LINE_PHONE,
   Line,
   People,
   Pill,
@@ -307,6 +313,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       )
       .orderBy(desc(invitation.createdAt));
 
+  // "Needs you" names an alert's kind inside a sentence.
+  const ALERT_KIND: Record<string, string> = {
+    instruction_like: "looks like an instruction",
+    secret_blocked: "secret blocked",
+    loop_guard: "agent loop",
+    loop_needs_human: "loop waiting for a person",
+    audit_tamper: "audit log tampered with",
+  };
+
+  // Presence on the overview: the sessions seen last, live ones first; the Agents page has them all.
+  const PRESENCE_CAP = 12;
+
+  // The overview: what needs me first, then the line of the last day, who is connected, and agent traffic for admins. Every
+  // focusable part has a stable id, so htmx gives the focus back to it after a live refresh.
   consoleApp.get("/", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
@@ -320,13 +340,30 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           .where(and(eq(memoryItem.teamId, p.teamId), eq(memoryItem.status, "proposed")))
       : [];
     const openAlerts = and(eq(alert.teamId, p.teamId), eq(alert.status, "open"));
-    const alerts = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(5) : [];
+    const [newest] = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(1) : [];
     const [alertCount] = isAdmin(p) ? await db.select({ n: count() }).from(alert).where(openAlerts) : [];
     const nAlerts = alertCount?.n ?? 0;
+    // The line keeps the last day; older messages wait on the threads page, as do the ones past the cap.
     const line = await recentLine(p);
     const dayAgo = Date.now() - 86_400_000;
-    const recent = line.filter((r) => r.message.createdAt.getTime() >= dayAgo);
-    const earlier = line.filter((r) => r.message.createdAt.getTime() < dayAgo);
+    const shown = line.filter((r) => r.message.createdAt.getTime() >= dayAgo).slice(0, LINE_CAP);
+    const online = agents.filter((r) => presence(r.agent) === "online").length;
+    const n = (k: number, one: string, many: string) => counted(_.lang, k, one, many);
+    const need = (id: string, href: string, text: string, go: string, warn?: boolean, more?: Child) => (
+      <li>
+        <a id={id} href={href} data-tone={warn ? "warn" : undefined}>
+          {warn ? <Icon name="triangle-alert" /> : <span class="dot" />}
+          <span class="need-text">
+            <strong>{text}</strong>
+            {more}
+          </span>
+          <span class="need-go">
+            <span>{go}</span>
+            <Icon name="chevron-right" />
+          </span>
+        </a>
+      </li>
+    );
     return page(
       c,
       "Overview",
@@ -337,101 +374,135 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         hx-target="#live"
         hx-swap="outerHTML"
         hx-trigger="sse:presence, sse:attention, sse:activity"
-        class="dash"
+        class="overview"
       >
-        <section class="dash-line" aria-labelledby="line-h">
-          <h2 id="line-h">{_("On the line")}</h2>
-          {line.length === 0 && (
-            <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
-          )}
-          {recent.length > 0 && <Line rows={recent} _={_} />}
-          {earlier.length > 0 && (
-            <>
-              <h3 class="rule">{_("Earlier")}</h3>
-              <Line rows={earlier} _={_} archived />
-            </>
+        <p class="loading-text">{_("Loading…")}</p>
+        <section class="needs" aria-labelledby="needs-h">
+          <h2 id="needs-h">{_("Needs you")}</h2>
+          {nAlerts === 0 && toValidate.length === 0 && invites.length === 0 ? (
+            <p class="empty">{_("Nothing needs you right now.")}</p>
+          ) : (
+            <ul class="needs-list">
+              {nAlerts > 0 &&
+                need(
+                  "need-alerts",
+                  "/console/alerts",
+                  n(nAlerts, "1\u00a0open alert.", "{n}\u00a0open alerts."),
+                  _("Review alerts"),
+                  true,
+                  newest && (
+                    <span class="need-more">
+                      {" "}
+                      {_("Newest:")} {_(ALERT_KIND[newest.kind] ?? newest.kind)}, <When at={newest.createdAt} lang={_.lang} />.
+                    </span>
+                  ),
+                )}
+              {toValidate.length > 0 &&
+                need(
+                  "need-memory",
+                  "/console/memory?status=proposed",
+                  n(toValidate.length, "1\u00a0memory proposal waits for a decision.", "{n}\u00a0memory proposals wait for a decision."),
+                  _("Review memory"),
+                )}
+              {invites.length > 0 &&
+                need(
+                  "need-invitations",
+                  "/console/members",
+                  n(invites.length, "1\u00a0invitation not accepted yet.", "{n}\u00a0invitations not accepted yet."),
+                  _("Open members"),
+                )}
+            </ul>
           )}
         </section>
-        <div class="dash-side">
-          <section aria-labelledby="presence-h">
-            <h2 id="presence-h">{_("Presence")}</h2>
+        <section class="line-section" aria-labelledby="line-h">
+          <div class="section-head">
+            <h2 id="line-h">{_("On the line")}</h2>
+            <p class="section-note">{_("Last 24 h")}</p>
+          </div>
+          {line.length === 0 ? (
+            <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
+          ) : shown.length === 0 ? (
+            <p class="empty">{_("No messages in the last 24 hours. Older ones are on the threads page.")}</p>
+          ) : (
+            <Line rows={shown} _={_} />
+          )}
+          {/* Phones show the first rows only: the way to the rest is theirs alone when wide screens show it all. */}
+          {(line.length > shown.length || shown.length > LINE_PHONE) && (
+            <p class={line.length > shown.length ? "line-more" : "line-more phone"}>
+              <a id="line-more" href="/console/threads">
+                {_("See all threads")}
+              </a>
+            </p>
+          )}
+        </section>
+        <div class="overview-side">
+          <section class="presence" aria-labelledby="presence-h">
+            <div class="section-head">
+              <h2 id="presence-h">{_("Presence")}</h2>
+              {agents.length > 0 && <p class="section-note">{n(online, "1 online", "{n} online")}</p>}
+            </div>
             <People
               rows={agents}
               lang={_.lang}
-              empty={_(
-                isAdmin(p)
-                  ? "No agent connected. Copy the invitation command to add one: codetgh invite <email>."
-                  : "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.",
-              )}
+              cap={PRESENCE_CAP}
+              more={
+                <a id="presence-more" href="/console/agents">
+                  {_("See all agents")}
+                </a>
+              }
+              empty={
+                isAdmin(p) ? (
+                  <>
+                    <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
+                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
+                  </>
+                ) : (
+                  _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
+                )
+              }
             />
           </section>
-          <section aria-labelledby="todo-h">
-            <h2 id="todo-h">{_("To handle")}</h2>
-            {toValidate.length === 0 && nAlerts === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
-            <ul class="todo">
-              {toValidate.length > 0 && (
-                <li>
-                  <Pill tone="warn">{_("to validate")}</Pill>{" "}
-                  <a href="/console/memory?status=proposed">
-                    {_("Team memory to validate")}
-                    {_(": ")}
-                    {toValidate.length}
-                  </a>
-                </li>
+          {isAdmin(p) && (
+            <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
+              <h2 id="traffic-h">
+                {p.paused && <Icon name="octagon-alert" />}
+                {_("Agent traffic")}
+              </h2>
+              {p.paused ? (
+                <form hx-post="/console/kill-switch/resume" hx-swap="none">
+                  <p>
+                    <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
+                    {_("Agents can't send messages or claim files until you resume agent traffic.")}
+                  </p>
+                  <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
+                    <input id="kill-confirm" name="confirm" required autocomplete="off" />
+                  </Field>
+                  <button type="submit" class="primary">
+                    {_("Resume agent traffic")}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  hx-post="/console/kill-switch"
+                  hx-swap="none"
+                  data-confirm={_("Stop agent traffic?")}
+                  data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+                  data-confirm-action={_("Stop agent traffic")}
+                >
+                  <p>
+                    <strong>{_("Flowing.")}</strong>{" "}
+                    {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
+                  </p>
+                  <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
+                    <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
+                  </Field>
+                  <button type="submit" class="danger">
+                    {_("Stop agent traffic…")}
+                  </button>
+                </form>
               )}
-              {alerts.map((a) => (
-                <li>
-                  <Pill tone="danger">{_(a.kind)}</Pill> <span class="excerpt">{a.excerpt.slice(0, 120)}</span>{" "}
-                  <When at={a.createdAt} lang={_.lang} />
-                </li>
-              ))}
-              {nAlerts > 0 && (
-                <li>
-                  <a href="/console/alerts">
-                    {_("Review alerts")} ({nAlerts})
-                  </a>
-                </li>
-              )}
-              {invites.length > 0 && (
-                <li>
-                  <Pill>{_("invited")}</Pill>{" "}
-                  <a href="/console/members">
-                    {_("Invitations not accepted yet")}
-                    {_(": ")}
-                    {invites.length}
-                  </a>
-                </li>
-              )}
-            </ul>
-            {isAdmin(p) && (
-              <>
-                <h3 id="agent-traffic">{_("Kill switch")}</h3>
-                {p.paused ? (
-                  <form hx-post="/console/kill-switch/resume" hx-swap="none">
-                    <label>
-                      {_("Type yes to resume agent traffic")} <input name="confirm" required />
-                    </label>
-                    <button type="submit">{_("Resume")}</button>
-                  </form>
-                ) : (
-                  <form
-                    hx-post="/console/kill-switch"
-                    hx-swap="none"
-                    data-confirm={_("Stop agent traffic?")}
-                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
-                    data-confirm-action={_("Stop agent traffic")}
-                  >
-                    <label>
-                      {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
-                    </label>
-                    <button type="submit" class="danger">
-                      {_("Stop agent traffic…")}
-                    </button>
-                  </form>
-                )}
-              </>
-            )}
-          </section>
+            </section>
+          )}
         </div>
       </div>,
     );
@@ -471,10 +542,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   async function recentLine(p: Principal) {
     const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
     const rows = await db
-      .select({ message, name: user.name })
+      .select({ message, name: user.name, handle: membership.handle, subject: thread.subject })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
+      // Display only: the sender's handle names their lane, the subject tells threads apart.
+      .leftJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
       .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine), isAdmin(p) ? undefined : sentOrReceivedBy(db, p)))
       .orderBy(desc(message.createdAt))
       .limit(40);

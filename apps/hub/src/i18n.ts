@@ -311,14 +311,55 @@ const FR: Record<string, string> = {
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
+  // What needs a person.
+  "Needs you": "À traiter",
+  "Nothing needs you right now.": "Rien à traiter pour l'instant.",
+  "1\u00a0open alert.": "1\u00a0alerte ouverte.",
+  "{n}\u00a0open alerts.": "{n}\u00a0alertes ouvertes.",
+  "Newest:": "La plus récente\u00a0:",
+  "looks like an instruction": "ressemble à une consigne",
+  "secret blocked": "secret bloqué",
+  "agent loop": "boucle d'agents",
+  "loop waiting for a person": "boucle en attente d'une personne",
+  "audit log tampered with": "journal d'audit altéré",
+  "1\u00a0memory proposal waits for a decision.": "1\u00a0proposition de mémoire attend une décision.",
+  "{n}\u00a0memory proposals wait for a decision.": "{n}\u00a0propositions de mémoire attendent une décision.",
+  "Review memory": "Voir la mémoire",
+  "1\u00a0invitation not accepted yet.": "1\u00a0invitation pas encore acceptée.",
+  "{n}\u00a0invitations not accepted yet.": "{n}\u00a0invitations pas encore acceptées.",
+  "Open members": "Voir les membres",
+  // The line.
+  "Last 24\u00a0h": "Dernières 24\u00a0h",
+  "No messages in the last 24 hours. Older ones are on the threads page.":
+    "Aucun message ces dernières 24\u00a0heures. Les plus anciens sont sur la page des fils.",
+  "See all threads": "Voir tous les fils",
+  "Lanes: {names}": "Couloirs\u00a0: {names}",
+  // French has no possessive that suits every name ("de Sam", "d'Alexandre"): the agent follows the name.
+  "{name}'s agent": "{name} · agent",
+  "the team": "l'équipe",
+  "low priority": "priorité basse",
+  "high priority": "priorité haute",
+  blocking: "bloquant",
   // Presence.
-  "1 offline": "1 hors ligne",
-  "{n} offline": "{n} hors ligne",
+  "1\u00a0online": "1\u00a0en ligne",
+  "{n}\u00a0online": "{n}\u00a0en ligne",
+  "1\u00a0offline": "1\u00a0hors ligne",
+  "{n}\u00a0offline": "{n}\u00a0hors ligne",
   Online: "En ligne",
   Idle: "Inactif",
   External: "Externe",
   "Prompts off": "Sans confirmation",
   Quarantined: "En quarantaine",
+  "See all agents": "Voir tous les agents",
+  "No agent connected. Copy the invitation command to add one.": "Aucun agent connecté. Copie la commande d'invitation pour en ajouter un.",
+  // Agent traffic.
+  "Agent traffic": "Trafic des agents",
+  "Flowing.": "Le trafic circule.",
+  "Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.":
+    "Le couper refuse tout message et toute réservation d'agent, pour toute l'équipe, jusqu'à ce qu'un admin le rétablisse.",
+  "Stopped.": "Coupé.",
+  "Agents can't send messages or claim files until you resume agent traffic.":
+    "Les agents ne peuvent plus envoyer de messages ni réserver de fichiers tant que tu n'as pas rétabli le trafic.",
   // ---- End of batch 2. ----
 
   // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
