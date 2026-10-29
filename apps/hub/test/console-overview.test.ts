@@ -134,6 +134,8 @@ describe("overview", () => {
   it("gives admins agent traffic, which asks before it stops and takes a typed yes to resume", async () => {
     const flowing = section(await html(team.lea.cookie), "traffic-h");
     expect(flowing).toContain("Flowing.");
+    const page = await html(team.lea.cookie);
+    expect(page.indexOf('id="agent-traffic"')).toBeGreaterThan(page.indexOf('id="presence-h"'));
     expect(flowing).toContain('<label for="kill-reason">Reason</label>');
     expect(flowing).toMatch(/<form hx-post="\/console\/kill-switch" hx-swap="none" data-confirm="Stop agent traffic\?"/);
     expect(flowing).toContain('<button type="submit" class="danger">Stop agent traffic…</button>');
@@ -145,6 +147,9 @@ describe("overview", () => {
     try {
       const page = await html(team.lea.cookie);
       expect(page).toContain('<section id="agent-traffic" class="traffic" data-tone="danger" aria-labelledby="traffic-h">');
+      // Stopped, it comes right after what needs you: before the line, and first beside it on a wide screen.
+      expect(page.indexOf('id="agent-traffic"')).toBeGreaterThan(page.indexOf('id="needs-h"'));
+      expect(page.indexOf('id="agent-traffic"')).toBeLessThan(page.indexOf('id="line-h"'));
       const stopped = section(page, "traffic-h");
       expect(stopped).toContain("Stopped.");
       expect(stopped).toContain('<label for="kill-confirm">Type yes to resume agent traffic</label>');

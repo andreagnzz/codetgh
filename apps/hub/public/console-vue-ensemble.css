@@ -41,8 +41,9 @@ h3.rule::before {
   flex: 0 0 var(--sp-4);
 }
 
-/* Overview: one column, in the order of the page (what needs me, the line, presence, agent traffic); from 1280 px what needs
-   me across the top, then the line on the left and presence and agent traffic beside it, in the order of the page. */
+/* Overview: one column, in the order of the page (what needs me, agent traffic while it is stopped, the line, presence, agent
+   traffic); from 1280 px what needs me across the top, then the line on the left and presence and agent traffic beside it,
+   in the order of the page. */
 .overview {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
