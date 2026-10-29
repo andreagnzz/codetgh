@@ -169,3 +169,24 @@ for (const width of [1280, 360])
     await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
     await expect(summary).toBeFocused();
   });
+
+test("a menu closes when the keyboard leaves it, so it never covers the next stop", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  await page.locator("details.account > summary").focus();
+  await page.keyboard.press("Enter");
+  for (const name of ["My data", "Tokens", "Français"]) expect(await tab(page)).toBe(name);
+  expect(await tab(page)).toBe("Overview");
+  await expect(page.locator("details.account")).not.toHaveAttribute("open", "");
+  expect(await tab(page)).toBe("Page action");
+  expect(await unobscured(page.locator(":focus"))).toBe(true);
+
+  await page.locator('summary[aria-label="Actions for lea laptop"]').focus();
+  await page.keyboard.press("Enter");
+  for (const name of ["Rename", "Revoke…"]) expect(await tab(page)).toBe(name);
+  // The next row's link: its ring is drawn around the whole row, by the link's ::after.
+  await page.keyboard.press("Tab");
+  expect((await focused(page)).text).toBe("ci (GitHub Actions)");
+  await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
+});

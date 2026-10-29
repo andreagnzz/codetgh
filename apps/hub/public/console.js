@@ -189,8 +189,9 @@
   document.body.addEventListener("htmx:sseOpen", () => state("live"));
   document.body.addEventListener("htmx:sseError", () => state("lost"));
 
-  // Menus (account, small-screen menu, row menus, project filter) close on Escape, focus back on their button; the floating
-  // ones also close on a click outside them.
+  // Menus (account, small-screen menu, row menus, project filter) close on Escape, focus back on their button. The floating
+  // ones also close on a click outside them, and when the keyboard leaves them, so they never cover the next stop. A focus
+  // that goes nowhere (a click on plain text, another window) keeps them open.
   const FLOATING = "details.account[open], details.row-menu[open], details.projects-filter[open]";
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
@@ -201,5 +202,10 @@
   });
   document.addEventListener("click", (e) => {
     for (const menu of document.querySelectorAll(FLOATING)) if (!menu.contains(e.target)) menu.open = false;
+  });
+  document.addEventListener("focusout", (e) => {
+    if (!(e.relatedTarget instanceof Node)) return;
+    for (const menu of document.querySelectorAll(FLOATING))
+      if (menu.contains(e.target) && !menu.contains(e.relatedTarget)) menu.open = false;
   });
 })();
