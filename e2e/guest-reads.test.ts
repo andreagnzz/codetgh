@@ -124,7 +124,8 @@ const FORBIDDEN = ["projects", "tasks", "memory", "claims", "delegations", "toke
 it("shows a guest no link to a page that refuses them, and a member every one", async () => {
   const nav = async (cookie: string) => {
     const html = await (await fetch(`${hub.url}/console`, { headers: { cookie } })).text();
-    return html.slice(html.indexOf("<aside"), html.indexOf("</aside>"));
+    // The side navigation, and the top bar's account menu (My data, Tokens).
+    return html.slice(html.indexOf("<aside"), html.indexOf("</header>"));
   };
   const guest = await nav(team.malik.cookie);
   for (const page of FORBIDDEN) expect(guest, page).not.toContain(`href="/console/${page}"`);
