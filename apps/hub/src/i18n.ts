@@ -273,6 +273,16 @@ const FR: Record<string, string> = {
   "Agents can't send messages until an admin resumes it.":
     "Les agents ne peuvent plus envoyer de messages tant qu'un admin ne l'a pas rétabli.",
   "Resume agent traffic": "Rétablir le trafic des agents",
+  Cancel: "Annuler",
+  Copy: "Copier",
+  Copied: "Copié",
+  "Press Ctrl+C to copy": "Appuie sur Ctrl+C pour copier",
+  "Press ⌘C to copy": "Appuie sur ⌘C pour copier",
+  Pages: "Pages",
+  Newer: "Plus récents",
+  optional: "facultatif",
+  "Loading…": "Chargement…",
+  "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
   // ---- End of the foundations block. ----
 
   // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----

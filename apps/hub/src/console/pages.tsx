@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
+import type { JSX } from "hono/jsx/jsx-runtime";
 import { BrandHead, Logo } from "../brand.js";
 import { type listAgents, presence, statusOf } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
@@ -182,6 +183,33 @@ export const Layout: FC<{
           </div>
           {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
           <p id="line-announce" class="sr-only" aria-live="polite" />
+          {/* A toast after an action whose result does not show on the page (console.js, data-done on the trigger). */}
+          <div class="toasts" role="status" />
+          {/* The confirmation of a destructive action (console.js, data-confirm on the trigger). */}
+          <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+            <h2 id="confirm-title">{_("Confirm")}</h2>
+            <p id="confirm-body" />
+            <p id="confirm-error" class="field-error" role="alert" />
+            <div class="actions">
+              <button type="button" class="secondary" value="cancel" autofocus>
+                {_("Cancel")}
+              </button>
+              <button type="button" class="primary" value="confirm" />
+            </div>
+          </dialog>
+          {/* What console.js draws: the icon of an error under a form, a toast. */}
+          <template id="error-icon">
+            <Icon name="circle-alert" />
+          </template>
+          <template id="toast">
+            <div class="toast">
+              <Icon name="circle-check" />
+              <p />
+              <button type="button" class="icon-button" aria-label={_("Close")}>
+                <Icon name="x" />
+              </button>
+            </div>
+          </template>
         </body>
       </html>
     </>
@@ -189,22 +217,38 @@ export const Layout: FC<{
 };
 
 // Every value below is rendered by JSX, which escapes text: agent-written strings never become HTML.
-export const Table: FC<{ head: string[]; rows: Child[][]; empty: Child }> = ({ head, rows, empty }) =>
+// A dense table. The caption names it for screen readers when the page title already says it; the column the rows are
+// ordered by says so with aria-sort and an arrow; numbers line up on the right. With no rows, the empty state replaces the
+// whole table, headers included.
+export const Table: FC<{
+  head: string[];
+  rows: Child[][];
+  empty: string | JSX.Element;
+  caption?: string;
+  sort?: { column: number; dir: "ascending" | "descending" };
+  numeric?: number[];
+  current?: number;
+  unread?: number[];
+}> = ({ head, rows, empty, caption, sort, numeric = [], current, unread = [] }) =>
   rows.length ? (
     <div class="table-wrap">
       <table>
+        {caption && <caption class="sr-only">{caption}</caption>}
         <thead>
           <tr>
-            {head.map((h) => (
-              <th scope="col">{h}</th>
+            {head.map((h, i) => (
+              <th scope="col" class={numeric.includes(i) ? "num" : undefined} aria-sort={sort?.column === i ? sort.dir : undefined}>
+                {h}
+                {sort?.column === i && <Icon name={sort.dir === "ascending" ? "arrow-up" : "arrow-down"} />}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr>
+          {rows.map((r, n) => (
+            <tr aria-current={current === n ? "true" : undefined} class={unread.includes(n) ? "unread" : undefined}>
               {r.map((cell, i) => (
-                <td data-label={head[i]}>
+                <td data-label={head[i]} class={numeric.includes(i) ? "num" : undefined}>
                   <div class="cell">{cell}</div>
                 </td>
               ))}
@@ -213,9 +257,40 @@ export const Table: FC<{ head: string[]; rows: Child[][]; empty: Child }> = ({ h
         </tbody>
       </table>
     </div>
-  ) : (
+  ) : typeof empty === "string" ? (
     <p class="empty">{empty}</p>
+  ) : (
+    empty
   );
+
+// "‹ Newer" and "Older ›" around a long list, with how much of it shows.
+export const Pager: FC<{ lang: Lang; newer?: string; older?: string; shown?: number; total?: number }> = ({
+  lang,
+  newer,
+  older,
+  shown,
+  total,
+}) => (
+  <nav class="pager" aria-label={t(lang, "Pages")}>
+    {shown !== undefined && total !== undefined && (
+      <p class="meta">{t(lang, "Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
+    )}
+    <div class="pager-links">
+      {newer && (
+        <a class="button" href={newer}>
+          <Icon name="chevron-left" />
+          {t(lang, "Newer")}
+        </a>
+      )}
+      {older && (
+        <a class="button" href={older}>
+          {t(lang, "Older")}
+          <Icon name="chevron-right" />
+        </a>
+      )}
+    </div>
+  </nav>
+);
 
 // A state always reads as text; the tone only reinforces it.
 export type Tone = "ok" | "warn" | "danger" | "neutral";
@@ -225,16 +300,34 @@ export const Pill: FC<{ tone?: Tone; children?: Child }> = ({ tone = "neutral", 
   </span>
 );
 
+// Tabs that change the URL: the current one by weight and an accent underline, its count when known.
+export const Tabs: FC<{ label: string; items: Array<{ href: string; text: Child; current: boolean; count?: number }> }> = ({
+  label,
+  items,
+}) => (
+  <nav class="tabs" aria-label={label}>
+    {items.map((i) => (
+      <a href={i.href} aria-current={i.current ? "page" : undefined}>
+        {i.text}
+        {i.count !== undefined && <span class="count">{i.count}</span>}
+      </a>
+    ))}
+  </nav>
+);
+
 // Current items, or the archives: threads quiet for a day with nothing unread, tasks finished a day ago.
 export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang; project?: string }> = ({ base, archived, lang, project }) => (
-  <nav class="tabs" aria-label={t(lang, "Archives")}>
-    <a href={project ? `${base}?project=${encodeURIComponent(project)}` : base} aria-current={archived ? undefined : "page"}>
-      {t(lang, "Current")}
-    </a>{" "}
-    <a href={`${base}?archived=1${project ? `&project=${encodeURIComponent(project)}` : ""}`} aria-current={archived ? "page" : undefined}>
-      {t(lang, "Archives")}
-    </a>
-  </nav>
+  <Tabs
+    label={t(lang, "Archives")}
+    items={[
+      { href: project ? `${base}?project=${encodeURIComponent(project)}` : base, text: t(lang, "Current"), current: !archived },
+      {
+        href: `${base}?archived=1${project ? `&project=${encodeURIComponent(project)}` : ""}`,
+        text: t(lang, "Archives"),
+        current: archived,
+      },
+    ]}
+  />
 );
 
 export const toneOf = (state: string): Tone =>
@@ -267,16 +360,37 @@ export const When: FC<{ at: Date; lang?: string }> = ({ at, lang = "en" }) => {
 };
 
 // One-click actions: an htmx POST answered with HX-Refresh; the CSRF header comes from <body hx-headers>. The level is the
-// importance: primary (one per area), secondary (the default), tertiary (a text action), danger (destructive).
+// importance: primary (one per area), secondary (the default), tertiary (a text action), danger (destructive). With confirm,
+// console.js asks first in the dialog, whose button repeats the action's label; with done, it says so in a toast after the
+// reload, for a result the page does not show.
 export const Action: FC<{
   post: string;
   label: string;
   vals?: Record<string, string>;
   level?: "primary" | "secondary" | "tertiary" | "danger";
-}> = ({ post, label, vals, level }) => (
-  <button type="button" class={level} hx-post={post} hx-vals={vals ? JSON.stringify(vals) : undefined} hx-swap="none">
+  confirm?: { title: string; body: string };
+  done?: string;
+}> = ({ post, label, vals, level, confirm, done }) => (
+  <button
+    type="button"
+    class={level}
+    hx-post={post}
+    hx-vals={vals ? JSON.stringify(vals) : undefined}
+    hx-swap="none"
+    data-confirm={confirm?.title}
+    data-confirm-body={confirm?.body}
+    data-confirm-action={confirm && label}
+    data-done={done}
+  >
     {label}
   </button>
+);
+
+// A handle or a session label, as typed in a terminal; never translated.
+export const Chip: FC<{ former?: boolean; children?: Child }> = ({ former, children }) => (
+  <span class={former ? "chip former" : "chip"} translate="no">
+    {children}
+  </span>
 );
 
 // A message about a state: its icon's shape is the severity; information and success are polite, an error is an alert.
@@ -308,6 +422,158 @@ export const Banner: FC<{ tone?: BannerTone; title: Child; actions?: Child; dism
     )}
   </div>
 );
+
+// A bordered group for a form or settings; the danger variant names its risk.
+export const Panel: FC<{ title?: Child; tone?: "danger"; children?: Child }> = ({ title, tone, children }) => (
+  <section class="panel" data-tone={tone}>
+    {title && (
+      <h2>
+        {tone === "danger" && <Icon name="octagon-alert" />}
+        {title}
+      </h2>
+    )}
+    {children}
+  </section>
+);
+
+// A create form folded behind the button that opens it.
+export const Collapsible: FC<{ summary: Child; open?: boolean; children?: Child }> = ({ summary, open, children }) => (
+  <details class="panel" open={open}>
+    <summary>{summary}</summary>
+    {children}
+  </details>
+);
+
+// The rarer actions of a table row, behind an ellipsis whose name says which row.
+export const RowMenu: FC<{ label: string; items: Child[] }> = ({ label, items }) => (
+  <details class="row-menu">
+    <summary aria-label={label}>
+      <Icon name="ellipsis" />
+    </summary>
+    <div class="pop">
+      <ul class="menu-items">
+        {items.map((item) => (
+          <li>{item}</li>
+        ))}
+      </ul>
+    </div>
+  </details>
+);
+
+// A labelled field: the label above, an optional help line, the control (the caller gives it the id and fieldAria), the error
+// in words under it.
+export const fieldAria = (id: string, { help, error }: { help?: unknown; error?: unknown }) => ({
+  "aria-describedby": [help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined,
+  "aria-invalid": error ? ("true" as const) : undefined,
+});
+export const Field: FC<{ id: string; label: Child; lang: Lang; help?: Child; error?: Child; optional?: boolean; children?: Child }> = ({
+  id,
+  label,
+  lang,
+  help,
+  error,
+  optional,
+  children,
+}) => (
+  <div class="field">
+    <label for={id}>
+      {label}
+      {optional && <span class="optional"> {t(lang, "optional")}</span>}
+    </label>
+    {help && (
+      <p class="help" id={`${id}-help`}>
+        {help}
+      </p>
+    )}
+    {children}
+    {error && (
+      <p class="field-error" id={`${id}-error`}>
+        <Icon name="circle-alert" />
+        {error}
+      </p>
+    )}
+  </div>
+);
+
+// Code to copy: wraps instead of scrolling; a command's prompt is drawn, never copied. console.js copies, or selects the text
+// and says how when the browser refuses.
+export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean }> = ({ code, lang, command }) => {
+  const _ = (s: string) => t(lang, s);
+  return (
+    <div class="code" data-kind={command ? "command" : undefined}>
+      <pre>
+        <code translate="no">{code}</code>
+      </pre>
+      <button type="button" class="copy" data-copy data-hint={_("Press Ctrl+C to copy")} data-hint-mac={_("Press ⌘C to copy")}>
+        <span class="when-idle">
+          <Icon name="copy" />
+          {_("Copy")}
+        </span>
+        <span class="when-copied">
+          <Icon name="check" />
+          {_("Copied")}
+        </span>
+      </button>
+      <p class="copy-hint" hidden />
+      <span class="sr-only" role="status" />
+    </div>
+  );
+};
+
+// A screen with nothing to show says what would fill it and how: a sentence, then the command or the one action.
+export const EmptyState: FC<{ title: Child; icon?: IconName; action?: Child; children?: Child }> = ({
+  title,
+  icon = "info",
+  action,
+  children,
+}) => (
+  <div class="empty-state">
+    <Icon name={icon} />
+    <div>
+      <p class="empty-title">{title}</p>
+      {children && <p class="empty">{children}</p>}
+      {action}
+    </div>
+  </div>
+);
+
+// What happened to one object, oldest first. Times are absolute (console.js puts them in the reader's time zone); a filled
+// node is a state change, a hollow one a note; the current state reads in bold. Past fold events, the oldest are folded.
+export type TimelineEvent = { at: Date; text: Child; actor?: Child; body?: Child; change?: boolean; now?: boolean };
+const STAMP: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+export const Stamp: FC<{ at: Date; lang: Lang }> = ({ at, lang }) => (
+  <time datetime={at.toISOString()} data-local>
+    {new Intl.DateTimeFormat(lang === "fr" ? "fr-FR" : "en-GB", STAMP).format(at)}
+  </time>
+);
+export const Timeline: FC<{ events: TimelineEvent[]; lang: Lang; empty: Child; fold?: number }> = ({ events, lang, empty, fold = 10 }) => {
+  if (!events.length) return <p class="empty">{empty}</p>;
+  const item = (e: TimelineEvent) => (
+    <li data-change={e.change ? "" : undefined} class={e.now ? "now" : undefined}>
+      <p class="timeline-head">
+        <Stamp at={e.at} lang={lang} />
+        {e.actor}
+        <span class="timeline-text">{e.text}</span>
+      </p>
+      {e.body && <p class="timeline-body">{e.body}</p>}
+    </li>
+  );
+  const folded = events.length > fold ? events.slice(0, events.length - fold) : [];
+  return (
+    <>
+      {folded.length > 0 && (
+        <details class="disclosure">
+          <summary>
+            {t(lang, "Show {n} earlier events").replace("{n}", String(folded.length))}
+            <Icon name="chevron-down" />
+          </summary>
+          <ol class="timeline">{folded.map(item)}</ol>
+        </details>
+      )}
+      <ol class="timeline">{events.slice(folded.length).map(item)}</ol>
+    </>
+  );
+};
 
 // Presence: who is live first, then a rule, then who is offline (archived, quieter).
 type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];

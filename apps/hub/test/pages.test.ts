@@ -115,11 +115,14 @@ describe("shell", () => {
     }
   });
 
-  it("names the live state, in French for a French reader", async () => {
+  it("names the live state, holds the toast region and the confirmation dialog, in French for a French reader", async () => {
     const page = await html(team.lea.cookie, "/console", "fr");
     expect(page).toContain(
       '<p class="live" role="status" data-state="connecting" data-live="En direct" data-lost="Reconnexion…">Connexion…</p>',
     );
+    expect(page).toContain('<div class="toasts" role="status"></div>');
+    expect(page).toContain('<dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">');
+    expect(page).toContain(">Annuler</button>");
     expect(page).toContain(">Vue d&#39;ensemble</a>");
   });
 
