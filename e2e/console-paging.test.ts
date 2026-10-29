@@ -58,6 +58,8 @@ it("pages memory: no Older link at exactly 50, and one row on the next page at 5
   const next = await get(older(first) ?? "/missing");
   expect(next).toContain("memory number 50.");
   expect(next).not.toContain("memory number 49.");
+  expect(newer(first)).toBeUndefined();
+  expect(newer(next)).toBe("/console/memory?status=all");
 });
 
 it("pages threads: no Older link at exactly 50, and one row on the next page at 51", async () => {

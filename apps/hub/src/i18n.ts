@@ -430,6 +430,61 @@ const FR: Record<string, string> = {
   "Thread reopened by the loop orchestrator": "Fil rouvert par l'orchestrateur de boucles",
   "Token created": "Jeton créé",
   "Token revoked": "Jeton révoqué",
+  // Team memory: an item (« élément ») is masculine.
+  "Team memory": "Mémoire d'équipe",
+  "Decisions, contracts and conventions the team keeps. Agents read the accepted ones; a person accepts or rejects what agents propose.":
+    "Les décisions, contrats et conventions de l'équipe. Les agents lisent ceux qui sont acceptés ; une personne accepte ou rejette ce que les agents proposent.",
+  Proposed: "Proposé",
+  Accepted: "Accepté",
+  Superseded: "Remplacé",
+  Rejected: "Rejeté",
+  All: "Tous",
+  Pinned: "Épinglé",
+  Decision: "Décision",
+  Contract: "Contrat",
+  Convention: "Convention",
+  Note: "Note",
+  Item: "Élément",
+  "Proposed by": "Proposé par",
+  When: "Quand",
+  "No proposals to review.": "Aucune proposition à examiner.",
+  "Agents propose team decisions with the memory_propose tool; they wait here for a person to accept or reject them.":
+    "Les agents proposent des décisions d'équipe avec l'outil memory_propose ; elles attendent ici qu'une personne les accepte ou les rejette.",
+  "Nothing accepted yet.": "Rien d'accepté pour l'instant.",
+  "Accepted items reach every agent through memory_search and the context each session starts with.":
+    "Les éléments acceptés parviennent à chaque agent par memory_search et par le contexte de démarrage de chaque session.",
+  "Nothing replaced yet.": "Rien de remplacé pour l'instant.",
+  "When a newer version of an item is accepted, the one it replaces moves here.":
+    "Quand une nouvelle version d'un élément est acceptée, celle qu'elle remplace arrive ici.",
+  "Nothing rejected.": "Rien de rejeté.",
+  "Proposals a person rejected stay here, with the note they left.":
+    "Les propositions qu'une personne a rejetées restent ici, avec la note qu'elle a laissée.",
+  "No team memory yet.": "Aucune mémoire d'équipe pour l'instant.",
+  "Agents propose team decisions with the memory_propose tool; a person accepts or rejects them.":
+    "Les agents proposent des décisions d'équipe avec l'outil memory_propose ; une personne les accepte ou les rejette.",
+  "Back to team memory": "Retour à la mémoire d'équipe",
+  "About this item": "À propos de cet élément",
+  "Proposed on": "Proposé le",
+  "Decided by": "Décidé par",
+  Replaces: "Remplace",
+  "Replaced by": "Remplacé par",
+  "Changes from v{n}": "Modifications depuis la v{n}",
+  "Lines that start with + are added, lines that start with − are removed.":
+    "Les lignes qui commencent par + sont ajoutées, celles qui commencent par − sont retirées.",
+  "{name} accepted it.": "{name} l'a accepté.",
+  "{name} rejected it.": "{name} l'a rejeté.",
+  Pin: "Épingler",
+  Unpin: "Désépingler",
+  "Accept or reject": "Accepter ou rejeter",
+  "Accepting it replaces {item}: agents then read this version.": "L'accepter remplace {item} : les agents lisent alors cette version.",
+  "Accepted, it reaches every agent through memory_search and the context each session starts with.":
+    "Accepté, il parvient à chaque agent par memory_search et par le contexte de démarrage de chaque session.",
+  "Shown with the decision on this page, to the whole team.": "Affichée avec la décision sur cette page, pour toute l'équipe.",
+  Accept: "Accepter",
+  Reject: "Rejeter",
+  "On this hub, only owners accept or reject proposals.": "Sur ce hub, seuls les propriétaires acceptent ou rejettent les propositions.",
+  "On this hub, only admins and owners accept or reject proposals.":
+    "Sur ce hub, seuls les admins et les propriétaires acceptent ou rejettent les propositions.",
   // ---- End of batch 6. ----
 };
 

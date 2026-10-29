@@ -208,3 +208,147 @@ details.audit-hash[open] > summary .icon {
     display: inline;
   }
 }
+
+/* Detail pages (a task, a memory item): the properties first for a screen reader; a column on the right from 1280 px,
+   a wrapping row above the text under it. */
+.rec-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "props" "body";
+  gap: var(--sp-6);
+}
+.rec-props {
+  grid-area: props;
+  min-width: 0;
+}
+.rec-body {
+  grid-area: body;
+  min-width: 0;
+}
+.rec-props dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.rec-props dl > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.rec-props dt {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.rec-props dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.rec-props dd > * {
+  min-width: 0;
+  max-width: 100%;
+}
+/* A link in a property is a target of 24 px or more. */
+.rec-props dd > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+.rec-props dd > .rec-sub {
+  margin: 0;
+  flex-basis: 100%;
+}
+.rec-props time {
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 20px;
+}
+.rec-body > section:not(.panel) > h2 {
+  margin-top: var(--sp-8);
+}
+.rec-body > h2:first-child,
+.rec-body > .banner:first-child + h2 {
+  margin-top: 0;
+}
+.rec-body > .panel {
+  margin-top: var(--sp-8);
+}
+/* A note a person left with a decision: quoted, with the rule a quote carries. */
+.rec-note {
+  max-width: var(--measure);
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Who did it in a timeline: the person, then the session when their agent did. */
+.rec-who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.rec-who > strong {
+  font-weight: 500;
+}
+@media (min-width: 1280px) {
+  .rec-detail {
+    grid-template-columns: minmax(0, 1fr) 272px;
+    grid-template-areas: "body props";
+    column-gap: var(--sp-8);
+    align-items: start;
+  }
+  .rec-props dl {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--sp-4);
+    padding: 0 0 0 var(--sp-6);
+    border-bottom: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+
+/* Team memory: a new version as changes, line by line. The sign says what changed, the tint repeats it. */
+.memory-diff {
+  max-width: 48rem;
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-radius: var(--r-md);
+  background: var(--surface-inset);
+  line-height: 20px;
+}
+.memory-diff > :is(ins, del, span) {
+  position: relative;
+  display: block;
+  min-height: 20px;
+  padding: 0 var(--sp-4) 0 var(--sp-8);
+  text-decoration: none;
+}
+.memory-diff > ::before {
+  position: absolute;
+  left: var(--sp-3);
+  font-weight: 600;
+}
+.memory-diff > ins {
+  background: var(--success-soft);
+}
+.memory-diff > ins::before {
+  content: "+";
+  color: var(--success);
+}
+.memory-diff > del {
+  background: var(--error-soft);
+}
+.memory-diff > del::before {
+  content: "\2212";
+  color: var(--error);
+}

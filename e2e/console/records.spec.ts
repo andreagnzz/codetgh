@@ -91,3 +91,15 @@ for (const scheme of ["light", "dark"] as const)
     await expect(page.locator("#verify-result .banner")).toContainText("Chain intact.");
     await expect(page.locator("#verify-result")).toHaveAttribute("aria-live", "polite");
   });
+
+test("memory: the status tabs, then on a proposal the note, Accept and Reject", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/memory`);
+  await page.getByRole("link", { name: /^Proposed/ }).focus();
+  for (const name of ["Accepted 0", "Superseded 0", "Rejected 0", "All 1"]) expect(await tab(page)).toBe(name);
+  await page.goto(`${hub.url}/console/memory/mit_01KEYBOARDMEMORY00000000000`);
+  await page.locator("#decision-note").focus();
+  expect(await tab(page)).toBe("Accept");
+  expect(await tab(page)).toBe("Reject");
+});

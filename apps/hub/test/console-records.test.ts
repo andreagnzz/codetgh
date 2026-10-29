@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { auditEvent, project, task } from "../src/db/schema.js";
+import { auditEvent, memoryItem, project, task } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub } from "./harness.js";
 
@@ -167,5 +167,85 @@ describe("audit log", () => {
     expect(html).toContain(">Journal d&#39;audit</h1>");
     expect(html).toContain(">Tâche créée<");
     expect(html).toContain(">Exporter en JSON</a>");
+  });
+});
+
+describe("team memory", () => {
+  it("shows one status at a time in tabs with their counts, proposals first", async () => {
+    const html = main(await page("/console/memory", team.lea.cookie));
+    expect(html).toMatch(/<a href="\/console\/memory\?status=proposed" aria-current="page">Proposed<span class="count">1<\/span><\/a>/);
+    expect(html).toContain('href="/console/memory?status=accepted">Accepted<span class="count">1</span>');
+    expect(html).toContain('href="/console/memory?status=rejected">Rejected<span class="count">1</span>');
+    expect(html).toContain('href="/console/memory?status=all">All<span class="count">3</span>');
+    // The item: its ref and version to type, its title as the row's link, its kind and who proposed it.
+    expect(html).toContain(">D-1 v2</span>");
+    expect(html).toContain(`<a class="row-link" href="/console/memory/${ids.d1v2}">Dates</a>`);
+    expect(html).toContain(">Decision<");
+    expect(html).toContain(">sam@feat/login</span>");
+    // On a status's tab the status column would repeat it; only All shows it, as a pill.
+    expect(html).not.toContain('class="pill"');
+    const all = main(await page("/console/memory?status=all", team.lea.cookie));
+    expect(all).toContain('<span class="pill" data-tone="warn">Proposed</span>');
+    expect(all).toContain('<span class="pill" data-tone="ok">Accepted</span>');
+    expect(all).toContain('<span class="pill" data-tone="neutral">Pinned</span>');
+  });
+
+  it("says what fills an empty tab", async () => {
+    const html = main(await page("/console/memory?status=superseded", team.lea.cookie));
+    expect(html).toContain('<p class="empty-title">Nothing replaced yet.</p>');
+    const none = main(await page("/console/memory", freshTeam.lea.cookie, "en", fresh));
+    expect(none).toContain('<p class="empty-title">No proposals to review.</p>');
+    expect(none).toContain("memory_propose");
+  });
+
+  it("shows a new version as changes from the one it replaces, and the decision form under it", async () => {
+    const html = await page(`/console/memory/${ids.d1v2}`, team.lea.cookie);
+    expect(head(html)).toContain(">Dates</h1>");
+    expect(head(html)).toContain('href="/console/memory?status=proposed">Back to team memory</a>');
+    const body = main(html);
+    expect(body).toContain(">Changes from v1</h2>");
+    expect(body).toContain('<ins class="add">With milliseconds.</ins>');
+    expect(body).toContain('<span class="same">Dates are ISO.</span>');
+    expect(body).toContain(`<a href="/console/memory/${ids.d1}">D-1 v1</a>`);
+    expect(body).toContain('hx-post="/console/memory/');
+    expect(body).toMatch(/<input id="decision-note" name="note" maxlength="500"/);
+    expect(body).toMatch(/<button type="submit" class="primary" name="decision" value="accept">Accept<\/button>/);
+    expect(body).toMatch(/<button type="submit" class="secondary" name="decision" value="reject">Reject<\/button>/);
+  });
+
+  it("shows an accepted item's decision, its pin in the page header, and what replaces it", async () => {
+    const html = await page(`/console/memory/${ids.d1}`, team.lea.cookie);
+    expect(head(html)).toContain('hx-post="/console/memory/');
+    expect(head(html)).toContain(">Unpin</button>");
+    expect(head(html)).toContain('<span class="pill" data-tone="neutral">Pinned</span>');
+    const body = main(html);
+    expect(body).toContain("Agreed at stand-up.");
+    expect(body).toContain(`<a href="/console/memory/${ids.d1v2}">D-1 v2</a>`);
+    const rejected = main(await page(`/console/memory/${ids.note}`, team.lea.cookie));
+    expect(rejected).toContain("Not since the move.");
+    expect(rejected).not.toContain("/decide");
+  });
+
+  it("tells a person whose role can't decide who does", async () => {
+    await hub.db
+      .update(memoryItem)
+      .set({ status: "proposed" })
+      .where(eq(memoryItem.id, ids.note ?? ""));
+    await post(team.lea.cookie, "/console/settings", { memory_accept_by: "admin" });
+    const html = main(await page(`/console/memory/${ids.note}`, team.sam.cookie));
+    expect(html).not.toContain("/decide");
+    expect(html).toContain("On this hub, only admins and owners accept or reject proposals.");
+    await post(team.lea.cookie, "/console/settings", { memory_accept_by: "member" });
+    await hub.db
+      .update(memoryItem)
+      .set({ status: "rejected" })
+      .where(eq(memoryItem.id, ids.note ?? ""));
+  });
+
+  it("reads in French", async () => {
+    const html = main(await page("/console/memory?status=all", team.lea.cookie, "fr"));
+    expect(html).toContain(">Proposé</span>");
+    expect(html).toContain(">Décision<");
+    expect(await page(`/console/memory/${ids.d1v2}`, team.lea.cookie, "fr")).toContain(">Modifications depuis la v1</h2>");
   });
 });

@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
-import { diffLines } from "diff";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -55,7 +54,7 @@ import { adminReleaseClaim } from "../domain/claims.js";
 import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
-import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
+import { canDecide, decideMemory, setPinned } from "../domain/memory.js";
 import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
@@ -94,7 +93,18 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { AuditLede, AuditTable, memoryLabel, type Names, VerifyResult } from "./records.js";
+import {
+  AuditLede,
+  AuditTable,
+  MemoryDecide,
+  MemoryDetail,
+  MemoryHead,
+  MemoryTable,
+  MemoryTabs,
+  memoryLabel,
+  type Names,
+  VerifyResult,
+} from "./records.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1625,12 +1635,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/memory", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const status = c.req.query("status") ?? "proposed";
     if (!["proposed", "accepted", "superseded", "rejected", "all"].includes(status)) throw new HubError("E_INVALID", "unknown status");
     const found = await db
-      .select({ item: memoryItem, name: user.name })
+      .select({ item: memoryItem, name: user.name, agentLabel: agent.label })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
+      .leftJoin(agent, eq(agent.id, memoryItem.proposedByAgent))
       .where(
         and(
           eq(memoryItem.teamId, p.teamId),
@@ -1642,87 +1654,98 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    // The tabs count every item of each status, also those past the page.
+    const byStatus = await db
+      .select({ status: memoryItem.status, n: count() })
+      .from(memoryItem)
+      .where(eq(memoryItem.teamId, p.teamId))
+      .groupBy(memoryItem.status);
+    const counts: Record<string, number> = Object.fromEntries(byStatus.map((r) => [r.status, r.n]));
+    counts.all = byStatus.reduce((n, r) => n + r.n, 0);
+    const older = c.req.query("before");
     return page(
       c,
       "Team memory",
       <>
-        <nav>
-          {["proposed", "accepted", "superseded", "rejected", "all"].map((s) => (
-            <a href={`/console/memory?status=${s}`}>{s}</a>
-          ))}
-        </nav>
-        <Table
-          lang={tr(c).lang}
-          head={["Ref", "Version", "Kind", "Status", "Title", "Proposed by", "When"]}
-          rows={rows.map(({ item, name }) => [
-            memoryRef(item),
-            item.version,
-            item.kind,
-            `${item.status}${item.pinned ? " · pinned" : ""}`,
-            <a href={`/console/memory/${item.id}`}>{item.title}</a>,
-            `${name}${item.authoredBy === "agent" ? " (agent)" : ""}`,
-            <When at={item.createdAt} />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && last && (
-          <a href={`/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`}>{tr(c)("Older")}</a>
+        <MemoryTabs status={status} counts={counts} _={_} />
+        <MemoryTable rows={rows} status={status} _={_} />
+        {(older || found.length > PAGE) && (
+          <Pager
+            lang={_.lang}
+            newer={older ? `/console/memory?status=${status}` : undefined}
+            older={
+              found.length > PAGE && last
+                ? `/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`
+                : undefined
+            }
+          />
         )}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              "Decisions, contracts and conventions the team keeps. Agents read the accepted ones; a person accepts or rejects what agents propose.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 
   consoleApp.get("/memory/:id", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const [row] = await db
-      .select({ item: memoryItem, name: user.name })
+      .select({ item: memoryItem, name: user.name, agentLabel: agent.label })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
+      .leftJoin(agent, eq(agent.id, memoryItem.proposedByAgent))
       .where(and(eq(memoryItem.id, c.req.param("id")), eq(memoryItem.teamId, p.teamId)));
     if (!row) throw new HubError("E_NOT_FOUND", "no such item");
-    const { item, name } = row;
-    const [old] = item.supersedesId ? await db.select().from(memoryItem).where(eq(memoryItem.id, item.supersedesId)) : [];
+    const { item } = row;
+    const [old] = item.supersedesId
+      ? await db
+          .select()
+          .from(memoryItem)
+          .where(and(eq(memoryItem.id, item.supersedesId), eq(memoryItem.teamId, p.teamId)))
+      : [];
+    const [newer] = await db
+      .select()
+      .from(memoryItem)
+      .where(and(eq(memoryItem.supersedesId, item.id), eq(memoryItem.teamId, p.teamId)))
+      .orderBy(desc(memoryItem.version))
+      .limit(1);
+    const [decider] = item.decidedByUser ? await db.select({ name: user.name }).from(user).where(eq(user.id, item.decidedByUser)) : [];
     return page(
       c,
-      `${memoryRef(item)} v${item.version} · ${item.title}`,
-      <>
-        <p>
-          {item.kind} · {item.status}
-          {item.pinned && " · pinned"} · proposed by {name}
-          {item.authoredBy === "agent" ? " (agent)" : ""} on <When at={item.createdAt} />
-          {item.branch && ` · branch ${item.branch}`}
-        </p>
-        {old ? (
-          <>
-            <h2>Changes from v{old.version}</h2>
-            {/* Removed text in red, added text in green; both rendered as text. */}
-            <pre>
-              {diffLines(old.body, item.body).map((part) => (
-                <span class={part.added ? "add" : part.removed ? "del" : "same"}>{part.value}</span>
-              ))}
-            </pre>
-          </>
-        ) : (
-          <pre>{item.body}</pre>
-        )}
-        {item.decisionNote && <p>Decision note: {item.decisionNote}</p>}
-        {item.status === "proposed" && canDecide(p) && (
-          <form hx-post={`/console/memory/${item.id}/decide`} hx-swap="none">
-            <label>
-              Note <input name="note" maxlength={500} />
-            </label>
-            <button type="submit" name="decision" value="accept">
-              Accept
-            </button>
-            <button type="submit" name="decision" value="reject">
-              Reject
-            </button>
-          </form>
-        )}
-        {item.status === "accepted" && canDecide(p) && (
-          <Action post={`/console/memory/${item.id}/pin`} vals={{ pinned: String(!item.pinned) }} label={item.pinned ? "Unpin" : "Pin"} />
-        )}
-      </>,
+      item.title,
+      <MemoryDetail
+        item={item}
+        proposer={row}
+        decider={decider?.name ?? null}
+        old={old}
+        newer={newer}
+        decide={
+          item.status === "proposed" && (
+            <MemoryDecide item={item} old={old} can={canDecide(p)} acceptBy={p.settings.memory_accept_by ?? "member"} _={_} />
+          )
+        }
+        _={_}
+      />,
+      undefined,
+      {
+        back: <a href={`/console/memory?status=${item.status}`}>{_("Back to team memory")}</a>,
+        head: <MemoryHead item={item} _={_} />,
+        actions: item.status === "accepted" && canDecide(p) && (
+          <Action
+            post={`/console/memory/${item.id}/pin`}
+            vals={{ pinned: String(!item.pinned) }}
+            label={_(item.pinned ? "Unpin" : "Pin")}
+          />
+        ),
+      },
     );
   });
 

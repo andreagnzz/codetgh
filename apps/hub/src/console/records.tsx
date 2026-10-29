@@ -1,10 +1,11 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { diffLines } from "diff";
 import type { Child, FC } from "hono/jsx";
 import type { auditEvent, memoryItem } from "../db/schema.js";
 import { memoryRef } from "../domain/memory.js";
 import type { Lang } from "../i18n.js";
 import { Icon } from "../icons.js";
-import { Banner, Chip, Stamp, Table, When } from "./pages.js";
+import { Banner, Chip, EmptyState, Field, fieldAria, Panel, Pill, Stamp, Table, type Tone, When } from "./pages.js";
 
 // The audit log, team memory, claims and tasks. People and objects read by name, the machine keys and ids stay underneath
 // in mono; a state is a word, a pill only reinforces it. Every value is rendered by JSX, which escapes text: titles, bodies,
@@ -242,3 +243,261 @@ export const AuditLede: FC<{ _: Tr }> = ({ _ }) => (
     })}
   </p>
 );
+
+// ---- Team memory ----
+
+export const MEMORY_STATUSES = ["proposed", "accepted", "superseded", "rejected", "all"] as const;
+const STATUS_WORD: Record<string, string> = {
+  proposed: "Proposed",
+  accepted: "Accepted",
+  superseded: "Superseded",
+  rejected: "Rejected",
+  all: "All",
+};
+const STATUS_TONE: Record<string, Tone> = { proposed: "warn", accepted: "ok" };
+const KIND: Record<string, string> = { decision: "Decision", contract: "Contract", convention: "Convention", note: "Note" };
+const MemoryState: FC<{ item: Pick<MemoryItem, "status" | "pinned">; _: Tr }> = ({ item, _ }) => (
+  <span class="rec-pills">
+    <Pill tone={STATUS_TONE[item.status] ?? "neutral"}>{_(STATUS_WORD[item.status] ?? item.status)}</Pill>
+    {item.pinned && <Pill>{_("Pinned")}</Pill>}
+  </span>
+);
+// Who proposed: the person, then the session their agent wrote from, or that they wrote it themselves.
+const Proposer: FC<{ name: string; agentLabel: string | null; item: Pick<MemoryItem, "authoredBy">; _: Tr }> = ({
+  name,
+  agentLabel,
+  item,
+  _,
+}) => <Lines main={name} sub={item.authoredBy === "agent" ? <Chip>{agentLabel ?? _("Agent")}</Chip> : _("Person")} />;
+
+export const MemoryTabs: FC<{ status: string; counts: Record<string, number>; _: Tr }> = ({ status, counts, _ }) => (
+  <nav class="tabs" aria-label={_("Status")}>
+    {MEMORY_STATUSES.map((s) => (
+      <a href={`/console/memory?status=${s}`} aria-current={s === status ? "page" : undefined}>
+        {_(STATUS_WORD[s] ?? s)}
+        <span class="count">{counts[s] ?? 0}</span>
+      </a>
+    ))}
+  </nav>
+);
+
+export type MemoryRow = { item: MemoryItem; name: string; agentLabel: string | null };
+export const MemoryTable: FC<{ rows: MemoryRow[]; status: string; _: Tr }> = ({ rows, status, _ }) => (
+  <Table
+    lang={_.lang}
+    caption={_("Team memory")}
+    head={[_("Item"), ...(status === "all" ? [_("Status")] : []), _("Proposed by"), _("When")]}
+    primary={0}
+    sort={{ column: status === "all" ? 3 : 2, dir: "descending" }}
+    empty={<MemoryEmpty status={status} _={_} />}
+    rows={rows.map(({ item, name, agentLabel }) => [
+      <Lines
+        main={
+          <>
+            <Chip>{memoryLabel(item)}</Chip>{" "}
+            <a class="row-link" href={`/console/memory/${item.id}`}>
+              {item.title}
+            </a>
+          </>
+        }
+        sub={
+          <>
+            {_(KIND[item.kind] ?? item.kind)}
+            {status !== "all" && item.pinned && (
+              <>
+                {" "}
+                <Pill>{_("Pinned")}</Pill>
+              </>
+            )}
+          </>
+        }
+      />,
+      ...(status === "all" ? [<MemoryState item={item} _={_} />] : []),
+      <Proposer name={name} agentLabel={agentLabel} item={item} _={_} />,
+      <When at={item.createdAt} lang={_.lang} />,
+    ])}
+  />
+);
+
+const MemoryEmpty: FC<{ status: string; _: Tr }> = ({ status, _ }) => {
+  const [title, body] = (
+    {
+      proposed: [
+        "No proposals to review.",
+        "Agents propose team decisions with the memory_propose tool; they wait here for a person to accept or reject them.",
+      ],
+      accepted: [
+        "Nothing accepted yet.",
+        "Accepted items reach every agent through memory_search and the context each session starts with.",
+      ],
+      superseded: ["Nothing replaced yet.", "When a newer version of an item is accepted, the one it replaces moves here."],
+      rejected: ["Nothing rejected.", "Proposals a person rejected stay here, with the note they left."],
+    } as Record<string, [string, string]>
+  )[status] ?? ["No team memory yet.", "Agents propose team decisions with the memory_propose tool; a person accepts or rejects them."];
+  return (
+    <EmptyState title={_(title)} icon="info">
+      {_(body)}
+    </EmptyState>
+  );
+};
+
+// What the hub saw in a text when it was written: shown, never run.
+const FLAG: Record<string, [string, string]> = {
+  "instruction-like": ["Looks like an instruction", "The hub flagged this text. It's shown here, never run."],
+  "secret-suspect": ["May hold a secret", "Don't copy it anywhere before checking it."],
+  "external-link": ["Links to another site", "Check where a link leads before you open it."],
+};
+const Flags: FC<{ flags: string[] | null; _: Tr }> = ({ flags, _ }) => (
+  <>
+    {(flags ?? []).map((f) => {
+      const [title, body] = FLAG[f] ?? [f, ""];
+      return (
+        <Banner tone="warn" title={_(title)}>
+          {body && _(body)}
+        </Banner>
+      );
+    })}
+  </>
+);
+
+// Line by line: removed lines struck out on the error tint, added ones on the success tint, a sign in front of each.
+const Diff: FC<{ from: string; to: string }> = ({ from, to }) => (
+  <pre class="memory-diff">
+    {diffLines(from, to).flatMap((part) =>
+      part.value
+        .replace(/\n$/, "")
+        .split("\n")
+        .map((line) =>
+          part.added ? <ins class="add">{line}</ins> : part.removed ? <del class="del">{line}</del> : <span class="same">{line}</span>,
+        ),
+    )}
+  </pre>
+);
+
+const Props: FC<{ label: string; children?: Child }> = ({ label, children }) => (
+  <aside class="rec-props" aria-label={label}>
+    <dl>{children}</dl>
+  </aside>
+);
+const Prop: FC<{ term: string; children?: Child }> = ({ term, children }) => (
+  <div>
+    <dt>{term}</dt>
+    <dd>{children}</dd>
+  </div>
+);
+
+export const MemoryHead: FC<{ item: MemoryItem; _: Tr }> = ({ item, _ }) => (
+  <>
+    <Chip>{memoryLabel(item)}</Chip>
+    <span>{_(KIND[item.kind] ?? item.kind)}</span>
+    <MemoryState item={item} _={_} />
+  </>
+);
+
+export const MemoryDetail: FC<{
+  item: MemoryItem;
+  proposer: MemoryRow;
+  decider: string | null;
+  old: MemoryItem | undefined;
+  newer: MemoryItem | undefined;
+  decide: Child;
+  _: Tr;
+}> = ({ item, proposer, decider, old, newer, decide, _ }) => (
+  <div class="rec-detail">
+    <Props label={_("About this item")}>
+      <Prop term={_("Proposed by")}>
+        <Proposer name={proposer.name} agentLabel={proposer.agentLabel} item={item} _={_} />
+      </Prop>
+      <Prop term={_("Proposed on")}>
+        <Stamp at={item.createdAt} lang={_.lang} />
+      </Prop>
+      {item.decidedAt && (
+        <Prop term={_("Decided by")}>
+          <Lines main={decider ?? _("A former member")} sub={<Stamp at={item.decidedAt} lang={_.lang} />} />
+        </Prop>
+      )}
+      {item.branch && (
+        <Prop term={_("Branch")}>
+          <Chip>{item.branch}</Chip>
+        </Prop>
+      )}
+      {old && (
+        <Prop term={_("Replaces")}>
+          <a href={`/console/memory/${old.id}`}>{memoryLabel(old)}</a>
+        </Prop>
+      )}
+      {newer && (
+        <Prop term={_("Replaced by")}>
+          <a href={`/console/memory/${newer.id}`}>{memoryLabel(newer)}</a>
+        </Prop>
+      )}
+    </Props>
+    <div class="rec-body">
+      <Flags flags={item.flags} _={_} />
+      {old ? (
+        <>
+          <h2>{fill(_("Changes from v{n}"), { n: old.version })}</h2>
+          <p class="meta">{_("Lines that start with + are added, lines that start with − are removed.")}</p>
+          <Diff from={old.body} to={item.body} />
+        </>
+      ) : (
+        <p class="rec-text">{item.body}</p>
+      )}
+      {item.decidedAt && item.status !== "proposed" && (
+        <section aria-labelledby="decision-h">
+          <h2 id="decision-h">{_("Decision")}</h2>
+          <p>
+            {fill(_(item.status === "rejected" ? "{name} rejected it." : "{name} accepted it."), {
+              name: decider ?? _("A former member"),
+            })}
+          </p>
+          {item.decisionNote && <blockquote class="rec-note">{item.decisionNote}</blockquote>}
+        </section>
+      )}
+      {decide}
+    </div>
+  </div>
+);
+
+// Accept or reject a proposal, with a note the whole team reads; or who decides, when this person can't.
+export const MemoryDecide: FC<{ item: MemoryItem; old: MemoryItem | undefined; can: boolean; acceptBy: string; _: Tr }> = ({
+  item,
+  old,
+  can,
+  acceptBy,
+  _,
+}) =>
+  can ? (
+    <Panel title={_("Accept or reject")}>
+      <p>
+        {old
+          ? fill(_("Accepting it replaces {item}: agents then read this version."), { item: memoryLabel(old) })
+          : _("Accepted, it reaches every agent through memory_search and the context each session starts with.")}
+      </p>
+      <form hx-post={`/console/memory/${item.id}/decide`} hx-swap="none">
+        <Field
+          id="decision-note"
+          label={_("Note")}
+          lang={_.lang}
+          optional
+          help={_("Shown with the decision on this page, to the whole team.")}
+        >
+          <input id="decision-note" name="note" maxlength={500} autocomplete="off" {...fieldAria("decision-note", { help: true })} />
+        </Field>
+        <button type="submit" class="primary" name="decision" value="accept">
+          {_("Accept")}
+        </button>
+        <button type="submit" class="secondary" name="decision" value="reject">
+          {_("Reject")}
+        </button>
+      </form>
+    </Panel>
+  ) : (
+    <p class="lede">
+      {_(
+        acceptBy === "owner"
+          ? "On this hub, only owners accept or reject proposals."
+          : "On this hub, only admins and owners accept or reject proposals.",
+      )}
+    </p>
+  );
