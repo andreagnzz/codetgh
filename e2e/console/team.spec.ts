@@ -60,7 +60,7 @@ for (const scheme of ["light", "dark"] as const)
       "Make owner Sam…",
       "Make admin Sam…",
       "Make guest Sam…",
-      "Revoke access Sam…",
+      "Revoke access for Sam…",
     ]);
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Revoke Sam's access?" });

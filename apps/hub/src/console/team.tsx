@@ -243,7 +243,7 @@ const MemberMenu: FC<{ r: MemberRow; viewer: Principal; _: Tr }> = ({ r, viewer,
         post={`/console/members/${m.id}/revoke`}
         label={_("Revoke access")}
         level="danger"
-        name={`${_("Revoke access")} ${r.name}…`}
+        name={`${named(_("Revoke access for {name}"), { name: r.name })}…`}
         confirm={{
           title: named(_("Revoke {name}'s access?"), { name: r.name }),
           body: _(

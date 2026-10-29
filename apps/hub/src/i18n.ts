@@ -370,6 +370,7 @@ const FR: Record<string, string> = {
   "Guests see only the threads they take part in: no projects, tasks, claims or team memory. Their delegate sessions stop taking requests, and their pending invitations are revoked.":
     "Les invités ne voient que les fils auxquels ils participent\u00a0: ni projets, ni tâches, ni réservations, ni mémoire d'équipe. Ses sessions déléguées cessent de prendre des demandes, et ses invitations en attente sont révoquées.",
   "Revoke access": "Révoquer l'accès",
+  "Revoke access for {name}": "Révoquer l'accès de {name}",
   "Revoke {name}'s access?": "Révoquer l'accès de {name}\u202f?",
   "They're signed out at once: their tokens stop working, their sessions end and their claims are released. What they wrote stays with the team.":
     "Sa connexion se ferme tout de suite\u00a0: ses jetons ne marchent plus, ses sessions s'arrêtent et ses réservations sont libérées. Ce que cette personne a écrit reste à l'équipe.",

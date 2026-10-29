@@ -76,7 +76,7 @@ describe("members", () => {
     expect(sam).toContain('data-confirm="Make Sam an owner?"');
     const revoke = button(sam, `/console/members/${ids.sam}/revoke`);
     expect(revoke).toContain('class="danger"');
-    expect(revoke).toContain('aria-label="Revoke access Sam…"');
+    expect(revoke).toContain('aria-label="Revoke access for Sam…"');
     expect(revoke).toContain('data-confirm="Revoke Sam&#39;s access?"');
     expect(revoke).toContain('data-confirm-body="They&#39;re signed out at once: their tokens stop working');
     expect(revoke).toContain('data-done="Sam&#39;s access revoked."');
@@ -185,6 +185,7 @@ describe("members", () => {
     expect(html).toContain("Révoquer l&#39;invitation de ines@acme.test\u202f?");
     expect(html).toContain(">Propriétaire<");
     expect(html).toContain(">Toi</span>");
+    expect(html).toContain('aria-label="Révoquer l&#39;accès de Sam…"');
   });
 });
 

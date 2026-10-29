@@ -70,7 +70,7 @@ test("remove a member: their console session ends at once", async ({ page, brows
   await page.goto(`${hub.url}/console/members`);
   // Revoking access waits in the person's menu and asks first; the dialog's button runs it.
   await page.locator('summary[aria-label="Actions for Malik"]').click();
-  await page.getByRole("button", { name: "Revoke access Malik…" }).click();
+  await page.getByRole("button", { name: "Revoke access for Malik…" }).click();
   const dialog = page.getByRole("dialog", { name: "Revoke Malik's access?" });
   await expect(dialog).toContainText("They're signed out at once");
   await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Revoke access", exact: true }).click()]);
