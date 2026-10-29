@@ -860,7 +860,7 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
         {rows.map(({ message: m, name, handle, subject }, i) => {
           const wire = wireOf(m, handle ?? name);
           const to = recipients(m.to, _);
-          const what = [m.kind !== "note" && _(m.kind), subject, PRIORITY[m.priority] && _(PRIORITY[m.priority] ?? "")].filter(Boolean);
+          const what = [m.kind !== "note" && _(m.kind), PRIORITY[m.priority] && _(PRIORITY[m.priority] ?? ""), subject].filter(Boolean);
           return (
             <li
               class={i < LINE_PHONE ? "wire-row" : "wire-row later"}

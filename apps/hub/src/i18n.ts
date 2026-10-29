@@ -351,6 +351,7 @@ const FR: Record<string, string> = {
   "Prompts off": "Sans confirmation",
   Quarantined: "En quarantaine",
   "See all agents": "Voir tous les agents",
+  "No agent connected right now.": "Aucun agent connecté pour l'instant.",
   "No agent connected. Copy the invitation command to add one.": "Aucun agent connecté. Copie la commande d'invitation pour en ajouter un.",
   // Agent traffic.
   "Agent traffic": "Trafic des agents",

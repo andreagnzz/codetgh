@@ -417,7 +417,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <section class="line-section" aria-labelledby="line-h">
           <div class="section-head">
             <h2 id="line-h">{_("On the line")}</h2>
-            <p class="section-note">{_("Last 24 h")}</p>
+            <p class="section-note">{_("Last 24\u00a0h")}</p>
           </div>
           {line.length === 0 ? (
             <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
@@ -439,7 +439,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <section class="presence" aria-labelledby="presence-h">
             <div class="section-head">
               <h2 id="presence-h">{_("Presence")}</h2>
-              {agents.length > 0 && <p class="section-note">{n(online, "1 online", "{n} online")}</p>}
+              {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
             </div>
             <People
               rows={agents}
@@ -451,7 +451,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 </a>
               }
               empty={
-                isAdmin(p) ? (
+                agents.length > 0 ? (
+                  _("No agent connected right now.")
+                ) : isAdmin(p) ? (
                   <>
                     <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
                     <CodeBlock code="codetgh invite <email>" lang={_.lang} command />

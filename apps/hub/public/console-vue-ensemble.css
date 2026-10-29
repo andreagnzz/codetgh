@@ -71,6 +71,10 @@ h3.rule::before {
     grid-row: 1 / span 2;
   }
 }
+/* A live refresh that takes its time: the bar sweeps in the gap above the region, not across its first heading. */
+.overview[aria-busy="true"]::before {
+  top: calc(-1 * var(--sp-3));
+}
 /* The region says "Loading…" in words under reduced motion: across the whole grid. */
 .overview > .loading-text {
   grid-column: 1 / -1;
@@ -426,19 +430,27 @@ main > #live + .field-error {
 .people:not(.archived) > .person:first-child {
   padding-top: 0;
 }
+/* One line: a long session label gives way (its full text stays in its title), the state keeps its place. */
 .person-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-1) var(--sp-2);
+  gap: var(--sp-2);
   max-width: none;
   margin: 0;
 }
 .person-name {
+  flex: none;
+  max-width: 70%;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.person-head .chip {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .person-head .pill,
 .person-state {
+  flex: none;
   margin-left: auto;
 }
 .person-state {
@@ -465,6 +477,17 @@ main > #live + .field-error {
 }
 .person form {
   margin-top: var(--sp-2);
+}
+/* Between a phone and the wide layout, the overview's presence takes two columns rather than one long list. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .presence .people {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--sp-8);
+  }
+  .presence .people:not(.archived) > .person:nth-child(2) {
+    padding-top: 0;
+  }
 }
 .people-more {
   margin: var(--sp-3) 0 0;
