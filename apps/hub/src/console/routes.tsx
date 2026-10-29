@@ -971,6 +971,24 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const last = rows.at(-1);
     // The hub raises an audit alert itself; any other alert names who sent the message, or nobody once they are erased.
     const sender = (a: (typeof rows)[number]["alert"], name: string | null) => name ?? _(a.kind === "audit_tamper" ? "The hub" : "Nobody");
+    // Alerts on someone else's direct thread, which the thread page audits when an admin opens it (the same check as /threads).
+    const onThreads = [...new Set(rows.flatMap((r) => (r.alert.threadId ? [r.alert.threadId] : [])))];
+    const mine = onThreads.length ? (await participantThreads(p)).map((r) => r.id) : [];
+    const audited = onThreads.length
+      ? (
+          await db
+            .select({ id: thread.id })
+            .from(thread)
+            .where(and(inArray(thread.id, onThreads), eq(thread.kind, "direct")))
+        )
+          .map((r) => r.id)
+          .filter((id) => !mine.includes(id))
+      : [];
+    // Which alert a row's actions act on, for screen readers: its kind and who sent it.
+    const which = (a: (typeof rows)[number]["alert"], name: string | null) => ({
+      alert: _(ALERT_KIND[a.kind] ?? a.kind),
+      from: sender(a, name),
+    });
     return page(
       c,
       "Alerts",
@@ -993,6 +1011,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               <AlertText
                 a={a}
                 from={a.userId ? `${sender(a, name)} · ${_(a.agentId ? "agent" : "person")}` : sender(a, name)}
+                which={which(a, name)}
+                audited={!!a.threadId && audited.includes(a.threadId)}
                 max={MAX_AGENT_MESSAGES}
                 _={_}
               />,
@@ -1007,12 +1027,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               </>,
               a.status === "open" && (
                 <>
-                  <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
+                  <Action
+                    post={`/console/alerts/${a.id}/dismissed`}
+                    label={_("Dismiss")}
+                    name={fill(_("Dismiss: {alert}, {from}"), which(a, name))}
+                  />
                   <RowMenu
-                    label={fill(_("More decisions on this alert: {alert}, {from}"), {
-                      alert: _(ALERT_KIND[a.kind] ?? a.kind),
-                      from: sender(a, name),
-                    })}
+                    label={fill(_("More decisions on this alert: {alert}, {from}"), which(a, name))}
                     items={[
                       <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />,
                       a.kind === "secret_blocked" && (

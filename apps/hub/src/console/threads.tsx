@@ -269,13 +269,17 @@ export const ALERT_STATUS: Record<string, string> = {
   false_positive: "False positive",
   fingerprint_allowed: "Fingerprint allowed",
 };
-// from: who sent the flagged message, or the hub itself.
-export const AlertText: FC<{ a: { kind: string; excerpt: string; threadId: string | null }; from: string; max: number; _: Tr }> = ({
-  a,
-  from,
-  max,
-  _,
-}) => (
+// from: who sent the flagged message, or the hub itself, then whether as an agent or a person; which: the alert's kind and
+// sender, which the link's accessible name repeats so a list of links tells the alerts apart. audited: the thread is someone
+// else's direct thread, whose opening the audit log records.
+export const AlertText: FC<{
+  a: { kind: string; excerpt: string; threadId: string | null };
+  from: string;
+  which: { alert: string; from: string };
+  audited: boolean;
+  max: number;
+  _: Tr;
+}> = ({ a, from, which, audited, max, _ }) => (
   <>
     <p class="alert-kind">{_(ALERT_KIND[a.kind] ?? a.kind)}</p>
     <p class="alert-from">{from}</p>
@@ -294,8 +298,11 @@ export const AlertText: FC<{ a: { kind: string; excerpt: string; threadId: strin
     )}
     {a.threadId && (
       <p class="alert-link">
-        <a href={`/console/threads/${a.threadId}`}>{_("Open thread")}</a>
+        <a href={`/console/threads/${a.threadId}`} aria-label={fill(_("Open thread: {alert}, {from}"), which)}>
+          {_("Open thread")}
+        </a>
       </p>
     )}
+    {a.threadId && audited && <p class="alert-audit">{_("You're not in it. Opening it is recorded in the audit log.")}</p>}
   </>
 );

@@ -400,6 +400,8 @@ const FR: Record<string, string> = {
   Decided: "Décidée",
   "Fingerprint allowed": "Empreinte autorisée",
   "More decisions on this alert: {alert}, {from}": "Autres décisions sur cette alerte\u00a0: {alert}, {from}",
+  "Dismiss: {alert}, {from}": "Ignorer\u00a0: {alert}, {from}",
+  "Open thread: {alert}, {from}": "Ouvrir le fil\u00a0: {alert}, {from}",
   "Allow this secret's fingerprint?": "Autoriser l'empreinte de ce secret\u202f?",
   "Messages that carry this exact secret then pass the hub's check. Other secrets are still refused.":
     "Les messages qui contiennent exactement ce secret passeront alors le contrôle du hub. Les autres secrets restent refusés.",

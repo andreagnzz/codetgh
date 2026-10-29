@@ -100,8 +100,9 @@ test("alerts with the keyboard: Dismiss, then the row's menu, whose quarantine a
   await page.goto(`${hub.url}/console/alerts`);
   expect((await tab(page)).text).toBe("Skip to content");
   await page.keyboard.press("Enter");
-  expect(await tab(page)).toMatchObject({ text: "Open thread", outline: "solid 2px" });
-  expect(await tab(page)).toMatchObject({ text: "Dismiss", outline: "solid 2px" });
+  // Each action names its alert: a screen reader's list of links and buttons tells the rows apart.
+  expect(await tab(page)).toMatchObject({ text: "Open thread: Looks like an instruction, Sam", outline: "solid 2px" });
+  expect(await tab(page)).toMatchObject({ text: "Dismiss: Looks like an instruction, Sam", outline: "solid 2px" });
   const menu = await tab(page);
   expect(menu).toMatchObject({ text: "More decisions on this alert: Looks like an instruction, Sam", outline: "solid 2px" });
   await page.keyboard.press("Enter");

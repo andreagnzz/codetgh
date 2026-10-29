@@ -502,6 +502,13 @@ main:has(> .thread + .field-error) > .live-reload {
   align-items: center;
   min-height: 24px;
 }
+/* Under the link to someone else's direct thread: opening it is audited. */
+.alert-audit {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
 .alerts-list .pill + .meta {
   display: block;
   margin-top: var(--sp-1);
