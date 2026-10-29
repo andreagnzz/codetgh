@@ -47,7 +47,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { type Logger, pino } from "pino";
 import { ulid } from "ulid";
-import { type Auth, MCP_SCOPE } from "./auth.js";
+import { type Auth, CLIENT_IP_HEADER, MCP_SCOPE } from "./auth.js";
 import type { Config } from "./config.js";
 import { consoleRoutes } from "./console/routes.js";
 import type { Db } from "./db/index.js";
@@ -155,6 +155,9 @@ export function createApp({
   device = new DeviceAuth(),
 }: Deps) {
   const app = new Hono<Env>();
+  // Behind Docker and Funnel the socket is the gateway: without a trusted proxy, every client shares the sign-in limits.
+  if (process.env.NODE_ENV === "production" && !config.trustedProxy)
+    logger.warn("CODETGH_TRUSTED_PROXY is unset: behind a proxy, every client shares the sign-in limits (docs/DEPLOY.md)");
   // A driver error carries the query's parameters, message text included: log its name only.
   app.onError((e, c) => {
     if (e instanceof HTTPException) return e.getResponse(); // bodyLimit's 413 and the like
@@ -377,6 +380,9 @@ export function createApp({
   // PreToolUse on Edit/Write: 204 means no decision, so Claude Code's permission flow runs unchanged.
   v1.post("/claims/pre-edit", async (c) => {
     const p = c.get("principal");
+    // Every Edit and Write asks, under the team's claims lock: room for several busy sessions of one person, not for a loop.
+    const wait = limiter.take(`pre-edit:${p.user.id}`, 4);
+    if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many edit checks: wait and retry", wait);
     const input = await parse(c, PreEditInput);
     const agent = await agentBySession(db, p, input.session_id);
     const decision = agent ? await preEdit(deps, p, agent, input.path) : null;
@@ -582,11 +588,16 @@ export function createApp({
 
   v1.get("/status", async (c) => {
     const p = c.get("principal");
+    // The presence mod polls every 30 s per session: room for 15 sessions of one person and their CLI calls, not for a loop.
+    const wait = limiter.take(`status:${p.user.id}`, 4);
+    if (wait > 0) throw new HubError("E_RATE_LIMITED", "too many status reads: wait and retry", wait);
     const sessionId = SessionQuery.safeParse({ session_id: c.req.query("session_id") }).data?.session_id;
     // A bad usage reading is dropped, never the presence refresh.
     const { session_id: _, ...usage } = StatusQuery.safeParse(c.req.query()).data ?? {};
-    const live = sessionId ? await touchSession(db, p, sessionId, usage) : false;
-    if (live) bus.emit("presence", { teamId: p.teamId });
+    const was = sessionId ? await touchSession(db, p, sessionId, usage) : null;
+    const live = was !== null;
+    // Every console tab of the team re-renders on this: only a session that was not online changes what they show.
+    if (was && was !== "online") bus.emit("presence", { teamId: p.teamId });
     // The mod wakes its session on this count: a live session counts only what it can read itself, a session that is
     // not live (ended, unknown, stale) counts nothing. Only a call without session_id (CLI, SDK) sees the whole inbox.
     const me = sessionId ? (live ? await agentBySession(db, p, sessionId) : null) : await restAgent(p, undefined);
@@ -832,7 +843,12 @@ export function createApp({
       return errorResponse(c, e);
     }
   });
-  app.on(["GET", "HEAD", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => auth.handler(c.req.raw));
+  app.on(["GET", "HEAD", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => {
+    // Set over any value the client sent: better-auth reads the client's address from this header only.
+    const headers = new Headers(c.req.raw.headers);
+    headers.set(CLIENT_IP_HEADER, clientIp(c, config.trustedProxy));
+    return auth.handler(new Request(c.req.raw, { headers }));
+  });
   const csp = secureHeaders({ contentSecurityPolicy: { defaultSrc: ["'self'"] } });
   app.get("/login", csp, (c) =>
     c.html(

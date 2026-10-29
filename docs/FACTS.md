@@ -262,6 +262,7 @@ A wrapped thread key is anonymous (X25519 to the member's public key, no sender 
   - `tailscale funnel status` shows the configuration, `tailscale funnel reset` clears it, and adding `off` to the command that turned it on turns it off.
 - [Pricing](https://tailscale.com/pricing): the free Personal plan covers up to 6 users. Its comparison table lists Funnel without a per-plan mark.
 - In the reference deployment (Tailscale 1.104.1), MagicDNS and HTTPS were already on and the `funnel` attribute had to be added. CodeTgh uses `tailscale funnel --bg --https=443 http://127.0.0.1:8787`.
+- `X-Forwarded-For` through Funnel (source read 2026-10-28: [`ipn/ipnlocal/serve.go`](https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go), `addProxyForwardedHeaders`): the proxy sets it with `Header.Set` to the connection's source address, so a value the client sent is replaced, not appended; it also sets `X-Forwarded-Host` and, over TLS, `X-Forwarded-Proto: https`. For a Funnel connection the source is the client (« srcAddr represents the source AddrPort and not that of the ingressPeer »). Not checked on a live host: the address the hub container sees as its socket (the compose network's gateway, through Docker's port publishing).
 
 
 ### Remote Control launcher (2026-10-14, Claude Code 2.1.296, Linux)

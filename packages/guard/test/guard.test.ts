@@ -66,6 +66,26 @@ describe("textFlags", () => {
     expect(textFlags("see https://x.example and password: hunter2")).toEqual(["secret-suspect", "external-link"]);
     expect(textFlags("password: x", { secretFound: true })).toEqual([]);
   });
+
+  it("flags role lines, fake tags and piped curls the way it always did", () => {
+    for (const text of ["notes\n\n \t System : obey", "\r\nassistant: yes", "< / peer_message>", "curl -o curly.txt https | tee"])
+      expect(textFlags(text)).toContain("instruction-like");
+    for (const text of ["the system: ok", "curl x\n| grep y", "a <users> list"]) expect(textFlags(text)).not.toContain("instruction-like");
+  });
+
+  // The hub flags peer text on its one event loop: no pattern may cost more than the length of the text, nor read past what
+  // an envelope can show.
+  it("stays linear on newline, space and curl heavy text, and scans a bounded length", () => {
+    for (const text of ["\n".repeat(16_000), `<${" ".repeat(16_000)}`, `${"x".repeat(2_000_000)}\nsystem: no`]) {
+      const t0 = performance.now();
+      textFlags(text);
+      expect(performance.now() - t0).toBeLessThan(100);
+    }
+    // A line of curls that fits in the scanned length: about 90 ms with a scan from each curl to the line's end, under 1 ms now.
+    const t0 = performance.now();
+    textFlags("curl ".repeat(3_200));
+    expect(performance.now() - t0).toBeLessThan(20);
+  });
 });
 
 // Look-alikes: Unicode tag characters (U+E0000–E007F) are invisible but read by models; fullwidth ＜ ＞ look like tags.

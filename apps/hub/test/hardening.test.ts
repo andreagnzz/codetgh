@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { agent, claim, membership, personalToken, task, team as teamTable, thread, user } from "../src/db/schema.js";
+import { agent, claim, membership, personalToken, session, task, team as teamTable, thread, user } from "../src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 // Findings of the phase 2 security review.
@@ -27,6 +27,36 @@ const preEdit = async (token: string, sessionId: string, path: string) => {
   });
   return (await res.json()) as { decision: string; reason: string };
 };
+
+// Rate limits and the address kept with a session follow one rule: the socket, or X-Forwarded-For from CODETGH_TRUSTED_PROXY.
+describe("client address", () => {
+  it("ignores an X-Forwarded-For from anyone but the trusted proxy, on the sign-in routes too", async () => {
+    const res = await fetch(`${hub.url}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: hub.url, "x-forwarded-for": "203.0.113.9" },
+      body: JSON.stringify({ email: team.sam.email, password: team.sam.password }),
+    });
+    expect(res.status).toBe(200);
+    const ips = (await hub.db.select({ ip: session.ipAddress }).from(session).where(eq(session.userId, team.sam.userId))).map((r) => r.ip);
+    expect(ips.length).toBeGreaterThan(1);
+    expect(ips).not.toContain("203.0.113.9");
+  });
+
+  // Behind Docker and Funnel the socket is the gateway: without a trusted proxy, every client shares the sign-in limits.
+  it("warns at start, in production, when no proxy is trusted", async () => {
+    const logs = async (trustedProxy?: string) => {
+      const lines: string[] = [];
+      vi.stubEnv("NODE_ENV", "production");
+      const prod = await startHub({ logLines: lines, config: { trustedProxy } }).finally(() => vi.unstubAllEnvs());
+      // better-auth seeds its OAuth resource in the background once created: let it finish before the database closes.
+      await prod.auth.$context;
+      await prod.stop();
+      return lines.join("\n");
+    };
+    expect(await logs()).toContain("CODETGH_TRUSTED_PROXY");
+    expect(await logs("172.18.0.1")).not.toContain("CODETGH_TRUSTED_PROXY");
+  });
+});
 
 describe("thread resource", () => {
   it("shows a reader only the messages they sent or received", async () => {

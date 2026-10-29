@@ -13,12 +13,14 @@ const INSTRUCTION_LIKE = [
   near("run|execute|exec", "command|script|this|the", 20),
   near("lance|lancez|exécute|exécutez|execute", "commande|script|ceci|cela|ça|la", 20),
   /\|\s*(?:ba|z)?sh\b/i,
-  /\bcurl\b[^\n]*\|/i,
+  // Each scan stops at the next curl, so a line of curls costs its length, not its length squared.
+  /\bcurl\b(?:(?!\bcurl\b)[^\n|])*\|/i,
   /\brm\s+-[a-z]*r[a-z]*f?\b/i,
   /\bsudo\b/i,
   /\$\(/,
-  /<\s*\/?\s*(?:system|peer_message|assistant|user)\b/i,
-  /^\s*(?:system|assistant)\s*:/im,
+  /<\s*(?:\/\s*)?(?:system|peer_message|assistant|user)\b/i,
+  // A role at the start of a line: the blanks before it stop at the line's start, so no match backtracks over the lines above.
+  /(?:^|[\n\r\u2028\u2029])[^\S\n\r\u2028\u2029]*(?:system|assistant)\s*:/i,
   near("approve|accept|allow", "permission|prompt|requests?"),
   near("approuve|approuvez|accepte|acceptez|autorise|autorisez", "permissions?|invites?|demandes?|requêtes?"),
   near("disable|turn off|désactive|desactive|désactivez", "codetgh|hooks?|security|sécurité|plugin"),
@@ -29,10 +31,14 @@ const EXTERNAL_LINK = /\bhttps?:\/\//i;
 // Tag characters spell text a model reads but a human never sees: hiding words is itself a red flag.
 const TAG_CHARACTERS = /[\u{E0000}-\u{E007F}]/u;
 
+// An envelope shows at most 8 KB of a body: text past this never reaches a model, and is not scanned.
+const MAX_SCANNED = 16 * 1024;
+
 export function textFlags(text: string, opts: { secretFound?: boolean } = {}) {
-  const visible = clean(text);
+  const head = text.slice(0, MAX_SCANNED);
+  const visible = clean(head);
   const flags: string[] = [];
-  if (TAG_CHARACTERS.test(text) || INSTRUCTION_LIKE.some((r) => r.test(visible))) flags.push("instruction-like");
+  if (TAG_CHARACTERS.test(head) || INSTRUCTION_LIKE.some((r) => r.test(visible))) flags.push("instruction-like");
   if (!opts.secretFound && SECRET_SUSPECT.test(visible)) flags.push("secret-suspect");
   if (EXTERNAL_LINK.test(visible)) flags.push("external-link");
   return flags;
