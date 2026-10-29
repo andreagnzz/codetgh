@@ -23,6 +23,8 @@ export type Config = {
   trustedProxy?: string;
   // Loopback unless HOST says otherwise: the container sets 0.0.0.0, its published port stays on 127.0.0.1.
   host: string;
+  // The console's component catalogue (/console/catalogue): set by the test harness only, never read from the environment.
+  catalogue?: boolean;
 };
 
 export function loadConfig(env = process.env): Config {

@@ -24,8 +24,8 @@ import { createPersonalToken } from "../src/tokens.js";
 // Generated per run: the repository holds no fixed hub secret, even for tests.
 const SECRET = randomBytes(32).toString("base64");
 
-// Real hub on a random port; PGlite in memory, or a fresh database on TEST_DATABASE_URL. With hostname, it listens on that
-// address only (the console demo binds 127.0.0.1).
+// Real hub on a random port, with the console's component catalogue; PGlite in memory, or a fresh database on
+// TEST_DATABASE_URL. With hostname, it listens on that address only (the console demo binds 127.0.0.1).
 export async function startHub(
   opts: { limiter?: RateLimiter; logLines?: string[]; mailer?: Mailer; config?: Partial<Config>; hostname?: string } = {},
 ) {
@@ -70,6 +70,7 @@ export async function startHub(
     brandDir: fileURLToPath(new URL("../../../assets/brand", import.meta.url)),
     port,
     host: "127.0.0.1",
+    catalogue: true,
     ...opts.config,
   };
   const template = process.env.CODETGH_TEST_PGLITE_TEMPLATE;

@@ -20,8 +20,9 @@ import {
   Timeline,
 } from "./pages.js";
 
-// Development and tests only (never mounted when NODE_ENV is production): every component of the console in every state it
-// can show without an action, with fictitious data. Its own headings are not translated; the components' words are.
+// Development and tests only (mounted by the test harness and the demo hub, never by the hub's own configuration): every
+// component of the console in every state it can show without an action, with fictitious data. Its own headings are not
+// translated; the components' words are.
 const HOUR = 3_600_000;
 
 export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {

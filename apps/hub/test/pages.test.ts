@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadConfig } from "../src/config.js";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
@@ -116,18 +117,18 @@ describe("pages", () => {
     expect(html).toContain("thread not found");
   });
 
-  it("serves the component catalogue in development and tests, and never in production", async () => {
+  it("serves the component catalogue only on a hub the test harness starts, never from the hub's own configuration", async () => {
     expect((await get("/console/catalogue", { cookie: team.lea.cookie })).status).toBe(200);
-    vi.stubEnv("NODE_ENV", "production");
-    const prod = await startHub();
+    // Opt-in: no environment variable, NODE_ENV included, turns it on for a hub started by main.ts.
+    expect(loadConfig({ CODETGH_SECRET: "s", NODE_ENV: "development" }).catalogue).toBeUndefined();
+    const plain = await startHub({ config: { catalogue: undefined } });
     try {
-      const people = await prod.seed();
-      const res = await fetch(`${prod.url}/console/catalogue`, { headers: { cookie: people.lea.cookie }, redirect: "manual" });
+      const people = await plain.seed();
+      const res = await fetch(`${plain.url}/console/catalogue`, { headers: { cookie: people.lea.cookie }, redirect: "manual" });
       expect(res.status).toBe(404);
-      expect((await fetch(`${prod.url}/console`, { headers: { cookie: people.lea.cookie } })).status).toBe(200);
+      expect((await fetch(`${plain.url}/console`, { headers: { cookie: people.lea.cookie } })).status).toBe(200);
     } finally {
-      vi.unstubAllEnvs();
-      await prod.stop();
+      await plain.stop();
     }
   });
 });

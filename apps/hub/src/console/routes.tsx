@@ -1920,8 +1920,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   // Development and tests only: the component catalogue, and two actions that let it show a confirmation, a toast and a
-  // refusal. Never mounted in production.
-  if (process.env.NODE_ENV !== "production") {
+  // refusal. Mounted only when the test harness (or the demo hub built on it) asks; the hub's own configuration never does.
+  if (config.catalogue) {
     consoleApp.get("/catalogue", (c) =>
       page(c, "Components", <Catalogue lang={tr(c).lang} />, undefined, {
         back: <a href="/console">{tr(c)("Overview")}</a>,
