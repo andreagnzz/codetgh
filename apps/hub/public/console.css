@@ -566,6 +566,9 @@ button:is(:disabled, [aria-disabled="true"]):hover {
   padding-inline: var(--sp-4);
 }
 /* Adjacent buttons keep their distance. */
+:where(form) > button + button {
+  margin-inline-start: var(--sp-2);
+}
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -1452,6 +1455,10 @@ details.panel:where([open]) > summary {
   font-size: var(--fs-sub);
   line-height: 24px;
   font-weight: 600;
+}
+/* Stacked forms, and what follows a form, keep their distance. */
+form:not(.inline) + :is(form:not(.inline), button, p:not(:empty)) {
+  margin-top: var(--sp-4);
 }
 /* A disclosure's chevron points right while closed, down once open. */
 details.disclosure:not([open]) > summary > .icon {
