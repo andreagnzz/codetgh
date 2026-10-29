@@ -981,55 +981,66 @@ const OAUTH_JS = `
 // Back to the device page after signing in (codetgh setup); any other value of next is ignored.
 const next = new URLSearchParams(location.search).get("next") === "/console/device" ? "/console/device" : "";
 const q = next ? "" : location.search.slice(1);
-async function post(path, body) {
-  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ ...body, oauth_query: q }) });
-  const data = await res.json().catch(() => ({}));
-  const next = data.url || data.redirect_uri || data.redirectURI;
+// Every word comes from the page, in its language: #error's data-words, keyed by the hub's error code (code, or error for
+// the OAuth endpoints); the hub's own message otherwise.
+const error = document.getElementById("error");
+const words = JSON.parse(error?.dataset.words || "{}");
+function said(data) {
+  const why = data.message || data.error_description;
+  return words[data.code || data.error] || (why ? words.said.replace("{reason}", () => why) : words.generic);
+}
+// A message under what it is about, with its icon; the fields that point at a refusal turn invalid with it.
+function show(out, text, ok) {
+  out.className = ok ? "field-done" : "field-error";
+  out.replaceChildren(document.getElementById(ok ? "done-icon" : "error-icon").content.firstElementChild.cloneNode(true), text);
+  if (!ok) for (const f of document.querySelectorAll("[aria-describedby~=" + out.id + "]")) f.setAttribute("aria-invalid", "true");
+}
+// The control that sent a request is busy until the hub answers; a hub out of reach is said in words.
+async function send(control, out, path, body, headers = {}) {
+  for (const f of document.querySelectorAll("[aria-invalid]")) f.removeAttribute("aria-invalid");
+  out.replaceChildren();
+  control.setAttribute("aria-busy", "true");
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, credentials: "include", body: JSON.stringify(body) });
+    return { res, data: await res.json().catch(() => ({})) };
+  } catch {
+    show(out, words.offline);
+  } finally {
+    control.removeAttribute("aria-busy");
+  }
+}
+async function post(control, path, body) {
+  const r = await send(control, error, path, { ...body, oauth_query: q });
+  if (!r) return;
+  const next = r.data.url || r.data.redirect_uri || r.data.redirectURI;
   if (next) location.href = next;
-  else if (res.ok) location.href = next || "/console";
-  else document.getElementById("error").textContent = data.message || "Error " + res.status;
+  else if (r.res.ok) location.href = next || "/console";
+  else show(error, said(r.data));
 }
 for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
-  const res = await fetch("/api/auth/sign-in/social", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (data.url) location.href = data.url;
-  else document.getElementById("error").textContent = data.message || "This sign-in method is not available.";
+  const r = await send(button, error, "/api/auth/sign-in/social", { provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") });
+  if (r?.data.url) location.href = r.data.url;
+  else if (r) show(error, r.data.code || r.data.message ? said(r.data) : words.unavailable);
 });
 document.getElementById("magic-link")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const res = await fetch("/api/auth/sign-in/magic-link", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ email: new FormData(e.target).get("email"), callbackURL: next || (q ? "/login?" + q : "/console") }),
-  });
-  const out = document.getElementById("error");
-  out.textContent = res.ok ? "Check your email for a sign-in link." : "Could not send the link: check the address, then try again.";
-  out.className = res.ok ? "" : "field-error";
+  const out = document.getElementById("link-result");
+  const r = await send(e.target.querySelector("[type=submit]"), out, "/api/auth/sign-in/magic-link", { email: new FormData(e.target).get("email"), callbackURL: next || (q ? "/login?" + q : "/console") });
+  if (r) show(out, r.res.ok ? words.sent : words.unsent, r.res.ok);
 });
 document.getElementById("login")?.addEventListener("submit", (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  post("/api/auth/sign-in/email", { email: f.get("email"), password: f.get("password") });
+  post(e.target.querySelector("[type=submit]"), "/api/auth/sign-in/email", { email: f.get("email"), password: f.get("password") });
 });
 document.getElementById("invite-signup")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  const res = await fetch("/api/auth/sign-up/email", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-codetgh-invite": location.pathname.split("/").pop() },
-    credentials: "include",
-    body: JSON.stringify({ name: f.get("name"), email: f.get("email"), password: f.get("password") }),
-  });
-  if (res.ok) location.href = e.target.dataset.next;
-  else document.getElementById("error").textContent = (await res.json().catch(() => ({}))).message || "Sign-up refused";
+  const r = await send(e.target.querySelector("[type=submit]"), error, "/api/auth/sign-up/email", { name: f.get("name"), email: f.get("email"), password: f.get("password") }, { "x-codetgh-invite": location.pathname.split("/").pop() });
+  if (r?.res.ok) location.href = e.target.dataset.next;
+  else if (r) show(error, said(r.data));
 });
 for (const b of document.querySelectorAll("[data-consent]")) {
-  b.addEventListener("click", () => post("/api/auth/oauth2/consent", { accept: b.dataset.consent === "accept" }));
+  b.addEventListener("click", () => post(b, "/api/auth/oauth2/consent", { accept: b.dataset.consent === "accept" }));
 }
 `;

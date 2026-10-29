@@ -1,2 +1,60 @@
 /* Batch 1, public pages (refonte/pages-publiques): sign-in, invitation, OAuth consent, device. Only that batch edits this file;
    the tokens, base and components are in console.css. */
+
+/* The column: a title that wraps evenly, a lede, then the page's one job. */
+.public h1 {
+  text-wrap: balance;
+}
+.public .lede {
+  margin-bottom: var(--sp-6);
+}
+
+/* Sign-in: the providers as secondary buttons, a rule that says "or", then the form and its one primary button. Every button
+   of the column spans it. */
+.providers {
+  display: grid;
+  gap: var(--sp-2);
+}
+.public :is(.providers button, form button[type="submit"]) {
+  width: 100%;
+  min-height: 44px;
+}
+.public form button[type="submit"] {
+  margin-top: var(--sp-2);
+}
+.or {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: none;
+  margin: var(--sp-6) 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.public .disclosure {
+  margin-top: var(--sp-6);
+}
+
+/* The hub's answer, 8 px under the fields it is about: a refusal in the error color, a success with its icon. */
+.public form :is(.field-error, .field-done):not(:empty) {
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-4);
+}
+.public form p:empty {
+  margin: 0;
+}
+.field-done {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+}
+.field-done > .icon {
+  margin-top: 2px;
+  color: var(--success);
+}

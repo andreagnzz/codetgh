@@ -308,6 +308,25 @@ const FR: Record<string, string> = {
   // ---- End of the foundations block. ----
 
   // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----
+  // Sign-in
+  "Use the account your team set up on this hub.": "Utilise le compte que ton équipe a créé sur ce hub.",
+  "Continue with GitHub": "Continuer avec GitHub",
+  "Continue with Google": "Continuer avec Google",
+  "Continue with your organization": "Continuer avec ton organisation",
+  or: "ou",
+  "Get a sign-in link by email instead": "Recevoir plutôt un lien par courriel",
+  "The email or password is wrong. Check both, then try again.":
+    "L'e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.",
+  "This email address isn't valid. Enter an address like name@example.com.":
+    "Cette adresse de courriel n'est pas valable. Saisis une adresse comme nom@exemple.com.",
+  "This sign-in method isn't available on this hub. Use another one.":
+    "Ce moyen de connexion n'est pas disponible sur ce hub. Utilises-en un autre.",
+  "If this address has an account or an invitation, a sign-in link is on its way. It works for 10\u00a0minutes.":
+    "Si cette adresse a un compte ou une invitation, un lien de connexion est en route. Il reste valable 10\u00a0minutes.",
+  "The link wasn't sent. Check the address, then try again.": "Le lien n'est pas parti. Vérifie l'adresse, puis réessaie.",
+  "The hub could not handle the request. Try again; if it keeps failing, check the hub logs.":
+    "Le hub n'a pas pu traiter la demande. Réessaie\u202f; si ça continue, regarde les journaux du hub.",
+  "The hub does not answer. Check your connection, then try again.": "Le hub ne répond pas. Vérifie ta connexion, puis réessaie.",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----

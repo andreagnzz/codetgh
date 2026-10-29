@@ -133,6 +133,23 @@ describe("pages", () => {
   });
 });
 
+describe("public pages", () => {
+  const html = async (path: string, lang = "en", cookie = "") => (await get(path, { "accept-language": lang, cookie })).text();
+
+  it("sign-in: one primary button, and the hub's answer under the fields that point at it, in the reader's words", async () => {
+    const page = await html("/login");
+    expect(page).toContain("<h1>Sign in</h1>");
+    expect(page.match(/class="primary"/g)).toHaveLength(1);
+    expect(page).toContain('<button type="submit" class="primary">Sign in</button>');
+    expect(page).toMatch(/<input name="email"[^>]*aria-describedby="error"/);
+    expect(page).toMatch(/<input name="password"[^>]*aria-describedby="error"/);
+    const answer = page.indexOf('id="error"');
+    expect(answer).toBeGreaterThan(page.indexOf('name="password"'));
+    expect(answer).toBeLessThan(page.indexOf(">Sign in</button>"));
+    expect(await html("/login", "fr")).toContain("L&#39;e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
+  });
+});
+
 describe("shell", () => {
   const html = async (cookie: string, path = "/console", lang = "en") => (await get(path, { cookie, "accept-language": lang })).text();
 
