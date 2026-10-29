@@ -101,17 +101,13 @@ export const InviteForm: FC<{ _: Tr; owner: boolean }> = ({ _, owner }) => (
 // The link always comes back: emailed or not, it can be sent another way.
 export const Invited: FC<{ _: Tr; email: string; link: string; days: number; emailed: boolean }> = ({ _, email, link, days, emailed }) => (
   <>
-    <Banner tone="success" title={named(_(emailed ? "Invitation emailed to {email}." : "Invitation ready for {email}."), { email })}>
-      {named(
-        _(
-          emailed
-            ? "The link is valid for {days}\u00a0days. You can also send it yourself:"
-            : "Send them this link. It's valid for {days}\u00a0days.",
-        ),
-        {
-          days: String(days),
-        },
-      )}
+    <Banner
+      tone={emailed ? "success" : "info"}
+      title={named(_(emailed ? "Invitation emailed to {email}." : "Send this link to {email}."), { email })}
+    >
+      {named(_(emailed ? "The link is valid for {days}\u00a0days. You can also send it yourself:" : "It's valid for {days}\u00a0days."), {
+        days: String(days),
+      })}
     </Banner>
     <CodeBlock code={link} lang={_.lang} copyLabel={_("Copy the invitation link")} />
   </>

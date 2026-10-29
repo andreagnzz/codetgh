@@ -86,7 +86,7 @@ test("invite a member: the form opens under the page header, and the link shows 
   await page.keyboard.type("zoe@acme.test");
   expect(await tabs(page, 3)).toEqual(["Role", "Valid for", "Invite"]);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#invite-result")).toContainText("Invitation ready for zoe@acme.test.");
+  await expect(page.locator("#invite-result")).toContainText("Send this link to zoe@acme.test.");
   expect(await tab(page)).toBe("Copy the invitation link");
 });
 

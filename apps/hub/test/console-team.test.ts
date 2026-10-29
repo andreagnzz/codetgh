@@ -157,9 +157,9 @@ describe("members", () => {
     const html = await (
       await consolePost(hub.url, team.lea.cookie, "/console/members/invite", { email: "zoe@acme.test", role: "member", days: "3" })
     ).text();
-    expect(html).toContain('<div class="banner" data-tone="success" role="status">');
-    expect(html).toContain("Invitation ready for zoe@acme.test.");
-    expect(html).toContain("Send them this link. It&#39;s valid for 3\u00a0days.");
+    expect(html).toContain('<div class="banner" data-tone="info" role="status">');
+    expect(html).toContain("Send this link to zoe@acme.test.");
+    expect(html).toContain("It&#39;s valid for 3\u00a0days.");
     expect(html).toMatch(/<code translate="no">http:\/\/[^<]+\/invite\/[A-Za-z0-9_-]{32}<\/code>/);
     expect(html).toContain('aria-label="Copy the invitation link"');
   });

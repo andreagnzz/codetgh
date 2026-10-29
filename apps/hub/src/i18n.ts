@@ -332,10 +332,10 @@ const FR: Record<string, string> = {
   "Valid for": "Valable",
   "From 1 to 30\u00a0days.": "De 1 à 30\u00a0jours.",
   "Invitation emailed to {email}.": "Invitation envoyée par courriel à {email}.",
-  "Invitation ready for {email}.": "Invitation prête pour {email}.",
+  "Send this link to {email}.": "Envoie ce lien à {email}.",
   "The link is valid for {days}\u00a0days. You can also send it yourself:":
     "Le lien est valable {days}\u00a0jours. Tu peux aussi l'envoyer toi-même\u00a0:",
-  "Send them this link. It's valid for {days}\u00a0days.": "Envoie-lui ce lien. Il est valable {days}\u00a0jours.",
+  "It's valid for {days}\u00a0days.": "Il est valable {days}\u00a0jours.",
   "Copy the invitation link": "Copier le lien d'invitation",
   "Pending invitations": "Invitations en attente",
   "Revoke the invitation for {email}": "Révoquer l'invitation de {email}",
