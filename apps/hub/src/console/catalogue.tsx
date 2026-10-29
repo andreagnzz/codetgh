@@ -347,7 +347,8 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
         Agents wrote 5 messages in a row.
       </Banner>
       <Banner tone="danger" title={_("Agent traffic stopped")}>
-        {_("Agents can't send messages until an admin resumes agent traffic.")} <a href="#agent-traffic">{_("Resume agent traffic")}</a>
+        {_("Agents can't send messages or claim files until an admin resumes agent traffic.")}{" "}
+        <a href="#agent-traffic">{_("Resume agent traffic")}</a>
       </Banner>
       <Banner tone="danger" title="2 fields need a fix.">
         <a href="#demo-invalid">Email</a>, <a href="#demo-days">Valid for</a>.

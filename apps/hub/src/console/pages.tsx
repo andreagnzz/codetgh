@@ -156,7 +156,7 @@ export const Layout: FC<{
             </header>
             {p.paused && (
               <Banner tone="danger" title={_("Agent traffic stopped")}>
-                {_("Agents can't send messages until an admin resumes agent traffic.")}{" "}
+                {_("Agents can't send messages or claim files until an admin resumes agent traffic.")}{" "}
                 {admin && <a href="/console#agent-traffic">{_("Resume agent traffic")}</a>}
               </Banner>
             )}
@@ -535,8 +535,14 @@ export const Field: FC<{ id: string; label: Child; lang: Lang; help?: Child; err
 
 // Code to copy: wraps instead of scrolling; a command's prompt is drawn, never copied. console.js copies, or selects the text
 // and says how when the browser refuses. With several blocks on a page, copyLabel names what each Copy copies ("Copy the
-// token"): it starts with the visible word.
-export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLabel?: string }> = ({ code, lang, command, copyLabel }) => {
+// token"): it starts with the visible word. In a region a live refresh replaces, id keeps Copy's place for the keyboard.
+export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLabel?: string; id?: string }> = ({
+  code,
+  lang,
+  command,
+  copyLabel,
+  id,
+}) => {
   const _ = (s: string) => t(lang, s);
   return (
     <div class="code" data-kind={command ? "command" : undefined}>
@@ -545,6 +551,7 @@ export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLa
       </pre>
       <button
         type="button"
+        id={id}
         class="copy"
         aria-label={copyLabel}
         data-copy
@@ -583,13 +590,17 @@ export const EmptyState: FC<{ title: Child; icon?: IconName; action?: Child; chi
   </div>
 );
 
-// What happened to one object, oldest first. Times are absolute (console.js puts them in the reader's time zone); a filled
-// node is a state change, a hollow one a note; the current state reads in bold. Past fold events, the oldest are folded.
+// What happened to one object, oldest first. Times are absolute (console.js puts them in the reader's time zone): the clock
+// alone for a time from today, the day and month before it on another day. A filled node is a state change, a hollow one a
+// note; the current state reads in bold. Past fold events, the oldest are folded.
 export type TimelineEvent = { at: Date; text: Child; actor?: Child; body?: Child; change?: boolean; now?: boolean };
-const STAMP: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+const CLOCK: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 export const Stamp: FC<{ at: Date; lang: Lang }> = ({ at, lang }) => (
   <time datetime={at.toISOString()} data-local>
-    {new Intl.DateTimeFormat(lang === "fr" ? "fr-FR" : "en-GB", STAMP).format(at)}
+    {new Intl.DateTimeFormat(
+      lang === "fr" ? "fr-FR" : "en-GB",
+      at.toDateString() === new Date().toDateString() ? CLOCK : { day: "numeric", month: "short", ...CLOCK },
+    ).format(at)}
   </time>
 );
 export const Timeline: FC<{ events: TimelineEvent[]; lang: Lang; empty: Child; fold?: number }> = ({ events, lang, empty, fold = 10 }) => {
