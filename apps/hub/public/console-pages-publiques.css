@@ -120,6 +120,22 @@
   margin: var(--sp-6) 0 0;
   color: var(--text-muted);
 }
+/* The invited address, read whole: a value in the read-only field's look (inset surface, dashed edge, 40 px for one line)
+   that wraps anywhere instead of being cut. */
+.public .field > .label {
+  margin: 0;
+  font-weight: 500;
+}
+.public .field > .value {
+  max-width: 32rem;
+  margin: var(--sp-1) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  line-height: 22px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-inset);
+  overflow-wrap: anywhere;
+}
 
 /* Device: a narrow column in the console; the code to compare stands out, in the terminal's own letters; facts sit beside
    their labels from 640 px. */

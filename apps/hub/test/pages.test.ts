@@ -175,8 +175,10 @@ describe("public pages", () => {
     const page = await html(`/invite/${token}`);
     expect(page).toContain("<h1>Join Acme web</h1>");
     expect(page).toContain("You&#39;re invited as a guest. A guest sees only the threads they take part in.");
-    const field = page.match(/<input id="invite-email"[^>]*>/)?.[0] ?? "";
-    for (const attr of ['name="email"', 'value="ines@acme.test"', 'readonly=""', 'autocomplete="username"']) expect(field).toContain(attr);
+    // Read whole as text, however long; the sign-up script and password managers read it from a field kept out of sight.
+    expect(page).toContain('<p class="value" translate="no">ines@acme.test</p>');
+    const field = page.match(/<input name="email"[^>]*>/)?.[0] ?? "";
+    for (const attr of ['type="email"', 'value="ines@acme.test"', 'autocomplete="username"', 'hidden=""']) expect(field).toContain(attr);
     expect(page).toContain('<p class="help" id="invite-password-help">At least 12 characters.</p>');
     const signedIn = await html(`/invite/${token}`, "fr", team.sam.cookie);
     expect(signedIn).toContain("<dd>sam@acme.test</dd>");

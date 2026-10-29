@@ -805,23 +805,16 @@ export const InvitePage: FC<{
             <>
               {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
               <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
-                <Field
-                  id="invite-email"
-                  label={_("Email")}
-                  lang={lang}
-                  help={_("Your account uses the address the invitation was sent to.")}
-                >
-                  <input
-                    id="invite-email"
-                    name="email"
-                    type="email"
-                    value={email}
-                    readonly
-                    title={email}
-                    autocomplete="username"
-                    {...fieldAria("invite-email", { help: 1 })}
-                  />
-                </Field>
+                {/* The address is not typed: it shows whole, as text that wraps. The sign-up script and password managers
+                    read it from a field out of sight and out of the tab order, as Chromium documents for a known username. */}
+                <div class="field">
+                  <p class="label">{_("Email")}</p>
+                  <p class="help">{_("Your account uses the address the invitation was sent to.")}</p>
+                  <p class="value" translate="no">
+                    {email}
+                  </p>
+                </div>
+                <input name="email" type="email" value={email} autocomplete="username" hidden />
                 <Field id="invite-name" label={_("Your name")} lang={lang}>
                   <input id="invite-name" name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
                 </Field>

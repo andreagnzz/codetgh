@@ -124,8 +124,10 @@ test("invitation with the keyboard: the invited address is the account's, and a 
     via: "console",
   });
   await page.goto(`${hub.url}/invite/${token}`);
+  // The address shows as text, not a stop; the form still sends it.
+  await expect(page.locator("#invite-signup .value")).toHaveText("nina@acme.test");
   await expect(page.locator("#invite-signup input[name=email]")).toHaveValue("nina@acme.test");
-  for (const name of ["CodeTgh", "Email", "Your name", "Password"]) expect(await tab(page)).toBe(name);
+  for (const name of ["CodeTgh", "Your name", "Password"]) expect(await tab(page)).toBe(name);
   await page.keyboard.type("correct horse battery");
   expect(await tab(page)).toBe("Create my account");
   // Revoked while the page was open: the hub refuses the account.
