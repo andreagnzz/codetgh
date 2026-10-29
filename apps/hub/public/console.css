@@ -719,7 +719,8 @@ textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-[aria-invalid="true"] {
+[aria-invalid="true"],
+[aria-invalid="true"]:is(:hover, :focus-visible) {
   border-color: var(--error);
 }
 textarea {
