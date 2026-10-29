@@ -120,3 +120,76 @@
   margin: var(--sp-6) 0 0;
   color: var(--text-muted);
 }
+
+/* Device: a narrow column in the console; the code to compare stands out, in the terminal's own letters; facts sit beside
+   their labels from 640 px. */
+.device {
+  max-width: 36rem;
+}
+.device .panel {
+  margin-bottom: var(--sp-6);
+}
+.device .field > input {
+  width: min(100%, 16rem);
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.device .panel > .field-error {
+  margin: var(--sp-3) 0 0;
+  color: var(--error);
+}
+.user-code {
+  font-size: var(--fs-heading);
+  line-height: 28px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+:not(pre) > code.user-code {
+  padding: 0 var(--sp-2);
+}
+/* The machine name is read whole here: it wraps instead of being cut. */
+.device-check .chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.device-check > h2 {
+  margin-bottom: var(--sp-4);
+}
+.device-check > .warn-line {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  margin: 0 0 var(--sp-4);
+  color: var(--text);
+}
+.warn-line > .icon {
+  margin-top: 2px;
+  color: var(--warning);
+}
+.device .actions {
+  margin: 0;
+}
+/* A refusal console.js places after Approve takes a row of its own, under both buttons. */
+.device .actions > .field-error {
+  flex-basis: 100%;
+  order: 1;
+  margin: 0;
+}
+@media (min-width: 640px) {
+  .device .facts > div {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: var(--sp-4);
+  }
+  .device .facts dt {
+    margin: 0;
+    line-height: 28px;
+  }
+  .device .facts dd {
+    line-height: 28px;
+  }
+  .device .facts .help {
+    line-height: 16px;
+  }
+}

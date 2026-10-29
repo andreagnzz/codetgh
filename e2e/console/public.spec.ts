@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { invitation } from "../../apps/hub/src/db/schema.js";
 import { createInvitation } from "../../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../../apps/hub/test/harness.js";
+import { signIn } from "./fixtures.js";
 
 // The public pages and the device page with a browser and a keyboard: what the hub refused, in the reader's language and
 // under what it is about; the control that waits on the hub says so; every stop shows its focus.
@@ -134,4 +135,29 @@ test("invitation with the keyboard: the invited address is the account's, and a 
   await expect(page.locator("#invite-signup #error[role=alert]")).toHaveText(
     "This invitation can't create an account any more. Ask the person who invited you for a new link.",
   );
+});
+
+test("device with the keyboard: type the code, check it and the machine, approve", async ({ page }) => {
+  const start = await fetch(`${hub.url}/v1/device/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ label: "lea-thinkpad" }),
+  });
+  const { user_code } = (await start.json()) as { user_code: string };
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/device`);
+  await page.getByLabel("Code shown in your terminal").fill("BBBB-BBBB");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".device .field-error[role=alert]")).toContainText("unknown or expired code");
+  await page.getByLabel("Code shown in your terminal").fill(user_code.toLowerCase());
+  await page.keyboard.press("Enter");
+  const check = page.locator("#device");
+  await expect(check.getByRole("heading", { name: "Check this sign-in" })).toBeVisible();
+  await expect(check).toContainText(user_code);
+  await expect(check).toContainText("lea-thinkpad");
+  await page.getByLabel("Code shown in your terminal").focus();
+  for (const name of ["Continue", "Approve", "Deny"]) expect(await tab(page)).toBe(name);
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Enter");
+  await expect(check.getByRole("status")).toContainText("Terminal approved");
 });

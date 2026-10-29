@@ -73,6 +73,7 @@ import {
 } from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
+import { Icon } from "../icons.js";
 import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
@@ -81,7 +82,11 @@ import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
+  Banner,
   Bypass,
+  Chip,
+  Field,
+  fieldAria,
   InvitePage,
   Layout,
   Line,
@@ -1134,21 +1139,40 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
 
-  // Browser sign-in: the person types the code their terminal shows, checks the machine, then approves or denies.
+  // Browser sign-in: the person types the code their terminal shows, checks the code and the machine, then approves or denies.
   consoleApp.get("/device", (c) => {
     const _ = tr(c);
     return page(
       c,
       "Sign in a terminal",
-      <>
-        <form hx-post="/console/device" hx-target="#device">
-          <label>
-            {_("Code shown in your terminal")} <input name="user_code" required maxlength={20} autocomplete="off" />
-          </label>
-          <button type="submit">{_("Continue")}</button>
-        </form>
+      <div class="device">
+        <p class="lede">{_("When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.")}</p>
+        <section class="panel">
+          <form hx-post="/console/device" hx-target="#device">
+            <Field
+              id="user-code"
+              label={_("Code shown in your terminal")}
+              lang={_.lang}
+              help={_("8 letters, like BCDF-GHJK. Capitals and the dash are optional.")}
+            >
+              <input
+                id="user-code"
+                name="user_code"
+                required
+                maxlength={20}
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck={false}
+                {...fieldAria("user-code", { help: 1 })}
+              />
+            </Field>
+            <button type="submit" class="primary">
+              {_("Continue")}
+            </button>
+          </form>
+        </section>
         <div id="device" />
-      </>,
+      </div>,
     );
   });
   const deviceInput = async (c: Context<Env>) => {
@@ -1161,22 +1185,44 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { code, keys } = await deviceInput(c);
     const entry = device.find(code, keys);
     const vals = JSON.stringify({ user_code: code });
+    // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare.
     return c.html(
-      <Result>
-        <p>
-          {_("Machine")}: <strong>{entry.label}</strong> ({_("typed by whoever started this request, so it proves nothing")})
+      <section class="panel device-check" role="status" aria-labelledby="device-check">
+        <h2 id="device-check">{_("Check this sign-in")}</h2>
+        <dl class="facts">
+          <div>
+            <dt>{_("Code")}</dt>
+            <dd>
+              <code class="user-code" translate="no">{`${code.slice(0, 4)}-${code.slice(4)}`}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Machine")}</dt>
+            <dd>
+              <Chip>{entry.label}</Chip>
+              <p class="help">{_("Sent by the terminal. Anyone can send any name, so compare the code, not the name.")}</p>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Started")}</dt>
+            <dd>
+              <When at={new Date(entry.startedAt)} lang={_.lang} />
+            </dd>
+          </div>
+        </dl>
+        <p class="warn-line">
+          <Icon name="triangle-alert" />
+          {_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}
         </p>
-        <p>
-          {_("Started")} <When at={new Date(entry.startedAt)} lang={_.lang} />
+        <p class="actions">
+          <button type="button" class="primary" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
+            {_("Approve")}
+          </button>
+          <button type="button" class="secondary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+            {_("Deny")}
+          </button>
         </p>
-        <p>{_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}</p>
-        <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
-          {_("Approve")}
-        </button>{" "}
-        <button type="button" class="tertiary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
-          {_("Deny")}
-        </button>
-      </Result>,
+      </section>,
     );
   });
   consoleApp.post("/device/approve", async (c) => {
@@ -1188,7 +1234,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
+    const _ = tr(c);
+    return c.html(
+      <Banner tone="success" title={_("Terminal approved")}>
+        {_("Go back to your terminal: it finishes on its own.")}
+      </Banner>,
+    );
   });
   consoleApp.post("/device/deny", async (c) => {
     const p = c.get("principal");
@@ -1197,7 +1248,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
+    const _ = tr(c);
+    return c.html(<Banner title={_("Sign-in denied")}>{_("No token was created.")}</Banner>);
   });
 
   consoleApp.post("/tokens/:id/revoke", async (c) => {

@@ -49,8 +49,10 @@ describe("browser sign-in (device authorization)", () => {
     expect(html).toContain("sam-laptop &lt;b&gt;");
     expect(html).not.toContain("<b>");
     // When the request started, and that the label is the requester's word, not a checked machine name.
-    expect(html).toMatch(/Started <time datetime="[^"]+"/);
-    expect(html).toContain("typed by whoever started this request");
+    expect(html).toMatch(/Started<\/dt><dd><time datetime="[^"]+"/);
+    expect(html).toContain("Anyone can send any name, so compare the code, not the name.");
+    // The code as the terminal prints it, whatever the person typed.
+    expect(html).toContain(`<code class="user-code" translate="no">${s.user_code}</code>`);
 
     const approved = await consolePost(hub.url, team.sam.cookie, "/console/device/approve", { user_code: s.user_code });
     expect(approved.status).toBe(200);

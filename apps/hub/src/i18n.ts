@@ -359,6 +359,18 @@ const FR: Record<string, string> = {
   "Invitation sent to": "Invitation envoyée à",
   "Signed in as": "Compte connecté",
   "Not this account?": "Pas le bon compte\u202f?",
+  // Device
+  "When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.":
+    "Quand codetgh connecte un terminal, il affiche un code. Tape ce code ici, puis approuve le terminal.",
+  "8 letters, like BCDF-GHJK. Capitals and the dash are optional.": "8\u00a0lettres, comme BCDF-GHJK. Majuscules et tiret facultatifs.",
+  "Check this sign-in": "Vérifie cette connexion",
+  Code: "Code",
+  "Sent by the terminal. Anyone can send any name, so compare the code, not the name.":
+    "Envoyé par le terminal. N'importe qui peut envoyer n'importe quel nom\u00a0: compare le code, pas le nom.",
+  "Terminal approved": "Terminal approuvé",
+  "Go back to your terminal: it finishes on its own.": "Retourne dans ton terminal\u00a0: il termine tout seul.",
+  "Sign-in denied": "Connexion refusée",
+  "No token was created.": "Aucun jeton n'a été créé.",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
