@@ -382,6 +382,16 @@ const FR: Record<string, string> = {
   "No delegate sessions.": "Aucune session déléguée.",
   "A delegate session does the tasks that the teammates you name send it, without a human, on its project only. Start one in the project's repository:":
     "Une session déléguée fait les tâches que lui envoient les coéquipiers que tu nommes, sans humain, sur son seul projet. Lance-en une dans le dépôt du projet\u00a0:",
+  // A refused action, in the reader's words (routes.tsx READER).
+  "This agent is no longer on the hub. Reload the page to see the current list.":
+    "Cet agent n'est plus sur le hub. Recharge la page pour voir la liste à jour.",
+  "This session no longer takes requests. Reload the page to see the current list.":
+    "Cette session ne prend plus de demandes. Recharge la page pour voir la liste à jour.",
+  "This project is no longer on the hub. Reload the page to see the current list.":
+    "Ce projet n'est plus sur le hub. Recharge la page pour voir la liste à jour.",
+  "Give the external agent a name.": "Donne un nom à l'agent externe.",
+  "Adding an external agent needs a sign-in from the last 10\u00a0minutes. Sign in again at /login, then add it.":
+    "Ajouter un agent externe demande une connexion de moins de 10\u00a0minutes. Reconnecte-toi sur /login, puis ajoute-le.",
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----

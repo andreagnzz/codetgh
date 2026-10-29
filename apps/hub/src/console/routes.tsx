@@ -983,20 +983,38 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
 
+  // A refusal of an action on Agents, Projects or Delegations, in the reader's words: what happened and what to do next,
+  // which onError gives in the page's language. The domain and the REST API keep their own words.
+  const READER: Record<string, string> = {
+    "agent not found": "This agent is no longer on the hub. Reload the page to see the current list.",
+    "no delegate session": "This session no longer takes requests. Reload the page to see the current list.",
+    "project not found": "This project is no longer on the hub. Reload the page to see the current list.",
+    "name the external agent": "Give the external agent a name.",
+    "Sign in again (less than 10 minutes ago) to do this.":
+      "Adding an external agent needs a sign-in from the last 10\u00a0minutes. Sign in again at /login, then add it.",
+  };
+  const inWords = (e: unknown): never => {
+    throw e instanceof HubError && Object.hasOwn(READER, e.message) ? new HubError(e.code, READER[e.message] ?? e.message) : e;
+  };
+
   consoleApp.post("/projects/:id/launch", async (c) => {
-    await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1").catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/projects/:id/runner", async (c) => {
-    await setRunDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    await setRunDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1").catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/a2a", async (c) => {
-    requireFresh(c);
+    try {
+      requireFresh(c);
+    } catch (e) {
+      inWords(e);
+    }
     const _ = tr(c);
-    const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "");
+    const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "").catch(inWords);
     c.header("Cache-Control", "no-store");
     return c.html(
       <>
@@ -1020,12 +1038,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/agents/:id/project", async (c) => {
     const parsed = AgentProjectForm.safeParse(await form(c));
     if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project for this session."));
-    await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id);
+    await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id).catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/:id/remove", async (c) => {
-    await removeAgent(db, c.get("principal"), c.req.param("id"));
+    await removeAgent(db, c.get("principal"), c.req.param("id")).catch(inWords);
     return refresh(c);
   });
 
@@ -1062,12 +1080,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/delegations/:id/stop", async (c) => {
-    await stopDelegate(db, c.get("principal"), c.req.param("id"));
+    await stopDelegate(db, c.get("principal"), c.req.param("id")).catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/:id/:trust{trusted|quarantined}", async (c) => {
-    await setAgentTrust(db, c.get("principal"), c.req.param("id"), c.req.param("trust") as "trusted");
+    await setAgentTrust(db, c.get("principal"), c.req.param("id"), c.req.param("trust") as "trusted").catch(inWords);
     return refresh(c);
   });
 

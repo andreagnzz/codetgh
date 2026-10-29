@@ -1,7 +1,8 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { consolePost } from "../../../e2e/helpers.js";
+import { consolePost, csrfToken } from "../../../e2e/helpers.js";
+import { session as authSession } from "../src/db/auth-schema.js";
 import { agent, project } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { type Hub, startHub } from "./harness.js";
@@ -184,6 +185,56 @@ describe("agents", () => {
     }
   });
 
+  it("answers a refused action with what happened and what to do next, in the page's language", async () => {
+    // As console.js sends it: htmx shows the bare reason where the action was.
+    const refused = async (path: string, cookie: string, lang = "en") => {
+      const res = await fetch(`${hub.url}${path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          "X-CSRF-Token": await csrfToken(hub.url, cookie),
+          "HX-Request": "true",
+          "accept-language": lang,
+          "content-type": "application/x-www-form-urlencoded",
+          origin: hub.url,
+        },
+        body: path.endsWith("/project") ? "project_id=prj_gone" : "",
+      });
+      return { status: res.status, text: await res.text() };
+    };
+    const gone = "This agent is no longer on the hub. Reload the page to see the current list.";
+    expect(await refused("/console/agents/agt_gone/quarantined", team.lea.cookie)).toEqual({
+      status: 404,
+      text: expect.stringContaining(gone),
+    });
+    expect((await refused("/console/agents/agt_gone/remove", team.lea.cookie)).text).toContain(gone);
+    expect((await refused("/console/agents/agt_gone/remove", team.lea.cookie, "fr")).text).toContain(
+      "Cet agent n&#39;est plus sur le hub. Recharge la page pour voir la liste à jour.",
+    );
+    expect((await refused(`/console/agents/${ids.lea}/project`, team.lea.cookie)).text).toContain(
+      "This project is no longer on the hub. Reload the page to see the current list.",
+    );
+    expect((await refused("/console/projects/prj_gone/launch", team.lea.cookie)).text).toContain("This project is no longer on the hub.");
+    expect((await refused("/console/projects/prj_gone/runner", team.lea.cookie, "fr")).text).toContain(
+      "Ce projet n&#39;est plus sur le hub.",
+    );
+    expect((await refused("/console/delegations/agt_gone/stop", team.lea.cookie)).text).toContain(
+      "This session no longer takes requests. Reload the page to see the current list.",
+    );
+    // A sign-in older than 10 minutes: how to get a fresh one.
+    await hub.db
+      .update(authSession)
+      .set({ createdAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(authSession.userId, team.malik.userId));
+    const stale = await refused("/console/agents/a2a", team.malik.cookie);
+    expect(stale.status).toBe(403);
+    expect(stale.text).toContain(
+      "Adding an external agent needs a sign-in from the last 10\u00a0minutes. Sign in again at /login, then add it.",
+    );
+    expect((await refused("/console/agents/a2a", team.malik.cookie, "fr")).text).toContain("Reconnecte-toi sur /login");
+    await hub.db.update(authSession).set({ createdAt: new Date() }).where(eq(authSession.userId, team.malik.userId));
+  });
+
   it("is in French", async () => {
     const html = await page("/console/agents", team.sam.cookie, "fr");
     expect(html).toContain("Tes sessions sur ce hub, par projet.");
@@ -265,7 +316,9 @@ describe("projects", () => {
     // Each control says which session it moves, and no project is chosen for the person.
     expect(loose).toContain('<select name="project_id" aria-label="Project for lea@scratch">');
     expect(loose).toMatch(/<option value="" disabled(="")? selected(="")?>Choose a project…<\/option>/);
-    expect(loose).toContain('<button type="submit" class="secondary" aria-label="Attach to project lea@scratch">Attach to project</button>');
+    expect(loose).toContain(
+      '<button type="submit" class="secondary" aria-label="Attach to project lea@scratch">Attach to project</button>',
+    );
     const refused = await consolePost(hub.url, team.lea.cookie, `/console/agents/${ids.lea}/project`, {});
     expect(refused.status).toBe(400);
     expect(await refused.text()).toContain("Choose a project for this session.");
