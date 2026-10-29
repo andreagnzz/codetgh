@@ -893,9 +893,11 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
                 <WireSvg lanes={set === "narrow" ? (lanes.narrow ?? []) : lanes.wide} wire={wire} set={set} />
               ))}
               <a id={`line-${m.id}`} class="wire-text" href={`/console/threads/${m.threadId}`}>
+                {/* The arrow keeps to the recipient: a narrow column breaks the line before it. */}
                 <span class="wire-who">
                   <strong>{who}</strong> <span aria-hidden="true">→</span>
-                  <span class="sr-only">{_("to")}</span> {to}
+                  <span class="sr-only">{_("to")}</span>
+                  {`\u00a0${to}`}
                 </span>
                 <Stamp at={m.createdAt} lang={_.lang} />
                 {what.length > 0 && <span class="wire-what">{what.join(" · ")}</span>}

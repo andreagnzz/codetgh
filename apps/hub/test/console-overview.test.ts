@@ -135,9 +135,9 @@ describe("overview", () => {
     expect(row(sent[14]?.id)).toContain('class="bus"');
     expect(row(sent[14]?.id)).not.toContain('class="link"');
     expect(row(newest?.id)).toContain('class="link"');
-    // The row says in words what the drawing shows.
+    // The row says in words what the drawing shows, the arrow kept with the recipient.
     expect(row(newest?.id)).toMatch(
-      /<strong>Sam&#39;s agent<\/strong> <span aria-hidden="true">→<\/span><span class="sr-only">to<\/span> @lea/,
+      /<strong>Sam&#39;s agent<\/strong> <span aria-hidden="true">→<\/span><span class="sr-only">to<\/span>\u00a0@lea/,
     );
     // The live announcement names the sender as the row does.
     expect(row(newest?.id)).toContain('data-summary="New message: Sam&#39;s agent → @lea"');
