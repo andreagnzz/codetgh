@@ -9,6 +9,11 @@
   margin-bottom: var(--sp-6);
 }
 
+/* A full-page error: what to do in body text, the hub's own reason as a caption under it, then the way back. */
+.public > .meta {
+  margin: calc(-1 * var(--sp-1)) 0 var(--sp-6);
+}
+
 /* Sign-in: the providers as secondary buttons, a rule that says "or", then the form and its one primary button. Every button
    of the column spans it. */
 .providers {

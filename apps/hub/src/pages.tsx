@@ -69,8 +69,8 @@ const ERROR_TEXT: Record<number, [string, string]> = {
   404: ["This page doesn't exist.", "Check the link, or start again from the overview."],
 };
 
-// A page load the hub refuses: what happened, the hub's own reason as a sentence, what to do, and a way back. An htmx
-// request keeps the bare reason.
+// A page load the hub refuses: what happened, what to do as the body text, the hub's own reason as a muted caption, and a
+// way back. An htmx request keeps the bare reason.
 export const ErrorPage = ({
   status,
   reason,
@@ -93,8 +93,8 @@ export const ErrorPage = ({
   return (
     <Layout lang={lang} title={`${heading} · CodeTgh`}>
       <h1>{heading}</h1>
-      {why && <p>{_("The hub said: {reason}").replace("{reason}", () => (/[.!?]$/.test(why) ? why : `${why}.`))}</p>}
-      <p class="lede">{_(next ?? nextByStatus)}</p>
+      <p>{_(next ?? nextByStatus)}</p>
+      {why && <p class="meta">{_("The hub said: {reason}").replace("{reason}", () => (/[.!?]$/.test(why) ? why : `${why}.`))}</p>}
       <p>
         <a href={back.href}>{_(back.label)}</a>
       </p>

@@ -45,10 +45,9 @@ describe("pages", () => {
       expect(html, path).toContain(`<h1>${title.replace("'", "&#39;")}</h1>`);
       expect(html, path).toContain('href="/console"');
     }
-    // The hub's reason reads as a sentence in body text, not as a muted caption.
-    expect(await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text()).toContain(
-      "<p>The hub said: thread not found.</p>",
-    );
+    // What to do is the body text; the hub's own reason follows as a muted caption.
+    const thread = await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text();
+    expect(thread).toContain('<p>Check the link, or start again from the overview.</p><p class="meta">The hub said: thread not found.</p>');
   });
 
   it("answers an unknown page opened in a browser with the 404 page, and an API, MCP or htmx client with the bare 404", async () => {
@@ -103,7 +102,7 @@ describe("pages", () => {
     expect(res.status).toBe(403);
     const html = await res.text();
     expect(html).toContain("<h1>Tu ne peux pas rejoindre l&#39;équipe avec cette invitation.</h1>");
-    expect(html).toContain("<p>Réponse du hub\u00a0: Cette invitation est pour une autre adresse de courriel.</p>");
+    expect(html).toContain('<p class="meta">Réponse du hub\u00a0: Cette invitation est pour une autre adresse de courriel.</p>');
     expect(html).toContain('<a href="/login">Se connecter avec un autre compte</a>');
     expect(html).not.toContain("Ton rôle ne le permet pas");
   });
