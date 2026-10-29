@@ -8,7 +8,8 @@
   flex: 1;
   min-width: 0;
 }
-.head-form > details[open] {
+/* Closed or open, the details keeps none of the panel's bottom margin. */
+.head-form > details {
   margin: 0;
 }
 .head-form > details:not([open]) > summary {
@@ -24,6 +25,13 @@
   grid-column: 1 / -1;
   grid-row: 4;
   margin-top: var(--sp-6);
+}
+/* Beside the title, the 40 px button overhangs the 32 px title line by 4 px on each side instead of growing the row: the title
+   and the lede stay where they are on the pages without a button, and the button's center is the title's. */
+@media (min-width: 640px) {
+  .page-actions:has(> .head-form > details:not([open])) {
+    margin-block: -4px;
+  }
 }
 /* In a panel, whose paragraphs are muted, a refusal that console.js places after a form keeps the error color. */
 :is(.head-form, .team-me, .team-settings) .field-error {

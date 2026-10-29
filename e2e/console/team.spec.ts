@@ -148,6 +148,26 @@ test("my data and settings: every field in order, each named, each with a visibl
   await expect(page.locator('input[name="claims_enforcement"][value="warn"]')).toBeChecked();
 });
 
+for (const width of [768, 1280])
+  test(`page header at ${width} px: the title and the closed form's button share a line, and the lede starts where it does on My data`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signIn(page, hub.url, team.lea);
+    const box = async (selector: string) => (await page.locator(selector).first().boundingBox()) ?? { y: 0, height: 0 };
+    const middle = async (selector: string) => {
+      const b = await box(selector);
+      return b.y + b.height / 2;
+    };
+    await page.goto(`${hub.url}/console/me`);
+    const lede = (await box(".page-meta")).y;
+    for (const path of ["/console/members", "/console/tokens"]) {
+      await page.goto(`${hub.url}${path}`);
+      expect(Math.abs((await middle(".page-head h1")) - (await middle(".head-form summary"))), path).toBeLessThanOrEqual(1);
+      expect((await box(".page-meta")).y, path).toBe(lede);
+    }
+  });
+
 test("a refusal under a form in a panel keeps the error color, not the panel's muted text", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.sam);
