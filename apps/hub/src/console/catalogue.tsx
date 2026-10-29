@@ -251,6 +251,24 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
             <Pill>Revoked</Pill>,
             "",
           ],
+          [
+            <a class="row-link" href="#token-4">
+              deploy bot
+            </a>,
+            "1 Oct, 08:00",
+            "3 410",
+            <Pill tone="ok">Active</Pill>,
+            <RowMenu
+              label="Actions for deploy bot"
+              items={[
+                <button type="button">Rename</button>,
+                <button type="button">Show its last uses</button>,
+                <button type="button" class="danger">
+                  Revoke…
+                </button>,
+              ]}
+            />,
+          ],
         ]}
         empty=""
       />

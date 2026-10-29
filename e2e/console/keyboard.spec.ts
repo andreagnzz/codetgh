@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { type Hub, startHub } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
 
@@ -18,6 +18,16 @@ const focused = (page: Page) =>
     const s = getComputedStyle(el);
     const text = el.getAttribute("aria-label") ?? (el.innerText.trim() || el.querySelector("img")?.alt) ?? "";
     return { text: text.trim(), outline: s.outlineStyle, width: s.outlineWidth };
+  });
+// What an eye or a pointer finds at the middle of an element: false when a menu covers it, or when a frame around it clips it
+// or had to scroll to show it (focus scrolls the nearest frame). Only the page scrolls to bring it into view.
+const unobscured = (locator: Locator) =>
+  locator.evaluate((el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) if (n.scrollTop > 0) return false;
+    scrollTo(0, el.getBoundingClientRect().top + scrollY - innerHeight / 2);
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return Boolean(hit && el.contains(hit));
   });
 const tab = async (page: Page) => {
   await page.keyboard.press("Tab");
@@ -140,3 +150,22 @@ test("a refused action shows the hub's reason under it; Copy copies and says so"
   await expect(copy).toHaveAttribute("data-state", "copied");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("codetgh invite ines@acme.test");
 });
+
+for (const width of [1280, 360])
+  test(`row menu, ${width} px: the last row's menu opens over what follows, every item in reach, Escape closes it`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await signIn(page, hub.url, team.lea);
+    await page.goto(`${hub.url}/console/catalogue`);
+    const summary = page.locator('summary[aria-label="Actions for deploy bot"]');
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("details.row-menu[open] .menu-items button")).toHaveCount(3);
+    for (const name of ["Rename", "Show its last uses", "Revoke…"]) {
+      expect(await tab(page)).toBe(name);
+      expect(await unobscured(page.locator(":focus")), name).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
+    await expect(summary).toBeFocused();
+  });

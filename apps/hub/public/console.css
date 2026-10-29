@@ -889,6 +889,10 @@ form.inline input {
   overflow-x: auto;
   max-width: 100%;
 }
+/* An open row menu floats over the frame and the rows below it: the frame stops clipping while it is open. */
+.table-wrap:has(details.row-menu[open]) {
+  overflow: visible;
+}
 table {
   border-collapse: collapse;
   width: 100%;
@@ -958,6 +962,9 @@ tr:has(.row-link) :is(button, details, a:not(.row-link)) {
   position: relative;
   z-index: 1;
 }
+tr:has(.row-link) details.row-menu[open] {
+  z-index: 2;
+}
 tr[aria-current="true"] > :first-child {
   box-shadow: inset 2px 0 0 var(--accent);
   padding-left: var(--sp-2);
@@ -1019,6 +1026,11 @@ tr.unread .row-link {
     content: attr(data-label);
     font-size: var(--fs-caption);
     color: var(--text-muted);
+  }
+  /* Actions sit on the left of a record: a row menu opens to the right. */
+  .row-menu .pop {
+    left: 0;
+    right: auto;
   }
   tr[aria-current="true"] > :first-child {
     padding-left: 0;
@@ -1311,7 +1323,11 @@ details.disclosure > summary:where(:hover) {
 details.disclosure:where([open]) > summary {
   margin-bottom: var(--sp-3);
 }
-/* Row menu: the ellipsis opens the rarer actions of a row. */
+/* Row menu: the ellipsis opens the rarer actions of a row, beside its one direct action. */
+details.row-menu {
+  display: inline-block;
+  vertical-align: middle;
+}
 details.row-menu > summary {
   display: inline-flex;
   align-items: center;
