@@ -213,6 +213,11 @@ describe("public pages", () => {
     expect(mine.match(/class="(button )?primary"/g)).toHaveLength(1);
     expect(mine).not.toContain('class="banner"');
   });
+
+  it("device: a polite live region the check panel and its answers land in", async () => {
+    const page = await html("/console/device", "en", team.lea.cookie);
+    expect(page).toContain('<div id="device" aria-live="polite"></div>');
+  });
 });
 
 describe("shell", () => {

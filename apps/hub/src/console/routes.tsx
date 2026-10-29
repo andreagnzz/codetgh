@@ -1171,7 +1171,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             </button>
           </form>
         </section>
-        <div id="device" />
+        {/* A polite live region from the first render: the check panel and the answers swapped in are announced. */}
+        <div id="device" aria-live="polite" />
       </div>,
     );
   });
@@ -1201,7 +1202,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const vals = JSON.stringify({ user_code: code });
     // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare.
     return c.html(
-      <section class="panel device-check" role="status" aria-labelledby="device-check">
+      <section class="panel device-check" aria-labelledby="device-check">
         <h2 id="device-check">{_("Check this sign-in")}</h2>
         <dl class="facts">
           <div>

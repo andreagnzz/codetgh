@@ -50,6 +50,8 @@ describe("browser sign-in (device authorization)", () => {
     expect(html).not.toContain("<b>");
     // When the request started, and that the label is the requester's word, not a checked machine name.
     expect(html).toMatch(/Started<\/dt><dd><time datetime="[^"]+"/);
+    // The page's polite live region announces the panel: the panel itself is no status.
+    expect(html).not.toContain('role="status"');
     expect(html).toContain("Anyone can send any name, so compare the code, not the name.");
     // The code as the terminal prints it, whatever the person typed.
     expect(html).toContain(`<code class="user-code" translate="no">${s.user_code}</code>`);
