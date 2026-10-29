@@ -156,7 +156,7 @@ export const Layout: FC<{
             </header>
             {p.paused && (
               <Banner tone="danger" title={_("Agent traffic stopped")}>
-                {_("Agents can't send messages until an admin resumes agent traffic.")}{" "}
+                {_("Agents can't send messages or claim files until an admin resumes agent traffic.")}{" "}
                 {admin && <a href="/console#agent-traffic">{_("Resume agent traffic")}</a>}
               </Banner>
             )}

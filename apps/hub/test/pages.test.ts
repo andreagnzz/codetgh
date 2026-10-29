@@ -218,7 +218,8 @@ describe("shell", () => {
     try {
       const admin = await html(team.lea.cookie, "/console/threads");
       expect(admin).toMatch(/<div class="banner" data-tone="danger" role="alert">.*Agent traffic stopped/s);
-      expect(admin).toContain("Agents can&#39;t send messages until an admin resumes agent traffic.");
+      // The same words as the confirmation that stopped it: claims are refused too.
+      expect(admin).toContain("Agents can&#39;t send messages or claim files until an admin resumes agent traffic.");
       // Straight to the form, which sits below the line and the presence on a phone.
       expect(admin).toContain('<a href="/console#agent-traffic">Resume agent traffic</a>');
       expect(await html(team.lea.cookie)).toContain('id="agent-traffic"');
