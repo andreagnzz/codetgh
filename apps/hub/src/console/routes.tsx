@@ -1180,10 +1180,24 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Type the 8-letter code your terminal shows."));
     return { code: parsed.data.user_code, keys: { user: c.get("principal").user.id, ip: clientIp(c, config.trustedProxy) } };
   };
+  // The domain's refusals of a code, in the reader's words: the page shows them under the form or the button that sent it.
+  const deviceStep = <T,>(c: Context<Env>, step: () => T): T => {
+    try {
+      return step();
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      const _ = tr(c);
+      if (e.code === "E_NOT_FOUND")
+        throw new HubError(e.code, _("This code is unknown or has expired. Check the code in your terminal, or run codetgh login again."));
+      if (e.code === "E_RATE_LIMITED")
+        throw new HubError(e.code, _("Too many wrong codes. Wait a few minutes, then type the code again."), e.retryAfterS);
+      throw e;
+    }
+  };
   consoleApp.post("/device", async (c) => {
     const _ = tr(c);
     const { code, keys } = await deviceInput(c);
-    const entry = device.find(code, keys);
+    const entry = deviceStep(c, () => device.find(code, keys));
     const vals = JSON.stringify({ user_code: code });
     // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare.
     return c.html(
@@ -1230,7 +1244,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireFresh(c);
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
+    const entry = deviceStep(c, () => device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
@@ -1244,7 +1258,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/device/deny", async (c) => {
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { deny: true });
+    const entry = deviceStep(c, () => device.decide(code, keys, { deny: true }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
     );

@@ -114,10 +114,15 @@ describe("browser sign-in (device authorization)", () => {
 
   it("wrong user codes: a few tries, then refused even with the right one", async () => {
     const s = await start();
-    for (let i = 0; i < 5; i++)
+    // Each refusal in the reader's words, which the device page shows under the form.
+    const first = await consolePost(hub.url, `${team.lea.cookie}; lang=fr`, "/console/device", { user_code: "BBBB-BBBB" });
+    expect(first.status).toBe(404);
+    expect(await first.text()).toContain("Ce code est inconnu ou a expiré. Vérifie le code dans ton terminal, ou relance codetgh login.");
+    for (let i = 1; i < 5; i++)
       expect((await consolePost(hub.url, team.lea.cookie, "/console/device", { user_code: "BBBB-BBBB" })).status).toBe(404);
     const blocked = await consolePost(hub.url, team.lea.cookie, "/console/device", { user_code: s.user_code });
     expect(blocked.status).toBe(429);
+    expect(await blocked.text()).toContain("Too many wrong codes. Wait a few minutes, then type the code again.");
     expect((await consolePost(hub.url, team.lea.cookie, "/console/device/approve", { user_code: s.user_code })).status).toBe(429);
     expect(((await (await poll(s.device_code)).json()) as { status: string }).status).toBe("pending");
   });

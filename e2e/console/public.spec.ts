@@ -148,7 +148,9 @@ test("device with the keyboard: type the code, check it and the machine, approve
   await page.goto(`${hub.url}/console/device`);
   await page.getByLabel("Code shown in your terminal").fill("BBBB-BBBB");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".device .field-error[role=alert]")).toContainText("unknown or expired code");
+  await expect(page.locator(".device .field-error[role=alert]")).toHaveText(
+    "This code is unknown or has expired. Check the code in your terminal, or run codetgh login again.",
+  );
   await page.getByLabel("Code shown in your terminal").fill(user_code.toLowerCase());
   await page.keyboard.press("Enter");
   const check = page.locator("#device");

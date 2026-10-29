@@ -371,6 +371,10 @@ const FR: Record<string, string> = {
   "Go back to your terminal: it finishes on its own.": "Retourne dans ton terminal\u00a0: il termine tout seul.",
   "Sign-in denied": "Connexion refusée",
   "No token was created.": "Aucun jeton n'a été créé.",
+  "This code is unknown or has expired. Check the code in your terminal, or run codetgh login again.":
+    "Ce code est inconnu ou a expiré. Vérifie le code dans ton terminal, ou relance codetgh login.",
+  "Too many wrong codes. Wait a few minutes, then type the code again.":
+    "Trop de codes erronés. Attends quelques minutes, puis tape le code à nouveau.",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
