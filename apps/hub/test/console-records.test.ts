@@ -226,6 +226,8 @@ describe("team memory", () => {
     expect(head(html)).toContain('href="/console/memory?status=proposed">Back to team memory</a>');
     const body = main(html);
     expect(body).toContain(">Changes from v1</h2>");
+    expect(body).toMatch(/<dt>Proposed by<\/dt><dd>(?:(?!<\/dd>).)*<time datetime="[^"]+" data-local/s);
+    expect(body).not.toContain("Proposed on");
     expect(body).toContain('<ins class="add">With milliseconds.</ins>');
     expect(body).toContain('<span class="same">Dates are ISO.</span>');
     expect(body).toContain(`<a href="/console/memory/${ids.d1}">D-1 v1</a>`);
@@ -394,6 +396,9 @@ describe("tasks", () => {
     expect(head(html)).toContain('<span class="pill" data-tone="neutral">In progress</span>');
     const body = main(html);
     expect(body).toContain('aria-label="About this task"');
+    // When it was created goes with who created it: a time from today reads without "on".
+    expect(body).toMatch(/<dt>Created by<\/dt><dd>(?:(?!<\/dd>).)*<time datetime="[^"]+" data-local/s);
+    expect(body).not.toContain("Created on");
     expect(body).toContain(">acme/webapp</span>");
     expect(body).toContain('<ol class="timeline">');
     expect(body).toContain(">created the task<");

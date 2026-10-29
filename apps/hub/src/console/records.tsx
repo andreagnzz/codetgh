@@ -425,11 +425,12 @@ export const MemoryDetail: FC<{
 }> = ({ item, proposer, decider, old, replacedBy, proposed, decide, _ }) => (
   <div class="rec-detail">
     <Props label={_("About this item")}>
+      {/* When goes with who, as for the decision: a time from today needs no "on". */}
       <Prop term={_("Proposed by")}>
         <Proposer name={proposer.name} agentLabel={proposer.agentLabel} item={item} _={_} />
-      </Prop>
-      <Prop term={_("Proposed on")}>
-        <Stamp at={item.createdAt} lang={_.lang} />
+        <span class="rec-sub">
+          <Stamp at={item.createdAt} lang={_.lang} />
+        </span>
       </Prop>
       {item.decidedAt && (
         <Prop term={_("Decided by")}>
@@ -759,9 +760,11 @@ export const TaskDetail: FC<{
           <Chip>{project}</Chip>
         </Prop>
       )}
-      <Prop term={_("Created by")}>{creator}</Prop>
-      <Prop term={_("Created on")}>
-        <Stamp at={t.createdAt} lang={_.lang} />
+      <Prop term={_("Created by")}>
+        {creator}
+        <span class="rec-sub">
+          <Stamp at={t.createdAt} lang={_.lang} />
+        </span>
       </Prop>
       <Prop term={_("Last updated")}>
         <Stamp at={t.updatedAt} lang={_.lang} />
