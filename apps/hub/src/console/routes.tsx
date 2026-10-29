@@ -818,7 +818,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 </dd>
               </div>
               {inProject && (
-                <div>
+                <div class="props-project">
                   <dt>{_("Project")}</dt>
                   <dd>
                     <Chip>{inProject.name}</Chip>

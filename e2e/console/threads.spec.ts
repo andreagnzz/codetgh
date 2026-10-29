@@ -133,4 +133,9 @@ for (const lang of ["en", "fr"] as const)
     await expect(page.locator(".convo-caption")).toBeVisible();
     await expect(page.locator(".convo-caption")).toHaveText(lang === "fr" ? "De gauche à droite : lea, sam" : "Left to right: lea, sam");
     await expect(page.locator(".convo-names")).toBeHidden();
+    // Who is in the thread and when it ran stay on screen, under the title.
+    const about = page.getByRole("complementary", { name: lang === "fr" ? "À propos de ce fil" : "About this thread" });
+    await expect(about).toBeVisible();
+    await expect(about).toContainText("@lea");
+    await expect(about).toContainText(lang === "fr" ? "Dernier message" : "Last message");
   });
