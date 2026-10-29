@@ -417,10 +417,11 @@ export const MemoryDetail: FC<{
   proposer: MemoryRow;
   decider: string | null;
   old: MemoryItem | undefined;
-  newer: MemoryItem | undefined;
+  replacedBy: MemoryItem | undefined;
+  proposed: MemoryItem[];
   decide: Child;
   _: Tr;
-}> = ({ item, proposer, decider, old, newer, decide, _ }) => (
+}> = ({ item, proposer, decider, old, replacedBy, proposed, decide, _ }) => (
   <div class="rec-detail">
     <Props label={_("About this item")}>
       <Prop term={_("Proposed by")}>
@@ -444,14 +445,22 @@ export const MemoryDetail: FC<{
           <a href={`/console/memory/${old.id}`}>{memoryLabel(old)}</a>
         </Prop>
       )}
-      {newer && (
+      {replacedBy && (
         <Prop term={_("Replaced by")}>
-          <a href={`/console/memory/${newer.id}`}>{memoryLabel(newer)}</a>
+          <a href={`/console/memory/${replacedBy.id}`}>{memoryLabel(replacedBy)}</a>
         </Prop>
       )}
     </Props>
     <div class="rec-body">
       <Flags flags={item.flags} _={_} />
+      {/* Agents still read this version until a person accepts the newer one. */}
+      {proposed.length > 0 && (
+        <Banner
+          title={fillNodes(_("A newer version is proposed: {items}."), {
+            items: proposed.flatMap((n, i) => [i ? ", " : "", <a href={`/console/memory/${n.id}`}>{memoryLabel(n)}</a>]),
+          })}
+        />
+      )}
       {old ? (
         <>
           <h2>{fill(_("Changes from v{n}"), { n: old.version })}</h2>

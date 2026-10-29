@@ -1723,12 +1723,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           .from(memoryItem)
           .where(and(eq(memoryItem.id, item.supersedesId), eq(memoryItem.teamId, p.teamId)))
       : [];
-    const [newer] = await db
+    // The versions proposed after this one: the accepted one replaced it, a proposed one waits, a rejected one is not shown.
+    const newer = await db
       .select()
       .from(memoryItem)
-      .where(and(eq(memoryItem.supersedesId, item.id), eq(memoryItem.teamId, p.teamId)))
-      .orderBy(desc(memoryItem.version))
-      .limit(1);
+      .where(and(eq(memoryItem.supersedesId, item.id), eq(memoryItem.teamId, p.teamId), not(eq(memoryItem.status, "rejected"))))
+      .orderBy(asc(memoryItem.version));
     const [decider] = item.decidedByUser ? await db.select({ name: user.name }).from(user).where(eq(user.id, item.decidedByUser)) : [];
     return page(
       c,
@@ -1738,7 +1738,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         proposer={row}
         decider={decider?.name ?? null}
         old={old}
-        newer={newer}
+        replacedBy={newer.find((n) => n.status === "accepted" || n.status === "superseded")}
+        proposed={newer.filter((n) => n.status === "proposed")}
         decide={
           item.status === "proposed" && (
             <MemoryDecide item={item} old={old} can={canDecide(p)} acceptBy={p.settings.memory_accept_by ?? "member"} _={_} />

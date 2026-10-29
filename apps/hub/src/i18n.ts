@@ -469,6 +469,7 @@ const FR: Record<string, string> = {
   "Decided by": "Décidé par",
   Replaces: "Remplace",
   "Replaced by": "Remplacé par",
+  "A newer version is proposed: {items}.": "Une nouvelle version est proposée : {items}.",
   "Changes from v{n}": "Modifications depuis la v{n}",
   "Lines that start with + are added, lines that start with − are removed.":
     "Les lignes qui commencent par + sont ajoutées, celles qui commencent par − sont retirées.",

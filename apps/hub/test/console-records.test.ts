@@ -219,17 +219,48 @@ describe("team memory", () => {
     expect(body).toMatch(/<button type="submit" class="secondary" name="decision" value="reject">Reject<\/button>/);
   });
 
-  it("shows an accepted item's decision, its pin in the page header, and what replaces it", async () => {
+  it("shows an accepted item's decision, its pin in the page header, and a newer version still proposed as such", async () => {
     const html = await page(`/console/memory/${ids.d1}`, team.lea.cookie);
     expect(head(html)).toContain('hx-post="/console/memory/');
     expect(head(html)).toContain(">Unpin</button>");
     expect(head(html)).toContain('<span class="pill" data-tone="neutral">Pinned</span>');
     const body = main(html);
     expect(body).toContain("Agreed at stand-up.");
-    expect(body).toContain(`<a href="/console/memory/${ids.d1v2}">D-1 v2</a>`);
+    // v2 is only proposed: agents still read v1, which nothing replaced yet.
+    expect(body).not.toContain("Replaced by");
+    expect(body).toContain(`A newer version is proposed: <a href="/console/memory/${ids.d1v2}">D-1 v2</a>.`);
     const rejected = main(await page(`/console/memory/${ids.note}`, team.lea.cookie));
     expect(rejected).toContain("Not since the move.");
     expect(rejected).not.toContain("/decide");
+  });
+
+  it("names what replaced an item only once that version is accepted, never a rejected one", async () => {
+    const item = (id: string, version: number, status: "accepted" | "superseded" | "rejected", supersedesId?: string) => ({
+      id,
+      teamId: team.teamId,
+      number: 3,
+      version,
+      kind: "convention" as const,
+      status,
+      title: "Branch names",
+      body: `Branches, take ${version}.`,
+      proposedByUser: team.malik.userId,
+      authoredBy: "human" as const,
+      supersedesId,
+    });
+    await hub.db
+      .insert(memoryItem)
+      .values([
+        item("mit_01BRANCHESV1000000000000000", 1, "superseded"),
+        item("mit_01BRANCHESV2000000000000000", 2, "accepted", "mit_01BRANCHESV1000000000000000"),
+        item("mit_01BRANCHESV3000000000000000", 3, "rejected", "mit_01BRANCHESV2000000000000000"),
+      ]);
+    const v1 = main(await page("/console/memory/mit_01BRANCHESV1000000000000000", team.lea.cookie));
+    expect(v1).toMatch(/Replaced by<\/dt><dd><a href="\/console\/memory\/mit_01BRANCHESV2000000000000000">V-3 v2<\/a>/);
+    const v2 = main(await page("/console/memory/mit_01BRANCHESV2000000000000000", team.lea.cookie));
+    expect(v2).not.toContain("Replaced by");
+    expect(v2).not.toContain("A newer version");
+    expect(v2).not.toContain("mit_01BRANCHESV3000000000000000");
   });
 
   it("tells a person whose role can't decide who does", async () => {
