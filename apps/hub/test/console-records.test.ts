@@ -324,7 +324,8 @@ describe("claims", () => {
     const [c] = await hub.db.select().from(claim).where(eq(claim.scope, "apps/web/src/login/**"));
     const html = main(await page("/console/claims", team.lea.cookie));
     const button = html.match(new RegExp(`<button[^>]*hx-post="/console/claims/${c?.id}/release"[^>]*>`))?.[0] ?? "";
-    // Freeing a claim deletes nothing: a plain button, the dialog's own button does it.
+    // Freeing a claim deletes nothing: a text action, the dialog's own button does it.
+    expect(button).toContain('class="tertiary"');
     expect(button).not.toContain("danger");
     expect(button).toContain('aria-label="Release apps/web/src/login/**…"');
     expect(button).toContain('data-confirm="Release the claim on apps/web/src/login/**?"');

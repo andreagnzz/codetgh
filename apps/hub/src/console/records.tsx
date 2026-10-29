@@ -580,6 +580,7 @@ export const ClaimsTable: FC<{ rows: ClaimRow[]; admin: boolean; _: Tr }> = ({ r
               <Action
                 post={`/console/claims/${c.id}/release`}
                 label={_("Release")}
+                level="tertiary"
                 name={`${_("Release")} ${c.scope}…`}
                 confirm={{
                   title: fill(_("Release the claim on {scope}?"), { scope: c.scope }),

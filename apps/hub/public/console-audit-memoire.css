@@ -368,11 +368,12 @@ details.audit-hash[open] > summary .icon {
   .claims-log th:nth-child(2) {
     width: 20%;
   }
+  /* When it ends, and Release as a text action: narrow columns, so the reason has the room. */
   .claims-log th:nth-child(4) {
-    width: 7rem;
+    width: 6rem;
   }
   .claims-log th:nth-child(5) {
-    width: 8rem;
+    width: 6rem;
   }
   .claims-log td {
     overflow-wrap: break-word;
