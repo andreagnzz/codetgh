@@ -15,7 +15,7 @@
   display: grid;
   gap: var(--sp-2);
 }
-.public :is(.providers button, form button[type="submit"]) {
+.public :is(.providers button, form button[type="submit"], .button.primary) {
   width: 100%;
   min-height: 44px;
 }
@@ -119,6 +119,10 @@
 .public .aside {
   margin: var(--sp-6) 0 0;
   color: var(--text-muted);
+}
+/* Signed in with another address: the banner names both, however long. */
+.public .banner-body {
+  overflow-wrap: anywhere;
 }
 /* The invited address, read whole: a value in the read-only field's look (inset surface, dashed edge, 40 px for one line)
    that wraps anywhere instead of being cut. */

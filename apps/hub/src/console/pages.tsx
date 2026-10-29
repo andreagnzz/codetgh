@@ -779,13 +779,9 @@ export const InvitePage: FC<{
         <>
           <h1>{heading}</h1>
           <p class="lede">{_((Object.hasOwn(INVITED_AS, role) && INVITED_AS[role]) || "You're invited as a member.")}</p>
-          {join ? (
+          {join && email.toLowerCase() === join.user.toLowerCase() ? (
             <>
               <dl class="facts">
-                <div>
-                  <dt>{_("Invitation sent to")}</dt>
-                  <dd>{email}</dd>
-                </div>
                 <div>
                   <dt>{_("Signed in as")}</dt>
                   <dd>{join.user}</dd>
@@ -797,8 +793,20 @@ export const InvitePage: FC<{
                   {heading}
                 </button>
               </form>
-              <p class="aside">
-                {_("Not this account?")} <a href="/login">{_("Sign in with another account")}</a>
+            </>
+          ) : join ? (
+            // Another address: the hub refuses a Join (it compares the two, ignoring case), so the page offers none and says
+            // why first. Display only; the hub keeps the rule.
+            <>
+              <Banner tone="warn" title={_("This invitation is for another email address.")}>
+                {_("It was sent to {email}. You're signed in as {user}.").replace(/\{(email|user)\}/g, (_m, k) =>
+                  k === "email" ? email : join.user,
+                )}
+              </Banner>
+              <p>
+                <a class="button primary" href="/login">
+                  {_("Sign in with another account")}
+                </a>
               </p>
             </>
           ) : (

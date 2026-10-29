@@ -88,7 +88,10 @@ it("refuses a join without the CSRF token, for another email, or with an unverif
   });
   expect(forged.status).toBe(403);
   const other = await invite(team.teamId, "someone@else.test", "member");
-  expect((await join(other.token, nora.cookie)).status).toBe(403);
+  // Its page offers no Join to another address, so the CSRF token comes from her own invitation's page: the hub's rule refuses.
+  const another = await join(other.token, nora.cookie, token);
+  expect(another.status).toBe(403);
+  expect(await another.text()).toContain("This invitation is for another email address.");
   await verified(nora.id, false);
   const unverified = await join(token, nora.cookie);
   expect(unverified.status).toBe(403);

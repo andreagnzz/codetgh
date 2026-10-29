@@ -84,7 +84,15 @@ describe("pages", () => {
       via: "console",
     });
     const headers = { cookie: team.sam.cookie, "accept-language": "fr" };
-    const invite = await (await get(`/invite/${token}`, headers)).text();
+    // The page of an invitation for another address has no Join: the session's CSRF token comes from one for Sam's own.
+    const own = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: team.sam.email,
+      role: "member",
+      invitedBy: null,
+      via: "system",
+    });
+    const invite = await (await get(`/invite/${own.token}`, headers)).text();
     const csrf = invite.match(/name="csrf" value="([^"]+)"/)?.[1] ?? "";
     const res = await fetch(`${hub.url}/invite/${token}/join`, {
       method: "POST",
@@ -180,9 +188,27 @@ describe("public pages", () => {
     const field = page.match(/<input name="email"[^>]*>/)?.[0] ?? "";
     for (const attr of ['type="email"', 'value="ines@acme.test"', 'autocomplete="username"', 'hidden=""']) expect(field).toContain(attr);
     expect(page).toContain('<p class="help" id="invite-password-help">At least 12 characters.</p>');
-    const signedIn = await html(`/invite/${token}`, "fr", team.sam.cookie);
-    expect(signedIn).toContain("<dd>sam@acme.test</dd>");
-    expect(signedIn).toContain('<button type="submit" class="primary">Rejoindre Acme web</button>');
+    // Signed in with another address: no Join the hub is sure to refuse; the page says why, and the way on is another account.
+    const other = await html(`/invite/${token}`, "fr", team.sam.cookie);
+    expect(other).toMatch(
+      /<div class="banner" data-tone="warn" role="status">.*Cette invitation est pour une autre adresse de courriel\./s,
+    );
+    expect(other).toContain("Elle a été envoyée à ines@acme.test. Compte connecté : sam@acme.test.");
+    expect(other).toContain('<a class="button primary" href="/login">Se connecter avec un autre compte</a>');
+    expect(other).not.toContain('id="invite-join"');
+    // Signed in with the invited address: the account it joins with, and Join as the one primary button.
+    const own = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "SAM@acme.test",
+      role: "member",
+      invitedBy: team.lea.userId,
+      via: "console",
+    });
+    const mine = await html(`/invite/${own.token}`, "fr", team.sam.cookie);
+    expect(mine).toContain("<dd>sam@acme.test</dd>");
+    expect(mine).toContain('<button type="submit" class="primary">Rejoindre Acme web</button>');
+    expect(mine.match(/class="(button )?primary"/g)).toHaveLength(1);
+    expect(mine).not.toContain('class="banner"');
   });
 });
 

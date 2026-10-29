@@ -356,9 +356,8 @@ const FR: Record<string, string> = {
     "Un compte utilise déjà cette adresse. Connecte-toi, puis rouvre cette invitation.",
   "This invitation can't create an account any more. Ask the person who invited you for a new link.":
     "Cette invitation ne peut plus créer de compte. Demande un nouveau lien à la personne qui t'a invité.",
-  "Invitation sent to": "Invitation envoyée à",
   "Signed in as": "Compte connecté",
-  "Not this account?": "Pas le bon compte\u202f?",
+  "It was sent to {email}. You're signed in as {user}.": "Elle a été envoyée à {email}. Compte connecté\u00a0: {user}.",
   // Device
   "When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.":
     "Quand codetgh connecte un terminal, il affiche un code. Tape ce code ici, puis approuve le terminal.",
