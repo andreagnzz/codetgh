@@ -23,11 +23,16 @@
   color: var(--text-muted);
   font: 400 var(--fs-caption) / 16px var(--mono);
 }
-/* A session label in a cell keeps the column narrow: cut, its full text on hover and for screen readers. */
+/* A session label in a cell keeps the column narrow: cut, its full text on hover and for screen readers. From 1024 px the
+   columns have the room for a usual label (malik@fix/invoice-rounding) whole; stacked on a phone, it takes the cell's width. */
 :is(.rec-main, .rec-sub) > .chip {
   max-width: 12rem;
 }
-/* Stacked on a phone, a cell has the screen's width: the label shows whole as far as it fits. */
+@media (min-width: 1024px) {
+  :is(.rec-main, .rec-sub) > .chip {
+    max-width: 16rem;
+  }
+}
 @media (max-width: 639px) {
   :is(.rec-main, .rec-sub) > .chip {
     max-width: 100%;
