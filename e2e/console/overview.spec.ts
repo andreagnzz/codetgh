@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { eq } from "drizzle-orm";
-import { message, thread } from "../../apps/hub/src/db/schema.js";
+import { agent, message, thread } from "../../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../../apps/hub/src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
@@ -27,6 +27,12 @@ test.beforeAll(async () => {
   team = await hub.seed();
   await startSession(hub.url, team.sam.token, "sam-overview");
   await startSession(hub.url, team.malik.token, "malik-overview");
+  // One session gone: presence folds it under "1 offline".
+  const gone = await startSession(hub.url, team.lea.token, "lea-gone");
+  await hub.db
+    .update(agent)
+    .set({ endedAt: new Date() })
+    .where(eq(agent.id, gone.agent_id ?? ""));
   // Twelve messages of the last hours and one flagged message: an open alert, thirteen rows on the line.
   for (let i = 1; i <= 12; i++)
     await send(i % 2 ? "sam" : "malik", { to: "@lea", subject: `Item ${i}`, body: `Message ${i}.` }, (13 - i) * 20);
@@ -58,6 +64,8 @@ for (const scheme of ["light", "dark"] as const)
     for (let i = 0; i < 13; i++) rows.push(await tab(page));
     expect(rows.every((r) => r.id.startsWith("line-msg_") && r.outline === "solid 2px")).toBe(true);
     // Thirteen rows fit on a wide screen: the way to every thread is a phone's only.
+    const offline = await tab(page);
+    expect(offline).toMatchObject({ id: "offline-toggle", text: "1\u00a0offline", outline: "solid 2px" });
     expect((await tab(page)).id).toBe("kill-reason");
     expect((await tab(page)).text).toBe("Stop agent traffic…");
     // What needs me runs across the top; presence starts beside the line.

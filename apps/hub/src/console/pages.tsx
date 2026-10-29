@@ -692,18 +692,29 @@ const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, 
     </li>
   );
 };
-// With cap, at most that many sessions, the live ones first, then more: the way to the whole list.
-export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: RowAction; cap?: number; more?: Child }> = ({
-  rows,
-  lang,
-  empty,
-  action,
-  cap = rows.length,
-  more,
-}) => {
+// With cap, at most that many sessions, the live ones first, then more: the way to the whole list. With fold, the offline
+// sessions wait in a disclosure of that id (its summary takes the id plus "-toggle"), so a live refresh keeps it open and
+// keeps the keyboard on it.
+export const People: FC<{
+  rows: AgentRow[];
+  lang: Lang;
+  empty: Child;
+  action?: RowAction;
+  cap?: number;
+  more?: Child;
+  fold?: string;
+}> = ({ rows, lang, empty, action, cap = rows.length, more, fold }) => {
   const live = rows.filter((r) => presence(r.agent) !== "offline");
   const offline = rows.filter((r) => presence(r.agent) === "offline");
   const shownOffline = offline.slice(0, Math.max(0, cap - live.length));
+  const heading = counted(lang, offline.length, "1\u00a0offline", "{n}\u00a0offline");
+  const archived = (
+    <ul class="people archived">
+      {shownOffline.map((r) => (
+        <Person r={r} lang={lang} action={action} />
+      ))}
+    </ul>
+  );
   return (
     <>
       {live.length ? (
@@ -717,18 +728,21 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: R
       ) : (
         empty
       )}
-      {offline.length > 0 && (
-        <>
-          <h3 class="rule">{counted(lang, offline.length, "1\u00a0offline", "{n}\u00a0offline")}</h3>
-          {shownOffline.length > 0 && (
-            <ul class="people archived">
-              {shownOffline.map((r) => (
-                <Person r={r} lang={lang} action={action} />
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+      {offline.length > 0 &&
+        (fold && shownOffline.length > 0 ? (
+          <details id={fold} class="disclosure">
+            <summary id={`${fold}-toggle`}>
+              {heading}
+              <Icon name="chevron-down" />
+            </summary>
+            {archived}
+          </details>
+        ) : (
+          <>
+            <h3 class="rule">{heading}</h3>
+            {shownOffline.length > 0 && archived}
+          </>
+        ))}
       {rows.length > cap && <p class="people-more">{more}</p>}
     </>
   );

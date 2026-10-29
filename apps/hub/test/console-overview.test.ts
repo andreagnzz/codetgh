@@ -128,7 +128,9 @@ describe("overview", () => {
     expect(presence).toContain('<span class="pill" data-tone="warn">Prompts off</span>');
     expect(presence).not.toMatch(/trusted/i);
     expect(presence).toContain('<span class="chip" translate="no" title="sam@main">sam@main</span>');
-    expect(presence).toContain('<h3 class="rule">1\u00a0offline</h3>');
+    // The offline sessions wait in a disclosure whose summary keeps the keyboard and the open state through a live refresh.
+    expect(presence).toMatch(/<details id="offline" class="disclosure"><summary id="offline-toggle">1\u00a0offline<svg/);
+    expect(presence).toContain('<ul class="people archived">');
   });
 
   it("gives admins agent traffic, which asks before it stops and takes a typed yes to resume", async () => {

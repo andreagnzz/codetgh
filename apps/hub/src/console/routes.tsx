@@ -488,6 +488,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               rows={agents}
               lang={_.lang}
               cap={PRESENCE_CAP}
+              fold="offline"
               more={
                 <a id="presence-more" href="/console/agents">
                   {_("See all agents")}

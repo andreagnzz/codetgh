@@ -503,6 +503,10 @@ main:has(> #live + .field-error) > .live-retry {
 .people.archived .person-name {
   font-weight: 500;
 }
+/* The offline sessions of the overview, folded under their count. */
+.presence details.disclosure {
+  margin-top: var(--sp-3);
+}
 .person form {
   margin-top: var(--sp-2);
 }
