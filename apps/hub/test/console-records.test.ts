@@ -13,6 +13,7 @@ let fresh: Hub;
 let freshTeam: Awaited<ReturnType<Hub["seed"]>>;
 let clock = 0;
 const ids: Record<string, string> = {};
+let projects: Record<string, string> = {};
 
 const rest = async (token: string, path: string, body: unknown) => {
   const res = await fetch(`${hub.url}${path}`, {
@@ -28,6 +29,10 @@ const page = async (path: string, cookie: string, lang = "en", h = hub) =>
 const main = (html: string) => html.slice(html.indexOf('<main id="main">'), html.indexOf("</main>"));
 // The page header: the way back, the title, its actions and its meta line.
 const head = (html: string) => html.slice(html.indexOf('<div class="page-head">'), html.indexOf('<div class="page-head">') + 3000);
+const section = (html: string, id: string) => {
+  const start = html.indexOf(`id="${id}"`);
+  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
+};
 const short = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
 const post = async (cookie: string, path: string, form: Record<string, string> = {}) => {
   const res = await consolePost(hub.url, cookie, path, form);
@@ -38,6 +43,7 @@ const post = async (cookie: string, path: string, form: Record<string, string> =
 beforeAll(async () => {
   hub = await startHub({ limiter: new RateLimiter(() => (clock += 3_600_000)) });
   team = await hub.seed();
+  projects = Object.fromEntries((await hub.db.select().from(project)).map((pr) => [pr.name, pr.id]));
   const session = async (token: string, id: string, repo: string, branch: string) =>
     (
       (await rest(token, "/v1/agents/session", {
@@ -287,5 +293,86 @@ describe("claims", () => {
     const html = main(await page("/console/claims", team.lea.cookie, "fr"));
     expect(html).toContain(">Partagée<");
     expect(html).toContain(">Libérer…</button>");
+  });
+});
+
+describe("tasks", () => {
+  it("groups the board by project, then status in words with its count", async () => {
+    const html = main(await page("/console/tasks?project=", team.lea.cookie));
+    const webapp = section(html, `p-${projects["acme/webapp"]}`);
+    expect(webapp).toContain('In progress <span class="count">1</span></h3>');
+    expect(webapp).toContain(`href="/console/tasks/${ids.doing}">Show login errors under each field</a>`);
+    expect(webapp).toContain(">@sam</span>");
+    const billing = section(html, `p-${projects["acme/billing"]}`);
+    expect(billing).toContain('Blocked <span class="count">1</span></h3>');
+    expect(billing).toContain("Waiting for the maintenance window");
+    const outside = section(html, "p-none");
+    expect(outside).toContain('To do <span class="count">1</span></h3>');
+    expect(outside).toContain(">Unassigned<");
+    expect(html).not.toContain("in_progress");
+  });
+
+  it("opens the New task form from the page header, with its fields labelled and Create task as its one primary", async () => {
+    const top = head(await page("/console/tasks", team.lea.cookie));
+    expect(top).toContain('<div class="new-task"><details class="panel"><summary>New task</summary>');
+    const html = await page("/console/tasks", team.lea.cookie);
+    const form = html.slice(html.indexOf('<form hx-post="/console/tasks" hx-swap="none">'));
+    expect(form).toContain('<label for="task-title">Title</label>');
+    expect(form).toMatch(/<input id="task-title" name="title" required="" maxlength="200"/);
+    expect(form).toMatch(/<textarea id="task-body" name="body" maxlength="8000"/);
+    expect(form).toContain("A handle like @lea. Leave it empty for nobody.");
+    expect(form).toMatch(/<input id="task-assignee" name="assignee"/);
+    expect(form).toContain('<button type="submit" class="primary">Create task</button>');
+  });
+
+  it("says what fills an empty board, a project without tasks and empty archives", async () => {
+    const none = main(await page("/console/tasks?project=", freshTeam.lea.cookie, "en", fresh));
+    expect(none).toContain('<p class="empty-title">No tasks yet.</p>');
+    const latency = (await fresh.db.select().from(project).where(eq(project.name, "acme/latency")))[0]?.id;
+    const filtered = main(await page(`/console/tasks?project=${latency}`, freshTeam.lea.cookie, "en", fresh));
+    expect(filtered).toContain('<p class="empty-title">No tasks in acme/latency.</p>');
+    expect(filtered).toContain('href="/console/tasks?project="');
+    const archives = main(await page("/console/tasks?archived=1&project=", freshTeam.lea.cookie, "en", fresh));
+    expect(archives).toContain('<p class="empty-title">No archived tasks.</p>');
+  });
+
+  it("shows a task's state, its properties, and its history and notes in one timeline", async () => {
+    const html = await page(`/console/tasks/${ids.doing}`, team.lea.cookie);
+    expect(head(html)).toContain(">Show login errors under each field</h1>");
+    expect(head(html)).toContain('<span class="pill" data-tone="neutral">In progress</span>');
+    const body = main(html);
+    expect(body).toContain('aria-label="About this task"');
+    expect(body).toContain(">acme/webapp</span>");
+    expect(body).toContain('<ol class="timeline">');
+    expect(body).toContain(">created the task<");
+    expect(body).toContain(">claimed the task<");
+    expect(body).toContain(">moved the task to In progress<");
+    expect(body).toContain("Email and password done.");
+  });
+
+  it("offers only the statuses the task can move to, in words, with the field names unchanged", async () => {
+    const html = main(await page(`/console/tasks/${ids.doing}`, team.lea.cookie));
+    const select = html.slice(html.indexOf('<select id="task-status" name="status">'), html.indexOf("</select>"));
+    expect(select).toContain('<option value="">Unchanged</option>');
+    for (const [value, label] of [
+      ["blocked", "Blocked"],
+      ["review", "In review"],
+      ["done", "Done"],
+      ["todo", "To do"],
+    ])
+      expect(select).toContain(`<option value="${value}">${label}</option>`);
+    expect(select).not.toContain('value="cancelled"');
+    expect(select).not.toContain('value="claimed"');
+    expect(html).toContain('name="expected_version" value="3"');
+    expect(html).toMatch(/<input id="task-assignee" name="assignee"/);
+    expect(html).toMatch(/<input id="task-reason" name="reason" maxlength="200"/);
+    expect(html).toMatch(/<input id="task-note" name="note" maxlength="500"/);
+  });
+
+  it("reads in French", async () => {
+    const html = main(await page("/console/tasks?project=", team.lea.cookie, "fr"));
+    expect(html).toContain('En cours <span class="count">1</span></h3>');
+    expect(html).toContain(">Non attribuée<");
+    expect(main(await page(`/console/tasks/${ids.doing}`, team.lea.cookie, "fr"))).toContain(">a créé la tâche<");
   });
 });

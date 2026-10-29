@@ -1,17 +1,34 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { TASK_STATUSES, type TaskStatus } from "@codetgh/shared";
 import { diffLines } from "diff";
 import type { Child, FC } from "hono/jsx";
-import type { auditEvent, claim, memoryItem } from "../db/schema.js";
+import type { auditEvent, claim, memoryItem, task } from "../db/schema.js";
 import { memoryRef } from "../domain/memory.js";
 import type { Lang } from "../i18n.js";
 import { Icon } from "../icons.js";
-import { Action, Banner, Chip, EmptyState, Field, fieldAria, Panel, Pill, Stamp, Table, type Tone, When } from "./pages.js";
+import {
+  Action,
+  Banner,
+  Chip,
+  EmptyState,
+  Field,
+  fieldAria,
+  Panel,
+  Pill,
+  Stamp,
+  Table,
+  Timeline,
+  type TimelineEvent,
+  type Tone,
+  When,
+} from "./pages.js";
 
 // The audit log, team memory, claims and tasks. People and objects read by name, the machine keys and ids stay underneath
 // in mono; a state is a word, a pill only reinforces it. Every value is rendered by JSX, which escapes text: titles, bodies,
 // notes and scopes that agents wrote never become HTML.
 type Tr = ((s: string) => string) & { lang: Lang };
 type AuditEvent = typeof auditEvent.$inferSelect;
+type Task = typeof task.$inferSelect;
 type MemoryItem = typeof memoryItem.$inferSelect;
 type Claim = typeof claim.$inferSelect;
 
@@ -555,4 +572,245 @@ export const ClaimsTable: FC<{ rows: ClaimRow[]; admin: boolean; _: Tr }> = ({ r
       ])}
     />
   </div>
+);
+
+// ---- Tasks ----
+
+export const TASK_WORD: Record<TaskStatus, string> = {
+  todo: "To do",
+  claimed: "Claimed",
+  in_progress: "In progress",
+  blocked: "Blocked",
+  review: "In review",
+  done: "Done",
+  cancelled: "Cancelled",
+};
+const TASK_TONE: Partial<Record<TaskStatus, Tone>> = { blocked: "danger", done: "ok" };
+export const TaskPill: FC<{ status: TaskStatus; _: Tr }> = ({ status, _ }) => (
+  <Pill tone={TASK_TONE[status] ?? "neutral"}>{_(TASK_WORD[status])}</Pill>
+);
+
+export type TaskRow = { task: Task; handle: string | null };
+const Assignee: FC<{ handle: string | null; _: Tr }> = ({ handle, _ }) => (handle ? <Chip>{`@${handle}`}</Chip> : none(_("Unassigned")));
+
+// One project's board: a group per status that has tasks, its count in the heading; the columns line up from group to group.
+export const TaskBoard: FC<{
+  rows: TaskRow[];
+  countOf: (s: TaskStatus) => number;
+  href: (id: string) => string;
+  level: "h2" | "h3";
+  _: Tr;
+}> = ({ rows, countOf, href, level, _ }) => {
+  const Heading = level;
+  return (
+    <>
+      {TASK_STATUSES.map((s) => {
+        const of = rows.filter((r) => r.task.status === s);
+        return (
+          of.length > 0 && (
+            <div class="task-group">
+              <Heading>
+                {_(TASK_WORD[s])} <span class="count">{countOf(s)}</span>
+              </Heading>
+              <Table
+                lang={_.lang}
+                caption={_(TASK_WORD[s])}
+                head={[_("Task"), _("Assigned to"), _("Updated")]}
+                primary={0}
+                empty=""
+                rows={of.map(({ task: t, handle }) => [
+                  <Lines
+                    main={
+                      <a class="row-link" href={href(t.id)}>
+                        {t.title}
+                      </a>
+                    }
+                    sub={dots([
+                      t.blockedReason && <span class="rec-text">{t.blockedReason}</span>,
+                      t.prNumber && fill(_("Pull request #{n}"), { n: t.prNumber }),
+                      t.runner && _("Runner"),
+                    ])}
+                  />,
+                  <Assignee handle={handle} _={_} />,
+                  <When at={t.updatedAt} lang={_.lang} />,
+                ])}
+              />
+            </div>
+          )
+        );
+      })}
+    </>
+  );
+};
+
+export const TasksEmpty: FC<{ archived: boolean; project?: string | null; _: Tr }> = ({ archived, project, _ }) =>
+  archived ? (
+    <EmptyState title={_("No archived tasks.")} icon="info">
+      {_("A task done or cancelled more than a day ago moves here.")}
+    </EmptyState>
+  ) : project !== undefined ? (
+    <EmptyState
+      title={project ? fill(_("No tasks in {project}."), { project }) : _("No tasks outside a project.")}
+      icon="info"
+      action={<a href="/console/tasks?project=">{_("All projects")}</a>}
+    />
+  ) : (
+    <EmptyState title={_("No tasks yet.")} icon="info">
+      {_("Create one with New task, or let agents create them with the task_create tool.")}
+    </EmptyState>
+  );
+
+export const NewTaskForm: FC<{ _: Tr }> = ({ _ }) => (
+  <form hx-post="/console/tasks" hx-swap="none">
+    <Field id="task-title" label={_("Title")} lang={_.lang}>
+      <input id="task-title" name="title" required maxlength={200} autocomplete="off" />
+    </Field>
+    <Field id="task-body" label={_("Description")} lang={_.lang} optional>
+      <textarea id="task-body" name="body" maxlength={8000} rows={4} />
+    </Field>
+    <Field id="task-assignee" label={_("Assigned to")} lang={_.lang} optional help={_("A handle like @lea. Leave it empty for nobody.")}>
+      <input
+        id="task-assignee"
+        name="assignee"
+        autocomplete="off"
+        spellcheck={false}
+        placeholder="@lea"
+        {...fieldAria("task-assignee", { help: true })}
+      />
+    </Field>
+    <button type="submit" class="primary">
+      {_("Create task")}
+    </button>
+  </form>
+);
+
+// What happened to a task, oldest first: its history from the audit log and its notes, in one timeline. A sentence in words
+// after the person, never the event's key.
+const TASK_EVENT: Record<string, string> = {
+  "task.created": "created the task",
+  "task.claimed": "claimed the task",
+  "task.taken_over": "took the task over",
+  "task.handed_off": "handed the task off",
+  "task.verified_by_tag": "finished the task with its tag",
+  "task.verify_skipped": "skipped the tag check",
+  "runner.leased": "gave the task to the runner",
+  "runner.updated": "updated the task from the runner",
+  "runner.retried": "retried the task in the runner",
+  "runner.lease_expired": "lost the runner's hold on the task",
+  "runner.merged": "merged the task's pull request",
+  "runner.pr_closed": "closed the task's pull request",
+};
+// An update that only added a note shows once, as the note.
+export const taskEvent = (e: AuditEvent, _: Tr): string | null => {
+  const fields = Array.isArray(e.data.fields) ? (e.data.fields as string[]) : [];
+  const status = e.data.status as TaskStatus | undefined;
+  if (e.action === "task.updated") {
+    if (fields.includes("status") && status && TASK_WORD[status])
+      return fill(_("moved the task to {status}"), { status: _(TASK_WORD[status]) });
+    if (fields.length && fields.every((f) => f === "note")) return null;
+    return _("updated the task");
+  }
+  return _(TASK_EVENT[e.action] ?? AUDIT[e.action] ?? e.action);
+};
+// Who did it: the person, and the session when their agent did.
+export const Who: FC<{ name: string; label?: string | null }> = ({ name, label }) => (
+  <span class="rec-who">
+    <strong>{name}</strong>
+    {label && <Chip>{label}</Chip>}
+  </span>
+);
+
+export const TaskDetail: FC<{
+  t: Task;
+  handle: string | null;
+  project: string | null;
+  creator: Child;
+  events: TimelineEvent[];
+  form: Child;
+  _: Tr;
+}> = ({ t, handle, project, creator, events, form, _ }) => (
+  <div class="rec-detail">
+    <Props label={_("About this task")}>
+      <Prop term={_("Assigned to")}>
+        <Assignee handle={handle} _={_} />
+      </Prop>
+      {project && (
+        <Prop term={_("Project")}>
+          <Chip>{project}</Chip>
+        </Prop>
+      )}
+      <Prop term={_("Created by")}>{creator}</Prop>
+      <Prop term={_("Created on")}>
+        <Stamp at={t.createdAt} lang={_.lang} />
+      </Prop>
+      <Prop term={_("Last updated")}>
+        <Stamp at={t.updatedAt} lang={_.lang} />
+      </Prop>
+      <Prop term={_("Version")}>{t.version}</Prop>
+      {t.branch && (
+        <Prop term={_("Branch")}>
+          <Chip>{t.branch}</Chip>
+        </Prop>
+      )}
+      {t.prNumber && <Prop term={_("Pull request")}>{`#${t.prNumber}`}</Prop>}
+      {t.paths.length > 0 && (
+        <Prop term={_("Paths")}>
+          {t.paths.map((path) => (
+            <Chip>{path}</Chip>
+          ))}
+        </Prop>
+      )}
+    </Props>
+    <div class="rec-body">
+      <Flags flags={t.flags} _={_} />
+      {t.status === "blocked" && t.blockedReason && (
+        <Banner tone="danger" title={_("Why it's blocked")}>
+          {t.blockedReason}
+        </Banner>
+      )}
+      {t.body ? <p class="rec-text">{t.body}</p> : <p class="empty">{_("No description.")}</p>}
+      <h2>{_("History")}</h2>
+      <Timeline events={events} lang={_.lang} empty={_("No history yet.")} />
+      {form}
+    </div>
+  </div>
+);
+
+// The update form offers only the moves the task allows; the reason only where Blocked is one of them.
+export const TaskUpdateForm: FC<{ t: Task; moves: TaskStatus[]; _: Tr }> = ({ t, moves, _ }) => (
+  <Panel title={_("Update the task")}>
+    <form hx-post={`/console/tasks/${t.id}`} hx-swap="none">
+      <input type="hidden" name="expected_version" value={String(t.version)} />
+      {moves.length > 0 && (
+        <Field id="task-status" label={_("Status")} lang={_.lang}>
+          <select id="task-status" name="status">
+            <option value="">{_("Unchanged")}</option>
+            {moves.map((s) => (
+              <option value={s}>{_(TASK_WORD[s])}</option>
+            ))}
+          </select>
+        </Field>
+      )}
+      <Field
+        id="task-assignee"
+        label={_("Assigned to")}
+        lang={_.lang}
+        optional
+        help={_("A handle like @lea, or none to unassign. Leave it empty to keep it as it is.")}
+      >
+        <input id="task-assignee" name="assignee" autocomplete="off" spellcheck={false} {...fieldAria("task-assignee", { help: true })} />
+      </Field>
+      {moves.includes("blocked") && (
+        <Field id="task-reason" label={_("Why it's blocked")} lang={_.lang} optional help={_("Needed for Blocked, and only then.")}>
+          <input id="task-reason" name="reason" maxlength={200} autocomplete="off" {...fieldAria("task-reason", { help: true })} />
+        </Field>
+      )}
+      <Field id="task-note" label={_("Note")} lang={_.lang} optional help={_("Added to the history, for the whole team.")}>
+        <input id="task-note" name="note" maxlength={500} autocomplete="off" {...fieldAria("task-note", { help: true })} />
+      </Field>
+      <button type="submit" class="primary">
+        {_("Save")}
+      </button>
+    </form>
+  </Panel>
 );

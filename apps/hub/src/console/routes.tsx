@@ -2,7 +2,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
+import { CLAIM_ENFORCEMENT, ROLES, type Role, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
@@ -59,7 +59,7 @@ import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage,
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
-import { archivedTask, createTask, updateTask } from "../domain/tasks.js";
+import { ALLOWED, archivedTask, createTask, updateTask } from "../domain/tasks.js";
 import {
   findInvitation,
   inviteMember,
@@ -81,6 +81,7 @@ import {
   Action,
   ArchiveTabs,
   Bypass,
+  Collapsible,
   InvitePage,
   Layout,
   Line,
@@ -104,7 +105,15 @@ import {
   MemoryTabs,
   memoryLabel,
   type Names,
+  NewTaskForm,
+  TaskBoard,
+  TaskDetail,
+  TaskPill,
+  TasksEmpty,
+  TaskUpdateForm,
+  taskEvent,
   VerifyResult,
+  Who,
 } from "./records.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
@@ -1805,6 +1814,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/tasks", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
     const where = and(eq(task.teamId, p.teamId), onProject(task.projectId, f), archived ? archivedTask() : not(archivedTask()));
@@ -1821,68 +1831,50 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(task)
       .where(where)
       .groupBy(task.projectId, task.status);
-    const countOf = (s: string, projectId?: string) =>
+    const countOf = (projectId?: string) => (s: string) =>
       counts.filter((x) => x.status === s && (!projectId || (x.projectId ?? "none") === projectId)).reduce((n, x) => n + x.n, 0);
-    // Under a project heading, the status headings step down one level.
-    const board = (all: typeof rows, projectId?: string) =>
-      TASK_STATUSES.map((s) => {
-        const of = all.filter((r) => r.task.status === s);
-        const Heading = projectId ? "h3" : "h2";
-        return (
-          of.length > 0 && (
-            <>
-              <Heading>
-                {s} ({countOf(s, projectId)})
-              </Heading>
-              <Table
-                lang={tr(c).lang}
-                head={["Title", "Assignee", "Version", "Updated"]}
-                rows={of.map((r) => [
-                  <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
-                  r.handle ? `@${r.handle}` : "",
-                  r.task.version,
-                  <When at={r.task.updatedAt} />,
-                ])}
-                empty={tr(c)("Nothing yet.")}
-              />
-            </>
-          )
-        );
-      });
+    const href = (id: string) => withProject(`/console/tasks/${id}`, f.selected);
+    const chosen = f.selected === "none" ? null : f.projects.find((pr) => pr.id === f.selected)?.name;
     return page(
       c,
       "Tasks",
       <>
-        <ArchiveTabs base="/console/tasks" archived={archived} lang={tr(c).lang} project={f.selected} />
-        {archived && rows.length === 0 && <p>{tr(c)("Nothing yet.")}</p>}
-        {f.selected
-          ? board(rows)
-          : byProject(f, rows, (r) => r.task.projectId, tr(c)("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {board(g.rows, g.id)}
-              </section>
-            ))}
+        <ArchiveTabs base="/console/tasks" archived={archived} lang={_.lang} project={f.selected} />
+        {rows.length === 0 ? (
+          <TasksEmpty archived={archived} project={f.selected ? (chosen ?? null) : undefined} _={_} />
+        ) : f.selected ? (
+          <TaskBoard rows={rows} countOf={countOf()} href={href} level="h2" _={_} />
+        ) : (
+          byProject(f, rows, (r) => r.task.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`p-${g.id}`}>
+              <h2 id={`p-${g.id}`}>{g.name}</h2>
+              <TaskBoard rows={g.rows} countOf={countOf(g.id)} href={href} level="h3" _={_} />
+            </section>
+          ))
+        )}
         {capped(
           c,
           rows.length,
           counts.reduce((n, x) => n + x.n, 0),
         )}
-        <h2>New task</h2>
-        <form hx-post="/console/tasks" hx-swap="none">
-          <label>
-            Title <input name="title" required maxlength={200} />
-          </label>
-          <label>
-            Description <textarea name="body" maxlength={8000} />
-          </label>
-          <label>
-            Assignee (@handle) <input name="assignee" />
-          </label>
-          <button type="submit">Create</button>
-        </form>
       </>,
       f,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              "What the team works on, by project and status. People create tasks here; agents create, claim and update them with the task tools.",
+            )}
+          </p>
+        ),
+        actions: (
+          <div class="new-task">
+            <Collapsible summary={_("New task")}>
+              <NewTaskForm _={_} />
+            </Collapsible>
+          </div>
+        ),
+      },
     );
   });
 
@@ -1901,6 +1893,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/tasks/:id", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const [t] = await db
       .select()
       .from(task)
@@ -1911,55 +1904,70 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(auditEvent)
       .where(and(eq(auditEvent.teamId, p.teamId), eq(auditEvent.subjectId, t.id)))
       .orderBy(asc(auditEvent.seq));
+    const [assignee] = t.assigneeUserId
+      ? await db
+          .select({ handle: membership.handle })
+          .from(membership)
+          .where(and(eq(membership.userId, t.assigneeUserId), eq(membership.teamId, p.teamId)))
+      : [];
+    // A guest never sees the team's projects; guests have no task pages, the check stays with the data.
+    const [inProject] =
+      t.projectId && p.role !== "guest"
+        ? await db
+            .select({ name: project.name })
+            .from(project)
+            .where(and(eq(project.id, t.projectId), eq(project.teamId, p.teamId)))
+        : [];
+    const names = await namesOf(p.teamId, [
+      t.createdByUser,
+      t.createdByAgent,
+      ...history.flatMap((e) => [e.actorUserId, e.actorAgentId]),
+      ...t.notes.flatMap((n) => [n.user_id, n.agent_id]),
+    ]);
+    const who = (userId: string | null, agentId: string | null) => (
+      <Who name={(userId && names.names.get(userId)) || _("A former member")} label={agentId ? (names.names.get(agentId) ?? null) : null} />
+    );
+    // A note written with an update reads under that update (the closest one by the same person, within seconds); a note on
+    // its own is its own event.
+    const updates = history.filter((e) => e.action === "task.updated" || e.action === "task.taken_over");
+    const along = new Map<number, string[]>();
+    const loose: typeof t.notes = [];
+    for (const n of t.notes) {
+      const at = new Date(n.at).getTime();
+      const near = updates
+        .filter((e) => e.actorUserId === n.user_id && Math.abs(e.at.getTime() - at) < 5_000)
+        .sort((a, b) => Math.abs(a.at.getTime() - at) - Math.abs(b.at.getTime() - at))[0];
+      if (near && taskEvent(near, _)) along.set(near.seq, [...(along.get(near.seq) ?? []), n.text]);
+      else loose.push(n);
+    }
+    const changes = history.flatMap((e) => {
+      const text = taskEvent(e, _);
+      if (!text) return [];
+      const actor = e.actorType === "hub" ? <Who name={_("Hub")} /> : who(e.actorUserId, e.actorAgentId);
+      return [{ at: e.at, actor, text, change: true, body: along.get(e.seq)?.join("\n") }];
+    });
+    const events = [
+      ...changes,
+      ...loose.map((n) => ({ at: new Date(n.at), actor: who(n.user_id, n.agent_id), text: _("added a note"), body: n.text })),
+    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+    const current = events.findLastIndex((e) => "change" in e);
     return page(
       c,
       t.title,
-      <>
-        <p>
-          <a href={withProject("/console/tasks", kept(c))}>{tr(c)("Back to tasks")}</a>
-        </p>
-        <p>
-          {t.status} · version {t.version}
-        </p>
-        <pre>{t.body}</pre>
-        <h2>Notes</h2>
-        <Table
-          lang={tr(c).lang}
-          head={["When", "Note"]}
-          rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        <h2>History</h2>
-        <Table
-          lang={tr(c).lang}
-          head={["#", "Action", "Via", "At"]}
-          rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        <h2>Update</h2>
-        <form hx-post={`/console/tasks/${t.id}`} hx-swap="none">
-          <input type="hidden" name="expected_version" value={String(t.version)} />
-          <label>
-            Status{" "}
-            <select name="status">
-              <option value="">unchanged</option>
-              {TASK_STATUSES.filter((s) => s !== "claimed").map((s) => (
-                <option value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Assignee (@handle or none) <input name="assignee" />
-          </label>
-          <label>
-            Reason (needed for blocked) <input name="reason" maxlength={200} />
-          </label>
-          <label>
-            Note <input name="note" maxlength={500} />
-          </label>
-          <button type="submit">Save</button>
-        </form>
-      </>,
+      <TaskDetail
+        t={t}
+        handle={assignee?.handle ?? null}
+        project={inProject?.name ?? null}
+        creator={who(t.createdByUser, t.createdByAgent)}
+        events={events.map((e, i) => ({ ...e, now: i === current }))}
+        form={<TaskUpdateForm t={t} moves={ALLOWED[t.status].filter((s) => s !== "claimed")} _={_} />}
+        _={_}
+      />,
+      undefined,
+      {
+        back: <a href={withProject("/console/tasks", kept(c))}>{_("Back to tasks")}</a>,
+        head: <TaskPill status={t.status} _={_} />,
+      },
     );
   });
 

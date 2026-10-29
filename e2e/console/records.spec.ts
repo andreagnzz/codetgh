@@ -107,6 +107,24 @@ test("claims: Release asks first in a dialog named after the scope, Cancel has t
   await expect(release).toBeFocused();
 });
 
+test("tasks: New task opens under the page header, its fields in order, Create task last", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/tasks`);
+  const summary = page.locator(".new-task summary");
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  const width = async (selector: string) => (await page.locator(selector).boundingBox())?.width ?? 0;
+  expect(await width(".new-task details[open]")).toBeGreaterThan((await width(".page-head")) / 2);
+  await tab(page);
+  await expect(page.locator("#task-title")).toBeFocused();
+  await tab(page);
+  await expect(page.locator("#task-body")).toBeFocused();
+  await tab(page);
+  await expect(page.locator("#task-assignee")).toBeFocused();
+  expect(await tab(page)).toBe("Create task");
+});
+
 test("memory: the status tabs, then on a proposal the note, Accept and Reject", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
@@ -118,3 +136,25 @@ test("memory: the status tabs, then on a proposal the note, Accept and Reject", 
   expect(await tab(page)).toBe("Accept");
   expect(await tab(page)).toBe("Reject");
 });
+
+for (const lang of ["en", "fr"])
+  test(`phone, ${lang}: no page of the batch scrolls sideways at 360 px, long paths and titles included`, async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await signIn(page, hub.url, team.lea);
+    await page.context().addCookies([{ name: "lang", value: lang, url: hub.url }]);
+    for (const path of [
+      "/console/audit",
+      "/console/memory?status=all",
+      "/console/memory/mit_01KEYBOARDMEMORY00000000000",
+      "/console/claims",
+      "/console/tasks?project=",
+      "/console/tasks/tsk_01KEYBOARDTASK0000000000000",
+    ]) {
+      await page.goto(`${hub.url}${path}`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), path).toBeLessThanOrEqual(360);
+    }
+    // An event's hashes, open, fit too.
+    await page.goto(`${hub.url}/console/audit`);
+    await page.locator("details.audit-hash > summary").first().click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  });

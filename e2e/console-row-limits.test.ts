@@ -83,7 +83,7 @@ it("filters agents and project sessions by viewer and project before the row lim
 
 it("counts every task in the status headings and says when the board is cut", async () => {
   const html = await get("/console/tasks?project=");
-  expect(html).toContain("todo (210)");
+  expect(html).toContain('To do <span class="count">210</span>');
   expect(html).toContain("Showing 200 of 210");
 });
 

@@ -56,7 +56,7 @@ describe("console tasks", () => {
     expect(t).toMatchObject({ status: "todo", assigneeUserId: team.sam.userId, createdByAgent: null });
 
     const board = await get(team.lea.cookie, "/console/tasks");
-    expect(board).toContain("todo");
+    expect(board).toContain('To do <span class="count">1</span>');
     expect(board).toContain("Migrate &lt;b&gt;users&lt;/b&gt;");
 
     const upd = await consolePost(hub.url, team.malik.cookie, `/console/tasks/${t.id}`, {
@@ -71,8 +71,8 @@ describe("console tasks", () => {
     const detail = await get(team.sam.cookie, `/console/tasks/${t.id}`);
     expect(detail).toContain("Move the users table");
     expect(detail).toContain("taking it over");
-    expect(detail).toContain("task.created");
-    expect(detail).toContain("task.updated");
+    expect(detail).toContain(">created the task<");
+    expect(detail).toContain(">updated the task<");
     const audit = await hub.db.select().from(auditEvent).where(eq(auditEvent.subjectId, t.id));
     expect(audit.every((e) => e.via === "console" && e.actorType === "user")).toBe(true);
   });
