@@ -691,6 +691,11 @@ textarea {
 :is(.panel, dialog, .public) :is(input, select, textarea) {
   background: var(--surface-raised);
 }
+/* A placeholder is an example, in the muted text color at full opacity (the browser's own gray is under 4.5:1). */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
 input:hover,
 select:hover,
 textarea:hover {
