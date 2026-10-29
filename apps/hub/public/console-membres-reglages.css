@@ -89,6 +89,12 @@
   gap: var(--sp-1) var(--sp-2);
 }
 
+/* My data: the link that downloads the copy is as tall as the panels' buttons (40 px, 44 on a touch screen). */
+:where(.team-me .panel) > .button {
+  min-height: 40px;
+  padding-inline: var(--sp-4);
+}
+
 /* A field that starts with "@": the sign is drawn in the field, never sent. Handles and ids are machine values, in mono. */
 :is(.team-members, .team-settings) .with-prefix {
   position: relative;
