@@ -3,7 +3,7 @@ import { ROLES, type Role } from "@codetgh/shared";
 import type { Child, FC } from "hono/jsx";
 import type { Lang } from "../i18n.js";
 import type { Principal } from "../principal.js";
-import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldAria, Pill, RowMenu, Table, When } from "./pages.js";
+import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldAria, Panel, Pill, RowMenu, Table, When } from "./pages.js";
 
 // Members, Tokens, My data and Settings. People read by name, with their email and the handle they are written to; an
 // action names the person or the token it acts on and asks first when it cuts something off; what the hub shows only once
@@ -330,4 +330,73 @@ export const Tokens: FC<{ _: Tr; rows: TokenRow[] }> = ({ _, rows }) => (
       }
     />
   </div>
+);
+
+// ---- My data ----
+
+export const MyData: FC<{ _: Tr; p: Principal }> = ({ _, p }) => (
+  <>
+    <Panel title={_("Profile")}>
+      <form hx-post="/console/me/profile" hx-swap="none">
+        <Field
+          id="me-name"
+          label={_("Display name")}
+          lang={_.lang}
+          help={named(_("Your teammates see it next to your handle, {handle}."), { handle: `@${p.handle}` })}
+        >
+          <input
+            id="me-name"
+            name="name"
+            value={p.user.name}
+            maxlength={60}
+            required
+            autocomplete="name"
+            {...fieldAria("me-name", { help: 1 })}
+          />
+        </Field>
+        <button type="submit" class="primary">
+          {_("Save")}
+        </button>
+      </form>
+    </Panel>
+    <Panel title={_("A copy of your data")}>
+      <p>{_("Your profile, sessions, messages, claims, tasks, team memory and audit events, in one JSON file.")}</p>
+      <a class="button" href="/console/me/export">
+        {_("Download my data")}
+      </a>
+    </Panel>
+    <Panel title="Slack">
+      <p>{_("Reply to the team's threads from Slack, as you. A one-time code links your Slack account.")}</p>
+      <form hx-post="/console/me/slack" hx-target="#slack-code">
+        <button type="submit" class="secondary">
+          {_("Link Slack")}
+        </button>
+      </form>
+      <div id="slack-code" />
+    </Panel>
+    <Panel title={_("Erase my data")} tone="danger">
+      <p>
+        {_(
+          "Your messages, subjects, claim reasons and task notes become [erased], your name becomes Former member, your claims are released, your tasks go back to the team and your access ends. Tasks and team memory you wrote stay with the team; the audit log keeps ids only.",
+        )}
+      </p>
+      <form hx-post="/console/me/erase" hx-swap="none">
+        <Field id="me-erase" label={_("Type erase to confirm")} lang={_.lang} help={_("This can't be undone.")}>
+          <input id="me-erase" name="confirm" required autocomplete="off" spellcheck={false} {...fieldAria("me-erase", { help: 1 })} />
+        </Field>
+        <button type="submit" class="danger">
+          {_("Erase my data")}
+        </button>
+      </form>
+    </Panel>
+  </>
+);
+
+export const SlackCode: FC<{ _: Tr; code: string }> = ({ _, code }) => (
+  <>
+    <Banner title={_("Type this in Slack within 10\u00a0minutes.")}>
+      {_("Your replies in CodeTgh threads there then reach the team as you.")}
+    </Banner>
+    <CodeBlock code={`/codetgh-link ${code}`} lang={_.lang} copyLabel={_("Copy the Slack command")} />
+  </>
 );

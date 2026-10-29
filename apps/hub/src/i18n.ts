@@ -392,6 +392,26 @@ const FR: Record<string, string> = {
   "Token {label} revoked.": "Jeton {label} révoqué.",
   "No personal tokens yet.": "Aucun jeton personnel pour l'instant.",
   "Create one to sign in a terminal.": "Crées-en un pour connecter un terminal.",
+  // My data.
+  "What this hub keeps about you, and what you can do with it.": "Ce que ce hub garde sur toi, et ce que tu peux en faire.",
+  Profile: "Profil",
+  "Your teammates see it next to your handle, {handle}.": "Tes coéquipiers le voient à côté de ton identifiant, {handle}.",
+  "A copy of your data": "Une copie de tes données",
+  "Your profile, sessions, messages, claims, tasks, team memory and audit events, in one JSON file.":
+    "Ton profil, tes sessions, messages, réservations, tâches, ta mémoire d'équipe et tes événements d'audit, dans un seul fichier JSON.",
+  "Download my data": "Télécharger mes données",
+  "Reply to the team's threads from Slack, as you. A one-time code links your Slack account.":
+    "Réponds aux fils de l'équipe depuis Slack, en ton nom. Un code à usage unique relie ton compte Slack.",
+  "Link Slack": "Relier Slack",
+  "Type this in Slack within 10\u00a0minutes.": "Tape ceci dans Slack d'ici 10\u00a0minutes.",
+  "Your replies in CodeTgh threads there then reach the team as you.":
+    "Tes réponses aux fils CodeTgh y arrivent alors à l'équipe en ton nom.",
+  "Copy the Slack command": "Copier la commande Slack",
+  "Erase my data": "Effacer mes données",
+  "Your messages, subjects, claim reasons and task notes become [erased], your name becomes Former member, your claims are released, your tasks go back to the team and your access ends. Tasks and team memory you wrote stay with the team; the audit log keeps ids only.":
+    "Tes messages, sujets, motifs de réservation et notes de tâche deviennent [erased], ton nom devient Former member, tes réservations sont libérées, tes tâches reviennent à l'équipe et ton accès prend fin. Les tâches et la mémoire d'équipe que tu as écrites restent à l'équipe\u202f; le journal d'audit ne garde que des identifiants.",
+  "Type erase to confirm": "Tape erase pour confirmer",
+  "This can't be undone.": "C'est définitif.",
   // ---- End of batch 5. ----
 
   // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----

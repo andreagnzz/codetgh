@@ -30,13 +30,13 @@
 }
 
 /* What a form answers, shown once: a banner that says it, then the blocks to copy. */
-:is(#invite-result, #new-token):not(:empty) {
+:is(#invite-result, #new-token, #slack-code):not(:empty) {
   margin-top: var(--sp-6);
 }
-:is(#invite-result, #new-token) .banner {
+:is(#invite-result, #new-token, #slack-code) .banner {
   margin-bottom: var(--sp-4);
 }
-:where(#invite-result, #new-token) > :last-child {
+:where(#invite-result, #new-token, #slack-code) > :last-child {
   margin-bottom: 0;
 }
 :where(#new-token) > p {

@@ -93,7 +93,7 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { Invitations, Invited, InviteForm, Members, TokenCreated, TokenForm, Tokens } from "./team.js";
+import { Invitations, Invited, InviteForm, Members, MyData, SlackCode, TokenCreated, TokenForm, Tokens } from "./team.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1023,49 +1023,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.get("/me", (c) =>
-    page(
-      c,
-      "My data",
-      <>
-        <form hx-post="/console/me/profile" hx-swap="none">
-          <label>
-            {tr(c)("Display name")} <input name="name" value={c.get("principal").user.name} maxlength={60} required />
-          </label>
-          <button type="submit">{tr(c)("Save")}</button>
-        </form>
-        <p>
-          <a href="/console/me/export">Download everything CodeTgh stores about you (JSON)</a>
-        </p>
-        <h2>Slack</h2>
-        <form hx-post="/console/me/slack" hx-target="#slack-code">
-          <button type="submit">Link Slack</button>
-        </form>
-        <div id="slack-code" />
-        <h2>Erase my data</h2>
-        <p>
-          Your messages, subjects, claim reasons and task notes become [erased], your name becomes Former member, your claims are released,
-          your tasks go back to the team and your access ends. Tasks and team memory you wrote stay with the team; the audit log keeps ids
-          only.
-        </p>
-        <form hx-post="/console/me/erase" hx-swap="none">
-          <label>
-            Type erase to confirm <input name="confirm" required />
-          </label>
-          <button type="submit">Erase my data</button>
-        </form>
-      </>,
-    ),
+    page(c, "My data", <MyData _={tr(c)} p={c.get("principal")} />, undefined, {
+      head: <p class="lede">{tr(c)("What this hub keeps about you, and what you can do with it.")}</p>,
+    }),
   );
 
   consoleApp.post("/me/slack", async (c) => {
     const code = await createSlackCode(messaging, c.get("principal"));
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>In Slack, type this within 10 minutes. Then your replies in CodeTgh threads there reach the team as you.</p>
-        <pre>{`/codetgh-link ${code}`}</pre>
-      </Result>,
-    );
+    return c.html(<SlackCode _={tr(c)} code={code} />);
   });
 
   consoleApp.get("/me/export", async (c) => {

@@ -235,3 +235,33 @@ describe("tokens", () => {
     expect(html).toContain("Révoquer le jeton sam laptop\u202f?");
   });
 });
+
+describe("my data", () => {
+  it("groups the profile, the export, Slack and erasing, the last one as a danger", async () => {
+    const html = main(await page("/console/me", team.sam.cookie));
+    expect(html).toContain('<label for="me-name">Display name</label>');
+    expect(html).toContain("Your teammates see it next to your handle, @sam.");
+    expect(html).toContain('<a class="button" href="/console/me/export">Download my data</a>');
+    expect(html).toContain('<form hx-post="/console/me/slack" hx-target="#slack-code">');
+    expect(html).toContain(">Link Slack</button>");
+    const erase = html.slice(html.indexOf('data-tone="danger"'));
+    expect(erase).toContain("Erase my data</h2>");
+    expect(erase).toContain('<label for="me-erase">Type erase to confirm</label>');
+    expect(erase).toContain('<button type="submit" class="danger">Erase my data</button>');
+  });
+
+  it("gives the Slack code in a block to copy", async () => {
+    const html = await (await consolePost(hub.url, team.sam.cookie, "/console/me/slack")).text();
+    expect(html).toContain("Type this in Slack within 10\u00a0minutes.");
+    expect(html).toMatch(/<code translate="no">\/codetgh-link [A-Z0-9]{8}<\/code>/);
+    expect(html).toContain('aria-label="Copy the Slack command"');
+  });
+
+  it("is in French", async () => {
+    const html = main(await page("/console/me", team.sam.cookie, "fr"));
+    expect(html).toContain("<h1>Mes données</h1>");
+    expect(html).toContain("Effacer mes données</h2>");
+    expect(html).toContain("Tape erase pour confirmer");
+    expect(html).toContain(">Relier Slack</button>");
+  });
+});
