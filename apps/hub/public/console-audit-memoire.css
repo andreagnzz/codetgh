@@ -352,3 +352,32 @@ details.audit-hash[open] > summary .icon {
   content: "\2212";
   color: var(--error);
 }
+
+/* Claims: the scope as typed, wrapping anywhere; fixed column widths, so a long path or session never squeezes the others. */
+.claim-scope {
+  overflow-wrap: anywhere;
+}
+@media (min-width: 640px) {
+  .claims-log table {
+    table-layout: fixed;
+  }
+  .claims-log th:nth-child(1) {
+    width: 28%;
+  }
+  .claims-log th:nth-child(2) {
+    width: 20%;
+  }
+  .claims-log th:nth-child(4) {
+    width: 7rem;
+  }
+  .claims-log th:nth-child(5) {
+    width: 8rem;
+  }
+  .claims-log td {
+    overflow-wrap: anywhere;
+  }
+  /* A fixed column knows its width: a session label is cut at it. */
+  .claims-log .chip {
+    max-width: 100%;
+  }
+}

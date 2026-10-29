@@ -96,6 +96,7 @@ import {
 import {
   AuditLede,
   AuditTable,
+  ClaimsTable,
   MemoryDecide,
   MemoryDetail,
   MemoryHead,
@@ -1764,10 +1765,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/claims", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const rows = await db
-      .select({ claim, name: user.name, total: sql<number>`count(*) over ()`.mapWith(Number) })
+      .select({ claim, name: user.name, agentLabel: agent.label, total: sql<number>`count(*) over ()`.mapWith(Number) })
       .from(claim)
       .innerJoin(user, eq(user.id, claim.holderUserId))
+      .leftJoin(agent, eq(agent.id, claim.holderAgentId))
       .where(and(eq(claim.teamId, p.teamId), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())))
       .orderBy(asc(claim.expiresAt))
       .limit(PAGE * 4);
@@ -1775,21 +1778,21 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Claims",
       <>
-        <Table
-          lang={tr(c).lang}
-          head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
-          rows={rows.map((r) => [
-            r.claim.scope,
-            r.name,
-            r.claim.mode,
-            r.claim.reason ?? "",
-            `${Math.max(1, Math.round((r.claim.expiresAt.getTime() - Date.now()) / 60_000))} min`,
-            isAdmin(p) ? <Action post={`/console/claims/${r.claim.id}/release`} label="Release" /> : "",
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
+        <ClaimsTable rows={rows} admin={isAdmin(p)} _={_} />
         {capped(c, rows.length, rows[0]?.total)}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              isAdmin(p)
+                ? "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release one its session left behind."
+                : "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 

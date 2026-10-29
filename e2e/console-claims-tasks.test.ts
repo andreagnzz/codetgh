@@ -25,7 +25,7 @@ describe("console claims", () => {
     const seen = await get(team.malik.cookie, "/console/claims");
     expect(seen).toContain("api/console.ts");
     expect(seen).toContain("Sam");
-    expect(seen).toContain("exclusive");
+    expect(seen).toContain("<span>Exclusive</span>");
     expect(seen).not.toContain(`/console/claims/${c.id}/release`);
     expect((await consolePost(hub.url, team.malik.cookie, `/console/claims/${c.id}/release`)).status).toBe(403);
 

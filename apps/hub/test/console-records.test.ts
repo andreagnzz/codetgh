@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { auditEvent, memoryItem, project, task } from "../src/db/schema.js";
+import { auditEvent, claim, memoryItem, project, task } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub } from "./harness.js";
 
@@ -247,5 +247,45 @@ describe("team memory", () => {
     expect(html).toContain(">Proposé</span>");
     expect(html).toContain(">Décision<");
     expect(await page(`/console/memory/${ids.d1v2}`, team.lea.cookie, "fr")).toContain(">Modifications depuis la v1</h2>");
+  });
+});
+
+describe("claims", () => {
+  it("lists what agents work on: the scope to type, who holds it and from which session, the mode and when it ends", async () => {
+    const html = main(await page("/console/claims", team.lea.cookie));
+    expect(html).toContain('<code class="claim-scope">apps/web/src/login/**</code>');
+    // What kind of scope, and how much of it the holder keeps to themselves, under it.
+    expect(html).toContain(">Pattern · <span>Exclusive</span>");
+    expect(html).toContain(">Resource · <span>Shared</span>");
+    expect(html).toContain(">sam@feat/login</span>");
+    expect(html).toContain("Login errors under each field");
+    expect(html).toContain(">No reason given<");
+    expect(html).toMatch(/datetime="[^"]+" data-local/);
+  });
+
+  it("lets only an admin release a claim, after asking, in a button named after its scope", async () => {
+    const [c] = await hub.db.select().from(claim).where(eq(claim.scope, "apps/web/src/login/**"));
+    const html = main(await page("/console/claims", team.lea.cookie));
+    const button = html.match(new RegExp(`<button[^>]*hx-post="/console/claims/${c?.id}/release"[^>]*>`))?.[0] ?? "";
+    // Freeing a claim deletes nothing: a plain button, the dialog's own button does it.
+    expect(button).not.toContain("danger");
+    expect(button).toContain('aria-label="Release apps/web/src/login/**…"');
+    expect(button).toContain('data-confirm="Release the claim on apps/web/src/login/**?"');
+    expect(button).toContain('data-confirm-action="Release"');
+    const member = main(await page("/console/claims", team.sam.cookie));
+    expect(member).not.toContain("/release");
+    expect(member).not.toContain(">Actions<");
+  });
+
+  it("says what a claim is when there is none", async () => {
+    const html = main(await page("/console/claims", freshTeam.lea.cookie, "en", fresh));
+    expect(html).toContain('<p class="empty-title">No active claims.</p>');
+    expect(html).toContain("claim tool");
+  });
+
+  it("reads in French", async () => {
+    const html = main(await page("/console/claims", team.lea.cookie, "fr"));
+    expect(html).toContain(">Partagée<");
+    expect(html).toContain(">Libérer…</button>");
   });
 });

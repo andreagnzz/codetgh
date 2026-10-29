@@ -485,6 +485,30 @@ const FR: Record<string, string> = {
   "On this hub, only owners accept or reject proposals.": "Sur ce hub, seuls les propriétaires acceptent ou rejettent les propositions.",
   "On this hub, only admins and owners accept or reject proposals.":
     "Sur ce hub, seuls les admins et les propriétaires acceptent ou rejettent les propositions.",
+  // Claims: a claim (« réservation ») is feminine.
+  "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out.":
+    "Ce sur quoi les agents travaillent en ce moment, la fin la plus proche d'abord. Une réservation prend fin quand sa session la libère ou se termine, ou quand son temps est écoulé.",
+  "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release one its session left behind.":
+    "Ce sur quoi les agents travaillent en ce moment, la fin la plus proche d'abord. Une réservation prend fin quand sa session la libère ou se termine, ou quand son temps est écoulé. Libère celle qu'une session a oubliée.",
+  Scope: "Périmètre",
+  "Held by": "Détenue par",
+  Mode: "Mode",
+  Ends: "Fin",
+  File: "Fichier",
+  Pattern: "Motif de fichiers",
+  Resource: "Ressource",
+  Task: "Tâche",
+  Exclusive: "Exclusive",
+  Intent: "Intention",
+  Shared: "Partagée",
+  "No reason given": "Aucun motif donné",
+  Release: "Libérer",
+  "Release the claim on {scope}?": "Libérer la réservation de {scope} ?",
+  "Agents can then change it without a warning. The session that held it isn't told.":
+    "Les agents peuvent alors le modifier sans avertissement. La session qui la détenait n'est pas prévenue.",
+  "No active claims.": "Aucune réservation active.",
+  "Before an agent changes files, it claims them with the claim tool, so the others are warned. Claims show here until they end.":
+    "Avant de modifier des fichiers, un agent les réserve avec l'outil claim, pour que les autres soient prévenus. Les réservations restent ici jusqu'à leur fin.",
   // ---- End of batch 6. ----
 };
 

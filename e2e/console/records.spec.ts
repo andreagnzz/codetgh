@@ -92,6 +92,21 @@ for (const scheme of ["light", "dark"] as const)
     await expect(page.locator("#verify-result")).toHaveAttribute("aria-live", "polite");
   });
 
+test("claims: Release asks first in a dialog named after the scope, Cancel has the focus, Escape gives it back", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/claims`);
+  const release = page.getByRole("button", { name: `Release ${LONG}…` });
+  await release.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: `Release the claim on ${LONG}?` });
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => (document.activeElement as HTMLElement).innerText.trim())).toBe("Cancel");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(release).toBeFocused();
+});
+
 test("memory: the status tabs, then on a proposal the note, Accept and Reject", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);

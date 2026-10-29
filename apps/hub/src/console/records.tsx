@@ -1,11 +1,11 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
 import { diffLines } from "diff";
 import type { Child, FC } from "hono/jsx";
-import type { auditEvent, memoryItem } from "../db/schema.js";
+import type { auditEvent, claim, memoryItem } from "../db/schema.js";
 import { memoryRef } from "../domain/memory.js";
 import type { Lang } from "../i18n.js";
 import { Icon } from "../icons.js";
-import { Banner, Chip, EmptyState, Field, fieldAria, Panel, Pill, Stamp, Table, type Tone, When } from "./pages.js";
+import { Action, Banner, Chip, EmptyState, Field, fieldAria, Panel, Pill, Stamp, Table, type Tone, When } from "./pages.js";
 
 // The audit log, team memory, claims and tasks. People and objects read by name, the machine keys and ids stay underneath
 // in mono; a state is a word, a pill only reinforces it. Every value is rendered by JSX, which escapes text: titles, bodies,
@@ -13,6 +13,7 @@ import { Banner, Chip, EmptyState, Field, fieldAria, Panel, Pill, Stamp, Table, 
 type Tr = ((s: string) => string) & { lang: Lang };
 type AuditEvent = typeof auditEvent.$inferSelect;
 type MemoryItem = typeof memoryItem.$inferSelect;
+type Claim = typeof claim.$inferSelect;
 
 // Names the route looked up for the ids on the page (display only): people, sessions, threads, tasks, memory, projects.
 export type Names = { names: Map<string, string>; threads: Map<string, { kind: string; subject: string | null }> };
@@ -501,3 +502,57 @@ export const MemoryDecide: FC<{ item: MemoryItem; old: MemoryItem | undefined; c
       )}
     </p>
   );
+
+// ---- Claims ----
+
+// The parts of a meta line that are there, a middle dot between them; nothing at all when none is.
+const dots = (parts: Child[]) => {
+  const kept = parts.filter((x) => x !== null && x !== undefined && x !== false && x !== "" && x !== 0);
+  return kept.length ? kept.flatMap((x, i) => (i ? [" · ", x] : [x])) : undefined;
+};
+
+const SCOPE: Record<string, string> = { path: "File", glob: "Pattern", resource: "Resource", task: "Task" };
+const MODE: Record<string, string> = { exclusive: "Exclusive", intent: "Intent", shared: "Shared" };
+export type ClaimRow = { claim: Claim; name: string; agentLabel: string | null };
+// The scope as typed, then its kind and mode: the columns that wrap stay wide enough to read.
+export const ClaimsTable: FC<{ rows: ClaimRow[]; admin: boolean; _: Tr }> = ({ rows, admin, _ }) => (
+  <div class="claims-log">
+    <Table
+      lang={_.lang}
+      caption={_("Claims")}
+      head={[_("Scope"), _("Held by"), _("Reason"), _("Ends"), ...(admin ? [_("Actions")] : [])]}
+      primary={0}
+      actions={admin}
+      sort={{ column: 3, dir: "ascending" }}
+      empty={
+        <EmptyState title={_("No active claims.")} icon="info">
+          {_(
+            "Before an agent changes files, it claims them with the claim tool, so the others are warned. Claims show here until they end.",
+          )}
+        </EmptyState>
+      }
+      rows={rows.map(({ claim: c, name, agentLabel }) => [
+        <Lines
+          main={<code class="claim-scope">{c.scope}</code>}
+          sub={dots([_(SCOPE[c.scopeType] ?? c.scopeType), <span>{_(MODE[c.mode] ?? c.mode)}</span>])}
+        />,
+        <Lines main={name} sub={agentLabel && <Chip>{agentLabel}</Chip>} />,
+        c.reason ? <span class="rec-text">{c.reason}</span> : none(_("No reason given")),
+        <Lines main={<Stamp at={c.expiresAt} lang={_.lang} />} sub={<When at={c.expiresAt} lang={_.lang} />} />,
+        ...(admin
+          ? [
+              <Action
+                post={`/console/claims/${c.id}/release`}
+                label={_("Release")}
+                name={`${_("Release")} ${c.scope}…`}
+                confirm={{
+                  title: fill(_("Release the claim on {scope}?"), { scope: c.scope }),
+                  body: _("Agents can then change it without a warning. The session that held it isn't told."),
+                }}
+              />,
+            ]
+          : []),
+      ])}
+    />
+  </div>
+);
