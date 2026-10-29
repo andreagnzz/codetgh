@@ -138,6 +138,34 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await page.keyboard.press("Escape");
 });
 
+test("a form's button can ask first with its own words; confirming sends that button's value with the form", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  const sent = () => page.waitForRequest((r) => r.url().endsWith("/console/catalogue/done")).then((r) => r.postData() ?? "");
+  const reject = page.locator("#demo-decide").getByRole("button", { name: "Reject…", exact: true });
+  await reject.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Reject D-1 v2?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("It stays under Rejected with your note.");
+  expect((await focused(page)).text).toBe("Cancel");
+  await page.keyboard.press("Escape");
+  await expect(reject).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  expect((await focused(page)).text).toBe("Reject");
+  const [body] = await Promise.all([sent(), page.keyboard.press("Enter")]);
+  expect(new URLSearchParams(body).get("decision")).toBe("reject");
+  expect(new URLSearchParams(body).get("note")).toBe("Not since the move.");
+  // The form's other button sends at once.
+  await page.waitForLoadState("load");
+  const [accepted] = await Promise.all([sent(), page.locator("#demo-decide").getByRole("button", { name: "Accept" }).click()]);
+  expect(new URLSearchParams(accepted).get("decision")).toBe("accept");
+  await expect(page.getByRole("dialog")).toBeHidden();
+});
+
 test("a refused action shows the hub's reason under it; Copy copies and says so", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.setViewportSize({ width: 1280, height: 900 });

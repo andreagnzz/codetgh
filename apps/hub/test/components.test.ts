@@ -93,6 +93,10 @@ describe("components", () => {
     expect(pager).toContain('<nav class="pager" aria-label="Pages">');
     expect(pager).toContain("50 affichés sur 128");
     expect(pager).toContain("Plus récents");
+    // A list that can't step back one page links to its newest rows, and says so.
+    const back = await render(Pager, { lang: "en", newest: "/a", older: "/b" });
+    expect(back).toMatch(/<a class="button" href="\/a">.*Newest<\/a>/);
+    expect(back).not.toContain("Newer");
     expect(pager).toContain("Plus anciens");
     const tabs = await render(Tabs, {
       label: "Memory",

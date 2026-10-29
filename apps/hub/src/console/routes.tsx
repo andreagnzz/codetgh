@@ -219,12 +219,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     }
     await next();
   });
-  // An htmx request gets the bare reason, which console.js shows where the action was; a page load gets a page.
+  // An htmx request gets the bare reason in the page's language, which console.js shows where the action was; a page load
+  // gets a page.
   consoleApp.onError((e, c) => {
     if (!(e instanceof HubError)) throw e;
     const status = HTTP_STATUS[e.code] as 400;
-    if (c.req.header("HX-Request") === "true") return c.html(<Result>{e.message}</Result>, status);
     const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+    if (c.req.header("HX-Request") === "true") return c.html(<Result>{t(lang, e.message)}</Result>, status);
     return c.html(<ErrorPage status={status} reason={e.message} lang={lang} />, status);
   });
   for (const section of ["/tasks", "/memory", "/claims", "/projects", "/delegations", "/tokens"])
@@ -245,19 +246,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
   const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
   // A guest never sees the list of the team's projects.
-  // A detail page adds a way back, a meta line and its one action to the page header.
+  // A detail page adds a way back, a meta line and its one action to the page header. A title that is a record's own name
+  // (named: a task's or a memory item's title) shows as written, never looked up in i18n.
   const page = (
     c: Context<Env>,
     title: string,
     body: unknown,
     filter?: ProjectFilter,
-    detail?: { back?: Child; head?: Child; actions?: Child },
+    { named, ...detail }: { back?: Child; head?: Child; actions?: Child; named?: boolean } = {},
   ) =>
     c.html(
       <Layout
         p={c.get("principal")}
         csrf={c.get("csrf")}
-        title={t(tr(c).lang, title)}
+        title={named ? title : t(tr(c).lang, title)}
         path={c.req.path}
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
@@ -1755,6 +1757,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             label={_(item.pinned ? "Unpin" : "Pin")}
           />
         ),
+        named: true,
       },
     );
   });
@@ -1967,6 +1970,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       {
         back: <a href={withProject("/console/tasks", kept(c))}>{_("Back to tasks")}</a>,
         head: <TaskPill status={t.status} _={_} />,
+        named: true,
       },
     );
   });

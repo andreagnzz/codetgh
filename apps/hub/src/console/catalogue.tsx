@@ -102,6 +102,24 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
           confirm={{ title: "Remove the agent sam@main?", body: "The hub refuses this one, so the dialog shows why and stays open." }}
         />
       </p>
+      <p class="meta">A form whose second button asks first: the dialog sends that button's value with the form.</p>
+      <form id="demo-decide" class="actions" hx-post="/console/catalogue/done" hx-swap="none">
+        <input name="note" aria-label="Note" value="Not since the move." />
+        <button type="submit" class="primary" name="decision" value="accept">
+          Accept
+        </button>
+        <button
+          type="submit"
+          class="secondary"
+          name="decision"
+          value="reject"
+          data-confirm="Reject D-1 v2?"
+          data-confirm-body="Agents won't read it. It stays under Rejected with your note."
+          data-confirm-action="Reject"
+        >
+          Reject…
+        </button>
+      </form>
 
       <h2>Fields</h2>
       <form>

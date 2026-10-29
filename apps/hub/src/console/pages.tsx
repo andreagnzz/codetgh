@@ -301,10 +301,12 @@ export const Table: FC<{
   );
 };
 
-// "‹ Newer" and "Older ›" around a long list, with how much of it shows.
-export const Pager: FC<{ lang: Lang; newer?: string; older?: string; shown?: number; total?: number }> = ({
+// "‹ Newer" and "Older ›" around a long list, with how much of it shows. A list whose way back goes to its first page, not
+// to the page before, says "‹ Newest".
+export const Pager: FC<{ lang: Lang; newer?: string; newest?: string; older?: string; shown?: number; total?: number }> = ({
   lang,
   newer,
+  newest,
   older,
   shown,
   total,
@@ -314,10 +316,10 @@ export const Pager: FC<{ lang: Lang; newer?: string; older?: string; shown?: num
       <p class="meta">{t(lang, "Showing {shown} of {total}").replace("{shown}", String(shown)).replace("{total}", String(total))}</p>
     )}
     <div class="pager-links">
-      {newer && (
-        <a class="button" href={newer}>
+      {(newer ?? newest) && (
+        <a class="button" href={newer ?? newest}>
           <Icon name="chevron-left" />
-          {t(lang, "Newer")}
+          {t(lang, newer ? "Newer" : "Newest")}
         </a>
       )}
       {older && (
