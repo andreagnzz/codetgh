@@ -134,6 +134,8 @@ test("consent with the keyboard: the access asked for in words, then Allow and D
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Enter");
   await expect(page.locator("#error[role=alert]")).toHaveText("This request has expired or was changed. Start again from your app.");
+  // The request is spent: Allow no longer reads as the way forward.
+  await expect(page.locator("[data-consent=accept]")).toHaveClass("secondary");
 });
 
 test("invitation with the keyboard: the invited address is the account's, and a refused sign-up says what to do", async ({ page }) => {

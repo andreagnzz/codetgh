@@ -1010,13 +1010,18 @@ async function send(control, out, path, body, headers = {}) {
     control.removeAttribute("aria-busy");
   }
 }
+// True when the hub refused the request (not when it was out of reach).
 async function post(control, path, body) {
   const r = await send(control, error, path, { ...body, oauth_query: q });
-  if (!r) return;
+  if (!r) return false;
   const next = r.data.url || r.data.redirect_uri || r.data.redirectURI;
   if (next) location.href = next;
   else if (r.res.ok) location.href = next || "/console";
-  else show(error, said(r));
+  else {
+    show(error, said(r));
+    return true;
+  }
+  return false;
 }
 for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
   const r = await send(button, error, "/api/auth/sign-in/social", { provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") });
@@ -1041,7 +1046,11 @@ document.getElementById("invite-signup")?.addEventListener("submit", async (e) =
   if (r?.res.ok) location.href = e.target.dataset.next;
   else if (r) show(error, said(r));
 });
+// A refused consent request is spent: Allow steps down to secondary, so it no longer invites a retry.
 for (const b of document.querySelectorAll("[data-consent]")) {
-  b.addEventListener("click", () => post(b, "/api/auth/oauth2/consent", { accept: b.dataset.consent === "accept" }));
+  b.addEventListener("click", async () => {
+    if (await post(b, "/api/auth/oauth2/consent", { accept: b.dataset.consent === "accept" }))
+      document.querySelector("[data-consent=accept]")?.classList.replace("primary", "secondary");
+  });
 }
 `;
