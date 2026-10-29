@@ -155,6 +155,7 @@ describe("public pages", () => {
     expect(answer).toBeGreaterThan(page.indexOf('name="password"'));
     expect(answer).toBeLessThan(page.indexOf(">Sign in</button>"));
     expect(await html("/login", "fr")).toContain("L&#39;e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
+    expect(await html("/login", "fr")).toContain("Trop d&#39;essais. Attends quelques secondes, puis réessaie.");
   });
 
   it("consent: the access asked for in words next to each scope, an unknown scope said as such, and the way back", async () => {

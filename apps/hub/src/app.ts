@@ -982,10 +982,11 @@ const OAUTH_JS = `
 const next = new URLSearchParams(location.search).get("next") === "/console/device" ? "/console/device" : "";
 const q = next ? "" : location.search.slice(1);
 // Every word comes from the page, in its language: #error's data-words, keyed by the hub's error code (code, or error for
-// the OAuth endpoints); the hub's own message otherwise.
+// the OAuth endpoints); the hub's own message otherwise. Too many tries in a row (429) has no code: its status says it.
 const error = document.getElementById("error");
 const words = JSON.parse(error?.dataset.words || "{}");
-function said(data) {
+function said({ res, data }) {
+  if (res.status === 429) return words.slow;
   const why = data.message || data.error_description;
   return words[data.code || data.error] || (why ? words.said.replace("{reason}", () => why) : words.generic);
 }
@@ -1015,18 +1016,18 @@ async function post(control, path, body) {
   const next = r.data.url || r.data.redirect_uri || r.data.redirectURI;
   if (next) location.href = next;
   else if (r.res.ok) location.href = next || "/console";
-  else show(error, said(r.data));
+  else show(error, said(r));
 }
 for (const button of document.querySelectorAll("[data-provider]")) button.addEventListener("click", async () => {
   const r = await send(button, error, "/api/auth/sign-in/social", { provider: button.dataset.provider, callbackURL: next || (q ? "/login?" + q : "/console") });
   if (r?.data.url) location.href = r.data.url;
-  else if (r) show(error, r.data.code || r.data.message ? said(r.data) : words.unavailable);
+  else if (r) show(error, r.data.code || r.data.message ? said(r) : words.unavailable);
 });
 document.getElementById("magic-link")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const out = document.getElementById("link-result");
   const r = await send(e.target.querySelector("[type=submit]"), out, "/api/auth/sign-in/magic-link", { email: new FormData(e.target).get("email"), callbackURL: next || (q ? "/login?" + q : "/console") });
-  if (r) show(out, r.res.ok ? words.sent : words.unsent, r.res.ok);
+  if (r) show(out, r.res.ok ? words.sent : r.res.status === 429 ? words.slow : words.unsent, r.res.ok);
 });
 document.getElementById("login")?.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1038,7 +1039,7 @@ document.getElementById("invite-signup")?.addEventListener("submit", async (e) =
   const f = new FormData(e.target);
   const r = await send(e.target.querySelector("[type=submit]"), error, "/api/auth/sign-up/email", { name: f.get("name"), email: f.get("email"), password: f.get("password") }, { "x-codetgh-invite": location.pathname.split("/").pop() });
   if (r?.res.ok) location.href = e.target.dataset.next;
-  else if (r) show(error, said(r.data));
+  else if (r) show(error, said(r));
 });
 for (const b of document.querySelectorAll("[data-consent]")) {
   b.addEventListener("click", () => post(b, "/api/auth/oauth2/consent", { accept: b.dataset.consent === "accept" }));

@@ -327,6 +327,7 @@ const FR: Record<string, string> = {
   "The hub could not handle the request. Try again; if it keeps failing, check the hub logs.":
     "Le hub n'a pas pu traiter la demande. Réessaie\u202f; si ça continue, regarde les journaux du hub.",
   "The hub does not answer. Check your connection, then try again.": "Le hub ne répond pas. Vérifie ta connexion, puis réessaie.",
+  "Too many tries. Wait a few seconds, then try again.": "Trop d'essais. Attends quelques secondes, puis réessaie.",
   // OAuth consent
   "Allow access to your account?": "Autoriser l'accès à ton compte\u202f?",
   "An app asks to use this hub as you. Allow it only if you just connected it yourself.":

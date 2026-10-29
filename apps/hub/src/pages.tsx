@@ -51,6 +51,7 @@ const ANSWER_WORDS = {
   said: "The hub said: {reason}",
   generic: "The hub could not handle the request. Try again; if it keeps failing, check the hub logs.",
   offline: "The hub does not answer. Check your connection, then try again.",
+  slow: "Too many tries. Wait a few seconds, then try again.",
 };
 export const HubAnswer = ({ lang, words = {} }: { lang: Lang; words?: Record<string, string> }) => (
   <p

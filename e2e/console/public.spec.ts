@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { invitation } from "../../apps/hub/src/db/schema.js";
 import { createInvitation } from "../../apps/hub/src/domain/teams.js";
@@ -79,6 +79,27 @@ test("sign-in: the button says it waits on the hub, and an unreachable hub is sa
   await submit(page, team.lea.password);
   await expect(page.locator("#error")).toHaveText("The hub does not answer. Check your connection, then try again.");
   await expect(page.locator("#login button[type=submit]")).not.toHaveAttribute("aria-busy", "true");
+});
+
+test("sign-in: too many tries in a row is said in the reader's words, not the hub's", async ({ page }) => {
+  // How better-auth answers past 3 sign-ins in 10 s from one address (its rate limiter, on in production): no code, an
+  // English message.
+  const slow = (route: Route) =>
+    route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      headers: { "X-Retry-After": "8" },
+      body: JSON.stringify({ message: "Too many requests. Please try again later." }),
+    });
+  await page.route("**/api/auth/sign-in/email", slow);
+  await page.route("**/api/auth/sign-in/magic-link", slow);
+  await page.goto(`${hub.url}/login`);
+  await submit(page, "wrong-password-123");
+  await expect(page.locator("#login #error[role=alert]")).toHaveText("Too many tries. Wait a few seconds, then try again.");
+  await page.locator("details.disclosure > summary").click();
+  await page.locator("#magic-link input[name=email]").fill("ines@acme.test");
+  await page.locator("#magic-link button[type=submit]").click();
+  await expect(page.locator("#link-result")).toHaveText("Too many tries. Wait a few seconds, then try again.");
 });
 
 test("sign-in with the keyboard: providers, the form, then the folded emailed link, which says a link is on its way", async ({ page }) => {
