@@ -42,7 +42,7 @@ describe("phase 3 security review fixes", () => {
   it("relays a GitHub delivery once, even when it is replayed", async () => {
     const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
     const url = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-    const secret = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
+    const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
     await startSession(hub.url, team.lea.token, "lea-hard-gh", { repo: repoFingerprint("git@github.com:acme/api.git") });
     const body = JSON.stringify({
       action: "opened",

@@ -16,7 +16,8 @@ test("join the team: invitation, account, token, agent online", async ({ page, b
   // The invitation form waits behind its button in the page header.
   await page.locator("summary", { hasText: "Invite a member" }).click();
   await page.getByLabel("Email").fill("nina@acme.test");
-  await page.getByRole("button", { name: "Invite" }).click();
+  // Exact: with no invitation pending, the empty state's "Copy the invite command" also holds the word.
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
   const link = (await page.locator("#invite-result pre").textContent())?.trim() ?? "";
   expect(link).toContain("/invite/");
 

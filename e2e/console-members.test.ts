@@ -30,7 +30,7 @@ describe("invitations", () => {
       days: "90",
     });
     expect(res.status).toBe(400);
-    expect(await res.text()).toContain("between 1 and 30 days");
+    expect(await res.text()).toContain("An invitation lasts 1 to 30\u00a0days. Enter a number of days in that range.");
   });
 
   it("revokes a pending invitation: its link stops working at once", async () => {
@@ -96,7 +96,7 @@ describe("members", () => {
   it("refuses to revoke a bridge member, so the GitHub webhook keeps working", async () => {
     const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
     const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-    const secret = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
+    const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
     const deliver = () => {
       const body = JSON.stringify({
         action: "opened",
