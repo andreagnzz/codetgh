@@ -89,6 +89,11 @@
   gap: var(--sp-1) var(--sp-2);
 }
 
+/* A panel whose form comes right under its title (Profile, Team) keeps 16 px between them, so the field's label does not read
+   as a second title. */
+:is(.team-me, .team-settings) .panel > h2 + form {
+  margin-top: var(--sp-4);
+}
 /* My data: the link that downloads the copy is as tall as the panels' buttons (40 px, 44 on a touch screen). */
 :where(.team-me .panel) > .button {
   min-height: 40px;
