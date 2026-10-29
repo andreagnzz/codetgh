@@ -125,7 +125,7 @@ test("tasks: New task opens under the page header, its fields in order, Create t
   expect(await tab(page)).toBe("Create task");
 });
 
-test("memory: the status tabs, then on a proposal the note, Accept and Reject", async ({ page }) => {
+test("memory: the status tabs, then on a proposal the note, Accept, and Reject, which asks first", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/memory`);
@@ -134,7 +134,15 @@ test("memory: the status tabs, then on a proposal the note, Accept and Reject", 
   await page.goto(`${hub.url}/console/memory/mit_01KEYBOARDMEMORY00000000000`);
   await page.locator("#decision-note").focus();
   expect(await tab(page)).toBe("Accept");
-  expect(await tab(page)).toBe("Reject");
+  expect(await tab(page)).toBe("Reject…");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Reject D-1 v1?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Agents won't read it.");
+  expect(await page.evaluate(() => (document.activeElement as HTMLElement).innerText.trim())).toBe("Cancel");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("button", { name: "Reject…" })).toBeFocused();
 });
 
 for (const lang of ["en", "fr"])

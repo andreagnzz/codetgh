@@ -216,7 +216,10 @@ describe("team memory", () => {
     expect(body).toContain('hx-post="/console/memory/');
     expect(body).toMatch(/<input id="decision-note" name="note" maxlength="500"/);
     expect(body).toMatch(/<button type="submit" class="primary" name="decision" value="accept">Accept<\/button>/);
-    expect(body).toMatch(/<button type="submit" class="secondary" name="decision" value="reject">Reject<\/button>/);
+    // Reject asks first, in the dialog, with its own words; Accept sends at once.
+    expect(body).toMatch(
+      /<button type="submit" class="secondary" name="decision" value="reject" data-confirm="Reject D-1 v2\?" data-confirm-body="Agents won&#39;t read it\. It stays under Rejected, with your note\." data-confirm-action="Reject">Reject…<\/button>/,
+    );
   });
 
   it("shows an accepted item's decision, its pin in the page header, and a newer version still proposed as such", async () => {

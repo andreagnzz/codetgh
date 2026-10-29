@@ -484,6 +484,9 @@ const FR: Record<string, string> = {
   "Shown with the decision on this page, to the whole team.": "Affichée avec la décision sur cette page, pour toute l'équipe.",
   Accept: "Accepter",
   Reject: "Rejeter",
+  "Reject {item}?": "Rejeter {item} ?",
+  "Agents won't read it. It stays under Rejected, with your note.":
+    "Les agents ne le liront pas. Il reste parmi les éléments rejetés, avec ta note.",
   "On this hub, only owners accept or reject proposals.": "Sur ce hub, seuls les propriétaires acceptent ou rejettent les propositions.",
   "On this hub, only admins and owners accept or reject proposals.":
     "Sur ce hub, seuls les admins et les propriétaires acceptent ou rejettent les propositions.",

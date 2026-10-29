@@ -514,8 +514,17 @@ export const MemoryDecide: FC<{ item: MemoryItem; old: MemoryItem | undefined; c
         <button type="submit" class="primary" name="decision" value="accept">
           {_("Accept")}
         </button>
-        <button type="submit" class="secondary" name="decision" value="reject">
-          {_("Reject")}
+        {/* Rejecting can't be undone: it asks first, in the dialog, which sends the button's value with the note. */}
+        <button
+          type="submit"
+          class="secondary"
+          name="decision"
+          value="reject"
+          data-confirm={fill(_("Reject {item}?"), { item: memoryLabel(item) })}
+          data-confirm-body={_("Agents won't read it. It stays under Rejected, with your note.")}
+          data-confirm-action={_("Reject")}
+        >
+          {`${_("Reject")}…`}
         </button>
       </form>
     </Panel>
