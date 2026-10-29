@@ -288,19 +288,18 @@ export const TokenCreated: FC<{ _: Tr; token: string; url: string }> = ({ _, tok
   </>
 );
 
-export type TokenRow = { id: string; label: string; createdAt: Date; expiresAt: Date; lastUsedAt: Date | null };
+export type TokenRow = { id: string; label: string; createdAt: Date; expiresAt: Date };
 export const Tokens: FC<{ _: Tr; rows: TokenRow[] }> = ({ _, rows }) => (
   <div class="records">
     <Table
       lang={_.lang}
       caption={_("Personal tokens")}
-      head={[_("Label"), _("Created"), _("Last used"), _("Expires"), _("Actions")]}
+      head={[_("Label"), _("Created"), _("Expires"), _("Actions")]}
       primary={0}
       actions
       rows={rows.map((t) => [
         <span class="token-label">{t.label}</span>,
         <When at={t.createdAt} lang={_.lang} />,
-        t.lastUsedAt ? <When at={t.lastUsedAt} lang={_.lang} /> : <span class="meta">{_("Not used yet")}</span>,
         t.expiresAt < new Date() ? (
           <span class="token-expired">
             <Pill>{_("Expired")}</Pill> <When at={t.expiresAt} lang={_.lang} />

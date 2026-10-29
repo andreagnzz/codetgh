@@ -177,10 +177,12 @@ describe("members", () => {
 });
 
 describe("tokens", () => {
-  it("lists a person's tokens: label, when it was made, last used and ends, each revoked after a confirmation", async () => {
+  it("lists a person's tokens: label, when it was made and ends, each revoked after a confirmation", async () => {
     const html = main(await page("/console/tokens", team.sam.cookie));
     const laptop = row(html, "sam laptop");
-    expect(laptop).toContain("Not used yet");
+    // Nothing in the hub records a token's last use: the list does not claim one.
+    expect(html).not.toContain("Last used");
+    expect(html).not.toContain("Not used yet");
     expect(laptop).toMatch(/<time[^>]*>in 90 days<\/time>/);
     const revoke = laptop.match(/<button[^>]*hx-post="\/console\/tokens\/[^"]+\/revoke"[^>]*>/)?.[0] ?? "";
     expect(revoke).toContain('class="danger"');

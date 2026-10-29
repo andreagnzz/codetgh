@@ -382,8 +382,6 @@ const FR: Record<string, string> = {
     "Puis installe le plugin Claude Code. Il demande l'adresse du hub et ce jeton\u00a0:",
   "Copy the plugin command": "Copier la commande du plugin",
   Created: "Créé",
-  "Last used": "Dernier usage",
-  "Not used yet": "Pas encore utilisé",
   Expired: "Expiré",
   "Revoke the token {label}": "Révoquer le jeton {label}",
   "Revoke the token {label}?": "Révoquer le jeton {label}\u202f?",
