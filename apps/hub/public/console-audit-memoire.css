@@ -432,6 +432,14 @@ details.audit-hash[open] > summary .icon {
 .new-task > details[open] {
   margin: 0;
 }
+/* Closed, only its button sits in the header's actions, at the height of the other pages' header buttons. */
+.new-task > details:not([open]) {
+  margin: 0;
+}
+.new-task > details:not([open]) > summary {
+  min-height: 32px;
+  padding-inline: var(--sp-3);
+}
 /* In a panel, whose paragraphs are muted, a refusal keeps the error color. */
 .new-task .panel .field-error,
 .rec-body .panel .field-error {
