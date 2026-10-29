@@ -167,6 +167,10 @@ kbd {
   font-family: var(--mono);
   font-size: 0.9286em; /* 13 px in 14 px text */
 }
+/* Mono keeps the size of the text around it in captions and inside a block. */
+:where(pre, .meta, .help, th, .pill, .chip) code {
+  font-size: 1em;
+}
 kbd {
   padding: 0 var(--sp-1);
   border: 1px solid var(--border-strong);
@@ -515,7 +519,7 @@ button[type="submit"]:not(.secondary, .tertiary, .danger, .danger-fill):is(:hove
   border-color: var(--accent-hover);
 }
 :is(button, .button).tertiary {
-  min-height: auto;
+  min-height: 24px; /* the smallest target, WCAG 2.5.8 */
   padding: 0;
   border-color: transparent;
   color: var(--accent);
@@ -1317,6 +1321,11 @@ details.row-menu:where([open]) > summary {
 .banner :is(button, .button).tertiary {
   color: var(--text);
   font-weight: 500;
+}
+.banner .banner-actions > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 .banner .icon-button {
   margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2)) 0 0;
