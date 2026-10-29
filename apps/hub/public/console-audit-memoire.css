@@ -1,21 +1,210 @@
 /* Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this file; the tokens, base and
-   components are in console.css. Until it restyles its screens, the rules below keep today's memory diff and status links. */
-.add {
-  background: var(--success-soft);
+   components are in console.css. Every rule is scoped to this batch's classes (rec-, audit-, memory-, claim-, task-), since
+   each batch's stylesheet loads on every page. */
+
+/* The page's one line of context, in the header under the title. */
+.rec-lede {
+  margin: 0;
 }
-.del {
-  text-decoration: line-through;
+
+/* A cell on two lines: what a person reads, then what identifies it, in a caption. */
+.rec-main,
+.rec-sub {
+  display: block;
 }
-main > nav:not([class]) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--sp-6);
-  margin: 0 0 var(--sp-6);
+.rec-sub {
+  margin-top: var(--sp-1);
 }
-main > nav:not([class]) a {
+/* A machine key or a short id: mono, muted, no tint (it is not a value to copy, a chip is). */
+.rec-key,
+:where(.meta) > .rec-key {
+  padding: 0;
+  background: none;
+  color: var(--text-muted);
+  font: 400 var(--fs-caption) / 16px var(--mono);
+}
+/* A session label in a cell keeps the column narrow: cut, its full text on hover and for screen readers. */
+:is(.rec-main, .rec-sub) > .chip {
+  max-width: 12rem;
+}
+/* Stacked on a phone, a cell has the screen's width: the label shows whole as far as it fits. */
+@media (max-width: 639px) {
+  :is(.rec-main, .rec-sub) > .chip {
+    max-width: 100%;
+  }
+}
+/* A key breaks after its dots only. */
+.rec-key {
+  overflow-wrap: normal;
+}
+/* A missing value says so, quietly. */
+.rec-none {
+  color: var(--text-muted);
+}
+/* Text a person or an agent wrote keeps its line breaks and wraps anywhere rather than pushing the page. */
+.rec-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+p.rec-text {
+  line-height: 22px;
+}
+/* A time that leads its cell reads as text; the relative time under it stays a caption. */
+.rec-main > time {
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 20px;
+}
+.rec-pills {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  min-height: 40px;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* Audit log. The event's number opens its hash and the previous one, on the floating layer: the chain stays on the page
+   without widening the table. */
+.audit-log th:first-child,
+.audit-log td:first-child {
+  width: 1%;
+}
+.audit-log .chip {
+  max-width: 9rem;
+}
+@media (min-width: 1280px) {
+  .audit-log .chip {
+    max-width: 14rem;
+  }
+}
+/* A refusal of Verify chain shows under the header's two buttons, never squeezing them. */
+.page-actions:has(> [hx-post="/console/audit/verify"]) {
+  flex-wrap: wrap;
+}
+.page-actions:has(> [hx-post="/console/audit/verify"]) > .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+@media (min-width: 640px) {
+  .page-actions:has(> [hx-post="/console/audit/verify"]),
+  .page-actions:has(> [hx-post="/console/audit/verify"]) > .field-error {
+    justify-content: flex-end;
+  }
+}
+details.audit-hash > summary {
+  width: auto;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+details.audit-hash > summary .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+details.audit-hash[open] > summary .icon {
+  transform: rotate(180deg);
+}
+.audit-hash .pop {
+  left: 0;
+  right: auto;
+  width: 26rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  white-space: normal;
+}
+.audit-hash dl {
+  margin: 0;
+}
+.audit-hash dt {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.audit-hash dd {
+  margin: var(--sp-1) 0 var(--sp-3);
+}
+.audit-hash dd:last-child {
+  margin-bottom: 0;
+}
+.audit-hash dd code {
+  padding: 0;
+  background: none;
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+/* Under 640 px each event is a record: what happened and its number, who and from where, on what, when. */
+@media (max-width: 639px) {
+  .audit-log tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "action seq" "actor actor" "object object" "time via";
+    column-gap: var(--sp-3);
+    row-gap: var(--sp-1);
+    padding: var(--sp-3) 0;
+  }
+  .audit-log td,
+  .audit-log td.primary-cell {
+    display: block;
+    padding: 0;
+  }
+  .audit-log td::before {
+    content: none;
+  }
+  .audit-log td:nth-child(1) {
+    grid-area: seq;
+    width: auto;
+  }
+  /* The number sits on the right: its hashes open towards the left. */
+  .audit-hash .pop {
+    left: auto;
+    right: 0;
+  }
+  .audit-log .chip {
+    max-width: 100%;
+  }
+  .audit-log td:nth-child(2) {
+    grid-area: time;
+  }
+  .audit-log td:nth-child(3) {
+    grid-area: actor;
+  }
+  .audit-log td:nth-child(4) {
+    grid-area: via;
+    align-self: end;
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+    line-height: 16px;
+  }
+  .audit-log td:nth-child(5) {
+    grid-area: action;
+    font-weight: 500;
+  }
+  .audit-log td:nth-child(5) .rec-key {
+    font-weight: 400;
+  }
+  .audit-log td:nth-child(6) {
+    grid-area: object;
+  }
+  /* Who, on what and when read on one line each, their second part after a middle dot. */
+  .audit-log td:is(:nth-child(2), :nth-child(3), :nth-child(6)) :is(.rec-main, .rec-sub) {
+    display: inline;
+  }
+  .audit-log td:is(:nth-child(2), :nth-child(3), :nth-child(6)) .rec-sub::before {
+    content: " · ";
+  }
+  .audit-log td:nth-child(2) .rec-main > time {
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+    line-height: 16px;
+  }
+  /* Who and on what keep their column's name, which no header shows here, on the same line. */
+  .audit-log td:is(:nth-child(3), :nth-child(6))::before {
+    content: attr(data-label) " ";
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+  }
+  .audit-log td:is(:nth-child(3), :nth-child(6)) > .cell {
+    display: inline;
+  }
 }

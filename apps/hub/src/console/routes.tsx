@@ -85,6 +85,7 @@ import {
   InvitePage,
   Layout,
   Line,
+  Pager,
   People,
   Pill,
   type ProjectFilter,
@@ -93,6 +94,7 @@ import {
   toneOf,
   When,
 } from "./pages.js";
+import { AuditLede, AuditTable, memoryLabel, type Names, VerifyResult } from "./records.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1352,9 +1354,65 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return refresh(c);
   });
 
+  // Names for the ids of a page (display only), from rows its reader already sees elsewhere: people, sessions, team threads'
+  // subjects (a direct thread's stays out), tasks, memory items and projects.
+  const namesOf = async (teamId: string, ids: Array<string | null | undefined>): Promise<Names> => {
+    const want = (prefix: string) => [...new Set(ids.filter((id): id is string => !!id?.startsWith(`${prefix}_`)))];
+    const names = new Map<string, string>();
+    const threads = new Map<string, { kind: string; subject: string | null }>();
+    const add = (rows: Array<{ id: string; name: string }>) => {
+      for (const r of rows) names.set(r.id, r.name);
+    };
+    const [usr, mem, agt, thr, tsk, mit, prj] = ["usr", "mem", "agt", "thr", "tsk", "mit", "prj"].map(want);
+    if (usr?.length) add(await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, usr)));
+    if (mem?.length)
+      add(
+        await db
+          .select({ id: membership.id, name: user.name })
+          .from(membership)
+          .innerJoin(user, eq(user.id, membership.userId))
+          .where(and(eq(membership.teamId, teamId), inArray(membership.id, mem))),
+      );
+    if (agt?.length)
+      add(
+        await db
+          .select({ id: agent.id, name: agent.label })
+          .from(agent)
+          .where(and(eq(agent.teamId, teamId), inArray(agent.id, agt))),
+      );
+    if (thr?.length)
+      for (const t of await db
+        .select({ id: thread.id, kind: thread.kind, subject: thread.subject })
+        .from(thread)
+        .where(and(eq(thread.teamId, teamId), inArray(thread.id, thr))))
+        threads.set(t.id, t);
+    if (tsk?.length)
+      add(
+        await db
+          .select({ id: task.id, name: task.title })
+          .from(task)
+          .where(and(eq(task.teamId, teamId), inArray(task.id, tsk))),
+      );
+    if (mit?.length)
+      for (const m of await db
+        .select()
+        .from(memoryItem)
+        .where(and(eq(memoryItem.teamId, teamId), inArray(memoryItem.id, mit))))
+        names.set(m.id, `${memoryLabel(m)} · ${m.title}`);
+    if (prj?.length)
+      add(
+        await db
+          .select({ id: project.id, name: project.name })
+          .from(project)
+          .where(and(eq(project.teamId, teamId), inArray(project.id, prj))),
+      );
+    return { names, threads };
+  };
+
   consoleApp.get("/audit", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
+    const _ = tr(c);
     const before = Number(c.req.query("before")) || undefined;
     const found = await db
       .select()
@@ -1364,33 +1422,38 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    const names = await namesOf(
+      p.teamId,
+      rows.flatMap((e) => [e.actorUserId, e.actorAgentId, e.subjectId, typeof e.data.thread === "string" ? e.data.thread : null]),
+    );
     return page(
       c,
       "Audit log",
       <>
-        <p>
-          <button type="button" hx-post="/console/audit/verify" hx-target="#verify-result">
-            Verify chain
-          </button>{" "}
-          <a href="/console/audit/export">Export JSON</a> (check it offline with <code>codetgh audit verify</code>)
-        </p>
-        <div id="verify-result" />
-        <Table
-          lang={tr(c).lang}
-          head={["#", "At", "Actor", "Via", "Action", "Subject", "Hash"]}
-          rows={rows.map((e) => [
-            e.seq,
-            <When at={e.at} />,
-            e.actorAgentId ?? e.actorUserId ?? e.actorType,
-            e.via,
-            e.action,
-            e.subjectId ?? "",
-            e.hash.slice(0, 12),
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
+        <div id="verify-result" aria-live="polite" />
+        <AuditTable rows={rows} names={names} teamName={p.teamName} _={_} />
+        {(before || found.length > PAGE) && (
+          <Pager
+            lang={_.lang}
+            newer={before ? "/console/audit" : undefined}
+            older={found.length > PAGE && last ? `/console/audit?before=${last.seq}` : undefined}
+          />
+        )}
       </>,
+      undefined,
+      {
+        head: <AuditLede _={_} />,
+        actions: (
+          <>
+            <a class="button" href="/console/audit/export">
+              {_("Export JSON")}
+            </a>
+            <button type="button" class="secondary" hx-post="/console/audit/verify" hx-target="#verify-result">
+              {_("Verify chain")}
+            </button>
+          </>
+        ),
+      },
     );
   });
 
@@ -1398,12 +1461,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     requireAdmin(p);
     await writeCheckpoint(db, p.teamId, auditKey);
-    const r = await verifyTeamAudit(db, p.teamId, auditKey.publicKey);
-    return c.html(
-      <Result>
-        {r.ok ? `Chain intact: ${r.events} events, ${r.checkpoints} signed checkpoints.` : `Problem (${r.problem}): ${r.message}.`}
-      </Result>,
-    );
+    return c.html(<VerifyResult r={await verifyTeamAudit(db, p.teamId, auditKey.publicKey)} _={tr(c)} />);
   });
 
   // Offline check: codetgh audit verify <file>. Ids only: the audit log never holds message text.

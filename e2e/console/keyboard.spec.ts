@@ -199,6 +199,11 @@ test("a table wider than its frame is a named stop whose arrows scroll it; one t
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/audit`);
   const frame = page.locator(".table-wrap").first();
+  // The audit log fits its frame at 768 px now: made wider than it, it stands for any table that does not.
+  await frame.evaluate((wrap) => {
+    wrap.querySelector("table")?.style.setProperty("min-width", "1400px");
+    dispatchEvent(new Event("resize"));
+  });
   await expect(frame).toHaveAttribute("role", "region");
   await expect(frame).toHaveAttribute("tabindex", "0");
   await expect(frame).toHaveAccessibleName(/\S/);

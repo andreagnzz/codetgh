@@ -15,7 +15,10 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const get = async (path: string) => (await fetch(`${hub.url}${path}`, { headers: { cookie: team.lea.cookie } })).text();
-const older = (html: string) => html.match(/<a href="([^"]+)">Older<\/a>/)?.[1]?.replaceAll("&amp;", "&");
+// The link that pages back carries ?before= (a list's "Older", a thread's "Older messages").
+const older = (html: string) => html.match(/href="([^"]+[?&;]before=[^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
+// An older page's way back to the latest rows: the list's "Newer".
+const newer = (html: string) => html.match(/href="([^"]*)"[^>]*>(?:(?!<\/a>)[\s\S])*?Newer<\/a>/)?.[1]?.replaceAll("&amp;", "&");
 
 it("pages alerts: no Older link at exactly 50, and one row on the next page at 51", async () => {
   const row = (i: number) => ({
@@ -111,6 +114,9 @@ it("pages the audit log: no Older link at exactly 50, and one row on the next pa
   expect(await total()).toBe(50);
   expect(older(await get("/console/audit"))).toBeUndefined();
   await append(1);
-  const next = await get(older(await get("/console/audit")) ?? "/missing");
+  const first = await get("/console/audit");
+  const next = await get(older(first) ?? "/missing");
   expect(next.match(/<tr>/g)).toHaveLength(2);
+  expect(newer(first)).toBeUndefined();
+  expect(newer(next)).toBe("/console/audit");
 });
