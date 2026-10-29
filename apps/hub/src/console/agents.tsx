@@ -317,7 +317,8 @@ export const DelegationsTable: FC<{ rows: DelegateRow[]; _: Tr }> = ({ rows, _ }
         <Action
           post={`/console/delegations/${r.agent.id}/stop`}
           label={_("Turn off")}
-          name={`${_("Turn off")} ${r.agent.label}…`}
+          level="danger"
+          name={named(_("Turn off delegation for {session}…"), "{session}", r.agent.label)}
           confirm={{
             title: named(_("Turn off delegation for {session}?"), "{session}", r.agent.label),
             body: _(

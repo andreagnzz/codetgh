@@ -372,6 +372,7 @@ const FR: Record<string, string> = {
   // Delegations.
   "a former member": "un ancien membre",
   "Turn off delegation for {session}?": "Couper la délégation de {session}\u202f?",
+  "Turn off delegation for {session}…": "Couper la délégation de {session}…",
   "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start --accept-requests-from delegates it again.":
     "Elle cesse aussitôt de prendre des demandes, et celles qu'elle n'a pas finies expirent. La session continue\u202f; seul un nouveau codetgh start --accept-requests-from la rend de nouveau déléguée.",
   "Delegation of {session} turned off.": "Délégation de {session} coupée.",

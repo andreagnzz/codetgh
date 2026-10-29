@@ -117,7 +117,7 @@ test("delegations, wide: turning one off asks first, and Escape gives the keyboa
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/delegations`);
-  const off = page.getByRole("button", { name: "Turn off malik@main…" });
+  const off = page.getByRole("button", { name: "Turn off delegation for malik@main…" });
   await off.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Turn off delegation for malik@main?" })).toBeVisible();

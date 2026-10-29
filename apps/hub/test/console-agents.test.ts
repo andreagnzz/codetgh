@@ -295,7 +295,9 @@ describe("delegations", () => {
     expect(html).toContain('<span class="chip" translate="no" title="@sam">@sam</span>');
     expect(html).toContain('<span class="pill" data-tone="warn">Paused</span>');
     const off = html.match(/<button[^>]*hx-post="\/console\/delegations\/[^"]+\/stop"[^>]*>/)?.[0] ?? "";
-    expect(off).toContain('aria-label="Turn off malik@main…"');
+    // Turning one off is hard to undo (unfinished requests expire): a danger action, named as its dialog asks.
+    expect(off).toContain('class="danger"');
+    expect(off).toContain('aria-label="Turn off delegation for malik@main…"');
     expect(off).toContain('data-confirm="Turn off delegation for malik@main?"');
     expect(off).toContain('data-done="Delegation of malik@main turned off."');
   });
