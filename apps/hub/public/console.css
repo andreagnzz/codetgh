@@ -727,14 +727,15 @@ label > textarea {
   width: min(100%, 32rem);
   font-weight: 400;
 }
-/* A checkbox or radio: a 20 px box in a 44 px row, and the whole row clicks. */
+/* A checkbox or radio: a 20 px box beside the first line of its label, in a row of 44 px or more; the whole row clicks. */
 label:where(:has(> input[type="checkbox"], > input[type="radio"])) {
   display: flex;
   gap: var(--sp-3);
-  align-items: center;
+  align-items: flex-start;
   min-height: 44px;
   max-width: 48rem;
   margin: 0;
+  padding: var(--sp-3) 0;
   font-weight: 400;
 }
 .help {
@@ -756,6 +757,14 @@ label:where(:has(> input[type="checkbox"], > input[type="radio"])) {
 }
 .field-error:empty {
   margin: 0;
+}
+/* A field after a group of checkboxes keeps its distance. */
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) + label,
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) + .field {
+  margin-top: var(--sp-3);
+}
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) + label:where(:has(> input[type="checkbox"], > input[type="radio"])) {
+  margin-top: 0;
 }
 .field {
   margin: 0 0 var(--sp-4);
@@ -893,7 +902,7 @@ th .icon {
 }
 td {
   border-bottom: 1px solid var(--border);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .num {
   text-align: right;
