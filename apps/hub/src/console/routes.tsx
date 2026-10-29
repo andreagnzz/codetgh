@@ -142,7 +142,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(
       <InvitePage
         team={inv?.teamName ?? ""}
-        role={inv?.role ?? ""}
+        role={inv?.role}
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}

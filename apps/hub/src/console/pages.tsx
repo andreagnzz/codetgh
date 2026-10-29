@@ -1,4 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import type { Role } from "@codetgh/shared";
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import type { JSX } from "hono/jsx/jsx-runtime";
@@ -745,7 +746,7 @@ export const Result: FC<{ children?: Child }> = ({ children }) => (
 );
 
 // The invited role, said in a sentence under the title that names the team; a guest also learns what a guest sees.
-const INVITED_AS: Record<string, string> = {
+const INVITED_AS: Record<Role, string> = {
   owner: "You're invited as an owner.",
   admin: "You're invited as an admin.",
   member: "You're invited as a member.",
@@ -762,7 +763,8 @@ const SIGN_UP_WORDS = {
 // account it joins with.
 export const InvitePage: FC<{
   team: string;
-  role: string;
+  // Known whenever the invitation is valid.
+  role?: Role;
   email: string;
   name: string;
   valid: boolean;
@@ -778,7 +780,7 @@ export const InvitePage: FC<{
       {valid ? (
         <>
           <h1>{heading}</h1>
-          <p class="lede">{_((Object.hasOwn(INVITED_AS, role) && INVITED_AS[role]) || "You're invited as a member.")}</p>
+          {role && <p class="lede">{_(INVITED_AS[role])}</p>}
           {join && email.toLowerCase() === join.user.toLowerCase() ? (
             <>
               <dl class="facts">
