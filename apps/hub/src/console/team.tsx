@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
-import { ROLES, type Role } from "@codetgh/shared";
+import { CLAIM_ENFORCEMENT, ROLES, type Role } from "@codetgh/shared";
 import type { Child, FC } from "hono/jsx";
+import type { TeamSettings } from "../db/schema.js";
 import type { Lang } from "../i18n.js";
 import type { Principal } from "../principal.js";
 import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldAria, Panel, Pill, RowMenu, Table, When } from "./pages.js";
@@ -398,5 +399,236 @@ export const SlackCode: FC<{ _: Tr; code: string }> = ({ _, code }) => (
       {_("Your replies in CodeTgh threads there then reach the team as you.")}
     </Banner>
     <CodeBlock code={`/codetgh-link ${code}`} lang={_.lang} copyLabel={_("Copy the Slack command")} />
+  </>
+);
+
+// ---- Settings ----
+
+const CLAIMS: Record<(typeof CLAIM_ENFORCEMENT)[number], [string, string]> = {
+  ask: ["Ask the person", "Claude Code asks before the edit goes through. This is the default."],
+  warn: [
+    "Warn the agent, never block",
+    "Autonomous sessions (bypassPermissions) can't answer a question: choose this for teams that run them.",
+  ],
+};
+const ACCEPT_BY = { member: "Members, admins and owners", admin: "Admins and owners", owner: "Owners only" } as const;
+
+// A checkbox and, under its label, what it changes.
+const Check: FC<{ name: string; checked: boolean; label: string; help: string }> = ({ name, checked, label, help }) => (
+  <div class="check">
+    <label>
+      <input type="checkbox" name={name} value="on" checked={checked} aria-describedby={`${name}-help`} /> {label}
+    </label>
+    <p class="help" id={`${name}-help`}>
+      {help}
+    </p>
+  </div>
+);
+
+export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { keyId: string; publicKey: string } }> = ({
+  _,
+  p,
+  s,
+  auditKey,
+}) => {
+  const claims = ["warn", "off"].includes(s.claims_enforcement ?? "") ? "warn" : "ask";
+  const [before, after] = _("To check an audit export offline, pass this key to {command}.").split("{command}");
+  return (
+    <>
+      <form hx-post="/console/settings" hx-swap="none" class="settings" data-done={_("Settings saved.")}>
+        <Panel title={_("Agent rules")}>
+          <fieldset class="choices">
+            <legend>{_("When an agent edits a file someone else claimed")}</legend>
+            {(["ask", "warn"] as const)
+              .filter((level) => CLAIM_ENFORCEMENT.includes(level))
+              .map((level) => (
+                <div class="check">
+                  <label>
+                    <input
+                      type="radio"
+                      name="claims_enforcement"
+                      value={level}
+                      checked={claims === level}
+                      aria-describedby={`claims-${level}-help`}
+                    />{" "}
+                    {_(CLAIMS[level][0])}
+                  </label>
+                  <p class="help" id={`claims-${level}-help`}>
+                    {_(CLAIMS[level][1])}
+                  </p>
+                </div>
+              ))}
+          </fieldset>
+          <Check
+            name="push_rewake"
+            checked={(s.push_allowed_modes ?? []).includes("rewake")}
+            label={_("Allow rewake push")}
+            help={_("An idle Claude Code session wakes up when a message arrives. Each member also turns it on in the plugin.")}
+          />
+          <Check
+            name="auto_link_projects"
+            checked={s.auto_link_projects !== false}
+            label={_("Link a new repository when a member starts a session in it")}
+            help={_("Otherwise an admin runs codetgh project new.")}
+          />
+          <Field
+            id="loop-orchestrator"
+            label={_("Loop orchestrator")}
+            lang={_.lang}
+            optional
+            help={_("The member whose agent judges the agent loops the hub muted. Left empty, a person reopens them.")}
+          >
+            <span class="with-prefix">
+              <span aria-hidden="true">@</span>
+              <input
+                id="loop-orchestrator"
+                name="loop_orchestrator"
+                maxlength={40}
+                pattern="[a-z0-9-]+"
+                value={s.loop_orchestrator ?? ""}
+                autocomplete="off"
+                spellcheck={false}
+                {...fieldAria("loop-orchestrator", { help: 1 })}
+              />
+            </span>
+          </Field>
+        </Panel>
+        <Panel title={_("Memory")}>
+          <Field id="memory-accept-by" label={_("Who accepts team memory")} lang={_.lang}>
+            <select id="memory-accept-by" name="memory_accept_by">
+              {(["member", "admin", "owner"] as const).map((r) => (
+                <option value={r} selected={(s.memory_accept_by ?? "member") === r}>
+                  {_(ACCEPT_BY[r])}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Check
+            name="memory_accept_via_mcp"
+            checked={Boolean(s.memory_accept_via_mcp)}
+            label={_("Accept team memory from Claude Code too")}
+            help={_("Claude Code then asks the person each time. claude.ai and the Agent SDK can't guarantee that.")}
+          />
+        </Panel>
+        <Panel title={_("Messages")}>
+          <Field
+            id="retention-days"
+            label={_("Keep messages for")}
+            lang={_.lang}
+            help={_("Older messages are deleted. Threads, team memory and the audit log stay.")}
+          >
+            <span class="with-unit">
+              <input
+                id="retention-days"
+                name="retention_days"
+                type="number"
+                min={1}
+                max={3650}
+                value={String(s.retention_days ?? 90)}
+                {...fieldAria("retention-days", { help: 1 })}
+              />
+              <span>{_("days")}</span>
+            </span>
+          </Field>
+          <Field
+            id="secret-patterns"
+            label={_("Extra secret patterns")}
+            lang={_.lang}
+            optional
+            help={_("One regular expression per line. A message that matches one is blocked, as a known secret is.")}
+          >
+            <textarea
+              id="secret-patterns"
+              name="secret_patterns"
+              rows={4}
+              spellcheck={false}
+              {...fieldAria("secret-patterns", { help: 1 })}
+            >
+              {(s.secret_patterns ?? []).join("\n")}
+            </textarea>
+          </Field>
+        </Panel>
+        <Panel title={_("Slack bridge")}>
+          <Field
+            id="slack-channel"
+            label={_("Slack channel")}
+            lang={_.lang}
+            optional
+            help={_("The channel that gets alerts and blocking requests. Its id looks like C0123ABC.")}
+          >
+            <input
+              id="slack-channel"
+              name="slack_channel"
+              maxlength={40}
+              pattern="[A-Z0-9]+"
+              value={s.slack_channel ?? ""}
+              autocomplete="off"
+              spellcheck={false}
+              {...fieldAria("slack-channel", { help: 1 })}
+            />
+          </Field>
+        </Panel>
+        <p class="actions settings-save">
+          <button type="submit" class="primary">
+            {_("Save settings")}
+          </button>
+        </p>
+      </form>
+      <Panel title={_("GitHub bridge")}>
+        <p class="bridge-state">{s.github_hook ? <Pill tone="ok">{_("Webhook configured")}</Pill> : <Pill>{_("Not configured")}</Pill>}</p>
+        <p>{_("GitHub tells the team about pull requests, check suites and new tags: titles, links and branches, never code.")}</p>
+        <p class="actions">
+          {/* Replacing the secret refuses GitHub's deliveries until the new one is in the GitHub App: it asks first. */}
+          <button
+            type="button"
+            hx-post="/console/settings/github"
+            hx-target="#github-hook"
+            data-confirm={s.github_hook ? _("Replace the webhook secret?") : undefined}
+            data-confirm-body={
+              s.github_hook
+                ? _("GitHub deliveries signed with the old secret are refused until you paste the new one in your GitHub App.")
+                : undefined
+            }
+            data-confirm-action={s.github_hook ? _("Replace the webhook secret") : undefined}
+          >
+            {s.github_hook ? `${_("Replace the webhook secret")}…` : _("Create the webhook")}
+          </button>
+        </p>
+        <div id="github-hook" />
+      </Panel>
+      <Panel title={_("Team")}>
+        <form hx-post="/console/settings/team" hx-swap="none">
+          <Field id="team-name" label={_("Team name")} lang={_.lang} help={_("Shown in the top bar and in invitations.")}>
+            <input id="team-name" name="name" value={p.teamName} maxlength={80} required {...fieldAria("team-name", { help: 1 })} />
+          </Field>
+          <button type="submit" class="secondary">
+            {_("Rename the team")}
+          </button>
+        </form>
+      </Panel>
+      <Panel title={_("Audit public key")}>
+        <p>
+          {before}
+          <code>{"codetgh audit verify <file> --public-key"}</code>
+          {after}
+        </p>
+        <p class="meta">
+          {_("Key id")} <code translate="no">{auditKey.keyId}</code>
+        </p>
+        <CodeBlock code={auditKey.publicKey} lang={_.lang} copyLabel={_("Copy the public key")} />
+      </Panel>
+    </>
+  );
+};
+
+// Shown once: where GitHub sends its events, and the secret it signs them with.
+export const GithubHook: FC<{ _: Tr; url: string; secret: string }> = ({ _, url, secret }) => (
+  <>
+    <Banner tone="warn" title={_("Copy the secret now: you won't see it again.")}>
+      {_(
+        "In your GitHub App, under Settings → Webhook, set these two values. Then subscribe to the Pull request, Check suite and Create events.",
+      )}
+    </Banner>
+    <CodeBlock code={`Webhook URL: ${url}\nSecret: ${secret}`} lang={_.lang} copyLabel={_("Copy the URL and the secret")} />
   </>
 );

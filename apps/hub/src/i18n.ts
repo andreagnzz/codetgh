@@ -412,6 +412,58 @@ const FR: Record<string, string> = {
     "Tes messages, sujets, motifs de réservation et notes de tâche deviennent [erased], ton nom devient Former member, tes réservations sont libérées, tes tâches reviennent à l'équipe et ton accès prend fin. Les tâches et la mémoire d'équipe que tu as écrites restent à l'équipe\u202f; le journal d'audit ne garde que des identifiants.",
   "Type erase to confirm": "Tape erase pour confirmer",
   "This can't be undone.": "C'est définitif.",
+  // Settings.
+  "How agents work on this team, and the bridges to Slack and GitHub.":
+    "Comment les agents travaillent dans l'équipe, et les ponts vers Slack et GitHub.",
+  Team: "Équipe",
+  "Shown in the top bar and in invitations.": "Affiché dans la barre du haut et dans les invitations.",
+  "Settings saved.": "Paramètres enregistrés.",
+  Messages: "Messages",
+  "Ask the person": "Demander à la personne",
+  "Claude Code asks before the edit goes through. This is the default.":
+    "Claude Code demande avant que la modification ne passe. C'est le réglage par défaut.",
+  "Warn the agent, never block": "Prévenir l'agent, sans jamais bloquer",
+  "Autonomous sessions (bypassPermissions) can't answer a question: choose this for teams that run them.":
+    "Les sessions autonomes (bypassPermissions) ne peuvent pas répondre à une question\u00a0: choisis ceci pour les équipes qui en utilisent.",
+  "Members, admins and owners": "Membres, admins et propriétaires",
+  "Admins and owners": "Admins et propriétaires",
+  "Owners only": "Propriétaires seulement",
+  "Accept team memory from Claude Code too": "Accepter aussi la mémoire d'équipe depuis Claude Code",
+  "Claude Code then asks the person each time. claude.ai and the Agent SDK can't guarantee that.":
+    "Claude Code demande alors à la personne à chaque fois. claude.ai et l'Agent SDK ne peuvent pas le garantir.",
+  "Link a new repository when a member starts a session in it": "Lier un nouveau dépôt quand un membre y ouvre une session",
+  "Otherwise an admin runs codetgh project new.": "Sinon, un admin lance codetgh project new.",
+  "Allow rewake push": "Autoriser le réveil",
+  "An idle Claude Code session wakes up when a message arrives. Each member also turns it on in the plugin.":
+    "Une session Claude Code inactive se réveille à l'arrivée d'un message. Chaque membre l'active aussi dans le plugin.",
+  "Keep messages for": "Garder les messages",
+  "Older messages are deleted. Threads, team memory and the audit log stay.":
+    "Les messages plus anciens sont supprimés. Les fils, la mémoire d'équipe et le journal d'audit restent.",
+  "Extra secret patterns": "Motifs de secrets en plus",
+  "One regular expression per line. A message that matches one is blocked, as a known secret is.":
+    "Une expression régulière par ligne. Un message qui correspond à l'une d'elles est bloqué, comme un secret connu.",
+  "Slack channel": "Canal Slack",
+  "The channel that gets alerts and blocking requests. Its id looks like C0123ABC.":
+    "Le canal qui reçoit les alertes et les demandes bloquantes. Son identifiant ressemble à C0123ABC.",
+  "Loop orchestrator": "Orchestrateur de boucles",
+  "The member whose agent judges the agent loops the hub muted. Left empty, a person reopens them.":
+    "Le membre dont l'agent juge les boucles d'agents que le hub a mises en sourdine. Vide, une personne les rouvre.",
+  "Save settings": "Enregistrer les paramètres",
+  "Webhook configured": "Webhook configuré",
+  "Not configured": "Non configuré",
+  "GitHub tells the team about pull requests, check suites and new tags: titles, links and branches, never code.":
+    "GitHub informe l'équipe des pull requests, des check suites et des nouveaux tags\u00a0: titres, liens et branches, jamais de code.",
+  "Replace the webhook secret?": "Remplacer le secret du webhook\u202f?",
+  "GitHub deliveries signed with the old secret are refused until you paste the new one in your GitHub App.":
+    "Les envois de GitHub signés avec l'ancien secret sont refusés tant que le nouveau n'est pas collé dans ton application GitHub.",
+  "Copy the secret now: you won't see it again.": "Copie le secret maintenant\u00a0: tu ne le reverras plus.",
+  "In your GitHub App, under Settings → Webhook, set these two values. Then subscribe to the Pull request, Check suite and Create events.":
+    "Dans ton application GitHub, sous Settings → Webhook, saisis ces deux valeurs. Puis abonne-la aux événements Pull request, Check suite et Create.",
+  "Copy the URL and the secret": "Copier l'adresse et le secret",
+  "To check an audit export offline, pass this key to {command}.":
+    "Pour vérifier un export d'audit hors ligne, donne cette clé à {command}.",
+  "Key id": "Identifiant de clé",
+  "Copy the public key": "Copier la clé publique",
   // ---- End of batch 5. ----
 
   // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----

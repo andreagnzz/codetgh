@@ -93,7 +93,19 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { Invitations, Invited, InviteForm, Members, MyData, SlackCode, TokenCreated, TokenForm, Tokens } from "./team.js";
+import {
+  GithubHook,
+  Invitations,
+  Invited,
+  InviteForm,
+  Members,
+  MyData,
+  Settings,
+  SlackCode,
+  TokenCreated,
+  TokenForm,
+  Tokens,
+} from "./team.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1305,104 +1317,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     requireAdmin(p);
     const _ = tr(c);
-    return page(
-      c,
-      "Settings",
-      <>
-        <form hx-post="/console/settings/team" hx-swap="none">
-          <label>
-            {_("Team name")} <input name="name" value={p.teamName} maxlength={80} required />
-          </label>
-          <button type="submit">{_("Rename the team")}</button>
-        </form>
-        <form hx-post="/console/settings" hx-swap="none" class="settings">
-          <section aria-labelledby="rules-h">
-            <h2 id="rules-h">{_("Agent rules")}</h2>
-            <label>
-              {_("When an agent edits a file someone else claimed")}{" "}
-              <select name="claims_enforcement">
-                {CLAIM_ENFORCEMENT.map((level) => (
-                  <option
-                    value={level}
-                    selected={(["warn", "off"].includes(p.settings.claims_enforcement ?? "") ? "warn" : "ask") === level}
-                  >
-                    {_({ warn: "warn the agent, never block", ask: "ask the human (default)" }[level])}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p class="meta">
-              {_(
-                "Autonomous sessions (bypassPermissions) cannot answer a question: CodeTgh warns them instead of asking. Choose warn for teams that run them.",
-              )}
-            </p>
-            <label>
-              {_("Who accepts team memory")}{" "}
-              <select name="memory_accept_by">
-                {(["member", "admin", "owner"] as const).map((r) => (
-                  <option value={r} selected={(p.settings.memory_accept_by ?? "member") === r}>
-                    {_(r)} {_("and above")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <input type="checkbox" name="memory_accept_via_mcp" value="on" checked={Boolean(p.settings.memory_accept_via_mcp)} />{" "}
-              {_("Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)")}
-            </label>
-            <label>
-              <input type="checkbox" name="auto_link_projects" value="on" checked={p.settings.auto_link_projects !== false} />{" "}
-              {_("Link a new repository when a member starts a session in it (otherwise an admin runs codetgh project new)")}
-            </label>
-            <label>
-              <input type="checkbox" name="push_rewake" value="on" checked={(p.settings.push_allowed_modes ?? []).includes("rewake")} />{" "}
-              {_(
-                "Allow rewake push: an idle Claude Code session wakes up when a message arrives (each member also turns it on in the plugin)",
-              )}
-            </label>
-            <label>
-              {_("Message retention (days)")}{" "}
-              <input name="retention_days" type="number" min={1} max={3650} value={String(p.settings.retention_days ?? 90)} />
-            </label>
-            <label>
-              {_("Extra secret patterns (regular expressions, one per line)")}{" "}
-              <textarea name="secret_patterns" rows={4}>
-                {(p.settings.secret_patterns ?? []).join("\n")}
-              </textarea>
-            </label>
-          </section>
-          <section aria-labelledby="bridges-h">
-            <h2 id="bridges-h">{_("Bridges")}</h2>
-            <label>
-              {_("Slack channel id for alerts and blocking requests (e.g. C0123ABC)")}{" "}
-              <input name="slack_channel" maxlength={40} pattern="[A-Z0-9]+" value={p.settings.slack_channel ?? ""} />
-            </label>
-            <label>
-              {_("Loop orchestrator: handle of the member whose agent judges muted agent loops (empty: a human reopens)")}{" "}
-              <input name="loop_orchestrator" maxlength={40} pattern="[a-z0-9-]+" value={p.settings.loop_orchestrator ?? ""} />
-            </label>
-          </section>
-          <button type="submit">{_("Save")}</button>
-        </form>
-        <section aria-labelledby="github-h" class="settings">
-          <h2 id="github-h">{_("GitHub bridge")}</h2>
-          <p>
-            <Pill tone={p.settings.github_hook ? "ok" : "neutral"}>
-              {_(p.settings.github_hook ? "webhook configured" : "not configured")}
-            </Pill>{" "}
-            <button type="button" hx-post="/console/settings/github" hx-target="#github-hook">
-              {_(p.settings.github_hook ? "Replace the webhook secret" : "Create the webhook")}
-            </button>
-          </p>
-          <div id="github-hook" />
-          <h2>{_("Audit public key")}</h2>
-          <p class="meta">
-            {_("key id")} {auditKey.keyId}
-          </p>
-          <pre>{auditKey.publicKey}</pre>
-        </section>
-      </>,
-    );
+    return page(c, "Settings", <Settings _={_} p={p} s={p.settings} auditKey={auditKey} />, undefined, {
+      head: <p class="lede">{_("How agents work on this team, and the bridges to Slack and GitHub.")}</p>,
+    });
   });
 
   // The secret is shown once; creating a new webhook replaces the old secret.
@@ -1410,15 +1327,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireFresh(c);
     const hook = await createGithubHook(db, c.get("principal"), config.secret);
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>
-          In your GitHub App (Settings → Webhook), set these, then subscribe to Pull request, Check suite and Create events. The secret is
-          shown once.
-        </p>
-        <pre>{`Webhook URL: ${config.publicUrl}/bridges/github/${hook.id}\nSecret: ${hook.secret}`}</pre>
-      </Result>,
-    );
+    return c.html(<GithubHook _={tr(c)} url={`${config.publicUrl}/bridges/github/${hook.id}`} secret={hook.secret} />);
   });
 
   consoleApp.post("/settings", async (c) => {

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { membership, personalToken } from "../src/db/schema.js";
+import { membership, personalToken, team as teamTable } from "../src/db/schema.js";
 import { bridgeAuthor } from "../src/domain/bridges.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { type Hub, startHub } from "./harness.js";
@@ -263,5 +263,68 @@ describe("my data", () => {
     expect(html).toContain("Effacer mes données</h2>");
     expect(html).toContain("Tape erase pour confirmer");
     expect(html).toContain(">Relier Slack</button>");
+  });
+});
+
+describe("settings", () => {
+  it("keeps every field name, with a label, a help line instead of parentheses, and the choice in words", async () => {
+    const html = main(await page("/console/settings", team.lea.cookie));
+    expect(html).toContain('<label for="team-name">Team name</label>');
+    const form = html.slice(
+      html.indexOf('<form hx-post="/console/settings"'),
+      html.indexOf("</form>", html.indexOf('hx-post="/console/settings"')),
+    );
+    expect(form).toContain('data-done="Settings saved."');
+    expect(form).toContain("<legend>When an agent edits a file someone else claimed</legend>");
+    expect(form).toMatch(/<input type="radio" name="claims_enforcement" value="ask" checked=""[^>]*>/);
+    expect(form).toMatch(/<input type="radio" name="claims_enforcement" value="warn"[^>]*>/);
+    expect(form).toContain('<option value="member" selected="">Members, admins and owners</option>');
+    expect(form).toContain('<option value="owner">Owners only</option>');
+    for (const name of ["memory_accept_via_mcp", "auto_link_projects", "push_rewake"])
+      expect(form).toMatch(new RegExp(`<input type="checkbox" name="${name}" value="on"[^>]*aria-describedby="${name}-help"`));
+    expect(form).toContain("Otherwise an admin runs codetgh project new.");
+    expect(form).not.toMatch(/<label[^>]*>[^<]*\(/);
+    expect(form).toMatch(/name="retention_days"[^>]*>\s*<span>days<\/span>/);
+    expect(form).toContain('name="secret_patterns"');
+    expect(form).toContain('name="slack_channel"');
+    expect(form).toContain('name="loop_orchestrator"');
+    expect(form).toContain('<button type="submit" class="primary">Save settings</button>');
+  });
+
+  it("says whether the GitHub webhook is set, and asks before replacing its secret", async () => {
+    const before = main(await page("/console/settings", team.lea.cookie));
+    expect(before).toContain('<span class="pill" data-tone="neutral">Not configured</span>');
+    expect(button(before, "/console/settings/github")).not.toContain("data-confirm");
+    const created = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
+    expect(created).toContain('<div class="banner" data-tone="warn" role="status">');
+    expect(created).toContain("Copy the secret now: you won&#39;t see it again.");
+    expect(created).toMatch(/Webhook URL: http:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+\nSecret: [A-Za-z0-9_-]{20,}/);
+    const after = main(await page("/console/settings", team.lea.cookie));
+    expect(after).toContain('<span class="pill" data-tone="ok">Webhook configured</span>');
+    const replace = button(after, "/console/settings/github");
+    expect(replace).toContain('data-confirm="Replace the webhook secret?"');
+    expect(after).toContain(">Replace the webhook secret…</button>");
+  });
+
+  it("gives the audit public key in a block to copy, with the command that uses it", async () => {
+    const html = main(await page("/console/settings", team.lea.cookie));
+    expect(html).toContain('aria-label="Copy the public key"');
+    expect(html).toContain("codetgh audit verify &lt;file&gt; --public-key");
+  });
+
+  it("shows a long team name and many patterns without losing them", async () => {
+    const name = "Acme web, projet de fin d'études, promotion 2026, groupe B (plateforme)";
+    await hub.db.update(teamTable).set({ name }).where(eq(teamTable.id, team.teamId));
+    const html = main(await page("/console/settings", team.lea.cookie));
+    expect(html).toContain('value="Acme web, projet de fin d&#39;études, promotion 2026, groupe B (plateforme)"');
+    await hub.db.update(teamTable).set({ name: "Acme web" }).where(eq(teamTable.id, team.teamId));
+  });
+
+  it("is in French", async () => {
+    const html = main(await page("/console/settings", team.lea.cookie, "fr"));
+    expect(html).toContain("<h1>Paramètres</h1>");
+    expect(html).toContain("Demander à la personne");
+    expect(html).toContain("Enregistrer les paramètres");
+    expect(html).toContain("Membres, admins et propriétaires");
   });
 });

@@ -30,13 +30,13 @@
 }
 
 /* What a form answers, shown once: a banner that says it, then the blocks to copy. */
-:is(#invite-result, #new-token, #slack-code):not(:empty) {
+:is(#invite-result, #new-token, #slack-code, #github-hook):not(:empty) {
   margin-top: var(--sp-6);
 }
-:is(#invite-result, #new-token, #slack-code) .banner {
+:is(#invite-result, #new-token, #slack-code, #github-hook) .banner {
   margin-bottom: var(--sp-4);
 }
-:where(#invite-result, #new-token, #slack-code) > :last-child {
+:where(#invite-result, #new-token, #slack-code, #github-hook) > :last-child {
   margin-bottom: 0;
 }
 :where(#new-token) > p {
@@ -130,6 +130,56 @@
   width: auto;
   justify-content: center;
   border-color: var(--border-strong);
+}
+
+/* Settings: each choice with what it changes under its label, aligned with the label's text; ids and patterns in mono. */
+input[name="slack_channel"],
+textarea[name="secret_patterns"] {
+  font-family: var(--mono);
+}
+.settings fieldset {
+  min-width: 0;
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+  border: 0;
+}
+.settings legend {
+  margin-bottom: var(--sp-1);
+  padding: 0;
+  font-weight: 500;
+}
+.check {
+  margin: 0 0 var(--sp-2);
+}
+.check > label {
+  padding-bottom: var(--sp-1);
+}
+.check > .help {
+  margin: 0;
+  padding-left: calc(20px + var(--sp-3));
+}
+.check + .field,
+fieldset + .check {
+  margin-top: var(--sp-4);
+}
+.settings .panel > :last-child {
+  margin-bottom: 0;
+}
+/* The save button closes the form; a refusal shows right under it, and what follows the form keeps its distance. */
+.settings-save {
+  margin: 0;
+}
+form.settings + .field-error {
+  margin: var(--sp-3) 0 0;
+}
+:is(form.settings, form.settings + .field-error) + .panel {
+  margin-top: var(--sp-12);
+}
+.bridge-state {
+  margin: 0 0 var(--sp-3);
+}
+.panel .meta code {
+  overflow-wrap: anywhere;
 }
 
 /* Under 640 px a row is a short record: its name and, in its top corner, its action; under them the other values on one line
