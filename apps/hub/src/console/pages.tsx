@@ -759,8 +759,8 @@ const SIGN_UP_WORDS = {
   FAILED_TO_CREATE_USER: "This invitation can't create an account any more. Ask the person who invited you for a new link.",
 };
 
-// Signed out, an account for the invited address, which shows as the account's sign-in; signed in, one button and the
-// account it joins with.
+// Signed out, an account for the invited address, which shows as the account's sign-in; signed in with that address, Join
+// and the account it uses; signed in with another, why not and the way to another account.
 export const InvitePage: FC<{
   team: string;
   // Known whenever the invitation is valid.
