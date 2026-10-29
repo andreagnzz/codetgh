@@ -164,20 +164,7 @@ export const Layout: FC<{
                 {actions && <div class="page-actions">{actions}</div>}
                 {head && <div class="page-meta">{head}</div>}
               </div>
-              {filter && (
-                <nav aria-label={_("Project")} class="projects-filter">
-                  {[{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }].map(
-                    (pr) => (
-                      <a
-                        href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
-                        aria-current={pr.id === filter.selected ? "page" : undefined}
-                      >
-                        {pr.name}
-                      </a>
-                    ),
-                  )}
-                </nav>
-              )}
+              {filter && <ProjectMenu filter={filter} path={path} archived={archived} lang={lang} />}
               {children}
             </main>
           </div>
@@ -213,6 +200,39 @@ export const Layout: FC<{
         </body>
       </html>
     </>
+  );
+};
+
+// The project filter: a menu whose button names the current choice; the choices stay links to the same pages.
+const ProjectMenu: FC<{ filter: ProjectFilter; path: string; archived?: boolean; lang: Lang }> = ({ filter, path, archived, lang }) => {
+  const _ = (s: string) => t(lang, s);
+  const choices = [{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }];
+  const chosen = choices.find((pr) => pr.id === filter.selected) ?? choices[0];
+  return (
+    <details class="projects-filter">
+      <summary>
+        {_("Project")}
+        {_(": ")}
+        <strong>{chosen?.name}</strong>
+        <Icon name="chevron-down" />
+      </summary>
+      <div class="pop">
+        <nav aria-label={_("Project")}>
+          <ul class="menu-items">
+            {choices.map((pr) => (
+              <li>
+                <a
+                  href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
+                  aria-current={pr.id === filter.selected ? "page" : undefined}
+                >
+                  {pr.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    </details>
   );
 };
 

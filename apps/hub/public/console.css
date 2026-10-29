@@ -286,7 +286,8 @@ summary::-webkit-details-marker {
   border-top: 1px solid var(--border);
 }
 .nav a,
-.account-items a {
+.account-items a,
+.menu-items a {
   position: relative;
   display: flex;
   align-items: center;
@@ -301,7 +302,8 @@ summary::-webkit-details-marker {
     color var(--hover);
 }
 .nav,
-.account-items {
+.account-items,
+.menu-items {
   --lift: var(--surface-inset);
 }
 .sidebar .nav {
@@ -310,19 +312,22 @@ summary::-webkit-details-marker {
   top: var(--sp-4);
 }
 .nav a:hover,
-.account-items a:hover {
+.account-items a:hover,
+.menu-items a:hover {
   color: var(--text);
   background: var(--lift);
 }
 /* The current page: weight, a lift and an accent bar, never the color alone. */
 .nav a[aria-current="page"],
-.account-items a[aria-current="page"] {
+.account-items a[aria-current="page"],
+.menu-items a[aria-current="page"] {
   color: var(--text);
   font-weight: 600;
   background: var(--lift);
 }
 .nav a[aria-current="page"]::before,
-.account-items a[aria-current="page"]::before {
+.account-items a[aria-current="page"]::before,
+.menu-items a[aria-current="page"]::before {
   content: "";
   position: absolute;
   left: 0;
@@ -381,7 +386,8 @@ summary::-webkit-details-marker {
   background: currentColor;
 }
 .account,
-.row-menu {
+.row-menu,
+.projects-filter {
   position: relative;
 }
 details.account > summary {
@@ -399,7 +405,7 @@ details.account > summary:where(:hover),
 details.account:where([open]) > summary {
   background: var(--surface-inset);
 }
-:where(.account[open] > summary) .icon {
+:where(.account[open] > summary, .projects-filter[open] > summary) .icon {
   transform: rotate(180deg);
 }
 /* Menus float on the raised surface: with dialogs and toasts, the only layers with a shadow. */
@@ -582,6 +588,7 @@ button:is(:disabled, [aria-disabled="true"]):hover {
 @media (pointer: coarse) {
   button:not(.tertiary),
   .button:not(.tertiary),
+  .menu-items a,
   input:not([type="checkbox"], [type="radio"]),
   select,
   summary {
@@ -1218,17 +1225,15 @@ dialog .actions {
   justify-content: flex-end;
   margin-top: var(--sp-6);
 }
-/* Tabs and filters that change the URL: the selected one by weight and an accent underline. */
-.tabs,
-.projects-filter {
+/* Tabs that change the URL: the selected one by weight and an accent underline. */
+.tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0 var(--sp-6);
   margin: 0 0 var(--sp-6);
   border-bottom: 1px solid var(--border);
 }
-.tabs a,
-.projects-filter a {
+.tabs a {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1240,19 +1245,50 @@ dialog .actions {
   text-decoration: none;
   transition: color var(--hover);
 }
-.tabs a:hover,
-.projects-filter a:hover {
+.tabs a:hover {
   color: var(--text);
 }
-.tabs a[aria-current="page"],
-.projects-filter a[aria-current="page"] {
+.tabs a[aria-current="page"] {
   color: var(--text);
   font-weight: 600;
   border-bottom-color: var(--accent);
 }
-.tabs a[aria-current="page"]:focus-visible,
-.projects-filter a[aria-current="page"]:focus-visible {
+.tabs a[aria-current="page"]:focus-visible {
   outline-offset: 0;
+}
+/* The project filter: a menu whose button says "Project: <choice>", on the floating layer, opening to the right. */
+details.projects-filter {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0 var(--sp-6);
+}
+details.projects-filter > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font-weight: 500;
+  transition: background-color var(--hover);
+}
+details.projects-filter > summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+details.projects-filter > summary:where(:hover),
+details.projects-filter:where([open]) > summary {
+  background: var(--surface-inset);
+}
+.projects-filter .pop {
+  left: 0;
+  right: auto;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 2 * var(--sp-4)));
 }
 .count {
   color: var(--text-muted);

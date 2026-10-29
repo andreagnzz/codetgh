@@ -119,6 +119,18 @@ describe("shell", () => {
     expect(menu).toContain('href="/console/me"');
   });
 
+  it("shows the project filter as a menu that names the current choice, with the same links", async () => {
+    const page = await html(team.lea.cookie, "/console/threads?project=none");
+    const filter = page.slice(
+      page.indexOf('<details class="projects-filter">'),
+      page.indexOf("</details>", page.indexOf("projects-filter")),
+    );
+    expect(filter).toMatch(/<summary>Project: <strong>Outside a project<\/strong><svg/);
+    expect(filter).toContain('<nav aria-label="Project">');
+    expect(filter).toContain('<a href="/console/threads?project=">All projects</a>');
+    expect(filter).toContain('<a href="/console/threads?project=none" aria-current="page">Outside a project</a>');
+  });
+
   it("shows a guest no link to a page that would refuse them", async () => {
     await setRole(hub, team.malik.userId, "guest");
     try {

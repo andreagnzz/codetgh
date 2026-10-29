@@ -189,18 +189,17 @@
   document.body.addEventListener("htmx:sseOpen", () => state("live"));
   document.body.addEventListener("htmx:sseError", () => state("lost"));
 
-  // Menus (account, small-screen menu, row menus) close on Escape, focus back on their button; the floating ones also close
-  // on a click outside them.
-  const MENUS = "details.account[open], details.menu[open], details.row-menu[open]";
+  // Menus (account, small-screen menu, row menus, project filter) close on Escape, focus back on their button; the floating
+  // ones also close on a click outside them.
+  const FLOATING = "details.account[open], details.row-menu[open], details.projects-filter[open]";
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    for (const menu of document.querySelectorAll(MENUS)) {
+    for (const menu of document.querySelectorAll(`${FLOATING}, details.menu[open]`)) {
       menu.open = false;
       if (menu.contains(document.activeElement)) menu.querySelector("summary")?.focus();
     }
   });
   document.addEventListener("click", (e) => {
-    for (const menu of document.querySelectorAll("details.account[open], details.row-menu[open]"))
-      if (!menu.contains(e.target)) menu.open = false;
+    for (const menu of document.querySelectorAll(FLOATING)) if (!menu.contains(e.target)) menu.open = false;
   });
 })();
