@@ -399,6 +399,15 @@ describe("refusals", () => {
     );
   });
 
+  it("a team name of spaces only", async () => {
+    expect(await refused(team.lea.cookie, "/console/settings/team", { name: "   " })).toContain(
+      "A team name has 1 to 80 characters, not only spaces. Enter a name.",
+    );
+    expect(await refused(`${team.lea.cookie}; lang=fr`, "/console/settings/team", { name: "   " })).toContain(
+      "Un nom d&#39;équipe compte de 1 à 80 caractères, pas seulement des espaces. Saisis un nom.",
+    );
+  });
+
   it("erasing without the typed word", async () => {
     expect(await refused(team.sam.cookie, "/console/me/erase", { confirm: "nope" })).toContain(
       "Nothing was erased. Type erase in the box to confirm.",

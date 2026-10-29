@@ -1218,7 +1218,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/settings/team", async (c) => {
-    await renameTeam(db, c.get("principal"), (await form(c)).name ?? "");
+    await renameTeam(db, c.get("principal"), (await form(c)).name ?? "").catch(reworded(tr(c)));
     return refresh(c);
   });
 

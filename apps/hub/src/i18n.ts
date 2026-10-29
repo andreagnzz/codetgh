@@ -424,6 +424,8 @@ const FR: Record<string, string> = {
     "Comment les agents travaillent dans l'équipe, et les ponts vers Slack et GitHub.",
   Team: "Équipe",
   "Shown in the top bar and in invitations.": "Affiché dans la barre du haut et dans les invitations.",
+  "A team name has 1 to 80 characters, not only spaces. Enter a name.":
+    "Un nom d'équipe compte de 1 à 80 caractères, pas seulement des espaces. Saisis un nom.",
   "Settings saved.": "Paramètres enregistrés.",
   Messages: "Messages",
   "Ask the person": "Demander à la personne",

@@ -21,6 +21,7 @@ const REFUSALS = new Map([
   ["invalid email", "This email address isn't valid. Enter the address to invite, like name@example.com."],
   ["an invitation lasts between 1 and 30 days", "An invitation lasts 1 to 30\u00a0days. Enter a number of days in that range."],
   ["type erase to confirm", "Nothing was erased. Type erase in the box to confirm."],
+  ["a team name has 1 to 80 characters", "A team name has 1 to 80 characters, not only spaces. Enter a name."],
 ]);
 export const reworded =
   (_: Tr) =>
