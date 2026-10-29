@@ -50,6 +50,30 @@ describe("pages", () => {
     );
   });
 
+  it("answers an unknown page opened in a browser with the 404 page, and an API, MCP or htmx client with the bare 404", async () => {
+    const html = { accept: "text/html,application/xhtml+xml", cookie: team.lea.cookie };
+    for (const path of ["/console/nope", "/nope"]) {
+      const res = await get(path, html);
+      expect(res.status, path).toBe(404);
+      const page = await res.text();
+      expect(page.startsWith("<!doctype html>"), path).toBe(true);
+      expect(page, path).toContain('<main class="public">');
+      expect(page, path).toContain("<h1>This page doesn&#39;t exist.</h1>");
+      expect(res.headers.get("content-security-policy"), path).toContain("default-src 'self'");
+    }
+    expect(await (await get("/console/nope", { ...html, "accept-language": "fr" })).text()).toContain("Cette page n&#39;existe pas.");
+    for (const [path, headers] of [
+      ["/v1/nope", { ...html, authorization: `Bearer ${team.lea.token}` }],
+      ["/mcp/nope", html],
+      ["/console/nope", { ...html, "HX-Request": "true" }],
+      ["/console/nope", { cookie: team.lea.cookie }],
+    ] as const) {
+      const res = await get(path, headers);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).toBe("404 Not Found");
+    }
+  });
+
   it("tells someone an invitation refuses what happened and where to go, in their language", async () => {
     const { token } = await createInvitation(hub.db, {
       teamId: team.teamId,

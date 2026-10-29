@@ -114,7 +114,7 @@ import { langOf } from "./i18n.js";
 import { createMailer, type Mailer } from "./mailer.js";
 import { createMcpServer, whoami } from "./mcp.js";
 import { openApiDocument } from "./openapi.js";
-import { ConsentPage, LoginPage } from "./pages.js";
+import { ConsentPage, ErrorPage, LoginPage } from "./pages.js";
 import { type Principal, principalForToken, principalForUser } from "./principal.js";
 import { bearerToken, createPersonalToken } from "./tokens.js";
 
@@ -954,6 +954,13 @@ export function createApp({
   // Last, so no route pays for a file lookup: the brand kit's logos (assets/brand), then favicons, manifest, CSS and fonts.
   app.get("/brand/*", serveStatic({ root: config.brandDir, rewriteRequestPath: (p) => p.replace(/^\/brand/, "") }));
   app.get("*", serveStatic({ root: config.publicDir }));
+  // An unknown page opened in a browser gets the 404 page of the public layout; an API, MCP or htmx client keeps the bare 404.
+  app.notFound((c) => {
+    const browser = (c.req.header("accept") ?? "").includes("text/html") && c.req.header("HX-Request") !== "true";
+    if (!browser || /^\/(v1|mcp|a2a|api)(\/|$)/.test(c.req.path)) return c.text("404 Not Found", 404);
+    const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+    return c.html(ErrorPage({ status: 404, lang }), 404, { "content-security-policy": "default-src 'self'" });
+  });
   return Object.assign(app, {
     bus,
     deps,
