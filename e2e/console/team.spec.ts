@@ -39,19 +39,14 @@ const tabs = async (page: Page, n: number) => {
 };
 
 for (const scheme of ["light", "dark"] as const)
-  test(`members, ${scheme}: the invitation form, each invitation's revoke, then each person's menu, which asks first`, async ({ page }) => {
+  test(`members, ${scheme}: the invitation form, each person's menu, which asks first, then each invitation's revoke`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, hub.url, team.lea);
     await page.goto(`${hub.url}/console/members`);
     expect(await tab(page)).toBe("Skip to content");
     await page.keyboard.press("Enter");
-    expect(await tabs(page, 4)).toEqual([
-      "Invite a member",
-      "Revoke the invitation for ines@acme.test…",
-      "Actions for Léa",
-      "Actions for Sam",
-    ]);
+    expect(await tabs(page, 3)).toEqual(["Invite a member", "Actions for Léa", "Actions for Sam"]);
     await page.keyboard.press("Enter");
     // The handle first, with its rule; then the roles Sam does not have, then revoking access.
     expect(await tabs(page, 6)).toEqual([
@@ -71,6 +66,8 @@ for (const scheme of ["light", "dark"] as const)
     await expect(dialog).toBeHidden();
     await expect(page.locator('summary[aria-label="Actions for Sam"]')).toBeFocused();
     await expect(page.locator("tr", { hasText: "sam@acme.test" })).toHaveCount(1);
+    // The pending invitations come after the team.
+    expect(await tabs(page, 2)).toEqual(["Actions for Malik", "Revoke the invitation for ines@acme.test…"]);
   });
 
 test("invite a member: the form opens under the page header, and the link shows with its Copy", async ({ page }) => {

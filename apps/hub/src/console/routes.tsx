@@ -1180,8 +1180,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Members",
       <>
-        <Invitations _={_} rows={invites} />
         <Members _={_} rows={rows} viewer={p} />
+        <Invitations _={_} rows={invites} />
       </>,
       undefined,
       {

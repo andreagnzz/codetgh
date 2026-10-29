@@ -114,8 +114,11 @@ describe("members", () => {
       .where(eq(membership.id, ids.malik ?? ""));
   });
 
-  it("lists pending invitations with their count, each revoked after a confirmation", async () => {
-    const pending = section(main(await page("/console/members", team.lea.cookie)), "invitations-h");
+  it("lists pending invitations after the team, with their count, each revoked after a confirmation", async () => {
+    const html = main(await page("/console/members", team.lea.cookie));
+    // The page's main job, people and roles, comes first; a long list of invitations waits under it.
+    expect(html.indexOf('id="members-h"')).toBeLessThan(html.indexOf('id="invitations-h"'));
+    const pending = section(html, "invitations-h");
     expect(pending).toContain("Pending invitations");
     expect(pending).toContain('<span class="count">1</span>');
     const ines = row(pending, "ines@acme.test");
