@@ -858,7 +858,10 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
   const lanes = lanesOf(rows.map((r) => wireOf(r.message, r.handle ?? r.name)));
   const phone = lanes.narrow ?? lanes.wide;
   const named = phone.map((l, i) => (l.startsWith("+") ? `${l} (${lanes.keys.slice(i).join(", ")})` : l));
-  const nameRows = lanes.wide.length > MAX_NARROW ? 3 : 2;
+  // Names that fit one lane at its narrowest (28.8 px for ten lanes, 32 px under ten: four mono letters) stand on one row;
+  // longer ones take turns on two, three past six people.
+  const longest = Math.max(...lanes.wide.map((l) => l.length));
+  const nameRows = longest <= (lanes.wide.length < MAX_LANES ? 4 : 3) ? 1 : lanes.wide.length > MAX_NARROW ? 3 : 2;
   const both = (draw: (set?: "wide" | "narrow") => Child) => (lanes.narrow ? [draw("wide"), draw("narrow")] : draw());
   return (
     <div class="lanes" data-lanes={lanes.wide.length} data-narrow={lanes.narrow ? "" : undefined}>

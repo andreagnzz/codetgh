@@ -389,8 +389,9 @@ main:has(> #live + .field-error) > .live-retry {
     white-space: nowrap;
   }
 }
-/* From 640 px each handle is printed above its caret. Lanes take turns on two rows (three past six people), so a name gets
-   the width of two lanes (three) before it is cut: row k starts (k + 1/2 - rows/2) lanes from the first caret's lane. */
+/* From 640 px each handle is printed above its caret: on one row when every name fits its lane, else taking turns on two
+   rows (three past six people), so a name gets the width of two lanes (three) before it is cut: row k starts
+   (k + 1/2 - rows/2) lanes from the first caret's lane. */
 @media (min-width: 640px) {
   .lanes {
     --pitch: clamp(24px, 288px / var(--lanes), 32px);
@@ -406,6 +407,9 @@ main:has(> #live + .field-error) > .live-retry {
     padding-top: var(--sp-1);
     color: var(--text-muted);
     font: var(--fs-caption) / 16px var(--mono);
+  }
+  .lane-names[data-rows="1"] {
+    --rows: 1;
   }
   .lane-names[data-rows="3"] {
     --rows: 3;
@@ -428,8 +432,9 @@ main:has(> #live + .field-error) > .live-retry {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* The first name starts over the first lane instead of spilling left of the column, and runs on to its right. */
-  .lane-row:first-child > .lane-name:first-child {
+  /* Wider than its lane, the first name starts over the first lane instead of spilling left of the column, and runs on to
+     its right. */
+  .lane-names:not([data-rows="1"]) > .lane-row:first-child > .lane-name:first-child {
     padding-left: calc((var(--rows) / 2 - 0.5) * var(--pitch));
     overflow: visible;
     text-align: left;

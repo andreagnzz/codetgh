@@ -85,6 +85,8 @@ describe("overview", () => {
     expect(member).toContain("1\u00a0memory proposal waits for a decision.");
     expect(member).not.toContain("open alert");
     expect(member).not.toContain("invitation");
+    // Two short handles on the line: their names fit one lane each, on one row.
+    expect(section(await html(team.lea.cookie), "line-h")).toContain('<p class="lane-names" data-rows="1">');
   });
 
   it("asks the people of a thread the loop guard muted to look at it, and only them", async () => {
