@@ -809,7 +809,7 @@ label:where(:has(> input[type="checkbox"], > input[type="radio"])) {
   font-weight: 400;
 }
 .field > .help {
-  margin: 2px 0 0;
+  margin: var(--sp-1) 0 0;
 }
 .field > :is(input, select, textarea) {
   display: block;
@@ -957,7 +957,7 @@ td.actions-cell {
   white-space: nowrap;
 }
 td button {
-  margin: 2px var(--sp-2) 2px 0;
+  margin: var(--sp-1) var(--sp-2) var(--sp-1) 0;
 }
 /* One link per row, in the primary cell, stretched over the row: the whole row is a target, the keyboard meets one link. */
 tr:has(.row-link) {
@@ -1111,7 +1111,7 @@ tr.unread .row-link {
   position: absolute;
   top: var(--sp-2);
   right: var(--sp-2);
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 var(--sp-2);
   background: var(--surface-raised);
   font-size: var(--fs-caption);
@@ -1424,7 +1424,7 @@ details.row-menu:where([open]) > summary {
   font-weight: 600;
 }
 .banner .banner-body {
-  margin-top: 2px;
+  margin-top: var(--sp-1);
 }
 .banner .banner-actions {
   display: flex;
