@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
 import { principalForToken } from "../src/principal.js";
 import { type Hub, setRole, startHub } from "./harness.js";
@@ -59,6 +59,21 @@ describe("pages", () => {
     const html = await res.text();
     expect(html).not.toContain("<!doctype html>");
     expect(html).toContain("thread not found");
+  });
+
+  it("serves the component catalogue in development and tests, and never in production", async () => {
+    expect((await get("/console/catalogue", { cookie: team.lea.cookie })).status).toBe(200);
+    vi.stubEnv("NODE_ENV", "production");
+    const prod = await startHub();
+    try {
+      const people = await prod.seed();
+      const res = await fetch(`${prod.url}/console/catalogue`, { headers: { cookie: people.lea.cookie }, redirect: "manual" });
+      expect(res.status).toBe(404);
+      expect((await fetch(`${prod.url}/console`, { headers: { cookie: people.lea.cookie } })).status).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+      await prod.stop();
+    }
   });
 });
 

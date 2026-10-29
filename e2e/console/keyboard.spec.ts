@@ -88,3 +88,47 @@ test("small screen: the menu opens with the keyboard, holds every link, closes o
   expect((await focused(page)).text).toContain("Menu");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
 });
+
+test("confirmation dialog: Cancel first, Escape gives the focus back; confirming runs the action and says so in a toast", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  const trigger = page.getByRole("button", { name: "Revoke token", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Revoke the token laptop-cli?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Sessions already open are not closed.");
+  expect((await focused(page)).text).toBe("Cancel");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Tab");
+  expect((await focused(page)).text).toBe("Revoke token");
+  await Promise.all([page.waitForEvent("load"), page.keyboard.press("Enter")]);
+  await expect(page.locator(".toasts .toast")).toHaveText("Token laptop-cli revoked.");
+  await page.locator(".toasts button").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".toasts .toast")).toHaveCount(0);
+});
+
+test("a refused action shows the hub's reason under it; Copy copies and says so", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  await page.getByRole("button", { name: "An action the hub refuses" }).click();
+  await expect(page.locator(".field-error[role=alert]").first()).toHaveText(
+    "The hub refuses this demo action, to show where its reason appears.",
+  );
+  const copy = page.locator(".code [data-copy]").first();
+  await copy.focus();
+  await page.keyboard.press("Enter");
+  await expect(copy).toHaveAttribute("data-state", "copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("codetgh invite ines@acme.test");
+});

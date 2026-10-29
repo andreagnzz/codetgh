@@ -76,6 +76,7 @@ import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
+import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
@@ -1871,6 +1872,16 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       release();
     });
   });
+
+  // Development and tests only: the component catalogue, and two actions that let it show a confirmation, a toast and a
+  // refusal. Never mounted in production.
+  if (process.env.NODE_ENV !== "production") {
+    consoleApp.get("/catalogue", (c) => page(c, "Components", <Catalogue lang={tr(c).lang} />));
+    consoleApp.post("/catalogue/done", (c) => refresh(c));
+    consoleApp.post("/catalogue/refused", () => {
+      throw new HubError("E_INVALID", "The hub refuses this demo action, to show where its reason appears.");
+    });
+  }
 
   app.route("/console", consoleApp);
   return app;
