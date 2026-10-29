@@ -257,6 +257,11 @@ const FR: Record<string, string> = {
   "You can't open this page.": "Tu ne peux pas ouvrir cette page.",
   "This page doesn't exist.": "Cette page n'existe pas.",
   "The hub refused this request.": "Le hub a refusé cette demande.",
+  "Check the link, or go back and try again.": "Vérifie le lien, ou reviens en arrière et réessaie.",
+  "Your role doesn't allow it. Ask an admin of your team if you need it.":
+    "Ton rôle ne le permet pas. Demande à un admin de ton équipe si tu en as besoin.",
+  "Check the link, or start again from the overview.": "Vérifie le lien, ou repars de la vue d'ensemble.",
+  "Go back and try again.": "Reviens en arrière et réessaie.",
   "Back to the overview": "Retour à la vue d'ensemble",
   "admins only": "réservé aux admins",
   "guests see only their own threads": "un invité ne voit que ses propres fils",

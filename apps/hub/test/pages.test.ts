@@ -50,6 +50,8 @@ describe("pages", () => {
     const html = await (await get("/console/members", { cookie: team.sam.cookie, "accept-language": "fr-FR" })).text();
     expect(html).toContain('<html lang="fr">');
     expect(html).toContain("Tu ne peux pas ouvrir cette page.");
+    expect(html).toContain("Demande à un admin de ton équipe");
+    expect(html).toContain("réservé aux admins");
     expect(html).toContain("Retour à la vue d&#39;ensemble");
   });
 

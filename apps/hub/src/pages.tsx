@@ -26,20 +26,23 @@ export const Layout = ({ lang, title = "CodeTgh", children }: { lang: Lang; titl
   </>
 );
 
-const ERROR_TITLE: Record<number, string> = {
-  400: "This request isn't valid.",
-  403: "You can't open this page.",
-  404: "This page doesn't exist.",
+// What happened, and what to do about it.
+const ERROR_TEXT: Record<number, [string, string]> = {
+  400: ["This request isn't valid.", "Check the link, or go back and try again."],
+  403: ["You can't open this page.", "Your role doesn't allow it. Ask an admin of your team if you need it."],
+  404: ["This page doesn't exist.", "Check the link, or start again from the overview."],
 };
 
-// A page load the hub refuses: what happened, the hub's reason, and a way back. An htmx request keeps the bare reason.
+// A page load the hub refuses: what happened, what to do, the hub's own reason, and a way back. An htmx request keeps the
+// bare reason.
 export const ErrorPage = ({ status, reason, lang }: { status: number; reason: string; lang: Lang }) => {
   const _ = (s: string) => t(lang, s);
-  const title = _(ERROR_TITLE[status] ?? "The hub refused this request.");
+  const [title, next] = ERROR_TEXT[status] ?? ["The hub refused this request.", "Go back and try again."];
   return (
-    <Layout lang={lang} title={`${title} · CodeTgh`}>
-      <h1>{title}</h1>
-      <p class="lede">{_(reason)}</p>
+    <Layout lang={lang} title={`${_(title)} · CodeTgh`}>
+      <h1>{_(title)}</h1>
+      <p class="lede">{_(next)}</p>
+      <p class="meta">{_(reason)}</p>
       <p>
         <a href="/console">{_("Back to the overview")}</a>
       </p>
