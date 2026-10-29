@@ -5,7 +5,7 @@ import { RateLimiter } from "../../apps/hub/src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
 
-// Threads and a thread with the keyboard and on a phone: every stop shows its focus, the conversation keeps the
+// Threads, a thread and alerts with the keyboard and on a phone: every stop shows its focus, the conversation keeps the
 // keyboard and the reply being typed when a message arrives, a new message traces its wire once, and nothing scrolls sideways.
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -92,6 +92,28 @@ test("no trace with prefers-reduced-motion on a thread", async ({ page }) => {
   await send("sam", { reply_to: question.id, kind: "answer", body: "Still me." });
   await expect(page.locator(".convo-row")).toHaveCount(rows + 1);
   expect(await page.locator(".convo-row.fresh .link").evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+});
+
+test("alerts with the keyboard: Dismiss, then the row's menu, whose quarantine asks first", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/alerts`);
+  expect((await tab(page)).text).toBe("Skip to content");
+  await page.keyboard.press("Enter");
+  expect(await tab(page)).toMatchObject({ text: "Open thread", outline: "solid 2px" });
+  expect(await tab(page)).toMatchObject({ text: "Dismiss", outline: "solid 2px" });
+  const menu = await tab(page);
+  expect(menu).toMatchObject({ text: "More decisions on this alert: Looks like an instruction, Sam", outline: "solid 2px" });
+  await page.keyboard.press("Enter");
+  expect((await tab(page)).text).toBe("False positive");
+  expect((await tab(page)).text).toBe("Quarantine sender…");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Quarantine Sam's sessions?" });
+  await expect(dialog).toBeVisible();
+  expect((await focused(page)).text).toBe("Cancel");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
 });
 
 for (const lang of ["en", "fr"] as const)

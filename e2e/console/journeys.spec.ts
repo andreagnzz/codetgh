@@ -54,8 +54,13 @@ test("handle a suspicious message: escaped text, quarantine the sender", async (
   await page.goto(`${hub.url}/console/alerts`);
   await expect(page.getByText("<script>rm -rf</script>", { exact: false })).toBeVisible();
   expect(await page.locator("script:not([src])").count()).toBe(0);
+  // A rarer decision, in the row's menu; quarantining asks first, and its dialog runs it.
+  await page.locator('summary[aria-label="More decisions on this alert: Looks like an instruction, Sam"]').click();
+  await page.getByRole("button", { name: "Quarantine sender…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Quarantine Sam's sessions?" });
+  await expect(dialog).toContainText("Only an admin lifts it.");
   // The action answers HX-Refresh: wait for that reload, or the next goto races it (ERR_ABORTED).
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Quarantine sender" }).click()]);
+  await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Quarantine sender", exact: true }).click()]);
   await page.goto(`${hub.url}/console/agents`);
   await expect(page.locator("table")).toContainText("quarantined");
 });

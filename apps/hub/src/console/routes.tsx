@@ -96,12 +96,13 @@ import {
   Pill,
   type ProjectFilter,
   Result,
+  RowMenu,
   Stamp,
   Table,
   toneOf,
   When,
 } from "./pages.js";
-import { Conversation, fill, Handles, lanesOf, MutedPill, Streak, threadName } from "./threads.js";
+import { ALERT_KIND, ALERT_STATUS, AlertText, Conversation, fill, Handles, lanesOf, MutedPill, Streak, threadName } from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -968,39 +969,96 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    // The hub raises an audit alert itself; any other alert names who sent the message, or nobody once they are erased.
+    const sender = (a: (typeof rows)[number]["alert"], name: string | null) => name ?? _(a.kind === "audit_tamper" ? "The hub" : "Nobody");
     return page(
       c,
       "Alerts",
       <>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
-          empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
-          rows={rows.map(({ alert: a, name }) => [
-            <>
-              <Pill tone="danger">{_(a.kind)}</Pill>
-              <br />
-              <When at={a.createdAt} lang={_.lang} />
-            </>,
-            name ?? "",
-            <pre>{a.excerpt}</pre>,
-            <Pill tone={toneOf(a.status)}>{_(a.status)}</Pill>,
-            a.status === "open" && (
+        <div class="alerts-list">
+          <Table
+            lang={_.lang}
+            caption={_("Alerts")}
+            head={[_("Alert"), _("Raised"), _("Status"), _("Actions")]}
+            primary={0}
+            numeric={[1]}
+            actions
+            sort={{ column: 1, dir: "descending" }}
+            empty={
+              <EmptyState title={_("No alerts.")}>
+                {_("Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
+              </EmptyState>
+            }
+            rows={rows.map(({ alert: a, name }) => [
+              <AlertText
+                a={a}
+                from={a.userId ? `${sender(a, name)} · ${_(a.agentId ? "agent" : "person")}` : sender(a, name)}
+                max={MAX_AGENT_MESSAGES}
+                _={_}
+              />,
+              <Stamp at={a.createdAt} lang={_.lang} />,
               <>
-                <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
-                <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />
-                {a.kind === "secret_blocked" && (
-                  <Action post={`/console/alerts/${a.id}/fingerprint_allowed`} label={_("Allow this fingerprint")} />
+                <Pill tone={a.status === "open" ? "warn" : "neutral"}>{_(ALERT_STATUS[a.status] ?? a.status)}</Pill>
+                {a.resolvedAt && (
+                  <span class="meta">
+                    {_("Decided")} <Stamp at={a.resolvedAt} lang={_.lang} />
+                  </span>
                 )}
-                {a.agentId && <Action post={`/console/agents/${a.agentId}/quarantined`} label={_("Quarantine sender")} />}
-              </>
-            ),
-          ])}
-        />
+              </>,
+              a.status === "open" && (
+                <>
+                  <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
+                  <RowMenu
+                    label={fill(_("More decisions on this alert: {alert}, {from}"), {
+                      alert: _(ALERT_KIND[a.kind] ?? a.kind),
+                      from: sender(a, name),
+                    })}
+                    items={[
+                      <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />,
+                      a.kind === "secret_blocked" && (
+                        <Action
+                          post={`/console/alerts/${a.id}/fingerprint_allowed`}
+                          label={_("Allow this fingerprint")}
+                          confirm={{
+                            title: _("Allow this secret's fingerprint?"),
+                            body: _("Messages that carry this exact secret then pass the hub's check. Other secrets are still refused."),
+                          }}
+                        />
+                      ),
+                      a.agentId && (
+                        <Action
+                          post={`/console/agents/${a.agentId}/quarantined`}
+                          label={_("Quarantine sender")}
+                          level="danger"
+                          confirm={{
+                            title: fill(_("Quarantine {name}'s sessions?"), { name: sender(a, name) }),
+                            body: _(
+                              "Every session of this person can then send only notes, questions and answers: no claims, tasks, requests, handoffs or memory. Only an admin lifts it.",
+                            ),
+                          }}
+                        />
+                      ),
+                    ].filter(Boolean)}
+                  />
+                </>
+              ),
+            ])}
+          />
+        </div>
         {found.length > PAGE && last && (
-          <a href={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`}>{_("Older")}</a>
+          <Pager lang={_.lang} older={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`} />
         )}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede">
+            {_(
+              "What the hub flagged or stopped, newest first. Decide on each open alert: dismiss it once handled, or mark it a false positive.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 

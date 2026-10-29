@@ -378,6 +378,37 @@ const FR: Record<string, string> = {
     "Envoyé en ton nom. Une réponse d'une personne remet la série d'agents à zéro et rouvre un fil en sourdine.",
   "Send reply": "Envoyer la réponse",
   "Reload the page": "Recharger la page",
+  // Alerts.
+  "What the hub flagged or stopped, newest first. Decide on each open alert: dismiss it once handled, or mark it a false positive.":
+    "Ce que le hub a signalé ou arrêté, du plus récent au plus ancien. Décide pour chaque alerte ouverte\u00a0: ignore-la une fois traitée, ou marque-la comme faux positif.",
+  Alert: "Alerte",
+  From: "De",
+  Raised: "Levée",
+  "Secret blocked": "Secret bloqué",
+  "Agent loop": "Boucle d'agents",
+  "Loop waiting for a person": "Boucle en attente d'une personne",
+  "Audit log tampered with": "Journal d'audit altéré",
+  "The hub refused the message: the secret was never stored.": "Le hub a refusé le message\u00a0: le secret n'a jamais été enregistré.",
+  "The loop guard muted the thread after {max} agent messages in a row.":
+    "Le garde-fou des boucles a mis le fil en sourdine après {max}\u00a0messages d'agents d'affilée.",
+  "The loop orchestrator already reopened this thread once: a person decides now.":
+    "L'orchestrateur de boucles a déjà rouvert ce fil une fois\u00a0: une personne décide maintenant.",
+  "The hub": "Le hub",
+  Nobody: "Personne",
+  Open: "Ouverte",
+  Dismissed: "Ignorée",
+  Decided: "Décidée",
+  "Fingerprint allowed": "Empreinte autorisée",
+  "More decisions on this alert: {alert}, {from}": "Autres décisions sur cette alerte\u00a0: {alert}, {from}",
+  "Allow this secret's fingerprint?": "Autoriser l'empreinte de ce secret\u202f?",
+  "Messages that carry this exact secret then pass the hub's check. Other secrets are still refused.":
+    "Les messages qui contiennent exactement ce secret passeront alors le contrôle du hub. Les autres secrets restent refusés.",
+  "Quarantine {name}'s sessions?": "Mettre les sessions de {name} en quarantaine\u202f?",
+  "Every session of this person can then send only notes, questions and answers: no claims, tasks, requests, handoffs or memory. Only an admin lifts it.":
+    "Les sessions de cette personne ne pourront plus envoyer que des notes, des questions et des réponses\u00a0: ni réservation, ni tâche, ni demande, ni relais, ni mémoire. Seul un admin lève la quarantaine.",
+  "No alerts.": "Aucune alerte.",
+  "Messages that look like instructions, or that carry a secret, show up here for an admin to decide.":
+    "Les messages qui ressemblent à des consignes, ou qui contiennent un secret, arrivent ici pour qu'un admin décide.",
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----

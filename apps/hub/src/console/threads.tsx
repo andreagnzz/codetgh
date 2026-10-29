@@ -253,3 +253,49 @@ export const Conversation: FC<{ rows: ConvRow[]; lanes: Lanes; _: Tr; title: str
     </div>
   );
 };
+
+// Alerts: what the hub flagged or stopped, in words. The excerpt of a flagged message is quoted as the agent wrote it; the
+// hub's own notes become sentences.
+export const ALERT_KIND: Record<string, string> = {
+  instruction_like: "Looks like an instruction",
+  secret_blocked: "Secret blocked",
+  loop_guard: "Agent loop",
+  loop_needs_human: "Loop waiting for a person",
+  audit_tamper: "Audit log tampered with",
+};
+export const ALERT_STATUS: Record<string, string> = {
+  open: "Open",
+  dismissed: "Dismissed",
+  false_positive: "False positive",
+  fingerprint_allowed: "Fingerprint allowed",
+};
+// from: who sent the flagged message, or the hub itself.
+export const AlertText: FC<{ a: { kind: string; excerpt: string; threadId: string | null }; from: string; max: number; _: Tr }> = ({
+  a,
+  from,
+  max,
+  _,
+}) => (
+  <>
+    <p class="alert-kind">{_(ALERT_KIND[a.kind] ?? a.kind)}</p>
+    <p class="alert-from">{from}</p>
+    {a.kind === "secret_blocked" ? (
+      <p class="alert-note">
+        <code translate="no">{a.excerpt}</code> {_("The hub refused the message: the secret was never stored.")}
+      </p>
+    ) : a.kind === "loop_guard" ? (
+      <p class="alert-note">{fill(_("The loop guard muted the thread after {max} agent messages in a row."), { max })}</p>
+    ) : a.kind === "loop_needs_human" ? (
+      <p class="alert-note">{_("The loop orchestrator already reopened this thread once: a person decides now.")}</p>
+    ) : a.kind === "audit_tamper" ? (
+      <p class="alert-note">{fill(_("The hub said: {reason}"), { reason: a.excerpt })}</p>
+    ) : (
+      <p class="alert-excerpt">{a.excerpt}</p>
+    )}
+    {a.threadId && (
+      <p class="alert-link">
+        <a href={`/console/threads/${a.threadId}`}>{_("Open thread")}</a>
+      </p>
+    )}
+  </>
+);

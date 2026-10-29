@@ -465,10 +465,53 @@ main:has(> .thread + .field-error) > .live-reload {
   }
 }
 
-/* The list keeps its columns from one table to the next (one per project, then the earlier ones). Under 640 px a record
-   is its name and what it is, then its values on one line: no label where the value says what it is. */
+/* Alerts: what was flagged, in words, then the excerpt quoted as the agent wrote it, or the hub's note. */
+.alert-kind {
+  margin: 0;
+  font-weight: 500;
+}
+.alert-from {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.alert-excerpt {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.alert-note {
+  margin: var(--sp-1) 0 0;
+  overflow-wrap: anywhere;
+}
+.alert-note code {
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-xs);
+  background: var(--surface-inset);
+}
+.alert-link {
+  margin: var(--sp-1) 0 0;
+}
+.alert-link a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+.alerts-list .pill + .meta {
+  display: block;
+  margin-top: var(--sp-1);
+}
+
+/* Both lists keep their columns from one table to the next (one per project, then the earlier ones). Under 640 px a record
+   is its name and what it is, then its values on one line, and its actions: no label where the value says what it is. */
 @media (min-width: 640px) {
-  .threads-list table {
+  .threads-list table,
+  .alerts-list table {
     table-layout: fixed;
   }
   .threads-list th:nth-child(2) {
@@ -480,26 +523,35 @@ main:has(> .thread + .field-error) > .live-reload {
   .threads-list th:nth-child(4) {
     width: 8rem;
   }
+  .alerts-list th:nth-child(2) {
+    width: 6.5rem;
+  }
+  .alerts-list th:nth-child(3) {
+    width: 9.5rem;
+  }
+  .alerts-list th:nth-child(4) {
+    width: 8.5rem;
+  }
 }
 @media (max-width: 639px) {
-  .threads-list tr {
+  :is(.threads-list, .alerts-list) tr {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-1) var(--sp-3);
     padding: var(--sp-3) 0;
   }
-  .threads-list td {
+  :is(.threads-list, .alerts-list) td {
     display: block;
     padding: 0;
   }
-  .threads-list td::before {
+  :is(.threads-list, .alerts-list) td::before {
     content: none;
   }
-  .threads-list td.primary-cell {
+  :is(.threads-list, .alerts-list) td:is(.primary-cell, .actions-cell) {
     flex: 1 0 100%;
   }
-  .threads-list td.primary-cell {
+  :is(.threads-list, .alerts-list) td.primary-cell {
     padding-bottom: var(--sp-1);
   }
   /* The streak alone would be a bare count: it keeps its label, on its line. */
@@ -515,5 +567,12 @@ main:has(> .thread + .field-error) > .live-reload {
   }
   .threads-list td.num {
     margin-left: auto;
+  }
+  .alerts-list .pill + .meta {
+    display: inline;
+    margin: 0 0 0 var(--sp-2);
+  }
+  .alerts-list td.actions-cell {
+    padding-top: var(--sp-1);
   }
 }
