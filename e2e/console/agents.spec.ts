@@ -58,12 +58,12 @@ for (const scheme of ["light", "dark"] as const)
     // acme/api comes first: Malik's delegate session, then acme/billing. Each session's actions wait behind its "…".
     expect(await tab(page)).toBe("Actions for malik@main");
     await page.keyboard.press("Enter");
-    expect(await tab(page)).toBe("Quarantine malik@main…");
+    expect(await tab(page)).toBe("Quarantine Malik…");
     expect(await tab(page)).toBe("Remove malik@main…");
     await page.keyboard.press("Escape");
     expect(await tab(page)).toBe("Actions for malik@fix/invoice");
     await page.keyboard.press("Enter");
-    expect(await tab(page)).toBe("Quarantine malik@fix/invoice…");
+    expect(await tab(page)).toBe("Quarantine Malik…");
     // The trigger asks first; Cancel has the focus; Escape gives it back to the menu the trigger was in.
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Quarantine Malik?" });

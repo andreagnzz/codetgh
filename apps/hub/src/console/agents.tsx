@@ -85,7 +85,7 @@ const SessionActions: FC<{ r: SessionRow; _: Tr; admin: boolean }> = ({ r, _, ad
         post={`/console/agents/${a.id}/quarantined`}
         label={_("Quarantine")}
         level="danger"
-        name={`${_("Quarantine")} ${a.label}…`}
+        name={`${_("Quarantine")} ${r.name}…`}
         confirm={{
           title: named(_("Quarantine {name}?"), "{name}", r.name),
           body: _(
@@ -94,7 +94,7 @@ const SessionActions: FC<{ r: SessionRow; _: Tr; admin: boolean }> = ({ r, _, ad
         }}
       />
     ) : (
-      admin && <Action post={`/console/agents/${a.id}/trusted`} label={_("Lift quarantine")} name={`${_("Lift quarantine")} ${a.label}`} />
+      admin && <Action post={`/console/agents/${a.id}/trusted`} label={_("Lift quarantine")} name={`${_("Lift quarantine")} ${r.name}`} />
     );
   return (
     <RowMenu

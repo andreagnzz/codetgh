@@ -117,7 +117,8 @@ describe("agents", () => {
       webapp.match(new RegExp(`<button[^>]*hx-post="/console/agents/${ids.sam}/${action}"[^>]*>`))?.[0] ?? "";
     const quarantine = button("quarantined");
     expect(quarantine).toContain('class="danger"');
-    expect(quarantine).toContain('aria-label="Quarantine sam@feat/login…"');
+    // A quarantine is the person's, all their sessions: it is named after them, as its dialog asks.
+    expect(quarantine).toContain('aria-label="Quarantine Sam…"');
     expect(quarantine).toContain('data-confirm="Quarantine Sam?"');
     expect(quarantine).toContain('data-confirm-body="All of their sessions can then send only notes, questions and answers');
     expect(quarantine).toContain('data-confirm-action="Quarantine"');
@@ -132,7 +133,7 @@ describe("agents", () => {
     const admin = section(main(await page("/console/agents", team.lea.cookie)), `p-${projects["acme/webapp"]}`);
     expect(admin).toContain('<span class="pill" data-tone="danger">Quarantined</span>');
     const lift = admin.match(/<button[^>]*hx-post="\/console\/agents\/[^"]+\/trusted"[^>]*>/)?.[0] ?? "";
-    expect(lift).toContain('aria-label="Lift quarantine sam@feat/login"');
+    expect(lift).toContain('aria-label="Lift quarantine Sam"');
     expect(lift).not.toContain("data-confirm");
     const own = main(await page("/console/agents", team.sam.cookie));
     expect(own).toContain("Quarantined");
