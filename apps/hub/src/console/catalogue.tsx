@@ -390,13 +390,14 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
       </details>
 
       <h2>Code</h2>
-      <CodeBlock lang={lang} command code="codetgh invite ines@acme.test" />
+      <CodeBlock lang={lang} command code="codetgh invite ines@acme.test" copyLabel="Copy the command" />
       <Banner tone="warn" title="Copy it now.">
         You won't see this token again.
       </Banner>
-      <CodeBlock lang={lang} code="ctgh_DEMO-TOKEN-SHOWN-ONCE-DEMO-TOKEN-SHOWN-ONCE" />
+      <CodeBlock lang={lang} code="ctgh_DEMO-TOKEN-SHOWN-ONCE-DEMO-TOKEN-SHOWN-ONCE" copyLabel="Copy the token" />
       <CodeBlock
         lang={lang}
+        copyLabel="Copy the key and the URL"
         code={
           "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAdemoDEMOdemoDEMOdemoDEMOdemoDEMOdemoDEMO0=\n-----END PUBLIC KEY-----\nhttps://ci.acme.test/acme/webapp/actions/runs/1234567890/job/9876543210/attempts/1"
         }

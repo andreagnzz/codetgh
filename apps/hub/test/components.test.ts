@@ -136,6 +136,10 @@ describe("components", () => {
     expect(html).toContain("Copié");
     expect(html).toContain('data-hint="Appuie sur Ctrl+C pour copier"');
     expect(html).toContain('<span class="sr-only" role="status"></span>');
+    expect(html).not.toContain("aria-label");
+    // Several blocks on one page: each Copy says what it copies.
+    const named = await render(CodeBlock, { code: "ctgh_x", lang: "en", copyLabel: "Copy the token" });
+    expect(named).toContain('<button type="button" class="copy" aria-label="Copy the token" data-copy');
   });
 
   it("empty state, chip, panel, collapsible, row menu", async () => {
