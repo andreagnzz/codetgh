@@ -46,8 +46,9 @@ const fillNodes = (s: string, vars: Record<string, Child>) =>
   });
 // "tsk_01M6…ABCD": the start and the end of an id, enough to tell two apart and to find the whole one in an export.
 export const short = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
-// A dotted key breaks after its dots, never inside a word.
-const key = (k: string) => <code class="rec-key">{k.split(/(?<=\.)/).map((part, i) => (i ? [<wbr />, part] : part))}</code>;
+// A dotted key breaks after its dots, a path after its slashes, never inside a word.
+const breakAfter = (text: string, at: RegExp) => text.split(at).map((part, i) => (i ? [<wbr />, part] : part));
+const key = (k: string) => <code class="rec-key">{breakAfter(k, /(?<=\.)/)}</code>;
 // A cell on two lines: what a person reads, then what identifies it.
 const Lines: FC<{ main: Child; sub?: Child }> = ({ main, sub }) => (
   <>
@@ -568,7 +569,7 @@ export const ClaimsTable: FC<{ rows: ClaimRow[]; admin: boolean; _: Tr }> = ({ r
       }
       rows={rows.map(({ claim: c, name, agentLabel }) => [
         <Lines
-          main={<code class="claim-scope">{c.scope}</code>}
+          main={<code class="claim-scope">{breakAfter(c.scope, /(?<=\/)/)}</code>}
           sub={dots([_(SCOPE[c.scopeType] ?? c.scopeType), <span>{_(MODE[c.mode] ?? c.mode)}</span>])}
         />,
         <Lines main={name} sub={agentLabel && <Chip>{agentLabel}</Chip>} />,

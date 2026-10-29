@@ -23,7 +23,8 @@ describe("console claims", () => {
     if (!c) throw new Error("no claim");
 
     const seen = await get(team.malik.cookie, "/console/claims");
-    expect(seen).toContain("api/console.ts");
+    // The scope breaks after its slashes.
+    expect(seen).toContain("api/<wbr/>console.ts");
     expect(seen).toContain("Sam");
     expect(seen).toContain("<span>Exclusive</span>");
     expect(seen).not.toContain(`/console/claims/${c.id}/release`);
@@ -39,7 +40,7 @@ describe("console claims", () => {
         .from(auditEvent)
         .where(and(eq(auditEvent.action, "claim.released"), eq(auditEvent.subjectId, c.id))),
     ).toHaveLength(1);
-    expect(await get(team.malik.cookie, "/console/claims")).not.toContain("api/console.ts");
+    expect(await get(team.malik.cookie, "/console/claims")).not.toContain("api/<wbr/>console.ts");
   });
 });
 

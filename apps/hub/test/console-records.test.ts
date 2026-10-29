@@ -309,7 +309,8 @@ describe("team memory", () => {
 describe("claims", () => {
   it("lists what agents work on: the scope to type, who holds it and from which session, the mode and when it ends", async () => {
     const html = main(await page("/console/claims", team.lea.cookie));
-    expect(html).toContain('<code class="claim-scope">apps/web/src/login/**</code>');
+    // The path breaks after its slashes, never inside a name.
+    expect(html).toContain('<code class="claim-scope">apps/<wbr/>web/<wbr/>src/<wbr/>login/<wbr/>**</code>');
     // What kind of scope, and how much of it the holder keeps to themselves, under it.
     expect(html).toContain(">Pattern · <span>Exclusive</span>");
     expect(html).toContain(">Resource · <span>Shared</span>");
