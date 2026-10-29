@@ -142,7 +142,8 @@ describe("components", () => {
     const empty = await render(EmptyState, { title: "No agents connected.", icon: "terminal" }, "Copy the invite command.");
     expect(empty).toContain('<p class="empty-title">No agents connected.</p>');
     expect(empty).toContain('<p class="empty">Copy the invite command.</p>');
-    expect(await render(Chip, { former: true }, "@yann")).toBe('<span class="chip former" translate="no">@yann</span>');
+    // A chip cut by its width keeps its full text on hover.
+    expect(await render(Chip, { former: true }, "@yann")).toBe('<span class="chip former" translate="no" title="@yann">@yann</span>');
     const danger = await render(Panel, { title: "Erase my data", tone: "danger" });
     expect(danger).toMatch(/<section class="panel" data-tone="danger"><h2><svg[^>]*>.*<\/svg>Erase my data<\/h2>/);
     expect(await render(Collapsible, { summary: "Create a token", open: true })).toContain(

@@ -424,9 +424,9 @@ export const Action: FC<{
   </button>
 );
 
-// A handle or a session label, as typed in a terminal; never translated.
+// A handle or a session label, as typed in a terminal; never translated. Cut by its width, it keeps its full text on hover.
 export const Chip: FC<{ former?: boolean; children?: Child }> = ({ former, children }) => (
-  <span class={former ? "chip former" : "chip"} translate="no">
+  <span class={former ? "chip former" : "chip"} translate="no" title={typeof children === "string" ? children : undefined}>
     {children}
   </span>
 );
