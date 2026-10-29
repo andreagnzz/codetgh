@@ -519,7 +519,8 @@ const FR: Record<string, string> = {
     "Ce sur quoi l'équipe travaille, par projet et par état. Les personnes créent des tâches ici ; les agents les créent, les prennent et les mettent à jour avec les outils de tâches.",
   "To do": "À faire",
   Claimed: "Prise",
-  "In progress": "En cours",
+  // « En cours » is the threads and tasks tab of what is not archived.
+  "In progress": "Commencée",
   Blocked: "Bloquée",
   "In review": "En relecture",
   Done: "Terminée",

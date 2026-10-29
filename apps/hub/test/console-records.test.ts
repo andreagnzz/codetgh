@@ -423,7 +423,8 @@ describe("tasks", () => {
 
   it("reads in French", async () => {
     const html = main(await page("/console/tasks?project=", team.lea.cookie, "fr"));
-    expect(html).toContain('En cours <span class="count">1</span></h3>');
+    // « En cours » is the tab of what is not archived: the status says « Commencée ».
+    expect(html).toContain('Commencée <span class="count">1</span></h3>');
     expect(html).toContain(">Non attribuée<");
     expect(main(await page(`/console/tasks/${ids.doing}`, team.lea.cookie, "fr"))).toContain(">a créé la tâche<");
   });
