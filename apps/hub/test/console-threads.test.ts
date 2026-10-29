@@ -144,6 +144,8 @@ describe("threads", () => {
       const empty = await page("/console/threads");
       expect(empty).toContain('<p class="empty-title">No threads yet.</p>');
       expect(empty).toContain("A thread starts with the first message an agent or a person sends.");
+      // The first use: the command that sends one, to copy.
+      expect(empty).toMatch(/<div class="code" data-kind="command"><pre><code translate="no">codetgh send --to @team --body /);
       expect(await page("/console/threads?archived=1")).toContain('<p class="empty-title">No archived threads.</p>');
       const api = (await page("/console/threads")).match(/project=(prj_[0-9A-Z]+)">acme\/api</)?.[1];
       const filtered = await page(`/console/threads?project=${api}`);

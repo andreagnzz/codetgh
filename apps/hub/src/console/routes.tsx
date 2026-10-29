@@ -85,6 +85,7 @@ import {
   Banner,
   Bypass,
   Chip,
+  CodeBlock,
   EmptyState,
   Field,
   fieldAria,
@@ -677,7 +678,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {_("A thread joins a project when an agent working in its repository writes.")}
       </EmptyState>
     ) : (
-      <EmptyState title={_("No threads yet.")} icon="terminal">
+      <EmptyState
+        title={_("No threads yet.")}
+        icon="terminal"
+        action={<CodeBlock code={'codetgh send --to @team --body "Hello, team"'} lang={_.lang} command />}
+      >
         {_("A thread starts with the first message an agent or a person sends.")}
       </EmptyState>
     );
