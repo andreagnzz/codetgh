@@ -1,8 +1,9 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
-import type { FC } from "hono/jsx";
-import { type Agent, presence } from "../domain/agents.js";
+import type { Child, FC } from "hono/jsx";
+import { type Agent, presence, statusOf } from "../domain/agents.js";
 import type { Lang } from "../i18n.js";
-import { Action, Chip, CodeBlock, EmptyState, Pill, RowMenu, Table, When } from "./pages.js";
+import { Icon } from "../icons.js";
+import { Action, Chip, CodeBlock, EmptyState, Pill, RowMenu, Table, type Tone, When } from "./pages.js";
 
 // Agents, Projects and Delegations. A session reads the same on the three pages: the person, the session's label as typed in
 // a terminal, its short id as the startup line prints it, then its state in words; pills only for what needs a look (idle,
@@ -43,7 +44,7 @@ export const Session: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
 };
 
 // Online is plain text; idle, paused, quarantined and external are pills; offline says when the session was last seen.
-export const SessionState: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
+export const SessionState: FC<{ r: SessionRow; _: Tr; bypass?: boolean }> = ({ r, _, bypass }) => {
   const state = presence(r.agent);
   const external = r.agent.kind === "a2a";
   return (
@@ -58,6 +59,7 @@ export const SessionState: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
         )}
         {r.paused && <Pill tone="warn">{_("Paused")}</Pill>}
         {external ? <Pill>{_("External")}</Pill> : r.agent.trustLevel === "quarantined" && <Pill tone="danger">{_("Quarantined")}</Pill>}
+        {bypass && r.agent.permissionMode === "bypassPermissions" && <Pill tone="warn">{_("Prompts off")}</Pill>}
       </p>
       {state !== "online" && (
         <p class="meta">
@@ -198,3 +200,90 @@ export const NoSessions: FC<{ _: Tr }> = ({ _ }) => (
     {_("Sessions appear here once someone sets up CodeTgh, then starts Claude Code with it in a team repository.")}
   </EmptyState>
 );
+
+// A project's Remote Control or runner: its state in words, then the action that changes it. Stopped, the usual state, is
+// plain text; running, waiting and failed are pills, and a failure has the machine's report under it.
+export type ToolState = { tone: Tone; text: string; report?: string | null; action: Child };
+const Tool: FC<{ state: ToolState; link?: Child }> = ({ state, link }) => (
+  <div class="tool">
+    {state.tone === "neutral" ? <span class="tool-state">{state.text}</span> : <Pill tone={state.tone}>{state.text}</Pill>}
+    {state.action}
+    {link}
+    {state.report && (
+      <p class="tool-report meta">
+        <code>{state.report}</code>
+      </p>
+    )}
+  </div>
+);
+// The head of a project: its name, then for the owner its id (the launcher and runner lists name projects by it) and, on the
+// same row from a wide screen, its Remote Control and runner.
+export const ProjectHead: FC<{ id: string; name: string; tools?: { remote: ToolState; runner: ToolState }; _: Tr }> = ({
+  id,
+  name,
+  tools,
+  _,
+}) => (
+  <div class="project-head">
+    <div class="project-name">
+      <h2 id={`p-${id}`}>{name}</h2>
+      {tools && (
+        <p class="tool-id meta">
+          {_("Project id")} <code>{id}</code>
+        </p>
+      )}
+    </div>
+    {tools && (
+      <div class="project-tools">
+        <Tool
+          state={tools.remote}
+          link={
+            tools.remote.tone === "ok" && (
+              <a class="claude-link" href="https://claude.ai/code">
+                {_("Open claude.ai/code")}
+                <Icon name="external-link" />
+              </a>
+            )
+          }
+        />
+        <Tool state={tools.runner} />
+      </div>
+    )}
+  </div>
+);
+
+// Projects lists sessions without column headers: who and which session, the state, what they said they are doing.
+export const SessionList: FC<{ rows: SessionRow[]; _: Tr; empty: string; action?: (r: SessionRow) => Child }> = ({
+  rows,
+  _,
+  empty,
+  action,
+}) =>
+  rows.length === 0 ? (
+    <p class="empty">{empty}</p>
+  ) : (
+    <ul class="session-list">
+      {rows.map((r) => {
+        const status = statusOf(r.agent);
+        const act = action?.(r);
+        return (
+          <li class="session-row">
+            <Session r={r} _={_} />
+            <SessionState r={r} _={_} bypass />
+            {status && (
+              <p class="session-doing">
+                {status.text}
+                {status.at && (
+                  <span class="meta">
+                    {" · "}
+                    <When at={status.at} lang={_.lang} />
+                  </span>
+                )}
+              </p>
+            )}
+            {act && <div class="session-action">{act}</div>}
+          </li>
+        );
+      })}
+    </ul>
+  );

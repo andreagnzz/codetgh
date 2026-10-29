@@ -184,3 +184,80 @@ describe("agents", () => {
     expect(await page("/console/agents", team.malik.cookie, "fr")).toContain(">En pause</span>");
   });
 });
+
+describe("projects", () => {
+  it("shows the owner each project's Remote Control and runner as a state in words, then the action", async () => {
+    for (const name of ["acme/webapp", "acme/api", "acme/ops"])
+      expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projects[name]}/launch`, { on: "1" })).status).toBe(204);
+    expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projects["acme/billing"]}/runner`, { on: "1" })).status).toBe(
+      204,
+    );
+    await rest(team.lea.token, "/v1/launcher/report", { project_id: projects["acme/webapp"], running: true });
+    await rest(team.lea.token, "/v1/launcher/report", {
+      project_id: projects["acme/api"],
+      running: false,
+      error: "claude: command not found",
+    });
+    await rest(team.lea.token, "/v1/runner/report", { project_id: projects["acme/billing"], running: 1 });
+    const html = main(await page("/console/projects", team.lea.cookie));
+    const webapp = section(html, `p-${projects["acme/webapp"]}`);
+    expect(webapp).toContain('<span class="pill" data-tone="ok">Remote Control running</span>');
+    expect(webapp).toContain(">Stop Remote Control</button>");
+    expect(webapp).toMatch(/href="https:\/\/claude\.ai\/code">Open claude\.ai\/code<svg[^>]*>.*M15 3h6v6/);
+    // A failure says so in the pill, and the launcher's report under it.
+    const api = section(html, `p-${projects["acme/api"]}`);
+    expect(api).toContain('<span class="pill" data-tone="danger">Remote Control failed</span>');
+    expect(api).toContain("<code>claude: command not found</code>");
+    expect(section(html, `p-${projects["acme/ops"]}`)).toContain(
+      '<span class="pill" data-tone="warn">Waiting for the launcher on your machine</span>',
+    );
+    expect(section(html, `p-${projects["acme/billing"]}`)).toContain(
+      '<span class="pill" data-tone="ok">Runner on · 1\u00a0agent running</span>',
+    );
+    // Never switched on: stopped, and the way to start it.
+    const latency = section(html, `p-${projects["acme/latency"]}`);
+    expect(latency).toContain('<span class="tool-state">Remote Control stopped</span>');
+    expect(latency).toContain('<span class="tool-state">Runner stopped</span>');
+    expect(latency).toContain(">Start Remote Control</button>");
+    expect(latency).toContain(`<code>${projects["acme/latency"]}</code>`);
+    expect(latency).toContain("No session on this project right now.");
+  });
+
+  it("lists each project's sessions for every member, what they said they do, and no owner tools", async () => {
+    const html = main(await page("/console/projects", team.sam.cookie));
+    const webapp = section(html, `p-${projects["acme/webapp"]}`);
+    expect(webapp).toContain('<ul class="session-list">');
+    expect(webapp).toContain(">sam@feat/login</span>");
+    expect(webapp).toContain("Online");
+    expect(html).not.toContain("Project id");
+    expect(html).not.toContain("Start Remote Control");
+  });
+
+  it("lets a member attach a session outside a project, in words that say it happens at once", async () => {
+    const html = main(await page("/console/projects", team.lea.cookie));
+    const loose = section(html, "p-none");
+    expect(loose).toContain("Start claude inside the project&#39;s repository folder to link a session, or attach one to a project here.");
+    expect(loose).toContain(`hx-post="/console/agents/${ids.lea}/project"`);
+    expect(loose).toContain('<select name="project_id" aria-label="Project">');
+    expect(loose).toContain('<button type="submit" class="secondary">Attach to project</button>');
+    const refused = await consolePost(hub.url, team.lea.cookie, `/console/agents/${ids.lea}/project`, {});
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("Choose a project for this session.");
+    const french = section(main(await page("/console/projects", team.lea.cookie, "fr")), "p-none");
+    expect(french).toContain("Lance claude dans le dossier du dépôt du projet");
+    expect(french).toContain("Rattacher au projet");
+  });
+
+  it("says how a project appears when there is none", async () => {
+    const fresh = await startHub();
+    try {
+      const other = await fresh.seed();
+      await fresh.db.delete(project);
+      const empty = main(await (await fetch(`${fresh.url}/console/projects`, { headers: { cookie: other.sam.cookie } })).text());
+      expect(empty).toContain("No projects yet.");
+      expect(empty).toContain('<code translate="no">codetgh project new</code>');
+    } finally {
+      await fresh.stop();
+    }
+  });
+});

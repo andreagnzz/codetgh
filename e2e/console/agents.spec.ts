@@ -95,6 +95,15 @@ test("add an external agent: the form opens under the page header, the token sho
   expect(await tab(page)).toBe("Copy the two lines");
 });
 
+test("projects, wide: the owner's Remote Control and runner, a state then its action, by keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/projects`);
+  await expect(page.locator(".tool-state", { hasText: "Remote Control stopped" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Start Remote Control" }).first().focus();
+  expect(await tab(page)).toBe("Start the runner");
+});
+
 for (const lang of ["en", "fr"])
   test(`phone, ${lang}: no page of the batch scrolls sideways at 360 px`, async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });

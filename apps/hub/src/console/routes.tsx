@@ -77,7 +77,7 @@ import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { AgentsTable, ExternalTable, NoSessions } from "./agents.js";
+import { AgentsTable, ExternalTable, NoSessions, ProjectHead, SessionList, type SessionRow, type ToolState } from "./agents.js";
 import { Catalogue } from "./catalogue.js";
 import {
   Action,
@@ -839,100 +839,97 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
     const runs = p.role === "owner" ? await runStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
-    const launch = (projectId: string) => {
+    const launch = (projectId: string): ToolState => {
       const l = launches.find((x) => x.projectId === projectId);
       const fresh = l?.reportedAt && Date.now() - l.reportedAt.getTime() < 60_000;
-      const state = !l
-        ? null
-        : l.reportedError && fresh
-          ? { tone: "danger" as const, text: l.reportedError }
-          : l.desired && l.running && fresh
-            ? { tone: "ok" as const, text: _("Remote Control running") }
-            : l.desired
-              ? { tone: "warn" as const, text: _("Waiting for the launcher on your machine") }
-              : l.reportedAt
-                ? { tone: "neutral" as const, text: _("Remote Control stopped") }
-                : null;
-      return (
-        <p class="launcher">
-          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
-          {l?.desired ? (
-            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "0" }} label={_("Stop Remote Control")} />
-          ) : (
-            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
-          )}{" "}
-          {state?.tone === "ok" && <a href="https://claude.ai/code">{_("Open claude.ai/code")}</a>}
-        </p>
-      );
+      const state: Omit<ToolState, "action"> =
+        l?.reportedError && fresh
+          ? { tone: "danger", text: _("Remote Control failed"), report: l.reportedError }
+          : l?.desired && l.running && fresh
+            ? { tone: "ok", text: _("Remote Control running") }
+            : l?.desired
+              ? { tone: "warn", text: _("Waiting for the launcher on your machine") }
+              : { tone: "neutral", text: _("Remote Control stopped") };
+      return {
+        ...state,
+        action: l?.desired ? (
+          <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "0" }} label={_("Stop Remote Control")} />
+        ) : (
+          <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
+        ),
+      };
     };
     // Same reading for the runner: its last report, with the count of agents it runs.
-    const runner = (projectId: string) => {
+    const runner = (projectId: string): ToolState => {
       const r = runs.find((x) => x.projectId === projectId);
       const fresh = r?.reportedAt && Date.now() - r.reportedAt.getTime() < 60_000;
-      const state = !r
-        ? null
-        : r.reportedError && fresh
-          ? { tone: "danger" as const, text: r.reportedError }
-          : r.desired && fresh
-            ? { tone: "ok" as const, text: `${_("Runner on")} · ${r.running} ${_("agents running")}` }
-            : r.desired
-              ? { tone: "warn" as const, text: _("Waiting for the runner on your machine") }
-              : r.reportedAt
-                ? { tone: "neutral" as const, text: _("Runner stopped") }
-                : null;
-      return (
-        <p class="launcher">
-          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
-          {r?.desired ? (
-            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "0" }} label={_("Stop the runner")} />
-          ) : (
-            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "1" }} label={_("Start the runner")} />
-          )}
-        </p>
-      );
+      const state: Omit<ToolState, "action"> =
+        r?.reportedError && fresh
+          ? { tone: "danger", text: _("Runner failed"), report: r.reportedError }
+          : r?.desired && fresh
+            ? {
+                tone: "ok",
+                text: _(r.running === 1 ? "Runner on · 1\u00a0agent running" : "Runner on · {n}\u00a0agents running").replace(
+                  "{n}",
+                  String(r.running),
+                ),
+              }
+            : r?.desired
+              ? { tone: "warn", text: _("Waiting for the runner on your machine") }
+              : { tone: "neutral", text: _("Runner stopped") };
+      return {
+        ...state,
+        action: r?.desired ? (
+          <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "0" }} label={_("Stop the runner")} />
+        ) : (
+          <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "1" }} label={_("Start the runner")} />
+        ),
+      };
     };
     const groups = [
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
       { id: "none", name: _("Sessions outside a project"), rows: byProject(null) },
     ].filter((g) => (f.selected ? g.id === f.selected : g.rows.length > 0 || g.id !== "none"));
-    // A member attaches their own sessions, an admin anyone's; a guest none.
-    const attach = (r: (typeof sessions)[number]) =>
+    // A member attaches their own sessions, an admin anyone's; a guest none. The button moves the session at once.
+    const attach = (r: SessionRow) =>
       projects.length > 0 &&
       p.role !== "guest" &&
       (r.agent.userId === p.user.id || isAdmin(p)) && (
-        <form class="attach" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
+        <form class="attach inline" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
           <select name="project_id" aria-label={_("Project")}>
             {projects.map((pr) => (
               <option value={pr.id}>{pr.name}</option>
             ))}
-          </select>{" "}
-          <button type="submit">{_("Attach to…")}</button>
+          </select>
+          <button type="submit" class="secondary">
+            {_("Attach to project")}
+          </button>
         </form>
       );
     return page(
       c,
       "Projects",
       projects.length === 0 && sessions.length === 0 ? (
-        <p class="empty">
-          {_("No project yet. A project appears when a member runs codetgh start in a repository, or runs codetgh project new there.")}
-        </p>
+        <EmptyState title={_("No projects yet.")} icon="terminal" action={<CodeBlock lang={_.lang} command code="codetgh project new" />}>
+          {_("A project appears when a member starts a session with codetgh start in a team repository, or runs this command there:")}
+        </EmptyState>
       ) : (
         groups.map((g) => (
-          <section aria-labelledby={`p-${g.id}`}>
-            <h2 id={`p-${g.id}`}>{g.name}</h2>
-            {p.role === "owner" && g.id !== "none" && (
-              <>
-                <p class="meta">
-                  {_("Project id")} <code>{g.id}</code>
-                </p>
-                {launch(g.id)}
-                {runner(g.id)}
-              </>
+          <section aria-labelledby={`p-${g.id}`} class="project">
+            <ProjectHead
+              id={g.id}
+              name={g.name}
+              tools={p.role === "owner" && g.id !== "none" ? { remote: launch(g.id), runner: runner(g.id) } : undefined}
+              _={_}
+            />
+            {g.id === "none" && (
+              <p class="help">
+                {_("Start claude inside the project's repository folder to link a session, or attach one to a project here.")}
+              </p>
             )}
-            {g.id === "none" && <p class="meta">{_("Start claude inside the project's repository folder to link the session.")}</p>}
-            <People
+            <SessionList
               rows={g.rows}
-              lang={_.lang}
+              _={_}
               empty={_("No session on this project right now.")}
               action={g.id === "none" ? attach : undefined}
             />
@@ -940,6 +937,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         ))
       ),
       f,
+      {
+        head: (
+          <p class="lede list-lede">
+            {_("Each team repository and the sessions working in it.")}
+            {p.role === "owner" && ` ${_("Remote Control and the runner start on your machine, only in the folders you listed there.")}`}
+          </p>
+        ),
+      },
     );
   });
 
@@ -979,7 +984,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/agents/:id/project", async (c) => {
     const parsed = AgentProjectForm.safeParse(await form(c));
-    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project."));
+    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project for this session."));
     await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id);
     return refresh(c);
   });
