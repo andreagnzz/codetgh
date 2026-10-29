@@ -93,7 +93,7 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { Invitations, Invited, InviteForm, Members } from "./team.js";
+import { Invitations, Invited, InviteForm, Members, TokenCreated, TokenForm, Tokens } from "./team.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1086,35 +1086,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/tokens", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const rows = await db
       .select()
       .from(personalToken)
       .where(and(eq(personalToken.userId, p.user.id), eq(personalToken.teamId, p.teamId), isNull(personalToken.revokedAt)))
       .orderBy(desc(personalToken.createdAt));
-    return page(
-      c,
-      "Personal tokens",
-      <>
-        <form hx-post="/console/tokens" hx-target="#new-token">
-          <label>
-            Label (machine or use) <input name="label" required maxlength={60} />
-          </label>
-          <button type="submit">Create a token</button>
-        </form>
-        <div id="new-token" />
-        <Table
-          lang={tr(c).lang}
-          head={["Label", "Created", "Expires", "Actions"]}
-          rows={rows.map((t) => [
-            t.label,
-            <When at={t.createdAt} />,
-            <When at={t.expiresAt} />,
-            <Action post={`/console/tokens/${t.id}/revoke`} label="Revoke" />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-      </>,
-    );
+    return page(c, "Personal tokens", <Tokens _={_} rows={rows} />, undefined, {
+      head: (
+        <p class="lede">
+          {_("A token lets a terminal or a script act as you on this hub, for 90\u00a0days. Revoke the ones you no longer use.")}
+        </p>
+      ),
+      actions: <TokenForm _={_} open={rows.length === 0} />,
+    });
   });
 
   consoleApp.post("/tokens", async (c) => {
@@ -1125,14 +1110,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { id, token } = await createPersonalToken(db, { userId: p.user.id, teamId: p.teamId, label });
     await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "token.created", subjectId: id }));
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>Copy it now: it will not be shown again.</p>
-        <pre>{token}</pre>
-        <p>Then, on your machine:</p>
-        <pre>{`codetgh login --url ${config.publicUrl}\nclaude plugin install codetgh@<marketplace>   # hub URL: ${config.publicUrl}, token: the value above`}</pre>
-      </Result>,
-    );
+    return c.html(<TokenCreated _={tr(c)} token={token} url={config.publicUrl} />);
   });
 
   // Browser sign-in: the person types the code their terminal shows, checks the machine, then approves or denies.

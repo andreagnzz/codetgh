@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { membership } from "../src/db/schema.js";
+import { membership, personalToken } from "../src/db/schema.js";
 import { bridgeAuthor } from "../src/domain/bridges.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { type Hub, startHub } from "./harness.js";
@@ -173,5 +173,65 @@ describe("members", () => {
     expect(html).toContain("Révoquer l&#39;invitation de ines@acme.test\u202f?");
     expect(html).toContain(">Propriétaire<");
     expect(html).toContain(">Toi</span>");
+  });
+});
+
+describe("tokens", () => {
+  it("lists a person's tokens: label, when it was made, last used and ends, each revoked after a confirmation", async () => {
+    const html = main(await page("/console/tokens", team.sam.cookie));
+    const laptop = row(html, "sam laptop");
+    expect(laptop).toContain("Not used yet");
+    expect(laptop).toMatch(/<time[^>]*>in 90 days<\/time>/);
+    const revoke = laptop.match(/<button[^>]*hx-post="\/console\/tokens\/[^"]+\/revoke"[^>]*>/)?.[0] ?? "";
+    expect(revoke).toContain('class="danger"');
+    expect(revoke).toContain('aria-label="Revoke the token sam laptop…"');
+    expect(revoke).toContain('data-confirm="Revoke the token sam laptop?"');
+    expect(revoke).toContain('data-done="Token sam laptop revoked."');
+    // With tokens, the form waits behind its button in the page header.
+    expect(html).toContain('<details class="panel"><summary>Create a token</summary>');
+  });
+
+  it("says when a token has expired", async () => {
+    await hub.db
+      .update(personalToken)
+      .set({ expiresAt: new Date(Date.now() - 86_400_000) })
+      .where(eq(personalToken.userId, team.malik.userId));
+    const malik = row(main(await page("/console/tokens", team.malik.cookie)), "malik laptop");
+    expect(malik).toContain('<span class="pill" data-tone="neutral">Expired</span>');
+    await hub.db
+      .update(personalToken)
+      .set({ expiresAt: new Date(Date.now() + 90 * 86_400_000) })
+      .where(eq(personalToken.userId, team.malik.userId));
+  });
+
+  it("with no token yet, says so and opens the form", async () => {
+    const fresh = await startHub();
+    const t = await fresh.seed();
+    await fresh.db.delete(personalToken).where(eq(personalToken.userId, t.sam.userId));
+    const html = main(await (await fetch(`${fresh.url}/console/tokens`, { headers: { cookie: t.sam.cookie } })).text());
+    await fresh.stop();
+    expect(html).toContain('<p class="empty-title">No personal tokens yet.</p>');
+    expect(html).toContain("Create one to sign in a terminal.");
+    expect(html).toContain('<details class="panel" open=""><summary>Create a token</summary>');
+    expect(html).toContain('<label for="token-label">Label</label>');
+    expect(html).not.toContain("<table");
+  });
+
+  it("shows a new token once, with the commands that use it", async () => {
+    const html = await (await consolePost(hub.url, team.sam.cookie, "/console/tokens", { label: "ci" })).text();
+    expect(html).toContain('<div class="banner" data-tone="warn" role="status">');
+    expect(html).toContain("Token created. Copy it now: you won&#39;t see it again.");
+    expect(html).toMatch(/<code translate="no">ctgh_[A-Za-z0-9_-]{43}<\/code>/);
+    expect(html).toContain('aria-label="Copy the token"');
+    expect(html).toContain(`codetgh login --url ${hub.url} --token-stdin`);
+    expect(html).toContain("claude plugin install codetgh@&lt;marketplace&gt;");
+    expect(html).toContain('data-kind="command"');
+  });
+
+  it("is in French", async () => {
+    const html = main(await page("/console/tokens", team.sam.cookie, "fr"));
+    expect(html).toContain("<h1>Jetons personnels</h1>");
+    expect(html).toContain("<summary>Créer un jeton</summary>");
+    expect(html).toContain("Révoquer le jeton sam laptop\u202f?");
   });
 });

@@ -367,6 +367,31 @@ const FR: Record<string, string> = {
   "They're signed out at once: their tokens stop working, their sessions end and their claims are released. What they wrote stays with the team.":
     "Sa connexion se ferme tout de suite\u00a0: ses jetons ne marchent plus, ses sessions s'arrêtent et ses réservations sont libérées. Ce que cette personne a écrit reste à l'équipe.",
   "{name}'s access revoked.": "Accès de {name} révoqué.",
+  // Personal tokens.
+  "Personal tokens": "Jetons personnels",
+  "A token lets a terminal or a script act as you on this hub, for 90\u00a0days. Revoke the ones you no longer use.":
+    "Un jeton permet à un terminal ou à un script d'agir en ton nom sur ce hub, pendant 90\u00a0jours. Révoque ceux dont tu ne te sers plus.",
+  "Create a token": "Créer un jeton",
+  "Name the machine or the use, like laptop or ci.": "Nomme la machine ou l'usage, comme portable ou ci.",
+  "Token created. Copy it now: you won't see it again.": "Jeton créé. Copie-le maintenant\u00a0: tu ne le reverras plus.",
+  "Copy the token": "Copier le jeton",
+  "On your machine, sign in with it. Paste the token when the terminal asks for it:":
+    "Sur ta machine, connecte-toi avec. Colle le jeton quand le terminal le demande\u00a0:",
+  "Copy the sign-in command": "Copier la commande de connexion",
+  "Then install the Claude Code plugin. It asks for the hub's address and this token:":
+    "Puis installe le plugin Claude Code. Il demande l'adresse du hub et ce jeton\u00a0:",
+  "Copy the plugin command": "Copier la commande du plugin",
+  Created: "Créé",
+  "Last used": "Dernier usage",
+  "Not used yet": "Pas encore utilisé",
+  Expired: "Expiré",
+  "Revoke the token {label}": "Révoquer le jeton {label}",
+  "Revoke the token {label}?": "Révoquer le jeton {label}\u202f?",
+  "Terminals and scripts that use it are refused from their next request. Invitations made with it are revoked too.":
+    "Les terminaux et les scripts qui l'utilisent sont refusés dès leur prochaine requête. Les invitations faites avec sont révoquées aussi.",
+  "Token {label} revoked.": "Jeton {label} révoqué.",
+  "No personal tokens yet.": "Aucun jeton personnel pour l'instant.",
+  "Create one to sign in a terminal.": "Crées-en un pour connecter un terminal.",
   // ---- End of batch 5. ----
 
   // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----

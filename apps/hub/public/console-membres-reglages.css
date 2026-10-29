@@ -1,7 +1,7 @@
 /* Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this file; the tokens, base
    and components are in console.css. */
 
-/* The page's create form (Invite a member) is its main job: the button that opens it is filled. Open, the form
+/* The page's create form (Invite a member, Create a token) is its main job: the button that opens it is filled. Open, the form
    takes the width of the page header, under the title. */
 .head-form {
   flex: 1;
@@ -30,14 +30,18 @@
 }
 
 /* What a form answers, shown once: a banner that says it, then the blocks to copy. */
-#invite-result:not(:empty) {
+:is(#invite-result, #new-token):not(:empty) {
   margin-top: var(--sp-6);
 }
-#invite-result .banner {
+:is(#invite-result, #new-token) .banner {
   margin-bottom: var(--sp-4);
 }
-:where(#invite-result) > :last-child {
+:where(#invite-result, #new-token) > :last-child {
   margin-bottom: 0;
+}
+:where(#new-token) > p {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text);
 }
 
 /* A person: the name, "You" for the reader, then the email (or what a system member is) under it. */
@@ -52,7 +56,8 @@
   gap: 0 var(--sp-2);
 }
 .person-name,
-.invitation-email {
+.invitation-email,
+.token-label {
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -62,6 +67,12 @@
 }
 .person-email {
   overflow-wrap: anywhere;
+}
+.token-expired {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
 }
 
 /* A field that starts with "@": the sign is drawn in the field, never sent. Handles and ids are machine values, in mono. */

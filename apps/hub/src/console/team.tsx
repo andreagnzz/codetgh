@@ -3,7 +3,7 @@ import { ROLES, type Role } from "@codetgh/shared";
 import type { Child, FC } from "hono/jsx";
 import type { Lang } from "../i18n.js";
 import type { Principal } from "../principal.js";
-import { Action, Banner, Chip, CodeBlock, Collapsible, Field, fieldAria, RowMenu, Table, When } from "./pages.js";
+import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldAria, Pill, RowMenu, Table, When } from "./pages.js";
 
 // Members, Tokens, My data and Settings. People read by name, with their email and the handle they are written to; an
 // action names the person or the token it acts on and asks first when it cuts something off; what the hub shows only once
@@ -261,4 +261,73 @@ export const Members: FC<{ _: Tr; rows: MemberRow[]; viewer: Principal }> = ({ _
       empty=""
     />
   </section>
+);
+
+// ---- Tokens ----
+
+export const TokenForm: FC<{ _: Tr; open: boolean }> = ({ _, open }) => (
+  <HeadForm summary={_("Create a token")} open={open}>
+    <form hx-post="/console/tokens" hx-target="#new-token">
+      <Field id="token-label" label={_("Label")} lang={_.lang} help={_("Name the machine or the use, like laptop or ci.")}>
+        <input id="token-label" name="label" required maxlength={60} autocomplete="off" {...fieldAria("token-label", { help: 1 })} />
+      </Field>
+      <button type="submit" class="primary">
+        {_("Create a token")}
+      </button>
+    </form>
+    <div id="new-token" />
+  </HeadForm>
+);
+
+// Shown once: the token, then the commands that use it on the person's machine.
+export const TokenCreated: FC<{ _: Tr; token: string; url: string }> = ({ _, token, url }) => (
+  <>
+    <Banner tone="warn" title={_("Token created. Copy it now: you won't see it again.")} />
+    <CodeBlock code={token} lang={_.lang} copyLabel={_("Copy the token")} />
+    <p>{_("On your machine, sign in with it. Paste the token when the terminal asks for it:")}</p>
+    <CodeBlock command code={`codetgh login --url ${url} --token-stdin`} lang={_.lang} copyLabel={_("Copy the sign-in command")} />
+    <p>{_("Then install the Claude Code plugin. It asks for the hub's address and this token:")}</p>
+    <CodeBlock command code="claude plugin install codetgh@<marketplace>" lang={_.lang} copyLabel={_("Copy the plugin command")} />
+  </>
+);
+
+export type TokenRow = { id: string; label: string; createdAt: Date; expiresAt: Date; lastUsedAt: Date | null };
+export const Tokens: FC<{ _: Tr; rows: TokenRow[] }> = ({ _, rows }) => (
+  <div class="records">
+    <Table
+      lang={_.lang}
+      caption={_("Personal tokens")}
+      head={[_("Label"), _("Created"), _("Last used"), _("Expires"), _("Actions")]}
+      primary={0}
+      actions
+      rows={rows.map((t) => [
+        <span class="token-label">{t.label}</span>,
+        <When at={t.createdAt} lang={_.lang} />,
+        t.lastUsedAt ? <When at={t.lastUsedAt} lang={_.lang} /> : <span class="meta">{_("Not used yet")}</span>,
+        t.expiresAt < new Date() ? (
+          <span class="token-expired">
+            <Pill>{_("Expired")}</Pill> <When at={t.expiresAt} lang={_.lang} />
+          </span>
+        ) : (
+          <When at={t.expiresAt} lang={_.lang} />
+        ),
+        <Action
+          post={`/console/tokens/${t.id}/revoke`}
+          label={_("Revoke")}
+          level="danger"
+          name={`${named(_("Revoke the token {label}"), { label: t.label })}…`}
+          confirm={{
+            title: named(_("Revoke the token {label}?"), { label: t.label }),
+            body: _("Terminals and scripts that use it are refused from their next request. Invitations made with it are revoked too."),
+          }}
+          done={named(_("Token {label} revoked."), { label: t.label })}
+        />,
+      ])}
+      empty={
+        <EmptyState title={_("No personal tokens yet.")} icon="terminal">
+          {_("Create one to sign in a terminal.")}
+        </EmptyState>
+      }
+    />
+  </div>
 );
