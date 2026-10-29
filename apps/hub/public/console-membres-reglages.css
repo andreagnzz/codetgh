@@ -174,18 +174,43 @@
 .team-settings :is(.check + .field, fieldset + .check) {
   margin-top: var(--sp-4);
 }
-.team-settings .panel > :last-child {
+.team-settings :is(.panel, form > section) > :last-child {
   margin-bottom: 0;
 }
-/* The save button closes the form; a refusal shows right under it, and what follows the form keeps its distance. */
+/* The settings form is one group: its sections apart by a rule, each title 16 px above its first field, and Save settings in
+   the group's footer with what it saves, so nothing outside the group reads as saved by it. A refusal shows right under the
+   group. */
+.team-settings > form.panel {
+  padding-bottom: 0;
+}
+.team-settings > form > section + section {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--border);
+}
+.team-settings > form > section > h2 {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sub);
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
 .team-settings .settings-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-6) calc(-1 * var(--sp-6)) 0;
+  padding: var(--sp-4) var(--sp-6);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
+  background: var(--surface-inset);
+}
+.team-settings .settings-save > .help {
   margin: 0;
 }
-.team-settings > form + .field-error {
-  margin: var(--sp-3) 0 0;
-}
-.team-settings > :is(form, form + .field-error) + .panel {
-  margin-top: var(--sp-12);
+.team-settings > form.panel + p.field-error {
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-6);
 }
 .team-settings .bridge-state {
   margin: 0 0 var(--sp-3);
@@ -240,6 +265,10 @@
   .team-records .row-menu .pop {
     left: auto;
     right: 0;
+  }
+  .team-settings .settings-save {
+    margin-inline: calc(-1 * var(--sp-4));
+    padding-inline: var(--sp-4);
   }
 }
 @media (max-width: 639px) and (pointer: coarse) {

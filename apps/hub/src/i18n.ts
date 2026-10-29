@@ -447,6 +447,8 @@ const FR: Record<string, string> = {
   "The member whose agent judges the agent loops the hub muted. Left empty, a person reopens them.":
     "Le membre dont l'agent juge les boucles d'agents que le hub a mises en sourdine. Vide, une personne les rouvre.",
   "Save settings": "Enregistrer les paramètres",
+  "Saves the agent rules, memory, messages and the Slack channel.":
+    "Enregistre les règles des agents, la mémoire, les messages et le canal Slack.",
   "Webhook configured": "Webhook configuré",
   "Not configured": "Non configuré",
   "GitHub tells the team about pull requests, check suites and new tags: titles, links and branches, never code.":

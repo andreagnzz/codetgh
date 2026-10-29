@@ -290,7 +290,24 @@ describe("settings", () => {
     expect(form).toContain('name="secret_patterns"');
     expect(form).toContain('name="slack_channel"');
     expect(form).toContain('name="loop_orchestrator"');
-    expect(form).toContain('<button type="submit" class="primary">Save settings</button>');
+  });
+
+  it("renames the team first, by its own button; then one group that Save settings closes and names; then the GitHub bridge", async () => {
+    const html = main(await page("/console/settings", team.lea.cookie));
+    const settings = html.indexOf('<form hx-post="/console/settings"');
+    expect(html.indexOf('<form hx-post="/console/settings/team"')).toBeGreaterThan(0);
+    expect(html.indexOf('<form hx-post="/console/settings/team"')).toBeLessThan(settings);
+    const end = html.indexOf("</form>", settings);
+    const form = html.slice(settings, end);
+    for (const title of ["Agent rules", "Memory", "Messages", "Slack bridge"]) expect(form).toContain(`>${title}</h2>`);
+    // The button closes the group and says what it saves; nothing the form does not save sits between its sections.
+    expect(form).toMatch(
+      /<button type="submit" class="primary" aria-describedby="settings-save-help">Save settings<\/button>\s*<p class="help" id="settings-save-help">Saves the agent rules, memory, messages and the Slack channel\.<\/p>\s*<\/div>$/,
+    );
+    expect(form).not.toContain("GitHub");
+    // The Slack bridge is the group's last section; the GitHub bridge comes right after it.
+    expect(form.slice(form.lastIndexOf("<h2"))).toMatch(/^<h2[^>]*>Slack bridge<\/h2>/);
+    expect(html.slice(end)).toMatch(/^<\/form>\s*<section class="panel"><h2>GitHub bridge<\/h2>/);
   });
 
   it("says whether the GitHub webhook is set, and asks before replacing its secret", async () => {

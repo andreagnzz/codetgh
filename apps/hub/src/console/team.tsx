@@ -420,6 +420,17 @@ const Check: FC<{ name: string; checked: boolean; label: string; help: string }>
   </div>
 );
 
+// A section of the settings form: its title, then its fields.
+const SettingsSection: FC<{ id: string; title: string; children?: Child }> = ({ id, title, children }) => (
+  <section aria-labelledby={id}>
+    <h2 id={id}>{title}</h2>
+    {children}
+  </section>
+);
+
+// The team's name first, renamed by its own button. Then one group, the settings form: its sections end with Slack's channel,
+// and Save settings closes the group in its footer, saying what it saves. Then the GitHub bridge, next to Slack's, and the
+// audit key.
 export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { keyId: string; publicKey: string } }> = ({
   _,
   p,
@@ -430,8 +441,18 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
   const [before, after] = _("To check an audit export offline, pass this key to {command}.").split("{command}");
   return (
     <div class="team-settings">
-      <form hx-post="/console/settings" hx-swap="none" data-done={_("Settings saved.")}>
-        <Panel title={_("Agent rules")}>
+      <Panel title={_("Team")}>
+        <form hx-post="/console/settings/team" hx-swap="none">
+          <Field id="team-name" label={_("Team name")} lang={_.lang} help={_("Shown in the top bar and in invitations.")}>
+            <input id="team-name" name="name" value={p.teamName} maxlength={80} required {...fieldAria("team-name", { help: 1 })} />
+          </Field>
+          <button type="submit" class="secondary">
+            {_("Rename the team")}
+          </button>
+        </form>
+      </Panel>
+      <form hx-post="/console/settings" hx-swap="none" class="panel" data-done={_("Settings saved.")}>
+        <SettingsSection id="rules-h" title={_("Agent rules")}>
           <fieldset class="choices">
             <legend>{_("When an agent edits a file someone else claimed")}</legend>
             {(["ask", "warn"] as const)
@@ -487,8 +508,8 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
               />
             </span>
           </Field>
-        </Panel>
-        <Panel title={_("Memory")}>
+        </SettingsSection>
+        <SettingsSection id="memory-h" title={_("Memory")}>
           <Field id="memory-accept-by" label={_("Who accepts team memory")} lang={_.lang}>
             <select id="memory-accept-by" name="memory_accept_by">
               {(["member", "admin", "owner"] as const).map((r) => (
@@ -504,8 +525,8 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
             label={_("Accept team memory from Claude Code too")}
             help={_("Claude Code then asks the person each time. claude.ai and the Agent SDK can't guarantee that.")}
           />
-        </Panel>
-        <Panel title={_("Messages")}>
+        </SettingsSection>
+        <SettingsSection id="messages-h" title={_("Messages")}>
           <Field
             id="retention-days"
             label={_("Keep messages for")}
@@ -542,8 +563,8 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
               {(s.secret_patterns ?? []).join("\n")}
             </textarea>
           </Field>
-        </Panel>
-        <Panel title={_("Slack bridge")}>
+        </SettingsSection>
+        <SettingsSection id="slack-h" title={_("Slack bridge")}>
           <Field
             id="slack-channel"
             label={_("Slack channel")}
@@ -562,12 +583,15 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
               {...fieldAria("slack-channel", { help: 1 })}
             />
           </Field>
-        </Panel>
-        <p class="actions settings-save">
-          <button type="submit" class="primary">
+        </SettingsSection>
+        <div class="settings-save">
+          <button type="submit" class="primary" aria-describedby="settings-save-help">
             {_("Save settings")}
           </button>
-        </p>
+          <p class="help" id="settings-save-help">
+            {_("Saves the agent rules, memory, messages and the Slack channel.")}
+          </p>
+        </div>
       </form>
       <Panel title={_("GitHub bridge")}>
         <p class="bridge-state">{s.github_hook ? <Pill tone="ok">{_("Webhook configured")}</Pill> : <Pill>{_("Not configured")}</Pill>}</p>
@@ -590,16 +614,6 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
           </button>
         </p>
         <div id="github-hook" />
-      </Panel>
-      <Panel title={_("Team")}>
-        <form hx-post="/console/settings/team" hx-swap="none">
-          <Field id="team-name" label={_("Team name")} lang={_.lang} help={_("Shown in the top bar and in invitations.")}>
-            <input id="team-name" name="name" value={p.teamName} maxlength={80} required {...fieldAria("team-name", { help: 1 })} />
-          </Field>
-          <button type="submit" class="secondary">
-            {_("Rename the team")}
-          </button>
-        </form>
       </Panel>
       <Panel title={_("Audit public key")}>
         <p>

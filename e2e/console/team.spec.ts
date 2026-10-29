@@ -127,6 +127,8 @@ test("my data and settings: every field in order, each named, each with a visibl
   expect(await tab(page)).toBe("Skip to content");
   await page.keyboard.press("Enter");
   expect(await tabs(page, 14)).toEqual([
+    "Team name",
+    "Rename the team",
     "Ask the person",
     "Allow rewake push",
     "Link a new repository when a member starts a session in it",
@@ -138,8 +140,6 @@ test("my data and settings: every field in order, each named, each with a visibl
     "Slack channel optional",
     "Save settings",
     "Create the webhook",
-    "Team name",
-    "Rename the team",
     "Copy the public key",
   ]);
   // The two answers to a claimed file are one group: the arrows move between them.
