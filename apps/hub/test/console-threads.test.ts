@@ -65,6 +65,9 @@ describe("threads", () => {
     expect(row).not.toContain("Perf review");
     expect(row).not.toContain("@sam");
     expect(row).not.toContain("@malik");
+    // Rows like it tell apart by a short id in mono, and the people cell says what it hides.
+    expect(row).toContain(`<code translate="no">thr_…${sent.thread.slice(-3)}</code> · You&#39;re not in it.`);
+    expect(row).toContain('<span class="meta">People not shown</span>');
   });
 
   it("puts current threads quiet for over a day under Earlier threads, and says what the tabs hold", async () => {

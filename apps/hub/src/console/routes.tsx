@@ -102,7 +102,19 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { ALERT_KIND, ALERT_STATUS, AlertText, Conversation, fill, Handles, lanesOf, MutedPill, Streak, threadName } from "./threads.js";
+import {
+  ALERT_KIND,
+  ALERT_STATUS,
+  AlertText,
+  Conversation,
+  fill,
+  Handles,
+  lanesOf,
+  MutedPill,
+  Streak,
+  shortId,
+  threadName,
+} from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -606,13 +618,22 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               </a>
               {(about(t) || t.mutedAt || nearLimit(t)) && (
                 <span class="thread-meta">
-                  {about(t)}
+                  {about(t) && (
+                    <span>
+                      {hidden(t) && (
+                        <>
+                          <code translate="no">{shortId(t.id)}</code> ·{" "}
+                        </>
+                      )}
+                      {about(t)}
+                    </span>
+                  )}
                   <MutedPill t={t} _={_} />
                   {nearLimit(t) && <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} />}
                 </span>
               )}
             </>,
-            hidden(t) ? <span class="meta">{_("Not shown")}</span> : <Handles handles={people.get(t.id) ?? []} _={_} />,
+            hidden(t) ? <span class="meta">{_("People not shown")}</span> : <Handles handles={people.get(t.id) ?? []} _={_} />,
             <Stamp at={t.lastMessageAt} lang={_.lang} />,
           ])}
           empty=""

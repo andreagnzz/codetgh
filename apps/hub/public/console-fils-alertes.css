@@ -22,6 +22,10 @@
   font-size: var(--fs-caption);
   line-height: 16px;
 }
+/* The short id of a thread that shows no name: mono at the caption's size. */
+.thread-meta code {
+  font-size: 1em;
+}
 .handles {
   display: inline-flex;
   flex-wrap: wrap;

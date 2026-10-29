@@ -324,7 +324,7 @@ const FR: Record<string, string> = {
   "Team thread from {people}": "Fil d'équipe lancé par {people}",
   "+{n} more": "+{n}\u00a0autres",
   "You're not in it. Opening it is recorded in the audit log.": "Tu n'y participes pas. L'ouvrir l'inscrit au journal d'audit.",
-  "Not shown": "Non affichées",
+  "People not shown": "Personnes non affichées",
   "Muted by a person": "En sourdine par une personne",
   "Muted by the loop guard": "En sourdine par le garde-fou des boucles",
   "Agent streak {n}\u00a0of\u00a0{max}": "Série d'agents\u00a0: {n}\u00a0sur\u00a0{max}",

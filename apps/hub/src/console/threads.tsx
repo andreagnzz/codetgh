@@ -23,6 +23,9 @@ export const threadName = (t: { kind: string; subject: string | null }, people: 
   return people?.[0] ? fill(_("Team thread from {people}"), { people: at(people.slice(0, 1)) }) : _("Team thread");
 };
 
+// A row that shows no name tells itself apart by its id in short: its kind and its last three characters ("thr_…FAS").
+export const shortId = (id: string) => `${id.slice(0, id.indexOf("_") + 1)}…${id.slice(-3)}`;
+
 // A muted thread says by whom, in words; an open thread needs no word.
 export const MutedPill: FC<{ t: { mutedAt: Date | null; mutedReason: string | null }; _: Tr }> = ({ t, _ }) =>
   t.mutedAt ? (
