@@ -942,6 +942,10 @@ tr:has(.row-link):hover,
 tr[aria-current="true"] {
   background: var(--surface-inset);
 }
+tr[aria-current="true"] :is(a:not(.row-link), .tertiary),
+tr:has(.row-link):hover :is(a:not(.row-link), .tertiary) {
+  color: var(--text);
+}
 .row-link {
   color: var(--text);
   font-weight: 500;

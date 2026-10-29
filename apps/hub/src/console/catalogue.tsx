@@ -208,6 +208,10 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
       >
         Showing data from 21:40.
       </Banner>
+      <p class="meta">
+        The current row (ci) has a text action and a link: both turn Ink on its inset surface, as on a hovered row. The revoked token has no
+        action: under 640 px its empty cell is dropped.
+      </p>
       <Table
         lang={lang}
         caption="Personal tokens"
@@ -240,10 +244,24 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
             <a class="row-link" href="#token-2">
               ci (GitHub Actions)
             </a>,
-            "27 Oct, 09:12",
+            <>
+              27 Oct, 09:12 · <a href="#ci-run">from a CI run</a>
+            </>,
             "86",
             <Pill tone="warn">Expires in 2 days</Pill>,
-            <RowMenu label="Actions for ci (GitHub Actions)" items={[<button type="button">Rename</button>]} />,
+            <>
+              <button type="button" class="tertiary">
+                Rename
+              </button>{" "}
+              <RowMenu
+                label="Actions for ci (GitHub Actions)"
+                items={[
+                  <button type="button" class="danger">
+                    Revoke…
+                  </button>,
+                ]}
+              />
+            </>,
           ],
           [
             <a class="row-link" href="#token-3">
