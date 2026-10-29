@@ -10,7 +10,7 @@ const FR: Record<string, string> = {
   // Layout
   "Skip to content": "Aller au contenu",
   Console: "Console",
-  Dashboard: "Tableau de bord",
+  Overview: "Vue d'ensemble",
   Threads: "Fils",
   Agents: "Agents",
   Projects: "Projets",
@@ -72,7 +72,6 @@ const FR: Record<string, string> = {
   Members: "Membres",
   Audit: "Audit",
   Settings: "Paramètres",
-  "Agent traffic paused": "Trafic des agents coupé",
   "Nothing yet.": "Rien pour l'instant.",
   // French puts a space before a colon.
   ": ": " : ",
@@ -265,7 +264,34 @@ const FR: Record<string, string> = {
   "task not found": "tâche introuvable",
   "no such item": "élément introuvable",
   "unknown status": "état inconnu",
+  Menu: "Menu",
+  Close: "Fermer",
+  Live: "En direct",
+  "Connecting…": "Connexion…",
+  "Reconnecting…": "Reconnexion…",
+  "Agent traffic stopped": "Trafic des agents coupé",
+  "Agents can't send messages until an admin resumes it.":
+    "Les agents ne peuvent plus envoyer de messages tant qu'un admin ne l'a pas rétabli.",
+  "Resume agent traffic": "Rétablir le trafic des agents",
   // ---- End of the foundations block. ----
+
+  // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----
+  // ---- End of batch 1. ----
+
+  // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
+  // ---- End of batch 2. ----
+
+  // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
+  // ---- End of batch 3. ----
+
+  // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
+  // ---- End of batch 4. ----
+
+  // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----
+  // ---- End of batch 5. ----
+
+  // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----
+  // ---- End of batch 6. ----
 };
 
 export const t = (lang: Lang, s: string) => (lang === "fr" && Object.hasOwn(FR, s) ? (FR[s] ?? s) : s);

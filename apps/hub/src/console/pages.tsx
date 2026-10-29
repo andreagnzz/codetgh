@@ -4,25 +4,36 @@ import type { Child, FC } from "hono/jsx";
 import { BrandHead, Logo } from "../brand.js";
 import { type listAgents, presence, statusOf } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
+import { Icon, type IconName } from "../icons.js";
 import { Layout as PublicLayout } from "../pages.js";
 import type { Principal } from "../principal.js";
 
-// The third field is the least role that may open the page: no link to a page that would answer 403.
-const NAV: Array<[string, string, ("member" | "admin")?]> = [
-  ["/console", "Dashboard"],
-  ["/console/threads", "Threads"],
-  ["/console/projects", "Projects", "member"],
-  ["/console/agents", "Agents"],
-  ["/console/delegations", "Delegations", "member"],
-  ["/console/claims", "Claims", "member"],
-  ["/console/tasks", "Tasks", "member"],
-  ["/console/memory", "Memory", "member"],
-  ["/console/tokens", "Tokens", "member"],
+// Three groups, by how often they are used. The third field is the least role that may open the page: no link to a page
+// that would answer 403. My data and Tokens are in the account menu.
+type NavItem = [string, string, ("member" | "admin")?];
+const NAV: NavItem[][] = [
+  [
+    ["/console", "Overview"],
+    ["/console/threads", "Threads"],
+    ["/console/alerts", "Alerts", "admin"],
+    ["/console/agents", "Agents"],
+    ["/console/projects", "Projects", "member"],
+  ],
+  [
+    ["/console/tasks", "Tasks", "member"],
+    ["/console/claims", "Claims", "member"],
+    ["/console/memory", "Memory", "member"],
+    ["/console/delegations", "Delegations", "member"],
+  ],
+  [
+    ["/console/members", "Members", "admin"],
+    ["/console/audit", "Audit", "admin"],
+    ["/console/settings", "Settings", "admin"],
+  ],
+];
+const ACCOUNT: NavItem[] = [
   ["/console/me", "My data"],
-  ["/console/alerts", "Alerts", "admin"],
-  ["/console/members", "Members", "admin"],
-  ["/console/audit", "Audit", "admin"],
-  ["/console/settings", "Settings", "admin"],
+  ["/console/tokens", "Tokens", "member"],
 ];
 
 // The project filter: ?project=<id>, or none for what is outside a project; no value shows every project.
@@ -38,12 +49,48 @@ export const Layout: FC<{
   keep?: string;
   // On the Archives tab, the filter links stay on it.
   archived?: boolean;
+  // A detail page: a way back above the title, a meta line under it, its one action next to it.
+  back?: Child;
+  head?: Child;
+  actions?: Child;
   children?: Child;
-}> = ({ p, csrf, title, path, lang, filter, keep, archived, children }) => {
+}> = ({ p, csrf, title, path, lang, filter, keep, archived, back, head, actions, children }) => {
   const _ = (s: string) => t(lang, s);
   const admin = p.role === "owner" || p.role === "admin";
+  const allowed = ([, , least]: NavItem) => (least === "admin" ? admin : least !== "member" || p.role !== "guest");
   const current = (href: string) =>
     href === "/console" ? path === "/console" || path === "/console/" : path === href || path.startsWith(`${href}/`);
+  const link = ([href, label]: NavItem) => (
+    <li>
+      <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
+        {_(label)}
+      </a>
+    </li>
+  );
+  const groups = NAV.map((g) => g.filter(allowed)).filter((g) => g.length > 0);
+  const nav = (
+    <nav class="nav" aria-label={_("Console")}>
+      {groups.map((g) => (
+        <ul>{g.map(link)}</ul>
+      ))}
+    </nav>
+  );
+  const account = (
+    <ul class="account-items">
+      {ACCOUNT.filter(allowed).map(link)}
+      <li>
+        {lang === "fr" ? (
+          <a href={`/lang/en?next=${encodeURIComponent(path)}`} hreflang="en" lang="en">
+            English
+          </a>
+        ) : (
+          <a href={`/lang/fr?next=${encodeURIComponent(path)}`} hreflang="fr" lang="fr">
+            Français
+          </a>
+        )}
+      </li>
+    </ul>
+  );
   return (
     <>
       {raw("<!doctype html>")}
@@ -64,60 +111,77 @@ export const Layout: FC<{
           <div class="shell">
             <aside class="sidebar">
               <Logo kind="horizontal" />
-              <nav aria-label={_("Console")}>
-                {NAV.filter(([, , least]) => (least === "admin" ? admin : least !== "member" || p.role !== "guest")).map(
-                  ([href, label]) => (
-                    <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
-                      {_(label)}
-                    </a>
-                  ),
-                )}
-              </nav>
-              <p class="who meta">
-                {p.user.name} · {_(p.role)}
-                <br />
+              {nav}
+            </aside>
+            <header class="topbar">
+              <p class="team" title={p.teamName}>
                 {p.teamName}
               </p>
-              <p class="meta">
-                {lang === "fr" ? (
-                  <a href={`/lang/en?next=${encodeURIComponent(path)}`} hreflang="en" lang="en">
-                    English
-                  </a>
-                ) : (
-                  <a href={`/lang/fr?next=${encodeURIComponent(path)}`} hreflang="fr" lang="fr">
-                    Français
-                  </a>
-                )}
+              {/* console.js follows the live connection (htmx sse events); the words come from here. */}
+              <p class="live" role="status" data-state="connecting" data-live={_("Live")} data-lost={_("Reconnecting…")}>
+                {_("Connecting…")}
               </p>
-            </aside>
-            <main id="main">
-              {p.paused && (
-                <p class="banner" role="status">
-                  {_("Agent traffic paused")}
+              <details class="account">
+                <summary>
+                  {p.user.name} · {_(p.role)}
+                  <Icon name="chevron-down" />
+                </summary>
+                <div class="pop">{account}</div>
+              </details>
+              <details class="menu">
+                <summary>
+                  <span class="menu-closed">
+                    <Icon name="menu" />
+                    {_("Menu")}
+                  </span>
+                  <span class="menu-open">
+                    <Icon name="x" />
+                    {_("Close")}
+                  </span>
+                </summary>
+                {nav}
+                <p class="menu-who">
+                  {p.user.name} · {_(p.role)}
                 </p>
-              )}
-              <h1>{title}</h1>
+                {account}
+              </details>
+            </header>
+            {p.paused && (
+              <Banner tone="danger" title={_("Agent traffic stopped")}>
+                {_("Agents can't send messages until an admin resumes it.")} {admin && <a href="/console">{_("Resume agent traffic")}</a>}
+              </Banner>
+            )}
+            <main id="main">
+              <div class="page-head">
+                {back && (
+                  <p class="back">
+                    <Icon name="chevron-left" />
+                    {back}
+                  </p>
+                )}
+                <h1>{title}</h1>
+                {actions && <div class="page-actions">{actions}</div>}
+                {head && <div class="page-meta">{head}</div>}
+              </div>
               {filter && (
                 <nav aria-label={_("Project")} class="projects-filter">
                   {[{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }].map(
                     (pr) => (
-                      <>
-                        <a
-                          href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
-                          aria-current={pr.id === filter.selected ? "page" : undefined}
-                        >
-                          {pr.name}
-                        </a>{" "}
-                      </>
+                      <a
+                        href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
+                        aria-current={pr.id === filter.selected ? "page" : undefined}
+                      >
+                        {pr.name}
+                      </a>
                     ),
                   )}
                 </nav>
               )}
               {children}
-              {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
-              <p id="line-announce" class="sr-only" aria-live="polite" />
             </main>
           </div>
+          {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
+          <p id="line-announce" class="sr-only" aria-live="polite" />
         </body>
       </html>
     </>
@@ -163,7 +227,7 @@ export const Pill: FC<{ tone?: Tone; children?: Child }> = ({ tone = "neutral", 
 
 // Current items, or the archives: threads quiet for a day with nothing unread, tasks finished a day ago.
 export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang; project?: string }> = ({ base, archived, lang, project }) => (
-  <nav aria-label={t(lang, "Archives")}>
+  <nav class="tabs" aria-label={t(lang, "Archives")}>
     <a href={project ? `${base}?project=${encodeURIComponent(project)}` : base} aria-current={archived ? undefined : "page"}>
       {t(lang, "Current")}
     </a>{" "}
@@ -202,17 +266,47 @@ export const When: FC<{ at: Date; lang?: string }> = ({ at, lang = "en" }) => {
   );
 };
 
-// One-click actions: an htmx POST answered with HX-Refresh; the CSRF header comes from <body hx-headers>.
-// Three levels: primary (one per area), secondary (the default outline), quiet (a text action).
-export const Action: FC<{ post: string; label: string; vals?: Record<string, string>; level?: "primary" | "quiet" }> = ({
-  post,
-  label,
-  vals,
-  level,
-}) => (
+// One-click actions: an htmx POST answered with HX-Refresh; the CSRF header comes from <body hx-headers>. The level is the
+// importance: primary (one per area), secondary (the default), tertiary (a text action), danger (destructive).
+export const Action: FC<{
+  post: string;
+  label: string;
+  vals?: Record<string, string>;
+  level?: "primary" | "secondary" | "tertiary" | "danger";
+}> = ({ post, label, vals, level }) => (
   <button type="button" class={level} hx-post={post} hx-vals={vals ? JSON.stringify(vals) : undefined} hx-swap="none">
     {label}
   </button>
+);
+
+// A message about a state: its icon's shape is the severity; information and success are polite, an error is an alert.
+export type BannerTone = "info" | "success" | "warn" | "danger";
+const BANNER_ICON: Record<BannerTone, IconName> = {
+  info: "info",
+  success: "circle-check",
+  warn: "triangle-alert",
+  danger: "octagon-alert",
+};
+export const Banner: FC<{ tone?: BannerTone; title: Child; actions?: Child; dismiss?: string; children?: Child }> = ({
+  tone = "info",
+  title,
+  actions,
+  dismiss,
+  children,
+}) => (
+  <div class="banner" data-tone={tone} role={tone === "danger" ? "alert" : "status"}>
+    <Icon name={BANNER_ICON[tone]} />
+    <div class="banner-text">
+      <p class="banner-title">{title}</p>
+      {children && <p class="banner-body">{children}</p>}
+      {actions && <p class="banner-actions">{actions}</p>}
+    </div>
+    {dismiss && (
+      <button type="button" class="icon-button" aria-label={dismiss} data-dismiss>
+        <Icon name="x" />
+      </button>
+    )}
+  </div>
 );
 
 // Presence: who is live first, then a rule, then who is offline (archived, quieter).

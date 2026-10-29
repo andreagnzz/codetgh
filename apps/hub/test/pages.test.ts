@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Hub, startHub } from "./harness.js";
+import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
+import { principalForToken } from "../src/principal.js";
+import { type Hub, setRole, startHub } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -57,5 +59,83 @@ describe("pages", () => {
     const html = await res.text();
     expect(html).not.toContain("<!doctype html>");
     expect(html).toContain("thread not found");
+  });
+});
+
+describe("shell", () => {
+  const html = async (cookie: string, path = "/console", lang = "en") => (await get(path, { cookie, "accept-language": lang })).text();
+
+  it("puts the skip link first, the navigation in three groups and the current page marked", async () => {
+    const page = await html(team.lea.cookie, "/console/agents");
+    expect(page.indexOf('class="skip"')).toBeLessThan(page.indexOf("<aside"));
+    const nav = page.slice(page.indexOf('<nav class="nav"'), page.indexOf("</nav>"));
+    expect(nav.match(/<ul>/g)).toHaveLength(3);
+    for (const label of [
+      "Overview",
+      "Threads",
+      "Alerts",
+      "Agents",
+      "Projects",
+      "Tasks",
+      "Claims",
+      "Memory",
+      "Delegations",
+      "Members",
+      "Audit",
+      "Settings",
+    ])
+      expect(nav).toContain(`>${label}</a>`);
+    expect(nav).toContain('<a href="/console/agents" aria-current="page">Agents</a>');
+    expect(page).toContain("<h1>Agents</h1>");
+  });
+
+  it("keeps My data, Tokens and the language in the account menu, and the same links in the small-screen menu", async () => {
+    const page = await html(team.lea.cookie);
+    const account = page.slice(page.indexOf('<details class="account">'), page.indexOf('<details class="menu">'));
+    expect(account).toContain("Léa · owner");
+    expect(account).toContain('href="/console/me"');
+    expect(account).toContain('href="/console/tokens"');
+    expect(account).toContain('href="/lang/fr?next=%2Fconsole"');
+    const menu = page.slice(page.indexOf('<details class="menu">'), page.indexOf("</header>"));
+    expect(menu).toContain("Menu");
+    expect(menu).toContain('<nav class="nav" aria-label="Console">');
+    expect(menu).toContain('href="/console/me"');
+  });
+
+  it("shows a guest no link to a page that would refuse them", async () => {
+    await setRole(hub, team.malik.userId, "guest");
+    try {
+      const page = await html(team.malik.cookie);
+      for (const path of ["/console/projects", "/console/tasks", "/console/members", "/console/alerts", "/console/tokens"])
+        expect(page).not.toContain(`href="${path}"`);
+      expect(page).toContain('href="/console/threads"');
+      expect(page).toContain('href="/console/me"');
+    } finally {
+      await setRole(hub, team.malik.userId, "member");
+    }
+  });
+
+  it("names the live state, in French for a French reader", async () => {
+    const page = await html(team.lea.cookie, "/console", "fr");
+    expect(page).toContain(
+      '<p class="live" role="status" data-state="connecting" data-live="En direct" data-lost="Reconnexion…">Connexion…</p>',
+    );
+    expect(page).toContain(">Vue d&#39;ensemble</a>");
+  });
+
+  it("says on every page that agent traffic is stopped, with the way to resume it for an admin", async () => {
+    const lea = await principalForToken(hub.db, team.lea.token);
+    if (!lea) throw new Error("setup");
+    await setKillSwitch(hub.db, lea, "rotating keys");
+    try {
+      const admin = await html(team.lea.cookie, "/console/threads");
+      expect(admin).toMatch(/<div class="banner" data-tone="danger" role="alert">.*Agent traffic stopped/s);
+      expect(admin).toContain('<a href="/console">Resume agent traffic</a>');
+      const member = await html(team.sam.cookie, "/console/threads");
+      expect(member).toContain("Agent traffic stopped");
+      expect(member).not.toContain("Resume agent traffic");
+    } finally {
+      await resumeKillSwitch(hub.db, lea, "yes");
+    }
   });
 });

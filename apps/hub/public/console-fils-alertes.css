@@ -1,0 +1,15 @@
+/* Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this file; the tokens, base and
+   components are in console.css. Until it restyles its screens, the rules below keep today's markup (the excerpt is also on the
+   overview). */
+.excerpt {
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+.flag {
+  border: 1px solid currentColor;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-full);
+  font-size: var(--fs-caption);
+  margin-right: var(--sp-1);
+}

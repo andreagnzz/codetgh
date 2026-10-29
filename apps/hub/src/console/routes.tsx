@@ -308,7 +308,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const earlier = line.filter((r) => r.message.createdAt.getTime() < dayAgo);
     return page(
       c,
-      "Dashboard",
+      "Overview",
       <div
         id="live"
         hx-get="/console"
@@ -759,7 +759,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             ) : (
               <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
             )}{" "}
-            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
+            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="tertiary" />
           </>,
         ])}
       />
@@ -1138,7 +1138,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
           {_("Approve")}
         </button>{" "}
-        <button type="button" class="quiet" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+        <button type="button" class="tertiary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
           {_("Deny")}
         </button>
       </Result>,
@@ -1233,7 +1233,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   <span class="sr-only">{_("Handle")}</span>@
                   <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
                 </label>
-                <button type="submit" class="quiet">
+                <button type="submit" class="tertiary">
                   {_("Rename")}
                 </button>
               </form>

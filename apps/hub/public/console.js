@@ -1,5 +1,5 @@
-// Console behavior that htmx does not cover: errors shown where the action was taken, a sober busy state,
-// and the activity line marking only messages that were not on screen before. No library, no inline script.
+// Console behavior that htmx does not cover: errors shown where the action was taken, a sober busy state, the activity line
+// marking only messages that were not on screen before, the live state and the menus. No library, no inline script.
 (() => {
   const fr = document.documentElement.lang === "fr";
   const GENERIC = fr
@@ -50,4 +50,28 @@
   };
   mark(false);
   document.body.addEventListener("htmx:afterSettle", () => mark(true));
+
+  // The live state in the top bar follows the stream; its words come from the page (data-live, data-lost).
+  const live = document.querySelector(".live");
+  const state = (s) => {
+    if (!live || live.dataset.state === s) return;
+    live.dataset.state = s;
+    live.textContent = live.dataset[s] ?? "";
+  };
+  document.body.addEventListener("htmx:sseOpen", () => state("live"));
+  document.body.addEventListener("htmx:sseError", () => state("lost"));
+
+  // The account menu and the small-screen menu close on Escape, focus back on their button; the account menu also closes on a
+  // click outside it.
+  const MENUS = "details.account[open], details.menu[open]";
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    for (const menu of document.querySelectorAll(MENUS)) {
+      menu.open = false;
+      if (menu.contains(document.activeElement)) menu.querySelector("summary")?.focus();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    for (const menu of document.querySelectorAll("details.account[open]")) if (!menu.contains(e.target)) menu.open = false;
+  });
 })();
