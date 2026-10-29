@@ -1,5 +1,6 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
 import type { Child, FC } from "hono/jsx";
+import { MAX_EXCERPT } from "../domain/messages.js";
 import type { Lang } from "../i18n.js";
 import { Icon } from "../icons.js";
 import { Chip, Pill, Stamp } from "./pages.js";
@@ -271,16 +272,16 @@ export const ALERT_STATUS: Record<string, string> = {
 };
 // from: who sent the flagged message, or the hub itself, then whether as an agent or a person; which: the alert's kind and
 // sender, which the link's accessible name repeats so a list of links tells the alerts apart. audited: the thread is someone
-// else's direct thread, whose opening the audit log records.
+// else's direct thread, whose opening the audit log records. A decided alert reads quieter than one that waits for a decision.
 export const AlertText: FC<{
-  a: { kind: string; excerpt: string; threadId: string | null };
+  a: { kind: string; status: string; excerpt: string; threadId: string | null };
   from: string;
   which: { alert: string; from: string };
   audited: boolean;
   max: number;
   _: Tr;
 }> = ({ a, from, which, audited, max, _ }) => (
-  <>
+  <div class={a.status === "open" ? "alert-text" : "alert-text decided"}>
     <p class="alert-kind">{_(ALERT_KIND[a.kind] ?? a.kind)}</p>
     <p class="alert-from">{from}</p>
     {a.kind === "secret_blocked" ? (
@@ -294,7 +295,11 @@ export const AlertText: FC<{
     ) : a.kind === "audit_tamper" ? (
       <p class="alert-note">{fill(_("The hub said: {reason}"), { reason: a.excerpt })}</p>
     ) : (
-      <p class="alert-excerpt">{a.excerpt}</p>
+      // The hub keeps the start of the message: an excerpt at that length was cut, and says so.
+      <p class="alert-excerpt">
+        {a.excerpt}
+        {a.excerpt.length >= MAX_EXCERPT && "…"}
+      </p>
     )}
     {a.threadId && (
       <p class="alert-link">
@@ -304,5 +309,5 @@ export const AlertText: FC<{
       </p>
     )}
     {a.threadId && audited && <p class="alert-audit">{_("You're not in it. Opening it is recorded in the audit log.")}</p>}
-  </>
+  </div>
 );

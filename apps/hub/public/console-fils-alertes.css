@@ -477,13 +477,23 @@ main:has(> .thread + .field-error) > .live-reload {
   line-height: 16px;
   overflow-wrap: anywhere;
 }
+/* Three lines at most: the thread holds the whole message. */
 .alert-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
   margin: var(--sp-1) 0 0;
   padding-left: var(--sp-3);
   border-left: 2px solid var(--border-strong);
   line-height: 22px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* A decided alert reads quieter than one that still waits for a decision. */
+.alert-text.decided :is(.alert-kind, .alert-excerpt, .alert-note) {
+  color: var(--text-muted);
 }
 .alert-note {
   margin: var(--sp-1) 0 0;
