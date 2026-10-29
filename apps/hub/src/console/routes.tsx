@@ -921,18 +921,22 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
       { id: "none", name: _("Sessions outside a project"), rows: byProject(null) },
     ].filter((g) => (f.selected ? g.id === f.selected : g.rows.length > 0 || g.id !== "none"));
-    // A member attaches their own sessions, an admin anyone's; a guest none. The button moves the session at once.
+    // A member attaches their own sessions, an admin anyone's; a guest none. The button moves the session at once. Both
+    // controls name the session, and no project is chosen for the person: sent as is, the form is refused in words.
     const attach = (r: SessionRow) =>
       projects.length > 0 &&
       p.role !== "guest" &&
       (r.agent.userId === p.user.id || isAdmin(p)) && (
         <form class="attach inline" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
-          <select name="project_id" aria-label={_("Project")}>
+          <select name="project_id" aria-label={_("Project for {session}").replace("{session}", () => r.agent.label)}>
+            <option value="" disabled selected>
+              {_("Choose a project…")}
+            </option>
             {projects.map((pr) => (
               <option value={pr.id}>{pr.name}</option>
             ))}
           </select>
-          <button type="submit" class="secondary">
+          <button type="submit" class="secondary" aria-label={`${_("Attach to project")} ${r.agent.label}`}>
             {_("Attach to project")}
           </button>
         </form>

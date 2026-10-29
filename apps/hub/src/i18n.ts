@@ -366,6 +366,8 @@ const FR: Record<string, string> = {
   "Start claude inside the project's repository folder to link a session, or attach one to a project here.":
     "Lance claude dans le dossier du dépôt du projet pour y rattacher la session, ou rattache-la à un projet ici.",
   "Attach to project": "Rattacher au projet",
+  "Project for {session}": "Projet pour {session}",
+  "Choose a project…": "Choisis un projet…",
   "Choose a project for this session.": "Choisis un projet pour cette session.",
   "No projects yet.": "Aucun projet pour l'instant.",
   "A project appears when a member starts a session with codetgh start in a team repository, or runs this command there:":

@@ -262,14 +262,17 @@ describe("projects", () => {
     const loose = section(html, "p-none");
     expect(loose).toContain("Start claude inside the project&#39;s repository folder to link a session, or attach one to a project here.");
     expect(loose).toContain(`hx-post="/console/agents/${ids.lea}/project"`);
-    expect(loose).toContain('<select name="project_id" aria-label="Project">');
-    expect(loose).toContain('<button type="submit" class="secondary">Attach to project</button>');
+    // Each control says which session it moves, and no project is chosen for the person.
+    expect(loose).toContain('<select name="project_id" aria-label="Project for lea@scratch">');
+    expect(loose).toMatch(/<option value="" disabled(="")? selected(="")?>Choose a project…<\/option>/);
+    expect(loose).toContain('<button type="submit" class="secondary" aria-label="Attach to project lea@scratch">Attach to project</button>');
     const refused = await consolePost(hub.url, team.lea.cookie, `/console/agents/${ids.lea}/project`, {});
     expect(refused.status).toBe(400);
     expect(await refused.text()).toContain("Choose a project for this session.");
     const french = section(main(await page("/console/projects", team.lea.cookie, "fr")), "p-none");
     expect(french).toContain("Lance claude dans le dossier du dépôt du projet");
     expect(french).toContain("Rattacher au projet");
+    expect(french).toContain("Choisis un projet…");
   });
 
   it("says how a project appears when there is none", async () => {
