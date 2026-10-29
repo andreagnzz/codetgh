@@ -239,7 +239,7 @@
 }
 /* The menu keeps its width whatever the longest project name: the button stays beside it. */
 .attach select {
-  width: 12rem;
+  width: 10rem;
   max-width: 100%;
   min-height: 32px;
   padding-block: var(--sp-1);
