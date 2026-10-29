@@ -326,6 +326,9 @@ const FR: Record<string, string> = {
   "1\u00a0invitation not accepted yet.": "1\u00a0invitation pas encore acceptée.",
   "{n}\u00a0invitations not accepted yet.": "{n}\u00a0invitations pas encore acceptées.",
   "Open members": "Voir les membres",
+  "1\u00a0thread muted by the loop guard.": "1\u00a0fil mis en sourdine par le garde-fou des boucles.",
+  "{n}\u00a0threads muted by the loop guard.": "{n}\u00a0fils mis en sourdine par le garde-fou des boucles.",
+  "Open threads": "Ouvrir les fils",
   // The line.
   "Last 24\u00a0h": "Dernières 24\u00a0h",
   "No messages in the last 24 hours. Older ones are on the threads page.":

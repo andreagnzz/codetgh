@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Child } from "hono/jsx";
@@ -344,6 +344,21 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const [newest] = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(1) : [];
     const [alertCount] = isAdmin(p) ? await db.select({ n: count() }).from(alert).where(openAlerts) : [];
     const nAlerts = alertCount?.n ?? 0;
+    // Threads the loop guard muted where this person can reply, which reopens them: team threads and their own.
+    const mine = (await participantThreads(p)).map((r) => r.id);
+    const muted = await db
+      .select({ id: thread.id })
+      .from(thread)
+      .where(
+        and(
+          eq(thread.teamId, p.teamId),
+          isNotNull(thread.mutedAt),
+          or(isNull(thread.mutedReason), ne(thread.mutedReason, "human")),
+          or(p.role === "guest" ? undefined : eq(thread.kind, "team"), inArray(thread.id, mine)),
+          not(archivedThread()),
+        ),
+      )
+      .orderBy(desc(thread.lastMessageAt));
     // The line keeps the last day; older messages wait on the threads page, as do the ones past the cap.
     const line = await recentLine(p);
     const dayAgo = Date.now() - 86_400_000;
@@ -422,7 +437,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <p class="loading-text">{_("Loading…")}</p>
           <section class="needs" aria-labelledby="needs-h">
             <h2 id="needs-h">{_("Needs you")}</h2>
-            {nAlerts === 0 && toValidate.length === 0 && invites.length === 0 ? (
+            {nAlerts === 0 && muted.length === 0 && toValidate.length === 0 && invites.length === 0 ? (
               <p class="empty">{_("Nothing needs you right now.")}</p>
             ) : (
               <ul class="needs-list">
@@ -439,6 +454,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                         {_("Newest:")} {_(ALERT_KIND[newest.kind] ?? newest.kind)}, <When at={newest.createdAt} lang={_.lang} />.
                       </span>
                     ),
+                  )}
+                {muted.length > 0 &&
+                  need(
+                    "need-muted",
+                    muted.length === 1 ? `/console/threads/${muted[0]?.id}` : "/console/threads",
+                    n(muted.length, "1\u00a0thread muted by the loop guard.", "{n}\u00a0threads muted by the loop guard."),
+                    _(muted.length === 1 ? "Open thread" : "Open threads"),
+                    true,
                   )}
                 {toValidate.length > 0 &&
                   need(

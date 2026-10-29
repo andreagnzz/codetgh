@@ -80,6 +80,25 @@ describe("overview", () => {
     expect(member).not.toContain("invitation");
   });
 
+  it("asks the people of a thread the loop guard muted to look at it, and only them", async () => {
+    const sent = await send("sam", { to: "@lea", subject: "Muted by the guard", body: "Ping." }, 2);
+    await hub.db.update(thread).set({ mutedAt: new Date(), mutedReason: "loop_guard" }).where(eq(thread.id, sent.thread));
+    try {
+      for (const who of ["lea", "sam"] as const) {
+        const needs = section(await html(team[who].cookie), "needs-h");
+        expect(needs).toContain("1\u00a0thread muted by the loop guard.");
+        expect(needs).toMatch(new RegExp(`<a id="need-muted" href="/console/threads/${sent.thread}" data-tone="warn">`));
+        expect(needs).toContain("Open thread");
+      }
+      expect(section(await html(team.malik.cookie), "needs-h")).not.toContain("muted");
+      // Muted by a person, it waits for nobody.
+      await hub.db.update(thread).set({ mutedReason: "human" }).where(eq(thread.id, sent.thread));
+      expect(section(await html(team.lea.cookie), "needs-h")).not.toContain("muted");
+    } finally {
+      await hub.db.update(thread).set({ mutedAt: null, mutedReason: null }).where(eq(thread.id, sent.thread));
+    }
+  });
+
   it("draws the fifteen newest messages of the last day on lanes, ten on phones, then a way to every thread", async () => {
     await startSession(hub.url, team.malik.token, "malik-line");
     // An old message: the line leaves it to the threads page.
