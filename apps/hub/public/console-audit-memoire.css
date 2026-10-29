@@ -424,6 +424,25 @@ details.audit-hash[open] > summary .icon {
 .task-group :is(th, td):nth-child(3) {
   width: 9rem;
 }
+/* A group's heading starts with its status's glyph, as on the pill: hollow, or filled in the tone of Blocked and Done. */
+.task-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--sp-2);
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  vertical-align: 0.1em;
+}
+.task-status[data-tone="danger"]::before {
+  border-color: var(--error);
+  background: var(--error);
+}
+.task-status[data-tone="ok"]::before {
+  border-color: var(--success);
+  background: var(--success);
+}
 .task-group .count {
   margin-left: var(--sp-1);
   font-size: var(--fs-body);

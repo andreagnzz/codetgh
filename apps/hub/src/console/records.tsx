@@ -630,7 +630,7 @@ export const TaskBoard: FC<{
         return (
           of.length > 0 && (
             <div class="task-group">
-              <Heading>
+              <Heading class="task-status" data-tone={TASK_TONE[s] ?? "neutral"}>
                 {_(TASK_WORD[s])} <span class="count">{countOf(s)}</span>
               </Heading>
               <Table

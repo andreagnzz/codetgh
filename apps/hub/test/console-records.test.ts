@@ -359,7 +359,8 @@ describe("tasks", () => {
     expect(webapp).toContain(`href="/console/tasks/${ids.doing}">Show login errors under each field</a>`);
     expect(webapp).toContain(">@sam</span>");
     const billing = section(html, `p-${projects["acme/billing"]}`);
-    expect(billing).toContain('Blocked <span class="count">1</span></h3>');
+    // The status's glyph before its word, as on its pill: Blocked in the error tone.
+    expect(billing).toContain('<h3 class="task-status" data-tone="danger">Blocked <span class="count">1</span></h3>');
     expect(billing).toContain("Waiting for the maintenance window");
     const outside = section(html, "p-none");
     expect(outside).toContain('To do <span class="count">1</span></h3>');
