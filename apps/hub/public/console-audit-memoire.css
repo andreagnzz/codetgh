@@ -459,6 +459,10 @@ details.audit-hash[open] > summary .icon {
   min-height: 32px;
   padding-inline: var(--sp-3);
 }
+/* While a decision is sent, only its button turns: the one the click focused; Reject's turns in the dialog. */
+.rec-body form[hx-post$="/decide"][aria-busy="true"] button[type="submit"]:not(:focus)::after {
+  content: none;
+}
 /* In a panel, whose paragraphs are muted, a refusal keeps the error color. */
 .new-task .panel .field-error,
 .rec-body .panel .field-error {
