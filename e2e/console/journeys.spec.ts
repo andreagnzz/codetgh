@@ -35,7 +35,7 @@ test("join the team: invitation, account, token, agent online", async ({ page, b
   await startSession(hub.url, token, "nina-first-session");
   await page.goto(`${hub.url}/console`);
   await expect(page.locator(".people")).toContainText("Nina");
-  await expect(page.locator(".people")).toContainText("online");
+  await expect(page.locator(".people")).toContainText("Online");
 });
 
 test("handle a suspicious message: escaped text, quarantine the sender", async ({ page }) => {

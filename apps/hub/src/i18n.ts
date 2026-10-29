@@ -311,6 +311,14 @@ const FR: Record<string, string> = {
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
+  // Presence.
+  "1 offline": "1 hors ligne",
+  "{n} offline": "{n} hors ligne",
+  Online: "En ligne",
+  Idle: "Inactif",
+  External: "Externe",
+  "Prompts off": "Sans confirmation",
+  Quarantined: "En quarantaine",
   // ---- End of batch 2. ----
 
   // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----

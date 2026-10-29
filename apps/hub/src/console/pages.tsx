@@ -621,50 +621,61 @@ export const Timeline: FC<{ events: TimelineEvent[]; lang: Lang; empty: Child; f
   );
 };
 
-// Presence: who is live first, then a rule, then who is offline (archived, quieter).
+// A count inside a sentence, kept with its noun: "1 open alert.", "3 open alerts.".
+export const counted = (lang: Lang, n: number, one: string, many: string) => t(lang, n === 1 ? one : many).replace("{n}", String(n));
+
+// Presence: who is connected, then the offline sessions under their count. Only exceptions get a pill (idle, prompts off,
+// quarantined, external); online is plain text, and the offline group says so once, in its heading.
 type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];
 type RowAction = (r: AgentRow) => Child;
 const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, action }) => {
+  const _ = (s: string) => t(lang, s);
   const state = presence(r.agent);
   const status = statusOf(r.agent);
+  // An external agent is quarantined by design: it says external, not quarantined.
+  const external = r.agent.kind === "a2a";
+  const bypass = r.agent.permissionMode === "bypassPermissions";
+  const quarantined = r.agent.trustLevel === "quarantined" && !external;
+  const meta: Child[] = [
+    r.project,
+    status &&
+      (status.at ? (
+        <>
+          {status.text} · <When at={status.at} lang={lang} />
+        </>
+      ) : (
+        status.text
+      )),
+    state === "offline" && (
+      <>
+        {_("Last seen")} <When at={r.agent.lastSeenAt} lang={lang} />
+      </>
+    ),
+  ].filter(Boolean);
   return (
-    <li>
-      <span class="who-name">{r.name}</span>{" "}
-      <span class="meta">
-        {r.agent.label}
-        {r.project && ` · ${r.project}`}
-      </span>{" "}
-      <Pill tone={toneOf(state)}>{t(lang, state)}</Pill>
-      {(r.agent.pushMode || r.agent.clientVersion) && (
-        <span class="meta">
-          {" "}
-          {[r.agent.pushMode && `push ${r.agent.pushMode}`, r.agent.clientVersion && `Claude Code ${r.agent.clientVersion}`]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      )}
-      {r.agent.permissionMode === "bypassPermissions" && (
-        <>
-          {" "}
-          <Bypass lang={lang} />
-        </>
-      )}
-      {r.agent.trustLevel === "quarantined" && (
-        <>
-          {" "}
-          <Pill tone="danger">{t(lang, "quarantined")}</Pill>
-        </>
-      )}
-      {status && (
-        <span class="status meta">
-          {status.text}
-          {status.at && (
+    <li class="person">
+      <p class="person-head">
+        <span class="person-name">{r.name}</span>
+        {!external && <Chip>{r.agent.label}</Chip>}
+        {state === "online" && <span class="person-state">{_("Online")}</span>}
+        {state === "idle" && <Pill>{_("Idle")}</Pill>}
+      </p>
+      {meta.length > 0 && (
+        <p class="person-meta">
+          {meta.map((m, i) => (
             <>
-              {" · "}
-              <When at={status.at} lang={lang} />
+              {i > 0 && " · "}
+              {m}
             </>
-          )}
-        </span>
+          ))}
+        </p>
+      )}
+      {(external || bypass || quarantined) && (
+        <p class="person-flags">
+          {external && <Pill>{_("External")}</Pill>}
+          {bypass && <Pill tone="warn">{_("Prompts off")}</Pill>}
+          {quarantined && <Pill tone="danger">{_("Quarantined")}</Pill>}
+        </p>
       )}
       {action?.(r)}
     </li>
@@ -681,12 +692,14 @@ export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: R
             <Person r={r} lang={lang} action={action} />
           ))}
         </ul>
-      ) : (
+      ) : typeof empty === "string" ? (
         <p class="empty">{empty}</p>
+      ) : (
+        empty
       )}
       {offline.length > 0 && (
         <>
-          <h3 class="rule">{t(lang, "Offline")}</h3>
+          <h3 class="rule">{counted(lang, offline.length, "1\u00a0offline", "{n}\u00a0offline")}</h3>
           <ul class="people archived">
             {offline.map((r) => (
               <Person r={r} lang={lang} action={action} />

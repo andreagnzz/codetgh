@@ -46,7 +46,7 @@ describe("console: sessions by project", () => {
     expect(html).toContain("feat/login");
     expect(html).toContain("Malik");
     expect(html).toContain("fix/invoice");
-    expect(html).toMatch(/online/);
+    expect(html).toMatch(/Online/);
     // Sam is a plain member: still sees teammates' sessions on this page.
     expect(html).not.toContain("No project yet");
   });

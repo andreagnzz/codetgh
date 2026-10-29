@@ -19,35 +19,89 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.people,
 .todo {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-.people li,
 .todo li {
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
 }
-.who-name {
-  font-weight: 600;
-}
-.people .status {
-  display: block;
-}
-.people.archived {
-  color: var(--text-muted);
-}
-/* A rule that carries meaning: what is below it is no longer live. */
+/* A rule that carries meaning, with its words in it: what is below is offline. */
 h3.rule {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0 0;
   color: var(--text-muted);
   font-size: var(--fs-caption);
   line-height: 16px;
   font-weight: 500;
+}
+h3.rule::before,
+h3.rule::after {
+  content: "";
+  flex: 1;
   border-top: 1px solid var(--border-strong);
-  padding-top: var(--sp-2);
+}
+h3.rule::before {
+  flex: 0 0 var(--sp-4);
+}
+
+/* Presence: the name, the session, the state; what the session says it does; the exceptions on their own line. */
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.person {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.people:not(.archived) > .person:first-child {
+  padding-top: 0;
+}
+.person-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  max-width: none;
+  margin: 0;
+}
+.person-name {
+  font-weight: 600;
+}
+.person-head .pill,
+.person-state {
+  margin-left: auto;
+}
+.person-state {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.person-meta {
+  max-width: none;
+  margin: var(--sp-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.person-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: var(--sp-2) 0 0;
+}
+.people.archived .person-name {
+  font-weight: 500;
+}
+.person form {
+  margin-top: var(--sp-2);
 }
 
 /* The activity line: a wire per message, sender caret to recipient caret, in the accent color. */
