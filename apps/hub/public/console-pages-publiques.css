@@ -114,3 +114,9 @@
 .public .actions button {
   min-height: 44px;
 }
+
+/* Invitation: the way to sign in instead, under the form, quieter than it. */
+.public .aside {
+  margin: var(--sp-6) 0 0;
+  color: var(--text-muted);
+}

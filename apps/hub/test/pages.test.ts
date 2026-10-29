@@ -163,6 +163,25 @@ describe("public pages", () => {
     // A scope named like an object's own property is not described by accident.
     expect(await html("/consent?client_id=c&scope=constructor")).toContain("<span>Not described by this hub</span>");
   });
+
+  it("invitation: the invited address is the new account's sign-in, read-only; signed in, the account it joins with", async () => {
+    const { token } = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "ines@acme.test",
+      role: "guest",
+      invitedBy: team.lea.userId,
+      via: "console",
+    });
+    const page = await html(`/invite/${token}`);
+    expect(page).toContain("<h1>Join Acme web</h1>");
+    expect(page).toContain("You&#39;re invited as a guest. A guest sees only the threads they take part in.");
+    const field = page.match(/<input id="invite-email"[^>]*>/)?.[0] ?? "";
+    for (const attr of ['name="email"', 'value="ines@acme.test"', 'readonly=""', 'autocomplete="username"']) expect(field).toContain(attr);
+    expect(page).toContain('<p class="help" id="invite-password-help">At least 12 characters.</p>');
+    const signedIn = await html(`/invite/${token}`, "fr", team.sam.cookie);
+    expect(signedIn).toContain("<dd>sam@acme.test</dd>");
+    expect(signedIn).toContain('<button type="submit" class="primary">Rejoindre Acme web</button>');
+  });
 });
 
 describe("shell", () => {

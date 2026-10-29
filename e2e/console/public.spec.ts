@@ -1,4 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import { invitation } from "../../apps/hub/src/db/schema.js";
+import { createInvitation } from "../../apps/hub/src/domain/teams.js";
 import { type Hub, startHub } from "../../apps/hub/test/harness.js";
 
 // The public pages and the device page with a browser and a keyboard: what the hub refused, in the reader's language and
@@ -109,4 +112,26 @@ test("consent with the keyboard: the access asked for in words, then Allow and D
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Enter");
   await expect(page.locator("#error[role=alert]")).toHaveText("This request has expired or was changed. Start again from your app.");
+});
+
+test("invitation with the keyboard: the invited address is the account's, and a refused sign-up says what to do", async ({ page }) => {
+  const { token } = await createInvitation(hub.db, {
+    teamId: team.teamId,
+    email: "nina@acme.test",
+    role: "member",
+    invitedBy: team.lea.userId,
+    via: "console",
+  });
+  await page.goto(`${hub.url}/invite/${token}`);
+  await expect(page.locator("#invite-signup input[name=email]")).toHaveValue("nina@acme.test");
+  for (const name of ["CodeTgh", "Email", "Your name", "Password"]) expect(await tab(page)).toBe(name);
+  await page.keyboard.type("correct horse battery");
+  expect(await tab(page)).toBe("Create my account");
+  // Revoked while the page was open: the hub refuses the account.
+  await hub.db.update(invitation).set({ revokedAt: new Date() }).where(eq(invitation.email, "nina@acme.test"));
+  await page.locator("#invite-signup input[name=name]").fill("Nina");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#invite-signup #error[role=alert]")).toHaveText(
+    "This invitation can't create an account any more. Ask the person who invited you for a new link.",
+  );
 });

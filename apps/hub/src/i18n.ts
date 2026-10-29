@@ -344,6 +344,21 @@ const FR: Record<string, string> = {
   "Nothing beyond your sign-in": "Rien de plus que ta connexion",
   "This request has expired or was changed. Start again from your app.":
     "Cette demande a expiré ou a été modifiée. Recommence depuis ton application.",
+  // Invitation
+  "You're invited as an owner.": "Tu rejoindras l'équipe comme propriétaire.",
+  "You're invited as an admin.": "Tu rejoindras l'équipe comme admin.",
+  "You're invited as a member.": "Tu rejoindras l'équipe comme membre.",
+  "You're invited as a guest. A guest sees only the threads they take part in.":
+    "Tu rejoindras l'équipe comme invité. Un invité ne voit que les fils auxquels il participe.",
+  "Your account uses the address the invitation was sent to.": "Ton compte utilise l'adresse à laquelle l'invitation a été envoyée.",
+  "At least 12 characters.": "Au moins 12\u00a0caractères.",
+  "An account already uses this address. Sign in, then open this invitation again.":
+    "Un compte utilise déjà cette adresse. Connecte-toi, puis rouvre cette invitation.",
+  "This invitation can't create an account any more. Ask the person who invited you for a new link.":
+    "Cette invitation ne peut plus créer de compte. Demande un nouveau lien à la personne qui t'a invité.",
+  "Invitation sent to": "Invitation envoyée à",
+  "Signed in as": "Compte connecté",
+  "Not this account?": "Pas le bon compte\u202f?",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----

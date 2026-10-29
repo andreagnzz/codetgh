@@ -141,7 +141,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}
-        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id) } : undefined}
+        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id), user: session.user.email } : undefined}
         lang={langOf(c.req.header("accept-language"), c.req.header("cookie"))}
       />,
     );
