@@ -1,8 +1,10 @@
 /* Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this file; the tokens, base and
-   components are in console.css. */
+   components are in console.css. Every page links every batch's stylesheet, so each rule here is scoped to this batch's
+   screens: .agents-lede (their page header), .add-external (Agents), .agents-table (Agents, Delegations), .project-head and
+   .session-list (Projects). */
 
 /* The page's description sits in the header's meta line, which already spaces it. */
-.list-lede {
+.agents-lede {
   margin: 0;
 }
 
@@ -23,67 +25,64 @@
 .add-external .field-error {
   color: var(--error);
 }
-#a2a-result:not(:empty) {
+.add-external #a2a-result:not(:empty) {
   margin-top: var(--sp-6);
 }
-#a2a-result > :last-child {
+.add-external #a2a-result > :last-child {
   margin-bottom: 0;
 }
 
-/* A session: the person and the label they would type, then its short id; machine values in mono. */
-.session-cell p,
-.session-state p,
-.setting,
-.senders {
+/* A session, on the three pages: the person and the label they would type, then its short id; machine values in mono. */
+:is(.agents-table, .session-list) :is(.session-cell, .session-state) p,
+.agents-table :is(.setting, .senders) {
   margin: 0;
   max-width: none;
 }
-.session-head {
+:is(.agents-table, .session-list) .session-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 var(--sp-2);
   min-width: 0;
 }
-.session-name {
+:is(.agents-table, .session-list) .session-name {
   font-weight: 500;
 }
 /* The label is what tells sessions apart: it wraps in full rather than being cut, since a phone shows no tooltip. */
-.session-head .chip {
+:is(.agents-table, .session-list) .session-head .chip {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.machine {
+:is(.agents-table, .session-list) .machine {
   font-family: var(--mono);
   font-size: 0.9286em; /* 13 px in 14 px text */
   overflow-wrap: anywhere;
 }
-.meta .machine {
+:is(.agents-table, .session-list) .meta .machine {
   font-size: 1em;
 }
-.not-reported,
-.state-off {
+:is(.agents-table, .session-list) :is(.not-reported, .state-off) {
   color: var(--text-muted);
 }
 /* What a session did not report is a caption, not a value. */
-.not-reported {
+:is(.agents-table, .session-list) .not-reported {
   font-size: var(--fs-caption);
 }
-.state-line {
+:is(.agents-table, .session-list) .state-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-1);
   min-height: 20px;
 }
-.setting {
+.agents-table .setting {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--sp-1);
 }
-.senders {
+.agents-table .senders {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-1);
@@ -161,58 +160,58 @@
 .project-head {
   margin: var(--sp-8) 0 var(--sp-3);
 }
-.project-title {
+.project-head .project-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
 }
-.project-title h2 {
+.project-head .project-title h2 {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
 }
-.project-title .tool-id {
+.project-head .tool-id {
   margin: 0;
   max-width: none;
   padding: var(--sp-2) var(--sp-3);
   overflow-wrap: anywhere;
 }
-.project-title li + li > .tool-id {
+.project-head li + li > .tool-id {
   margin-top: var(--sp-1);
   border-top: 1px solid var(--border);
 }
-.project-tools {
+.project-head .project-tools {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3) var(--sp-6);
   margin-top: var(--sp-2);
 }
-.tool {
+.project-head .tool {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--sp-1);
   min-width: 0;
 }
-.tool-line {
+.project-head .tool-line {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--sp-2);
   max-width: 100%;
 }
-.tool-state {
+.project-head .tool-state {
   color: var(--text-muted);
 }
-.tool-report {
+.project-head .tool-report {
   margin: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 /* From a wide screen, a state and its action share a line, as tall as a button, so both columns read on one line. */
 @media (min-width: 1024px) {
-  .tool-line {
+  .project-head .tool-line {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
@@ -221,16 +220,21 @@
   }
 }
 @media (max-width: 639px) {
-  .project-tools {
+  .project-head .project-tools {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.claude-link {
+.project-head .claude-link {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
   min-height: 24px;
   font-weight: 500;
+}
+/* A refused action says why under the line it was on. */
+.project-head .tool-line > .field-error {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 /* A project's sessions: a list on the Agents columns, without their headers. The attach form takes the third column, under
@@ -241,7 +245,7 @@
   padding: 0;
   border-top: 1px solid var(--border);
 }
-.session-row {
+.session-list .session-row {
   display: grid;
   grid-template-columns: minmax(0, 26fr) minmax(0, 18fr) minmax(0, 56fr);
   grid-template-areas: "session state doing" "session state action";
@@ -251,51 +255,46 @@
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);
 }
-.session-row:not(:has(> .session-doing)) {
+.session-list .session-row:not(:has(> .session-doing)) {
   grid-template-areas: "session state action";
 }
-.session-row > .session-cell {
+.session-list .session-row > .session-cell {
   grid-area: session;
 }
-.session-row > .session-state {
+.session-list .session-row > .session-state {
   grid-area: state;
 }
-.session-doing {
+.session-list .session-doing {
   grid-area: doing;
   margin: 0;
   max-width: var(--measure);
   overflow-wrap: anywhere;
 }
-.session-action {
+.session-list .session-action {
   grid-area: action;
   min-width: 0;
 }
 /* The menu keeps its width whatever the longest project name: the button stays beside it. */
-.attach select {
+.session-list .attach select {
   width: 10rem;
   max-width: 100%;
   min-height: 32px;
   padding-block: var(--sp-1);
 }
 @media (max-width: 1023px) {
-  .session-row,
-  .session-row:not(:has(> .session-doing)) {
+  .session-list .session-row,
+  .session-list .session-row:not(:has(> .session-doing)) {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "session state" "doing doing" "action action";
   }
 }
 @media (max-width: 639px) {
-  .session-row,
-  .session-row:not(:has(> .session-doing)) {
+  .session-list .session-row,
+  .session-list .session-row:not(:has(> .session-doing)) {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "session" "state" "doing" "action";
   }
-  .session-action {
+  .session-list .session-action {
     margin-top: var(--sp-1);
   }
-}
-/* A refused action says why under the line it was on. */
-.tool-line > .field-error {
-  flex-basis: 100%;
-  margin: 0;
 }

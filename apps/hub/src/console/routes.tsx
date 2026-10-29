@@ -809,7 +809,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       f,
       {
         head: (
-          <p class="lede list-lede">
+          <p class="lede agents-lede">
             {_(
               isAdmin(p)
                 ? "Every session connected to the team, by project. Quarantine a session that misbehaves, remove one nobody uses."
@@ -974,7 +974,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       f,
       {
         head: (
-          <p class="lede list-lede">
+          <p class="lede agents-lede">
             {_("Each team repository and the sessions working in it.")}
             {p.role === "owner" && ` ${_("Remote Control and the runner start on your machine, only in the folders you listed there.")}`}
           </p>
@@ -1071,7 +1071,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       undefined,
       {
         head: (
-          <p class="lede list-lede">
+          <p class="lede agents-lede">
             {_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}
           </p>
         ),
