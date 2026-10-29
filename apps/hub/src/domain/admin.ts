@@ -1,11 +1,11 @@
 import type { Role } from "@codetgh/shared";
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import { agent, alert, membership, personalToken, project, type TeamSettings, team } from "../db/schema.js";
+import { agent, alert, invitation, membership, personalToken, project, type TeamSettings, team } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
 import { expireDelegated, lockDelegates } from "./agents.js";
-import { appendAudit } from "./audit.js";
+import { type AuditInput, appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
 // A group repeated by +, * or {…} that holds a quantifier or an alternation, at any depth: (a+)+, ((a+))+ and (a|aa)+
@@ -52,6 +52,20 @@ export async function requireHumanMember(db: Db, teamId: string, userId: string)
 export async function requireNotBridge(db: Db, teamId: string, userId: string) {
   if (await hasAgentOfKind(db, teamId, userId, ["bridge"]))
     throw new HubError("E_FORBIDDEN", "the GitHub or Slack bridge member cannot be revoked: its webhook would stop working");
+}
+
+// A pending invitation ends with the admin rights or the token that made it: a cut-off access must not return through a link.
+export async function endPendingInvitations(
+  db: Db,
+  by: Pick<AuditInput, "teamId" | "actorType" | "actorUserId" | "via">,
+  ...madeBy: SQL[]
+) {
+  const rows = await db
+    .update(invitation)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(invitation.teamId, by.teamId), isNull(invitation.acceptedAt), isNull(invitation.revokedAt), ...madeBy))
+    .returning({ id: invitation.id });
+  for (const r of rows) await appendAudit(db, { ...by, action: "invitation.revoked", subjectId: r.id });
 }
 
 // Owner changes take the owners lock, as eraseMe does, and read the actor's role again under it: two owners demoting or
@@ -289,6 +303,7 @@ export async function revokeToken(db: Db, p: Principal, tokenId: string) {
     if (!t) throw new HubError("E_NOT_FOUND", "token not found");
     if (t.userId !== p.user.id) requireAdmin(p);
     await tx.update(personalToken).set({ revokedAt: new Date() }).where(eq(personalToken.id, t.id));
+    await endPendingInvitations(tx, byUser(p), eq(invitation.invitedByToken, t.id));
     await appendAudit(tx, { ...byUser(p), action: "token.revoked", subjectId: t.id });
     return t.userId;
   });
@@ -310,6 +325,9 @@ export async function changeRole(db: Db, p: Principal, membershipId: string, rol
     if (m.userId === p.user.id) throw new HubError("E_FORBIDDEN", "you cannot change your own role");
     await requireHumanMember(tx, p.teamId, m.userId);
     await tx.update(membership).set({ role }).where(eq(membership.id, m.id));
+    if (role === "member" || role === "guest") await endPendingInvitations(tx, byUser(p), eq(invitation.invitedBy, m.userId));
+    else if (m.role === "owner" && role === "admin")
+      await endPendingInvitations(tx, byUser(p), eq(invitation.invitedBy, m.userId), eq(invitation.role, "owner"));
     // A guest runs no delegate session (agents.ts registerSession), so a live one stops accepting requests.
     if (role === "guest") {
       const rows = await tx

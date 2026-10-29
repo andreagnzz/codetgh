@@ -1,0 +1,1 @@
+ALTER TABLE "invitation" ADD COLUMN "invited_by_token" text;

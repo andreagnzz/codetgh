@@ -21,6 +21,9 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+  // SSO back-channel logout, per person so a new membership does not lift it: /mcp refuses the OAuth access tokens
+  // (stateless JWTs) issued until then.
+  oauthNotBefore: timestamp("oauth_not_before"),
 });
 
 export const session = pgTable(

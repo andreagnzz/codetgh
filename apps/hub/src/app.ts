@@ -219,8 +219,12 @@ export function createApp({
     auth,
     async (request, claims) => {
       try {
-        const principal = await principalForUser(db, String(claims.sub), "oauth");
-        if (!principal) return Response.json({ code: "E_UNAUTHORIZED", message: "not a member of any team" }, { status: 401 });
+        const principal = await principalForUser(db, String(claims.sub), "oauth", claims.iat ?? 0);
+        if (!principal)
+          return Response.json(
+            { code: "E_UNAUTHORIZED", message: "not a member of any team, or signed out since this token was issued" },
+            { status: 401 },
+          );
         return mcp.fetch(request, {
           authInfo: {
             token: "",

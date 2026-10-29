@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { SSO_PROVIDER } from "../auth.js";
 import type { Config } from "../config.js";
-import { account, membership, oauthAccessToken, oauthRefreshToken, session } from "../db/schema.js";
+import { account, membership, oauthAccessToken, oauthRefreshToken, session, user } from "../db/schema.js";
 import type { MessagingDeps } from "./messages.js";
 
 const LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout";
@@ -41,6 +41,7 @@ export async function backchannelLogout(deps: MessagingDeps, config: Config, tok
     await tx.delete(session).where(eq(session.userId, acc.userId));
     await tx.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, acc.userId));
     await tx.delete(oauthRefreshToken).where(eq(oauthRefreshToken.userId, acc.userId));
+    await tx.update(user).set({ oauthNotBefore: new Date() }).where(eq(user.id, acc.userId));
   });
   for (const m of await db.select({ teamId: membership.teamId }).from(membership).where(eq(membership.userId, acc.userId)))
     bus.emit("revoked", { teamId: m.teamId, userId: acc.userId });

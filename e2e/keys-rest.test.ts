@@ -1,6 +1,6 @@
 import { newKeyPair, newThreadKey, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { type Hub, setRole, startHub } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -52,4 +52,12 @@ it("answers a bad keys query with 400, not 500", async () => {
   expect(tooLong.status).toBe(400);
   expect(((await tooLong.json()) as { code: string }).code).toBe("E_INVALID");
   expect((await api(team.lea.token, "/keys?handles=@lea,@sam")).status).toBe(200);
+});
+
+it("refuses the keys lookup to a guest, who would learn the members and who has a key", async () => {
+  await setRole(hub, team.malik.userId, "guest");
+  const res = await api(team.malik.token, "/keys?handles=@lea,@sam");
+  await setRole(hub, team.malik.userId, "member");
+  expect(res.status).toBe(403);
+  expect(((await res.json()) as { code: string }).code).toBe("E_FORBIDDEN");
 });

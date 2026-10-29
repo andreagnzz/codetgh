@@ -436,7 +436,7 @@ export const REST_ROUTES = {
   keys: {
     method: "GET",
     path: "/v1/keys",
-    summary: "Public keys of members, by comma-separated @handles",
+    summary: "Public keys of members, by comma-separated @handles (members only: 403 for a guest)",
     query: KeysQuery,
     output: KeysOutput,
   },
@@ -466,7 +466,7 @@ export const REST_ROUTES = {
     method: "POST",
     path: "/v1/invitations",
     summary:
-      "Invite an email address to the team as member or guest (admins; admin and owner roles from the console only); returns the 7-day link, also emailed when SMTP is set",
+      "Invite an email address to the team as member or guest (admins; admin and owner roles from the console only); returns the 7-day link, also emailed when SMTP is set; the link stops working when its author loses admin rights or the token that made it is revoked",
     body: InviteInput,
     output: InviteOutput,
   },

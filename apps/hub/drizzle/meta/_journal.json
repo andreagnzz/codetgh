@@ -183,6 +183,27 @@
       "when": 1793220374076,
       "tag": "0025_stored_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793233051932,
+      "tag": "0026_invitation_invited_by_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793233068619,
+      "tag": "0027_membership_oauth_not_before",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793233072482,
+      "tag": "0028_user_oauth_not_before",
+      "breakpoints": true
     }
   ]
 }

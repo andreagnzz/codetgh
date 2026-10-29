@@ -74,6 +74,8 @@ export const invitation = pgTable(
     role: text("role", { enum: ["owner", "admin", "member", "guest"] }).notNull(),
     tokenHash: text("token_hash").notNull().unique(),
     invitedBy: text("invited_by"),
+    // The personal token that made it, if one did: revoking that token ends the invitation too.
+    invitedByToken: text("invited_by_token"),
     expiresAt: timestamp("expires_at").notNull(),
     acceptedAt: timestamp("accepted_at"),
     acceptedUserId: text("accepted_user_id"),

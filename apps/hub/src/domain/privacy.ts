@@ -26,6 +26,7 @@ import {
 } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
+import { byUser, endPendingInvitations } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { releaseFor } from "./claims.js";
 
@@ -132,6 +133,7 @@ export async function eraseMe(db: Db, p: Principal, confirm: string) {
       .set({ status: "revoked", revokedAt: now, revokedBy: me, handle: sql`'former-' || right(${membership.id}, 8)` })
       .where(and(eq(membership.teamId, p.teamId), eq(membership.userId, me)))
       .returning({ id: membership.id });
+    await endPendingInvitations(tx, byUser(p), eq(invitation.invitedBy, me));
     await tx
       .update(personalToken)
       .set({ revokedAt: sql`coalesce(${personalToken.revokedAt}, now())`, label: "erased" })

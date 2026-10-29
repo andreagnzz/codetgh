@@ -1,9 +1,11 @@
 import type { Role } from "@codetgh/shared";
-import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { consolePost } from "../../../e2e/helpers.js";
 import { INVITE_HEADER } from "../src/auth.js";
-import { membership, user } from "../src/db/schema.js";
-import { createInvitation, createTeam, revokeMember } from "../src/domain/teams.js";
+import { membership, personalToken, user } from "../src/db/schema.js";
+import { createInvitation, createTeam, joinWithInvitation, revokeMember } from "../src/domain/teams.js";
+import { createPersonalToken } from "../src/tokens.js";
 import { type Hub, startHub } from "./harness.js";
 
 // Someone who already has an account joins only by opening the invitation link and clicking Join, with the invited email verified.
@@ -119,4 +121,91 @@ it("brings a revoked member back only with an invitation sent after the removal,
   const fresh = await invite(team.teamId, team.sam.email, "guest");
   expect((await join(fresh.token, sam)).status).toBe(303);
   expect(await inTeam(team.sam.userId)).toMatchObject({ status: "active", role: "guest", revokedAt: null });
+});
+
+it("gives the next free handle when another sign-up takes the same one between the read and the insert", async () => {
+  // The trigger plays a second Alex whose sign-up commits @alex just before this one inserts it.
+  await hub.db.insert(user).values({ id: "usr_race", name: "Alex", email: "alex.one@acme.test" });
+  await hub.db.execute(
+    sql.raw(`create or replace function race_alex() returns trigger language plpgsql as $$ begin
+      insert into membership (id, team_id, user_id, role, handle) values ('mem_race', new.team_id, 'usr_race', 'member', new.handle);
+      return new; end $$`),
+  );
+  await hub.db.execute(
+    sql.raw(`create trigger race_alex before insert on membership for each row
+      when (new.handle = 'alex' and new.id <> 'mem_race') execute function race_alex()`),
+  );
+  try {
+    const { token } = await invite(team.teamId, "alex.two@acme.test", "member");
+    const { user: alex } = await hub.auth.api.signUpEmail({
+      body: { name: "Alex", email: "alex.two@acme.test", password: "alex-password-123" },
+      headers: new Headers({ [INVITE_HEADER]: token }),
+    });
+    expect(await inTeam("usr_race")).toMatchObject({ handle: "alex" });
+    expect(await inTeam(alex.id)).toMatchObject({ status: "active", handle: "alex-2" });
+  } finally {
+    await hub.db.execute(sql.raw("drop trigger if exists race_alex on membership"));
+    await hub.db.execute(sql.raw("drop function if exists race_alex"));
+  }
+});
+
+describe("an invitation is honoured only while its author may still grant its role, and its token is valid", () => {
+  // One link for Nora, who has an account, and one for a newcomer who signs up, from the same author.
+  async function links(newcomer: string, invitedBy: string, role: Role, invitedByToken?: string) {
+    const make = (email: string) =>
+      createInvitation(hub.db, { teamId: team.teamId, email, role, invitedBy, invitedByToken, via: "console" });
+    return { nora: (await make("nora@other.test")).token, newcomer, token: (await make(newcomer)).token };
+  }
+  // Refused as an unknown link is, on each way in: the invitation page, Join, and a sign-up through the link.
+  async function expectRefused(l: Awaited<ReturnType<typeof links>>) {
+    expect(await (await fetch(`${hub.url}/invite/${l.nora}`)).text()).not.toContain("invite-signup");
+    await expect(
+      joinWithInvitation(hub.db, { id: nora.id, name: "Nora", email: "nora@other.test", emailVerified: true }, l.nora),
+    ).rejects.toMatchObject({ code: "E_NOT_FOUND" });
+    await expect(
+      hub.auth.api.signUpEmail({
+        body: { name: "Newcomer", email: l.newcomer, password: "newcomer-password-123" },
+        headers: new Headers({ [INVITE_HEADER]: l.token }),
+      }),
+    ).rejects.toThrow();
+    expect((await inTeam(nora.id))?.status).toBe("revoked");
+  }
+  const changeRole = async (userId: string, role: Role) =>
+    expect(
+      (await consolePost(hub.url, team.lea.cookie, `/console/members/${(await inTeam(userId))?.id}/role`, { role })).status,
+    ).toBeLessThan(400);
+
+  // The role-change cleanup has run when a request that read the author's old role commits its invitation.
+  it("refuses an owner invitation committed after its author went from owner to admin", async () => {
+    await hub.db.update(membership).set({ role: "owner" }).where(eq(membership.userId, team.malik.userId));
+    await changeRole(team.malik.userId, "admin");
+    await expectRefused(await links("owner-by-admin@new.test", team.malik.userId, "owner"));
+  });
+
+  it("refuses an invitation committed after its author went from admin to member", async () => {
+    await changeRole(team.malik.userId, "member");
+    await expectRefused(await links("by-member@new.test", team.malik.userId, "member"));
+  });
+
+  it("refuses an invitation whose token has expired since, though nothing revoked it", async () => {
+    const { id } = await createPersonalToken(hub.db, { userId: team.lea.userId, teamId: team.teamId, label: "short" });
+    const l = await links("by-expired-token@new.test", team.lea.userId, "member", id);
+    await hub.db
+      .update(personalToken)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(personalToken.id, id));
+    await expectRefused(l);
+  });
+
+  it("still takes an owner's invitation made with a valid token, by Join and by sign-up", async () => {
+    const { id } = await createPersonalToken(hub.db, { userId: team.lea.userId, teamId: team.teamId, label: "valid" });
+    const l = await links("welcome@new.test", team.lea.userId, "member", id);
+    expect((await join(l.nora, nora.cookie)).status).toBe(303);
+    expect(await inTeam(nora.id)).toMatchObject({ status: "active", role: "member" });
+    const { user: u } = await hub.auth.api.signUpEmail({
+      body: { name: "Welcome", email: l.newcomer, password: "welcome-password-123" },
+      headers: new Headers({ [INVITE_HEADER]: l.token }),
+    });
+    expect(await inTeam(u.id)).toMatchObject({ status: "active", role: "member" });
+  });
 });
