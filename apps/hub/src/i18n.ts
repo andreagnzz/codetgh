@@ -318,7 +318,10 @@ const FR: Record<string, string> = {
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
   // A session, on Agents, Projects and Delegations. Online, Idle, External, Prompts off and Quarantined are batch 2's keys.
   Paused: "En pause",
-  Push: "Poussée",
+  Push: "Réception",
+  "While working": "Pendant le travail",
+  "Wakes up": "Se réveille",
+  "Live channel": "Canal en direct",
   "Not reported": "Non transmis",
   Bridge: "Pont",
   "Other client": "Autre client",

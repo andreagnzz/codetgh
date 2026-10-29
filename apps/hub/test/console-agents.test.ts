@@ -105,7 +105,8 @@ describe("agents", () => {
     expect(api).toContain("bypassPermissions");
     const webapp = section(html, `p-${projects["acme/webapp"]}`);
     expect(webapp).toContain("acceptEdits");
-    expect(webapp).toContain("rewake");
+    // A push mode in words, with CodeTgh's own name for it under them.
+    expect(webapp).toContain('<span>Wakes up</span><span class="machine meta">rewake</span>');
     expect(webapp).toContain("2.1.14");
     expect(section(html, `p-${projects["acme/billing"]}`)).toContain("Not reported");
   });
@@ -238,6 +239,8 @@ describe("agents", () => {
   it("is in French", async () => {
     const html = await page("/console/agents", team.sam.cookie, "fr");
     expect(html).toContain("Tes sessions sur ce hub, par projet.");
+    expect(html).toContain(">Réception</th>");
+    expect(html).toContain("<span>Se réveille</span>");
     expect(html).toContain("Non transmis");
     expect(await page("/console/agents", team.malik.cookie, "fr")).toContain(">En pause</span>");
   });

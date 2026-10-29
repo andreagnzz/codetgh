@@ -16,6 +16,8 @@ export type SessionRow = { agent: Agent; name: string; handle?: string | null; p
 const short = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
 const KIND: Record<string, string> = { "claude-ai": "claude.ai", "agent-sdk": "Agent SDK", bridge: "Bridge", other: "Other client" };
 const kindOf = (a: Agent) => (a.sessionId.startsWith("cli-") ? "CLI" : KIND[a.kind]);
+// How a teammate's message reaches the session (push_mode): read while it works, or it wakes up for it, or a live channel.
+const PUSH: Record<string, string> = { hooks: "While working", rewake: "Wakes up", channel: "Live channel" };
 const named = (s: string, key: string, value: string) => s.replace(key, () => value);
 
 export const Session: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
@@ -129,6 +131,7 @@ export const AgentsTable: FC<{ rows: SessionRow[]; _: Tr; admin: boolean; captio
       empty=""
       rows={rows.map((r) => {
         const a = r.agent;
+        const push = a.pushMode && PUSH[a.pushMode];
         return [
           <Session r={r} _={_} />,
           <SessionState r={r} _={_} />,
@@ -142,7 +145,14 @@ export const AgentsTable: FC<{ rows: SessionRow[]; _: Tr; admin: boolean; captio
           ) : (
             notReported(_)
           ),
-          a.pushMode ? <span class="machine">{a.pushMode}</span> : notReported(_),
+          a.pushMode ? (
+            <p class="setting">
+              {push && <span>{_(push)}</span>}
+              <span class="machine meta">{a.pushMode}</span>
+            </p>
+          ) : (
+            notReported(_)
+          ),
           a.clientVersion ?? notReported(_),
           <SessionActions r={r} _={_} admin={admin} />,
         ];
