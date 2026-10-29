@@ -289,6 +289,10 @@ const FR: Record<string, string> = {
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
   Unread: "Non lu",
+  "Stop agent traffic…": "Couper le trafic des agents…",
+  "Stop agent traffic?": "Couper le trafic des agents\u202f?",
+  "Agents can't send messages or claim files until an admin resumes agent traffic.":
+    "Les agents ne peuvent plus envoyer de messages ni réserver de fichiers tant qu'un admin n'a pas rétabli le trafic.",
   "The hub said: {reason}": "Réponse du hub\u00a0: {reason}",
   "You can't join with this invitation.": "Tu ne peux pas rejoindre l'équipe avec cette invitation.",
   "Sign in with the account it was sent to, or ask the person who invited you for a new link.":

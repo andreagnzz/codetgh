@@ -78,7 +78,11 @@ test("cut agent traffic and resume it with a confirmation", async ({ page }) => 
   await startSession(hub.url, team.sam.token, "sam-kill");
   await signIn(page, hub.url, team.lea);
   await page.getByLabel("Reason").fill("rotating keys");
-  await page.getByRole("button", { name: "Stop agent traffic" }).click();
+  // The trigger asks first: the dialog names the action and its consequence, and its button runs it.
+  await page.getByRole("button", { name: "Stop agent traffic…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Stop agent traffic?" });
+  await expect(dialog).toContainText("until an admin resumes agent traffic");
+  await dialog.getByRole("button", { name: "Stop agent traffic", exact: true }).click();
   await expect(page.getByText("Agent traffic stopped")).toBeVisible();
 
   const sam = await mcpClient(hub.url, team.sam.token);

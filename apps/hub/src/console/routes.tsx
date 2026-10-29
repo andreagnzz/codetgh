@@ -414,11 +414,19 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                     <button type="submit">{_("Resume")}</button>
                   </form>
                 ) : (
-                  <form hx-post="/console/kill-switch" hx-swap="none">
+                  <form
+                    hx-post="/console/kill-switch"
+                    hx-swap="none"
+                    data-confirm={_("Stop agent traffic?")}
+                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+                    data-confirm-action={_("Stop agent traffic")}
+                  >
                     <label>
                       {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
                     </label>
-                    <button type="submit">{_("Stop agent traffic")}</button>
+                    <button type="submit" class="danger">
+                      {_("Stop agent traffic…")}
+                    </button>
                   </form>
                 )}
               </>

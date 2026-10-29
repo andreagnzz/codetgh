@@ -15,6 +15,8 @@
   const go = dialog?.querySelector("button[value='confirm']");
   const dialogError = document.getElementById("confirm-error");
   let pending = null;
+  // A form asks through its submit button, which carries the level and takes the focus back.
+  const triggerOf = (elt) => (elt.matches("form") ? elt.querySelector("[type=submit]") : elt);
   document.body.addEventListener("htmx:confirm", (e) => {
     const elt = e.detail.elt;
     if (!dialog || !go || !elt.dataset.confirm) return;
@@ -27,7 +29,7 @@
       dialogError.className = "";
     }
     go.textContent = elt.dataset.confirmAction ?? elt.textContent;
-    go.className = elt.classList.contains("danger") ? "danger-fill" : "primary";
+    go.className = triggerOf(elt)?.classList.contains("danger") ? "danger-fill" : "primary";
     dialog.showModal();
   });
   dialog?.addEventListener("click", (e) => {
@@ -45,9 +47,9 @@
   });
   // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger.
   dialog?.addEventListener("close", () => {
-    const elt = pending?.elt;
+    const back = pending && triggerOf(pending.elt);
     pending = null;
-    if (elt?.isConnected) elt.focus();
+    if (back?.isConnected) back.focus();
   });
 
   const hostOf = (elt) => elt.closest("form") ?? elt;
