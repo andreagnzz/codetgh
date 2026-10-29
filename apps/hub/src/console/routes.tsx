@@ -633,6 +633,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       );
     };
     const filtered = f.projects.find((pr) => pr.id === f.selected)?.name;
+    // Older pages go back with ?before=; an older page links back to the latest threads, in the same tab and project.
+    const params = [archived && "archived=1", f.selected && `project=${encodeURIComponent(f.selected)}`].filter(Boolean);
+    const latest = `/console/threads${params.length ? `?${params.join("&")}` : ""}`;
+    const older =
+      found.length > PAGE && last
+        ? `/console/threads?${[...params, `before=${encodeURIComponent(last.lastMessageAt.toISOString())}`].join("&")}`
+        : undefined;
+    const newer = c.req.query("before") ? latest : undefined;
     // The page's description already says what the archives hold.
     const empty = archived ? (
       <EmptyState title={_("No archived threads.")} />
@@ -668,12 +676,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   {split(g.rows, "h3")}
                 </section>
               ))}
-        {found.length > PAGE && last && (
-          <Pager
-            lang={_.lang}
-            older={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
-          />
-        )}
+        {(older || newer) && <Pager lang={_.lang} newer={newer} older={older} />}
       </>,
       f,
       {
@@ -1066,8 +1069,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             ])}
           />
         </div>
-        {found.length > PAGE && last && (
-          <Pager lang={_.lang} older={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`} />
+        {/* An older page (?before=) links back to the latest alerts. */}
+        {((found.length > PAGE && last) || c.req.query("before")) && (
+          <Pager
+            lang={_.lang}
+            newer={c.req.query("before") ? "/console/alerts" : undefined}
+            older={
+              found.length > PAGE && last ? `/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}` : undefined
+            }
+          />
         )}
       </>,
       undefined,
