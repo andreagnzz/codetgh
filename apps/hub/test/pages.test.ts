@@ -31,7 +31,6 @@ describe("pages", () => {
 
   it("shows a full-page error in the public layout, with its status, the hub's reason and a way back", async () => {
     for (const [path, cookie, status, title] of [
-      ["/console/threads/thr_unknown", team.lea.cookie, 404, "This page doesn't exist."],
       ["/console/tasks/tsk_unknown", team.lea.cookie, 404, "This page doesn't exist."],
       ["/console/members", team.sam.cookie, 403, "You can't open this page."],
       ["/console/memory?status=bogus", team.lea.cookie, 400, "This request isn't valid."],
@@ -46,8 +45,8 @@ describe("pages", () => {
       expect(html, path).toContain('href="/console"');
     }
     // The hub's reason reads as a sentence in body text, not as a muted caption.
-    expect(await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text()).toContain(
-      "<p>The hub said: thread not found.</p>",
+    expect(await (await get("/console/tasks/tsk_unknown", { cookie: team.lea.cookie })).text()).toContain(
+      "<p>The hub said: task not found.</p>",
     );
   });
 

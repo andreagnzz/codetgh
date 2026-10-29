@@ -56,14 +56,7 @@ import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
-import {
-  archivedThread,
-  ENCRYPTED_PLACEHOLDER,
-  MAX_AGENT_MESSAGES,
-  type MessagingDeps,
-  sendMessage,
-  sentOrReceivedBy,
-} from "../domain/messages.js";
+import { archivedThread, MAX_AGENT_MESSAGES, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
@@ -80,6 +73,7 @@ import {
 } from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
+import { Icon } from "../icons.js";
 import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
@@ -88,8 +82,12 @@ import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
+  Banner,
   Bypass,
+  Chip,
   EmptyState,
+  Field,
+  fieldAria,
   InvitePage,
   Layout,
   Line,
@@ -103,7 +101,7 @@ import {
   toneOf,
   When,
 } from "./pages.js";
-import { fill, Handles, MutedPill, Streak, threadName } from "./threads.js";
+import { Conversation, fill, Handles, lanesOf, MutedPill, Streak, threadName } from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -706,82 +704,226 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return { t, adminRead };
   };
 
+  // A reply sent without `to` is stored as user:<id> or agent:<id>: the page names the person by their handle. Display only.
+  const named = async (teamId: string, to: string[]) => {
+    const ids = (prefix: string) => [...new Set(to.filter((a) => a.startsWith(prefix)).map((a) => a.slice(prefix.length)))];
+    const handles = new Map<string, string>();
+    const users = ids("user:");
+    const agents = ids("agent:");
+    if (users.length)
+      for (const r of await db
+        .select({ id: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, teamId), inArray(membership.userId, users))))
+        handles.set(`user:${r.id}`, `@${r.handle}`);
+    if (agents.length)
+      for (const r of await db
+        .select({ id: agent.id, handle: membership.handle })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(and(eq(agent.teamId, teamId), inArray(agent.id, agents))))
+        handles.set(`agent:${r.id}`, `@${r.handle}`);
+    return handles;
+  };
+
   consoleApp.get("/threads/:id", async (c) => {
-    const { t, adminRead } = await loadThread(c);
+    const _ = tr(c);
+    let loaded: Awaited<ReturnType<typeof loadThread>>;
+    try {
+      loaded = await loadThread(c);
+    } catch (e) {
+      // A page load gets the thread's own words; an htmx refresh keeps the bare reason.
+      if (!(e instanceof HubError && e.code === "E_NOT_FOUND") || c.req.header("HX-Request") === "true") throw e;
+      return c.html(
+        <ErrorPage
+          status={404}
+          lang={_.lang}
+          title="This thread doesn't exist."
+          next="Check the link, or find the thread in the list."
+          back={{ href: "/console/threads", label: "Back to threads" }}
+        />,
+        404,
+      );
+    }
+    const { t, adminRead } = loaded;
     const p = c.get("principal");
     if (adminRead) await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
-    const project = kept(c);
+    const keep = kept(c);
     // The latest page, oldest first; Older goes back. A thread grows with every reply: never load all of it.
     const found = await db
-      .select({ message, name: user.name })
+      .select({ message, name: user.name, handle: membership.handle, label: agent.label })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
+      .leftJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
+      .leftJoin(agent, eq(agent.id, message.fromAgentId))
       .where(and(eq(message.threadId, t.id), adminRead ? undefined : sentOrReceivedBy(db, p), olderThan(c, message.createdAt)))
       .orderBy(desc(message.createdAt))
       .limit(PAGE + 1);
-    const rows = found.slice(0, PAGE).reverse();
+    const handles = await named(
+      p.teamId,
+      found.flatMap((r) => r.message.to),
+    );
+    const rows = found
+      .slice(0, PAGE)
+      .reverse()
+      .map((r) => ({ ...r, key: r.handle ?? r.name, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
     const first = rows[0];
-    const state = t.mutedAt ? (t.mutedReason === "human" ? "muted by a person" : "muted (loop guard)") : "open";
+    const lanes = lanesOf(rows);
+    const [me] = await db
+      .select({ handle: membership.handle })
+      .from(membership)
+      .where(and(eq(membership.userId, p.user.id), eq(membership.teamId, p.teamId)));
+    // A guest never sees the team's projects.
+    const [inProject] =
+      t.projectId && p.role !== "guest"
+        ? await db
+            .select({ name: project.name })
+            .from(project)
+            .where(and(eq(project.id, t.projectId), eq(project.teamId, p.teamId)))
+        : [];
+    const older = c.req.query("before");
     // Every refresh of an admin read would be audited as a new opening, and an older page is not the latest: those stay still.
     const live =
-      adminRead || c.req.query("before")
+      adminRead || older
         ? {}
         : {
-            "hx-get": withProject(`/console/threads/${t.id}`, project),
+            "hx-get": withProject(`/console/threads/${t.id}`, keep),
             "hx-select": "main",
             "hx-target": "main",
             "hx-swap": "outerHTML",
             "hx-trigger": "sse:activity",
           };
+    const title = threadName(t, lanes.keys, me?.handle ?? null, _);
     return page(
       c,
-      t.subject ?? `Thread ${t.id}`,
-      <div {...live}>
-        <p>
-          <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
+      title,
+      <>
+        <div {...live} class="thread">
+          <p class="loading-text">{_("Loading…")}</p>
+          {adminRead && (
+            <Banner title={_("You're reading a direct thread as an admin.")}>
+              {_("This opening is recorded in the audit log, and the page doesn't refresh on its own.")}
+            </Banner>
+          )}
+          <aside class="thread-props" aria-label={_("About this thread")}>
+            <dl>
+              <div>
+                <dt>{_("People")}</dt>
+                <dd>
+                  <Handles handles={lanes.keys} _={_} />
+                </dd>
+              </div>
+              {inProject && (
+                <div>
+                  <dt>{_("Project")}</dt>
+                  <dd>
+                    <Chip>{inProject.name}</Chip>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>{_("First message")}</dt>
+                <dd>
+                  {/* The first page holds the thread's first message; on a later one it is still to come. */}
+                  <Stamp at={(found.length > PAGE ? undefined : first?.message.createdAt) ?? t.createdAt} lang={_.lang} />
+                </dd>
+              </div>
+              <div>
+                <dt>{_("Last message")}</dt>
+                <dd>
+                  <Stamp at={t.lastMessageAt} lang={_.lang} />
+                </dd>
+              </div>
+            </dl>
+          </aside>
+          <div class="thread-main">
+            {found.length > PAGE && first && (
+              <p class="convo-more">
+                <a
+                  class="button"
+                  href={`/console/threads/${t.id}?${keep ? `project=${encodeURIComponent(keep)}&` : ""}before=${encodeURIComponent(first.message.createdAt.toISOString())}`}
+                >
+                  <Icon name="arrow-up" />
+                  {_("Older messages")}
+                </a>
+              </p>
+            )}
+            {rows.length ? (
+              <Conversation rows={rows} lanes={lanes} _={_} title={t.subject} />
+            ) : (
+              <EmptyState title={_("No messages here yet.")}>{_("Messages you send or receive in this thread appear here.")}</EmptyState>
+            )}
+            {older && (
+              <p class="convo-more">
+                <a class="button" href={withProject(`/console/threads/${t.id}`, keep)}>
+                  <Icon name="arrow-down" />
+                  {_("Latest messages")}
+                </a>
+              </p>
+            )}
+            {t.mutedAt && t.mutedReason !== "human" && (
+              <Banner tone="warn" title={_("The loop guard muted this thread.")}>
+                {fill(_("Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again."), {
+                  max: MAX_AGENT_MESSAGES,
+                })}
+              </Banner>
+            )}
+            {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
+            {!adminRead && !t.encrypted && (
+              <form class="reply" hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
+                <Field
+                  id="reply-body"
+                  label={_("Reply to the thread")}
+                  lang={_.lang}
+                  help={_("Sent as you. A reply from a person resets the agent streak and reopens a muted thread.")}
+                >
+                  <textarea
+                    id="reply-body"
+                    hx-preserve="true"
+                    name="body"
+                    required
+                    maxlength={8000}
+                    rows={4}
+                    {...fieldAria("reply-body", { help: true })}
+                  />
+                </Field>
+                <button type="submit" class="primary">
+                  {_("Send reply")}
+                </button>
+              </form>
+            )}
+            {t.encrypted && !adminRead && (
+              <Banner title={_("End-to-end encrypted")}>
+                {_("The console can't write into this thread: reply from your terminal, where codetgh encrypts for every participant.")}
+              </Banner>
+            )}
+          </div>
+        </div>
+        {/* Shown by the stylesheet only once a live refresh has failed (console.js writes why after the region). */}
+        <p class="live-reload">
+          <a href={withProject(`/console/threads/${t.id}`, keep)}>{_("Reload the page")}</a>
         </p>
-        <p>
-          {t.kind} thread · {state} · agent streak {t.agentStreak}
-        </p>
-        <Table
-          lang={tr(c).lang}
-          head={["From", "Kind", "Message", "Sent"]}
-          rows={rows.map(({ message: m, name }) => [
-            `${name}${m.authoredBy === "agent" ? " (agent)" : ""}`,
-            `${m.kind} · ${m.priority}`,
-            <>
-              {m.flags.map((f) => (
-                <span class="flag">{f}</span>
-              ))}
-              {m.subject && <strong>{m.subject}</strong>}
-              <pre>{m.encrypted ? ENCRYPTED_PLACEHOLDER : m.body}</pre>
-            </>,
-            <When at={m.createdAt} />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && first && (
-          <a
-            href={`/console/threads/${t.id}?${project ? `project=${encodeURIComponent(project)}&` : ""}before=${encodeURIComponent(first.message.createdAt.toISOString())}`}
-          >
-            {tr(c)("Older")}
-          </a>
-        )}
-        {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
-        {!adminRead && !t.encrypted && (
-          <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
-            <label>
-              Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
-            </label>
-            <button type="submit">Send</button>
-          </form>
-        )}
-        {t.mutedAt ? (
-          <Action post={`/console/threads/${t.id}/reopen`} label="Reopen" />
-        ) : (
-          <Action post={`/console/threads/${t.id}/mute`} label="Mute" />
-        )}
-      </div>,
+      </>,
+      undefined,
+      {
+        back: <a href={withProject("/console/threads", keep)}>{_("Back to threads")}</a>,
+        head: (
+          <>
+            <span>{_(t.kind === "team" ? "Team thread" : "Direct thread")}</span>
+            {inProject && <Chip>{inProject.name}</Chip>}
+            {t.encrypted && <span>{_("End-to-end encrypted")}</span>}
+            <MutedPill t={t} _={_} />
+            <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} />
+          </>
+        ),
+        // A guest can't mute or reopen a thread: no button that would only be refused.
+        actions:
+          p.role === "guest" ? undefined : t.mutedAt ? (
+            <Action post={`/console/threads/${t.id}/reopen`} label={_("Reopen thread")} />
+          ) : (
+            <Action post={`/console/threads/${t.id}/mute`} label={_("Mute thread")} />
+          ),
+      },
     );
   });
 

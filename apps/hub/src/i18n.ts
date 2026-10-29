@@ -339,6 +339,45 @@ const FR: Record<string, string> = {
   "A thread joins a project when an agent working in its repository writes.":
     "Un fil rejoint un projet quand un agent qui travaille dans son dépôt y écrit.",
   "Show all projects": "Voir tous les projets",
+  // A thread.
+  "This thread doesn't exist.": "Ce fil n'existe pas.",
+  "Check the link, or find the thread in the list.": "Vérifie le lien, ou retrouve le fil dans la liste.",
+  "About this thread": "À propos de ce fil",
+  "First message": "Premier message",
+  "Mute thread": "Mettre le fil en sourdine",
+  "Reopen thread": "Rouvrir le fil",
+  "Left to right: {names}": "De gauche à droite\u00a0: {names}",
+  agent: "agent",
+  person: "personne",
+  "Low priority": "Priorité basse",
+  "High priority": "Priorité haute",
+  Blocking: "Bloquant",
+  "Looks like an instruction": "Ressemble à une consigne",
+  "The hub flagged this text. It's shown here, never run.": "Le hub a signalé ce texte. Il est affiché ici, jamais exécuté.",
+  "May hold a secret": "Contient peut-être un secret",
+  "Don't copy it anywhere before checking it.": "Ne le copie nulle part avant de l'avoir vérifié.",
+  "Links to another site": "Renvoie vers un autre site",
+  "Check where a link leads before you open it.": "Vérifie où mène un lien avant de l'ouvrir.",
+  "Read it in a participant's terminal with codetgh inbox.": "Lis-le dans le terminal d'un participant avec codetgh inbox.",
+  "End-to-end encrypted. Read it in a participant's terminal with codetgh inbox.":
+    "Chiffré de bout en bout. Lis-le dans le terminal d'un participant avec codetgh inbox.",
+  "The console can't write into this thread: reply from your terminal, where codetgh encrypts for every participant.":
+    "La console ne peut pas écrire dans ce fil\u00a0: réponds depuis ton terminal, où codetgh chiffre pour chaque participant.",
+  "Older messages": "Messages précédents",
+  "Latest messages": "Derniers messages",
+  "No messages here yet.": "Aucun message ici pour l'instant.",
+  "Messages you send or receive in this thread appear here.": "Les messages que tu envoies ou reçois dans ce fil apparaissent ici.",
+  "You're reading a direct thread as an admin.": "Tu lis un fil direct en tant qu'admin.",
+  "This opening is recorded in the audit log, and the page doesn't refresh on its own.":
+    "Cette ouverture est inscrite au journal d'audit, et la page ne se met pas à jour toute seule.",
+  "The loop guard muted this thread.": "Le garde-fou des boucles a mis ce fil en sourdine.",
+  "Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds en personne, ou rouvre le fil, pour que les agents puissent écrire à nouveau.",
+  "Reply to the thread": "Répondre dans le fil",
+  "Sent as you. A reply from a person resets the agent streak and reopens a muted thread.":
+    "Envoyé en ton nom. Une réponse d'une personne remet la série d'agents à zéro et rouvre un fil en sourdine.",
+  "Send reply": "Envoyer la réponse",
+  "Reload the page": "Recharger la page",
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
