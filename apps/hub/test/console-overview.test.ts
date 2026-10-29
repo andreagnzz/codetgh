@@ -142,6 +142,16 @@ describe("overview", () => {
     expect(row(newest?.id)).toContain("Item 17");
   });
 
+  it("keeps the subject of a direct thread between two others from an admin, as the threads page does", async () => {
+    const dm = await send("sam", { to: "@malik", subject: "Private plan", body: "Between us." }, 1);
+    const row = (page: string) =>
+      page.slice(page.indexOf(`data-mid="${dm.id}"`), page.indexOf("</li>", page.indexOf(`data-mid="${dm.id}"`)));
+    const admin = row(section(await html(team.lea.cookie), "line-h"));
+    expect(admin).toContain("Sam&#39;s agent");
+    expect(admin).not.toContain("Private plan");
+    expect(row(section(await html(team.malik.cookie), "line-h"))).toContain("Private plan");
+  });
+
   it("says who is online, shows only the exceptions as pills, and the offline sessions under their count", async () => {
     await hub.db.update(agent).set({ permissionMode: "bypassPermissions" }).where(eq(agent.sessionId, "sam-needs"));
     const ended = await startSession(hub.url, team.lea.token, "lea-gone");

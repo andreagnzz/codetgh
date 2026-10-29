@@ -360,7 +360,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       )
       .orderBy(desc(thread.lastMessageAt));
     // The line keeps the last day; older messages wait on the threads page, as do the ones past the cap.
-    const line = await recentLine(p);
+    const line = await recentLine(p, mine);
     const dayAgo = Date.now() - 86_400_000;
     const shown = line.filter((r) => r.message.createdAt.getTime() >= dayAgo).slice(0, LINE_CAP);
     const online = agents.filter((r) => presence(r.agent) === "online").length;
@@ -579,10 +579,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // The activity line: who wrote to whom, never what. Same visibility as the thread page: a reply addressed to one person
   // stays between them, admins excepted.
-  async function recentLine(p: Principal) {
-    const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
+  async function recentLine(p: Principal, mine: string[]) {
     const rows = await db
-      .select({ message, name: user.name, handle: membership.handle, subject: thread.subject })
+      .select({ message, name: user.name, handle: membership.handle, subject: thread.subject, kind: thread.kind })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
@@ -610,7 +609,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
         .where(and(eq(agent.teamId, p.teamId), inArray(agent.id, agents))))
         handles.set(`agent:${r.id}`, `@${r.handle}`);
-    return rows.map((r) => ({ ...r, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
+    // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
+    return rows.map(({ kind, ...r }) => ({
+      ...r,
+      subject: kind === "direct" && !mine.includes(r.message.threadId) ? null : r.subject,
+      message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) },
+    }));
   }
 
   consoleApp.get("/threads", async (c) => {
