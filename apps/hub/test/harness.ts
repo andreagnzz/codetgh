@@ -24,16 +24,24 @@ import { createPersonalToken } from "../src/tokens.js";
 // Generated per run: the repository holds no fixed hub secret, even for tests.
 const SECRET = randomBytes(32).toString("base64");
 
-// Real hub on a random port; PGlite in memory, or a fresh database on TEST_DATABASE_URL.
-export async function startHub(opts: { limiter?: RateLimiter; logLines?: string[]; mailer?: Mailer; config?: Partial<Config> } = {}) {
+// Real hub on a random port; PGlite in memory, or a fresh database on TEST_DATABASE_URL. With hostname, it listens on that
+// address only (the console demo binds 127.0.0.1).
+export async function startHub(
+  opts: { limiter?: RateLimiter; logLines?: string[]; mailer?: Mailer; config?: Partial<Config>; hostname?: string } = {},
+) {
   let app: ReturnType<typeof createApp> | undefined;
   const server = await new Promise<Server>((resolve) => {
-    const s = serve({ port: 0, fetch: (req, env) => (app ? app.fetch(req, env) : new Response("starting", { status: 503 })) }, () =>
-      resolve(s as Server),
+    const s = serve(
+      {
+        port: 0,
+        hostname: opts.hostname,
+        fetch: (req, env) => (app ? app.fetch(req, env) : new Response("starting", { status: 503 })),
+      },
+      () => resolve(s as Server),
     );
   });
   const port = (server.address() as AddressInfo).port;
-  const url = `http://localhost:${port}`;
+  const url = `http://${opts.hostname ?? "localhost"}:${port}`;
   let databaseUrl: string | undefined;
   let dropDb = async () => {};
   if (process.env.TEST_DATABASE_URL) {
