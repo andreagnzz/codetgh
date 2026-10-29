@@ -140,6 +140,8 @@ describe("overview", () => {
       /<strong>Sam&#39;s agent<\/strong> <span aria-hidden="true">→<\/span><span class="sr-only">to<\/span> @lea/,
     );
     expect(row(newest?.id)).toContain("Item 17");
+    // A message from today shows the clock alone.
+    expect(row(newest?.id)).toMatch(/data-local="true">\d\d:\d\d<\/time>/);
   });
 
   it("keeps the subject of a direct thread between two others from an admin, as the threads page does", async () => {
