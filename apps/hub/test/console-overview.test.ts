@@ -1,9 +1,12 @@
 import { eq } from "drizzle-orm";
+import { jsx } from "hono/jsx";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Line } from "../src/console/pages.js";
 import { agent, message, thread } from "../src/db/schema.js";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { createInvitation } from "../src/domain/teams.js";
+import { t } from "../src/i18n.js";
 import { principalForToken } from "../src/principal.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
@@ -156,6 +159,21 @@ describe("overview", () => {
     expect(admin).toContain("Sam&#39;s agent");
     expect(admin).not.toContain("Private plan");
     expect(row(section(await html(team.malik.cookie), "line-h"))).toContain("Private plan");
+  });
+
+  it("names the lanes a phone shows from the rows it shows: someone only in the older rows gets no lane there", async () => {
+    const _ = Object.assign((s: string) => t("en", s), { lang: "en" as const });
+    const at = new Date();
+    const rows = Array.from({ length: 12 }, (_x, i) => ({
+      message: { id: `m${i}`, createdAt: at, kind: "note", priority: "normal", authoredBy: "agent", threadId: "t1", to: ["@lea"] },
+      name: i < 11 ? "Sam" : "Nora",
+      handle: i < 11 ? "sam" : "nora",
+      subject: null,
+    }));
+    const html = String(await jsx(Line as never, { rows, _ } as never).toString());
+    expect(html).toContain('<div class="lanes" data-lanes="3" data-narrow="2">');
+    expect(html).toContain('<p class="lane-caption">Lanes: sam, lea</p>');
+    expect(html).toContain('<p class="lane-names" data-rows="1">');
   });
 
   it("says who is online, shows only the exceptions as pills, and the offline sessions under their count", async () => {

@@ -759,6 +759,8 @@ type Msg = { id: string; createdAt: Date; kind: string; priority: string; author
 // At most ten lanes from 640 px and six under it; past that the people seen least recently share the last lane, "+n".
 const MAX_LANES = 10;
 const MAX_NARROW = 6;
+export const LINE_CAP = 15;
+export const LINE_PHONE = 10;
 const WIRE_Y = 18; // the middle of the row's first line of text
 
 const wireOf = (m: Pick<Msg, "authoredBy" | "to">, from: string): Wire => ({
@@ -766,12 +768,17 @@ const wireOf = (m: Pick<Msg, "authoredBy" | "to">, from: string): Wire => ({
   human: m.authoredBy !== "agent",
   to: m.to.some((a) => a.startsWith("thread:") || a === "@team") ? "all" : m.to.filter((a) => a.startsWith("@")).map((a) => a.slice(1)),
 });
-// One lane per person, in order of first appearance. Past six people a second, narrower set is drawn for phones.
-type LaneSet = { keys: string[]; wide: string[]; narrow?: string[] };
+// One lane per person, in order of first appearance. Phones show the first rows only: when the people of those rows are not
+// the wide set (past six, or someone only in the older rows), a second set is drawn for phones from those rows.
+type LaneSet = { keys: string[]; wide: string[]; phoneKeys: string[]; narrow?: string[] };
 const cap = (keys: string[], max: number) => (keys.length <= max ? keys : [...keys.slice(0, max - 1), `+${keys.length - max + 1}`]);
+const keysOf = (wires: Wire[]) => [...new Set(wires.flatMap((w) => [w.from, ...(w.to === "all" ? [] : w.to)]))];
 const lanesOf = (wires: Wire[]): LaneSet => {
-  const keys = [...new Set(wires.flatMap((w) => [w.from, ...(w.to === "all" ? [] : w.to)]))];
-  return { keys, wide: cap(keys, MAX_LANES), narrow: keys.length > MAX_NARROW ? cap(keys, MAX_NARROW) : undefined };
+  const keys = keysOf(wires);
+  const phoneKeys = keysOf(wires.slice(0, LINE_PHONE));
+  const wide = cap(keys, MAX_LANES);
+  const narrow = cap(phoneKeys, MAX_NARROW);
+  return { keys, wide, phoneKeys, narrow: narrow.join() === wide.join() ? undefined : narrow };
 };
 const laneOf = (lanes: string[], key: string) => {
   const i = lanes.indexOf(key);
@@ -851,20 +858,20 @@ const PRIORITY: Record<string, string> = { low: "low priority", high: "high prio
 // first LINE_PHONE; the rest wait on the threads page. The head of the lanes stays in view while the line scrolls: a caret
 // per person, the handles printed above them from 640 px (on two staggered rows, three past six people, so each name has
 // the width of as many lanes), a caption naming them on phones.
-export const LINE_CAP = 15;
-export const LINE_PHONE = 10;
 type LineRow = { message: Msg; name: string; handle: string | null; subject: string | null };
 export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
   const lanes = lanesOf(rows.map((r) => wireOf(r.message, r.handle ?? r.name)));
   const phone = lanes.narrow ?? lanes.wide;
-  const named = phone.map((l, i) => (l.startsWith("+") ? `${l} (${lanes.keys.slice(i).join(", ")})` : l));
+  const named = phone.map((l, i) => (l.startsWith("+") ? `${l} (${lanes.phoneKeys.slice(i).join(", ")})` : l));
   // Names that fit one lane at its narrowest (28.8 px for ten lanes, 32 px under ten: four mono letters) stand on one row;
   // longer ones take turns on two, three past six people.
   const longest = Math.max(...lanes.wide.map((l) => l.length));
   const nameRows = longest <= (lanes.wide.length < MAX_LANES ? 4 : 3) ? 1 : lanes.wide.length > MAX_NARROW ? 3 : 2;
-  const both = (draw: (set?: "wide" | "narrow") => Child) => (lanes.narrow ? [draw("wide"), draw("narrow")] : draw());
+  // Each lane set its drawing: the wide one, and the phone's when it differs.
+  const perSet = (draw: (lanes: string[], set?: "wide" | "narrow") => Child, onPhones = true) =>
+    lanes.narrow ? [draw(lanes.wide, "wide"), onPhones && draw(lanes.narrow, "narrow")] : draw(lanes.wide);
   return (
-    <div class="lanes" data-lanes={lanes.wide.length} data-narrow={lanes.narrow ? "" : undefined}>
+    <div class="lanes" data-lanes={lanes.wide.length} data-narrow={lanes.narrow?.length}>
       <div class="lane-heads" aria-hidden="true">
         <p class="lane-caption">{_("Lanes: {names}").replace("{names}", () => named.join(", "))}</p>
         <p class="lane-names" data-rows={nameRows}>
@@ -880,8 +887,8 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
             </span>
           ))}
         </p>
-        {both((set) => (
-          <Carets lanes={set === "narrow" ? (lanes.narrow ?? []) : lanes.wide} set={set} />
+        {perSet((l, s) => (
+          <Carets lanes={l} set={s} />
         ))}
       </div>
       <ol class="line">
@@ -892,9 +899,13 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
           const who = m.authoredBy === "agent" ? _("{name}'s agent").replace("{name}", () => name) : name;
           return (
             <li class={i < LINE_PHONE ? "wire-row" : "wire-row later"} data-mid={m.id} data-summary={`${_("New message")}: ${who} → ${to}`}>
-              {both((set) => (
-                <WireSvg lanes={set === "narrow" ? (lanes.narrow ?? []) : lanes.wide} wire={wire} set={set} />
-              ))}
+              {/* A row past the phone's first ones is hidden there: it needs no phone wire. */}
+              {perSet(
+                (l, s) => (
+                  <WireSvg lanes={l} wire={wire} set={s} />
+                ),
+                i < LINE_PHONE,
+              )}
               <a id={`line-${m.id}`} class="wire-text" href={`/console/threads/${m.threadId}`}>
                 {/* The arrow keeps to the recipient: a narrow column breaks the line before it. */}
                 <span class="wire-who">

@@ -363,9 +363,25 @@ main:has(> #live + .field-error) > .live-retry {
     animation: none;
   }
 }
-/* Phones: six lanes at most, the ten newest messages, then the way to the rest. */
+/* Phones: the ten newest messages, then the way to the rest; when their people are not the wide set, their own lanes (six
+   at most, data-narrow says how many). */
 @media (max-width: 639px) {
-  .lanes[data-narrow] {
+  .lanes[data-narrow="1"] {
+    --lanes: 1;
+  }
+  .lanes[data-narrow="2"] {
+    --lanes: 2;
+  }
+  .lanes[data-narrow="3"] {
+    --lanes: 3;
+  }
+  .lanes[data-narrow="4"] {
+    --lanes: 4;
+  }
+  .lanes[data-narrow="5"] {
+    --lanes: 5;
+  }
+  .lanes[data-narrow="6"] {
     --lanes: 6;
   }
   .lanes[data-narrow] .wire.wide {
