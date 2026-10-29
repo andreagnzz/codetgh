@@ -182,7 +182,10 @@ const Subject: FC<{ e: AuditEvent; names: Names; teamName: string; _: Tr }> = ({
   // A session is named as typed in a terminal.
   const shown = name && prefix === "agt" && names.names.has(id) ? <Chip>{name}</Chip> : name;
   return (
-    <Lines main={shown ?? <code class="rec-key">{short(id)}</code>} sub={name ? <code class="rec-key">{short(id)}</code> : undefined} />
+    <Lines
+      main={shown ?? <code class="rec-key rec-id">{short(id)}</code>}
+      sub={name ? <code class="rec-key rec-id">{short(id)}</code> : undefined}
+    />
   );
 };
 

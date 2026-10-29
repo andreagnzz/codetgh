@@ -33,9 +33,12 @@
     max-width: 100%;
   }
 }
-/* A key breaks after its dots only. */
+/* A key breaks after its dots only; a short id, its start and end around an ellipsis, never. */
 .rec-key {
   overflow-wrap: normal;
+}
+.rec-id {
+  white-space: nowrap;
 }
 /* A missing value says so, quietly. */
 .rec-none {
@@ -177,6 +180,10 @@ p.rec-text {
 }
 .audit-log .chip {
   max-width: 9rem;
+}
+/* How it came in, on one line: REST API, Console. */
+.audit-log td:nth-child(4) {
+  white-space: nowrap;
 }
 @media (min-width: 1280px) {
   .audit-log .chip {
