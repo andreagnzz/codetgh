@@ -1,25 +1,51 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
 import { BrandHead, Logo } from "./brand.js";
 import { type Lang, t } from "./i18n.js";
 
+// The doctype keeps every browser out of quirks mode.
 export const Layout = ({ lang, title = "CodeTgh", children }: { lang: Lang; title?: string; children?: Child }) => (
-  <html lang={lang}>
-    <head>
-      <meta charset="utf-8" />
-      <BrandHead />
-      <title>{title}</title>
-    </head>
-    <body>
-      <main class="public">
-        <Logo kind="stacked" />
-        {children}
-        <p id="error" class="field-error" role="alert" />
-      </main>
-      <script src="/assets/oauth.js" />
-    </body>
-  </html>
+  <>
+    {raw("<!doctype html>")}
+    <html lang={lang}>
+      <head>
+        <meta charset="utf-8" />
+        <BrandHead />
+        <title>{title}</title>
+      </head>
+      <body>
+        <main class="public">
+          <Logo kind="stacked" />
+          {children}
+          <p id="error" class="field-error" role="alert" />
+        </main>
+        <script src="/assets/oauth.js" />
+      </body>
+    </html>
+  </>
 );
+
+const ERROR_TITLE: Record<number, string> = {
+  400: "This request isn't valid.",
+  403: "You can't open this page.",
+  404: "This page doesn't exist.",
+};
+
+// A page load the hub refuses: what happened, the hub's reason, and a way back. An htmx request keeps the bare reason.
+export const ErrorPage = ({ status, reason, lang }: { status: number; reason: string; lang: Lang }) => {
+  const _ = (s: string) => t(lang, s);
+  const title = _(ERROR_TITLE[status] ?? "The hub refused this request.");
+  return (
+    <Layout lang={lang} title={`${title} · CodeTgh`}>
+      <h1>{title}</h1>
+      <p class="lede">{_(reason)}</p>
+      <p>
+        <a href="/console">{_("Back to the overview")}</a>
+      </p>
+    </Layout>
+  );
+};
 
 const PROVIDER_LABEL = { github: "Sign in with GitHub", google: "Sign in with Google", sso: "Sign in with your organization" };
 

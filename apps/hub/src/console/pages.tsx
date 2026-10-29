@@ -1,4 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import { BrandHead, Logo } from "../brand.js";
 import { type listAgents, presence, statusOf } from "../domain/agents.js";
@@ -44,77 +45,82 @@ export const Layout: FC<{
   const current = (href: string) =>
     href === "/console" ? path === "/console" || path === "/console/" : path === href || path.startsWith(`${href}/`);
   return (
-    <html lang={lang}>
-      <head>
-        <meta charset="utf-8" />
-        <BrandHead />
-        <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false}' />
-        <title>{`${title} · CodeTgh`}</title>
-        <script src="/assets/htmx.js" />
-        <script src="/assets/sse.js" />
-        <script src="/console.js" defer />
-      </head>
-      <body hx-headers={JSON.stringify({ "X-CSRF-Token": csrf })} hx-ext="sse" sse-connect="/console/stream">
-        <a class="skip" href="#main">
-          {_("Skip to content")}
-        </a>
-        <div class="shell">
-          <aside class="sidebar">
-            <Logo kind="horizontal" />
-            <nav aria-label={_("Console")}>
-              {NAV.filter(([, , least]) => (least === "admin" ? admin : least !== "member" || p.role !== "guest")).map(([href, label]) => (
-                <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
-                  {_(label)}
-                </a>
-              ))}
-            </nav>
-            <p class="who meta">
-              {p.user.name} · {_(p.role)}
-              <br />
-              {p.teamName}
-            </p>
-            <p class="meta">
-              {lang === "fr" ? (
-                <a href={`/lang/en?next=${encodeURIComponent(path)}`} hreflang="en" lang="en">
-                  English
-                </a>
-              ) : (
-                <a href={`/lang/fr?next=${encodeURIComponent(path)}`} hreflang="fr" lang="fr">
-                  Français
-                </a>
-              )}
-            </p>
-          </aside>
-          <main id="main">
-            {p.paused && (
-              <p class="banner" role="status">
-                {_("Agent traffic paused")}
-              </p>
-            )}
-            <h1>{title}</h1>
-            {filter && (
-              <nav aria-label={_("Project")} class="projects-filter">
-                {[{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }].map(
-                  (pr) => (
-                    <>
-                      <a
-                        href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
-                        aria-current={pr.id === filter.selected ? "page" : undefined}
-                      >
-                        {pr.name}
-                      </a>{" "}
-                    </>
+    <>
+      {raw("<!doctype html>")}
+      <html lang={lang}>
+        <head>
+          <meta charset="utf-8" />
+          <BrandHead />
+          <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false}' />
+          <title>{`${title} · CodeTgh`}</title>
+          <script src="/assets/htmx.js" />
+          <script src="/assets/sse.js" />
+          <script src="/console.js" defer />
+        </head>
+        <body hx-headers={JSON.stringify({ "X-CSRF-Token": csrf })} hx-ext="sse" sse-connect="/console/stream">
+          <a class="skip" href="#main">
+            {_("Skip to content")}
+          </a>
+          <div class="shell">
+            <aside class="sidebar">
+              <Logo kind="horizontal" />
+              <nav aria-label={_("Console")}>
+                {NAV.filter(([, , least]) => (least === "admin" ? admin : least !== "member" || p.role !== "guest")).map(
+                  ([href, label]) => (
+                    <a href={keep ? `${href}?project=${encodeURIComponent(keep)}` : href} aria-current={current(href) ? "page" : undefined}>
+                      {_(label)}
+                    </a>
                   ),
                 )}
               </nav>
-            )}
-            {children}
-            {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
-            <p id="line-announce" class="sr-only" aria-live="polite" />
-          </main>
-        </div>
-      </body>
-    </html>
+              <p class="who meta">
+                {p.user.name} · {_(p.role)}
+                <br />
+                {p.teamName}
+              </p>
+              <p class="meta">
+                {lang === "fr" ? (
+                  <a href={`/lang/en?next=${encodeURIComponent(path)}`} hreflang="en" lang="en">
+                    English
+                  </a>
+                ) : (
+                  <a href={`/lang/fr?next=${encodeURIComponent(path)}`} hreflang="fr" lang="fr">
+                    Français
+                  </a>
+                )}
+              </p>
+            </aside>
+            <main id="main">
+              {p.paused && (
+                <p class="banner" role="status">
+                  {_("Agent traffic paused")}
+                </p>
+              )}
+              <h1>{title}</h1>
+              {filter && (
+                <nav aria-label={_("Project")} class="projects-filter">
+                  {[{ id: undefined, name: _("All projects") }, ...filter.projects, { id: "none", name: _("Outside a project") }].map(
+                    (pr) => (
+                      <>
+                        <a
+                          href={`${path}?${archived ? "archived=1&" : ""}project=${pr.id ? encodeURIComponent(pr.id) : ""}`}
+                          aria-current={pr.id === filter.selected ? "page" : undefined}
+                        >
+                          {pr.name}
+                        </a>{" "}
+                      </>
+                    ),
+                  )}
+                </nav>
+              )}
+              {children}
+              {/* Outside the live-refreshed parts, so a screen reader hears each new message once. */}
+              <p id="line-announce" class="sr-only" aria-live="polite" />
+            </main>
+          </div>
+        </body>
+      </html>
+    </>
   );
 };
 

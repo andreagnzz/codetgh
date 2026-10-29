@@ -73,6 +73,7 @@ import {
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
+import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
 import {
@@ -154,7 +155,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       await joinWithInvitation(db, session.user, c.req.param("token"));
     } catch (e) {
       if (!(e instanceof HubError)) throw e;
-      return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 403);
+      const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+      return c.html(<ErrorPage status={HTTP_STATUS[e.code]} reason={e.message} lang={lang} />, HTTP_STATUS[e.code] as 403);
     }
     return c.redirect("/console", 303);
   });
@@ -182,9 +184,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     }
     await next();
   });
+  // An htmx request gets the bare reason, which console.js shows where the action was; a page load gets a page.
   consoleApp.onError((e, c) => {
     if (!(e instanceof HubError)) throw e;
-    return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
+    const status = HTTP_STATUS[e.code] as 400;
+    if (c.req.header("HX-Request") === "true") return c.html(<Result>{e.message}</Result>, status);
+    const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+    return c.html(<ErrorPage status={status} reason={e.message} lang={lang} />, status);
   });
   for (const section of ["/tasks", "/memory", "/claims", "/projects", "/delegations", "/tokens"])
     consoleApp.use(`${section}/*`, async (c, next) => {
@@ -1774,7 +1780,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .select()
       .from(task)
       .where(and(eq(task.id, c.req.param("id")), eq(task.teamId, p.teamId)));
-    if (!t) return c.notFound();
+    if (!t) throw new HubError("E_NOT_FOUND", "task not found");
     const history = await db
       .select()
       .from(auditEvent)

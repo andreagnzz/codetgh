@@ -252,6 +252,20 @@ const FR: Record<string, string> = {
   "Already have an account?": "Déjà un compte ?",
   "This invitation is no longer valid.": "Cette invitation n'est plus valable.",
   "Ask the person who invited you for a new link.": "Demande un nouveau lien à la personne qui t'a invité.",
+
+  // ---- Foundations (refonte/fondations): shell, components, error pages. ----
+  "This request isn't valid.": "Cette demande n'est pas valable.",
+  "You can't open this page.": "Tu ne peux pas ouvrir cette page.",
+  "This page doesn't exist.": "Cette page n'existe pas.",
+  "The hub refused this request.": "Le hub a refusé cette demande.",
+  "Back to the overview": "Retour à la vue d'ensemble",
+  "admins only": "réservé aux admins",
+  "guests see only their own threads": "un invité ne voit que ses propres fils",
+  "thread not found": "fil introuvable",
+  "task not found": "tâche introuvable",
+  "no such item": "élément introuvable",
+  "unknown status": "état inconnu",
+  // ---- End of the foundations block. ----
 };
 
 export const t = (lang: Lang, s: string) => (lang === "fr" && Object.hasOwn(FR, s) ? (FR[s] ?? s) : s);
