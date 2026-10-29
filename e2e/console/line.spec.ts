@@ -89,3 +89,14 @@ test("times read in the reader's time zone: the clock alone for today, the day a
   await expect(now).toHaveText(clock(await now.getAttribute("datetime")));
   await context.close();
 });
+
+test("a live refresh the hub refuses keeps what the page shows and says from when it is", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  await page.route("**/console", (route) =>
+    route.request().headers()["hx-request"] ? route.fulfill({ status: 500, body: "boom" }) : route.continue(),
+  );
+  await send("second");
+  await expect(page.locator("#live + .field-error")).toHaveText(/^Couldn't refresh\. Showing data from \d\d:\d\d\.$/);
+  await expect(page.locator("#live + .field-error")).toHaveAttribute("role", "alert");
+  await expect(page.locator(".wire-row")).toHaveCount(1);
+});

@@ -9,6 +9,7 @@
   const OFFLINE = fr
     ? "Le hub ne répond pas. Vérifie ta connexion, puis réessaie."
     : "The hub does not answer. Check your connection, then try again.";
+  const STALE = fr ? "Impossible d'actualiser. Les données affichées datent de {time}." : "Couldn't refresh. Showing data from {time}.";
   const CLOCK = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 
   // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation.
@@ -86,18 +87,24 @@
     errorAfter(hostOf(e.detail.elt))?.remove();
     busy(e, true);
   });
+  // A region the stream refreshes keeps what it shows when a refresh fails: the words say so, with the reader's clock time of
+  // its last load.
+  const liveRegion = (elt) => elt.matches?.("[hx-trigger*='sse:']");
+  let loadedAt = new Date();
+  const stale = () => STALE.replace("{time}", new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", CLOCK).format(loadedAt));
   document.body.addEventListener("htmx:afterRequest", (e) => {
     busy(e, false);
     // Refused, the dialog stays open and can be confirmed again.
     if (pending?.elt === e.detail.elt) pending.sent = false;
+    if (e.detail.successful && liveRegion(e.detail.elt)) loadedAt = new Date();
   });
   // The hub answers a refused action with its reason (4xx); anything else gets a generic next step.
   document.body.addEventListener("htmx:responseError", (e) => {
     const { status, responseText } = e.detail.xhr;
     const reason = new DOMParser().parseFromString(responseText, "text/html").body.textContent?.trim();
-    show(e.detail.elt, status < 500 && reason ? reason : GENERIC);
+    show(e.detail.elt, liveRegion(e.detail.elt) ? stale() : status < 500 && reason ? reason : GENERIC);
   });
-  document.body.addEventListener("htmx:sendError", (e) => show(e.detail.elt, OFFLINE));
+  document.body.addEventListener("htmx:sendError", (e) => show(e.detail.elt, liveRegion(e.detail.elt) ? stale() : OFFLINE));
 
   // Removing what holds the focus (a toast, a dismissed banner) gives it back to where it came from, or to the page.
   const cameFrom = new WeakMap();
