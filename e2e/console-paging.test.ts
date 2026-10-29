@@ -15,7 +15,8 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const get = async (path: string) => (await fetch(`${hub.url}${path}`, { headers: { cookie: team.lea.cookie } })).text();
-const older = (html: string) => html.match(/<a href="([^"]+)">Older<\/a>/)?.[1]?.replaceAll("&amp;", "&");
+// The link that pages back carries ?before= (a list's "Older", a thread's "Older messages").
+const older = (html: string) => html.match(/href="([^"]+[?&;]before=[^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
 
 it("pages alerts: no Older link at exactly 50, and one row on the next page at 51", async () => {
   const row = (i: number) => ({

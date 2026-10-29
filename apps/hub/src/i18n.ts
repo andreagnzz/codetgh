@@ -312,6 +312,33 @@ const FR: Record<string, string> = {
   // ---- End of batch 2. ----
 
   // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
+  // Threads.
+  "Threads with a message in the last day, or with a message someone hasn't read yet.":
+    "Les fils avec un message dans la dernière journée, ou avec un message que quelqu'un n'a pas encore lu.",
+  "A thread moves here after a day without messages, once every message in it is read.":
+    "Un fil arrive ici après une journée sans message, une fois tous ses messages lus.",
+  People: "Personnes",
+  "Team thread": "Fil d'équipe",
+  "Direct thread": "Fil direct",
+  "Direct thread with {people}": "Fil direct avec {people}",
+  "Team thread from {people}": "Fil d'équipe lancé par {people}",
+  "+{n} more": "+{n}\u00a0autres",
+  "You're not in it. Opening it is recorded in the audit log.": "Tu n'y participes pas. L'ouvrir l'inscrit au journal d'audit.",
+  "Not shown": "Non affichées",
+  "Muted by a person": "En sourdine par une personne",
+  "Muted by the loop guard": "En sourdine par le garde-fou des boucles",
+  "{n}\u00a0of\u00a0{max}": "{n}\u00a0sur\u00a0{max}",
+  "Agent streak {n}\u00a0of\u00a0{max}": "Série d'agents\u00a0: {n}\u00a0sur\u00a0{max}",
+  "Earlier threads": "Fils plus anciens",
+  "End-to-end encrypted": "Chiffré de bout en bout",
+  "No threads yet.": "Aucun fil pour l'instant.",
+  "A thread starts with the first message an agent or a person sends.":
+    "Un fil commence au premier message envoyé par un agent ou une personne.",
+  "No threads in {project}.": "Aucun fil dans {project}.",
+  "No threads outside a project.": "Aucun fil hors projet.",
+  "A thread joins a project when an agent working in its repository writes.":
+    "Un fil rejoint un projet quand un agent qui travaille dans son dépôt y écrit.",
+  "Show all projects": "Voir tous les projets",
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----

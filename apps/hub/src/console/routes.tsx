@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, min, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Child } from "hono/jsx";
@@ -56,7 +56,14 @@ import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
-import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
+import {
+  archivedThread,
+  ENCRYPTED_PLACEHOLDER,
+  MAX_AGENT_MESSAGES,
+  type MessagingDeps,
+  sendMessage,
+  sentOrReceivedBy,
+} from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
@@ -82,17 +89,21 @@ import {
   Action,
   ArchiveTabs,
   Bypass,
+  EmptyState,
   InvitePage,
   Layout,
   Line,
+  Pager,
   People,
   Pill,
   type ProjectFilter,
   Result,
+  Stamp,
   Table,
   toneOf,
   When,
 } from "./pages.js";
+import { fill, Handles, MutedPill, Streak, threadName } from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -500,6 +511,34 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return rows.map((r) => ({ ...r, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
   }
 
+  // Who is in each thread, in order of first appearance: who wrote, and who a direct thread's messages went to, from the
+  // messages the reader may see (the thread page's own filter). Display only.
+  const peopleOf = async (p: Principal, ids: string[], direct: string[]) => {
+    const people = new Map<string, string[]>();
+    const add = (id: string, handle: string) => {
+      const list = people.get(id) ?? [];
+      if (!list.includes(handle)) people.set(id, [...list, handle]);
+    };
+    if (!ids.length) return people;
+    for (const r of await db
+      .select({ threadId: message.threadId, handle: membership.handle })
+      .from(message)
+      .innerJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
+      .where(and(inArray(message.threadId, ids), sentOrReceivedBy(db, p)))
+      .groupBy(message.threadId, membership.handle)
+      .orderBy(min(message.createdAt)))
+      add(r.threadId, r.handle);
+    if (direct.length)
+      for (const r of await db
+        .selectDistinct({ threadId: message.threadId, handle: membership.handle })
+        .from(receipt)
+        .innerJoin(message, eq(message.id, receipt.messageId))
+        .innerJoin(membership, and(eq(membership.userId, receipt.recipientUserId), eq(membership.teamId, receipt.teamId)))
+        .where(and(inArray(message.threadId, direct), sentOrReceivedBy(db, p))))
+        add(r.threadId, r.handle);
+    return people;
+  };
+
   consoleApp.get("/threads", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
@@ -522,23 +561,97 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    // The subject and the people of someone else's direct thread are part of it: only the audited opening shows them to an
+    // admin.
+    const hidden = (t: (typeof rows)[number]) => t.kind === "direct" && !mine.includes(t.id);
+    const shown = rows.filter((t) => !hidden(t));
+    const people = await peopleOf(
+      p,
+      shown.map((t) => t.id),
+      shown.filter((t) => t.kind === "direct").map((t) => t.id),
+    );
+    const me =
+      (
+        await db
+          .select({ handle: membership.handle })
+          .from(membership)
+          .where(and(eq(membership.userId, p.user.id), eq(membership.teamId, p.teamId)))
+      )[0]?.handle ?? null;
+    // Under the name: the kind when the name does not already say it, then what else is true of the thread.
+    const about = (t: (typeof rows)[number]) =>
+      [
+        t.subject && !hidden(t) && _(t.kind === "team" ? "Team thread" : "Direct thread"),
+        hidden(t) && _("You're not in it. Opening it is recorded in the audit log."),
+        t.encrypted && _("End-to-end encrypted"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
     const table = (of: typeof rows) => (
-      <Table
-        lang={tr(c).lang}
-        head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
-        rows={of.map((t) => [
-          <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
-          _(t.kind),
-          // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
-          t.kind === "direct" && !mine.includes(t.id) ? "" : (t.subject ?? ""),
-          t.agentStreak,
-          <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
-          <When at={t.lastMessageAt} lang={_.lang} />,
-        ])}
-        empty={
-          archived ? _("No archived threads.") : _("No threads yet. A thread starts with the first message an agent or a person sends.")
+      <div class="threads-list">
+        <Table
+          lang={_.lang}
+          caption={_("Threads")}
+          head={[_("Thread"), _("People"), _("Agent streak"), _("Last message")]}
+          primary={0}
+          numeric={[3]}
+          sort={{ column: 3, dir: "descending" }}
+          rows={of.map((t) => [
+            <>
+              <a class="row-link" href={withProject(`/console/threads/${t.id}`, f.selected)}>
+                {threadName(hidden(t) ? { kind: t.kind, subject: null } : t, people.get(t.id), me, _)}
+              </a>
+              {(about(t) || t.mutedAt) && (
+                <span class="thread-meta">
+                  {about(t)}
+                  <MutedPill t={t} _={_} />
+                </span>
+              )}
+            </>,
+            hidden(t) ? <span class="meta">{_("Not shown")}</span> : <Handles handles={people.get(t.id) ?? []} _={_} />,
+            <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} short />,
+            <Stamp at={t.lastMessageAt} lang={_.lang} />,
+          ])}
+          empty=""
+        />
+      </div>
+    );
+    // Current threads quiet for more than a day (some of their messages are still unread) come after a rule.
+    const dayAgo = Date.now() - 86_400_000;
+    const split = (of: typeof rows, heading: "h2" | "h3") => {
+      const recent = of.filter((t) => t.lastMessageAt.getTime() >= dayAgo || archived);
+      const earlier = of.filter((t) => t.lastMessageAt.getTime() < dayAgo && !archived);
+      const Rule = heading;
+      return (
+        <>
+          {recent.length > 0 && table(recent)}
+          {earlier.length > 0 && (
+            <>
+              <Rule class="earlier">{_("Earlier threads")}</Rule>
+              {table(earlier)}
+            </>
+          )}
+        </>
+      );
+    };
+    const filtered = f.projects.find((pr) => pr.id === f.selected)?.name;
+    // The page's description already says what the archives hold.
+    const empty = archived ? (
+      <EmptyState title={_("No archived threads.")} />
+    ) : f.selected ? (
+      <EmptyState
+        title={filtered ? fill(_("No threads in {project}."), { project: filtered }) : _("No threads outside a project.")}
+        action={
+          <p>
+            <a href={`/console/threads?${archived ? "archived=1&" : ""}project=`}>{_("Show all projects")}</a>
+          </p>
         }
-      />
+      >
+        {_("A thread joins a project when an agent working in its repository writes.")}
+      </EmptyState>
+    ) : (
+      <EmptyState title={_("No threads yet.")} icon="terminal">
+        {_("A thread starts with the first message an agent or a person sends.")}
+      </EmptyState>
     );
     return page(
       c,
@@ -546,23 +659,35 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <>
         <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
         {/* A guest never sees the team's projects, their names as headings included. */}
-        {f.selected || rows.length === 0 || p.role === "guest"
-          ? table(rows)
-          : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {table(g.rows)}
-              </section>
-            ))}
+        {rows.length === 0
+          ? empty
+          : f.selected || p.role === "guest"
+            ? split(rows, "h2")
+            : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
+                <section aria-labelledby={`p-${g.id}`}>
+                  <h2 id={`p-${g.id}`}>{g.name}</h2>
+                  {split(g.rows, "h3")}
+                </section>
+              ))}
         {found.length > PAGE && last && (
-          <a
-            href={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
-          >
-            {_("Older")}
-          </a>
+          <Pager
+            lang={_.lang}
+            older={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
+          />
         )}
       </>,
       f,
+      {
+        head: (
+          <p class="lede">
+            {_(
+              archived
+                ? "A thread moves here after a day without messages, once every message in it is read."
+                : "Threads with a message in the last day, or with a message someone hasn't read yet.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 

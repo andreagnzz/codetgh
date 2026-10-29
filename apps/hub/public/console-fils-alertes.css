@@ -1,6 +1,6 @@
 /* Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this file; the tokens, base and
-   components are in console.css. Until it restyles its screens, the rules below keep today's markup (the excerpt is also on the
-   overview). */
+   components are in console.css. The excerpt stays for the overview, until batch 2 moves it to its own words; the flag for
+   the thread page, until it shows flags in words. */
 .excerpt {
   font-family: var(--mono);
   font-size: var(--fs-caption);
@@ -12,4 +12,130 @@
   border-radius: var(--r-full);
   font-size: var(--fs-caption);
   margin-right: var(--sp-1);
+}
+
+/* A list page's description, under its title. */
+.page-meta > .lede {
+  margin: 0;
+}
+
+/* Threads: one row per thread, named by its subject or by its kind and people; muted ones say by whom. */
+.thread-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.handles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+}
+.handles .more {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  white-space: nowrap;
+}
+/* The agent streak: the count in words, five ticks that repeat it. */
+.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+.ticks > span {
+  width: 4px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 1px;
+}
+.ticks > .on {
+  border-color: var(--text-muted);
+  background: var(--text-muted);
+}
+/* A rule that carries meaning, with its words in it: what is below has had no message for more than a day. */
+.earlier {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-6) 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.earlier::before,
+.earlier::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
+}
+.earlier::before {
+  flex: 0 0 var(--sp-4);
+}
+
+/* The list keeps its columns from one table to the next (one per project, then the earlier ones). Under 640 px a record
+   is its name and what it is, then its values on one line: no label where the value says what it is. */
+@media (min-width: 640px) {
+  .threads-list table {
+    table-layout: fixed;
+  }
+  .threads-list th:nth-child(2) {
+    width: 30%;
+  }
+  .threads-list th:nth-child(3) {
+    width: 8.5rem;
+  }
+  .threads-list th:nth-child(4) {
+    width: 8rem;
+  }
+}
+@media (max-width: 639px) {
+  .threads-list tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-3) 0;
+  }
+  .threads-list td {
+    display: block;
+    padding: 0;
+  }
+  .threads-list td::before {
+    content: none;
+  }
+  .threads-list td.primary-cell {
+    flex: 1 0 100%;
+  }
+  .threads-list td.primary-cell {
+    padding-bottom: var(--sp-1);
+  }
+  /* The streak alone would be a bare count: it keeps its label, on its line. */
+  .threads-list td:nth-child(3) {
+    display: flex;
+    align-items: center;
+  }
+  .threads-list td:nth-child(3)::before {
+    content: attr(data-label);
+    margin-right: var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+  }
+  .threads-list td.num {
+    margin-left: auto;
+  }
 }
