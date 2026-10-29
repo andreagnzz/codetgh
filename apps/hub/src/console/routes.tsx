@@ -780,7 +780,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           f.selected ? (
             <EmptyState
               title={chosen ? _("No sessions in {project}.").replace("{project}", () => chosen) : _("No sessions outside a project.")}
-              action={<a href="/console/agents?project=">{_("All projects")}</a>}
+              action={
+                <p>
+                  <a class="agents-all" href="/console/agents?project=">
+                    {_("Show all projects")}
+                  </a>
+                </p>
+              }
             />
           ) : (
             <NoSessions _={_} />

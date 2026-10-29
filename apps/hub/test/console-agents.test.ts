@@ -172,7 +172,8 @@ describe("agents", () => {
   it("says what fills an empty page, and how to see every project again", async () => {
     const filtered = main(await page(`/console/agents?project=${projects["acme/latency"]}`, team.lea.cookie));
     expect(filtered).toContain("No sessions in acme/latency.");
-    expect(filtered).toContain('href="/console/agents?project="');
+    // The same action, and the same name, as on Threads.
+    expect(filtered).toContain('<a class="agents-all" href="/console/agents?project=">Show all projects</a>');
     const fresh = await startHub();
     try {
       const other = await fresh.seed();
