@@ -42,7 +42,7 @@ const submit = async (page: Page, password: string) => {
 
 for (const [locale, refused] of [
   ["en-US", "The email or password is wrong. Check both, then try again."],
-  ["fr-FR", "L'e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie."],
+  ["fr-FR", "Le courriel ou le mot de passe est incorrect. Vérifie les deux, puis réessaie."],
 ] as const)
   test.describe(locale, () => {
     test.use({ locale });

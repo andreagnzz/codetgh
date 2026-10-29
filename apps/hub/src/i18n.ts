@@ -317,7 +317,7 @@ const FR: Record<string, string> = {
   "Get a sign-in link by email instead": "Recevoir plutôt un lien par courriel",
   "Email for the link": "Courriel pour le lien",
   "The email or password is wrong. Check both, then try again.":
-    "L'e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.",
+    "Le courriel ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.",
   "This email address isn't valid. Enter an address like name@example.com.":
     "Cette adresse de courriel n'est pas valable. Saisis une adresse comme nom@exemple.com.",
   "This sign-in method isn't available on this hub. Use another one.":

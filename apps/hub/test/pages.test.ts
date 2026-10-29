@@ -153,7 +153,7 @@ describe("public pages", () => {
     const answer = page.indexOf('id="error"');
     expect(answer).toBeGreaterThan(page.indexOf('name="password"'));
     expect(answer).toBeLessThan(page.indexOf(">Sign in</button>"));
-    expect(await html("/login", "fr")).toContain("L&#39;e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
+    expect(await html("/login", "fr")).toContain("Le courriel ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
     expect(await html("/login", "fr")).toContain("Trop d&#39;essais. Attends quelques secondes, puis réessaie.");
   });
 
