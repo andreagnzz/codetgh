@@ -117,9 +117,13 @@ describe("components", () => {
     expect(asked).toContain('hx-post="/console/tokens/t1/revoke"');
     expect(asked).toContain('data-confirm="Revoke the token laptop?"');
     expect(asked).toContain('data-confirm-body="Terminals using it stop."');
+    // The trigger opens the dialog, so its label ends in "…"; the dialog's button runs the action, so it does not.
     expect(asked).toContain('data-confirm-action="Revoke token"');
+    expect(asked).toContain(">Revoke token…</button>");
     expect(asked).toContain('data-done="Token revoked."');
-    expect(await render(Action, { post: "/x", label: "Mute" })).not.toContain("data-confirm");
+    const now = await render(Action, { post: "/x", label: "Mute" });
+    expect(now).not.toContain("data-confirm");
+    expect(now).toContain(">Mute</button>");
   });
 
   it("code block: Copy and Copied in the page's language, the prompt of a command left out of the text", async () => {

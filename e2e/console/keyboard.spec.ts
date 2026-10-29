@@ -105,7 +105,8 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/catalogue`);
-  const trigger = page.getByRole("button", { name: "Revoke token", exact: true });
+  // The trigger opens the dialog, so it ends in "…"; the dialog's button runs the action under the bare label.
+  const trigger = page.locator("#demo-confirm-host").getByRole("button", { name: "Revoke token…", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Revoke the token laptop-cli?" });
@@ -127,7 +128,7 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await expect(page.locator(".toasts .toast")).toHaveCount(0);
 
   // Refused after confirmation: the reason shows in the dialog, which stays open.
-  await page.getByRole("button", { name: "Remove agent", exact: true }).focus();
+  await page.getByRole("button", { name: "Remove agent…", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("dialog").getByRole("button", { name: "Remove agent" }).click();
   await expect(page.locator("#confirm-error")).toHaveText("The hub refuses this demo action, to show where its reason appears.");

@@ -391,8 +391,8 @@ export const When: FC<{ at: Date; lang?: string }> = ({ at, lang = "en" }) => {
 
 // One-click actions: an htmx POST answered with HX-Refresh; the CSRF header comes from <body hx-headers>. The level is the
 // importance: primary (one per area), secondary (the default), tertiary (a text action), danger (destructive). With confirm,
-// console.js asks first in the dialog, whose button repeats the action's label; with done, it says so in a toast after the
-// reload, for a result the page does not show.
+// console.js asks first in the dialog: the trigger opens it, so its label ends in "…", and the dialog's button runs the action
+// under the bare label. With done, it says so in a toast after the reload, for a result the page does not show.
 export const Action: FC<{
   post: string;
   label: string;
@@ -412,7 +412,7 @@ export const Action: FC<{
     data-confirm-action={confirm && label}
     data-done={done}
   >
-    {label}
+    {confirm ? `${label}…` : label}
   </button>
 );
 
