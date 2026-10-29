@@ -283,6 +283,7 @@ const FR: Record<string, string> = {
   "Press ⌘C to copy": "Appuie sur ⌘C pour copier",
   Pages: "Pages",
   Newer: "Plus récents",
+  Newest: "Les plus récents",
   optional: "facultatif",
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
