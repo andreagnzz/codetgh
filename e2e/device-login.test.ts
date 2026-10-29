@@ -48,8 +48,11 @@ describe("browser sign-in (device authorization)", () => {
     const html = await shown.text();
     expect(html).toContain("sam-laptop &lt;b&gt;");
     expect(html).not.toContain("<b>");
-    // When the request started, and that the label is the requester's word, not a checked machine name.
-    expect(html).toMatch(/Started<\/dt><dd><time datetime="[^"]+"/);
+    // When the request started, the clock time in the reader's zone then how long ago, with no tooltip to read; and that the
+    // label is the requester's word, not a checked machine name.
+    expect(html).toMatch(/Started<\/dt><dd><time datetime="[^"]+" data-local="true">[^<]+<\/time> · (now|\d+ seconds? ago)<\/dd>/);
+    // Which account the personal token is for, said on every width (the account menu is folded on phones).
+    expect(html).toContain("<dt>Signed in as</dt><dd>sam@acme.test</dd>");
     // The page's polite live region announces the panel: the panel itself is no status.
     expect(html).not.toContain('role="status"');
     expect(html).toContain("Anyone can send any name, so compare the code, not the name.");

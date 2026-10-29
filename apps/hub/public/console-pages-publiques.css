@@ -168,6 +168,12 @@
 :not(pre) > code.user-code {
   padding: 0 var(--sp-2);
 }
+/* The time is a value like the others, not a caption. */
+.device .facts dd time {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
 /* The machine name is read whole here: it wraps instead of being cut. */
 .device-check .chip {
   white-space: normal;

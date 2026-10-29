@@ -94,6 +94,7 @@ import {
   Pill,
   type ProjectFilter,
   Result,
+  Stamp,
   Table,
   toneOf,
   When,
@@ -1200,7 +1201,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { code, keys } = await deviceInput(c);
     const entry = deviceStep(c, () => device.find(code, keys));
     const vals = JSON.stringify({ user_code: code });
-    // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare.
+    // Within the code's ten minutes: seconds, then minutes.
+    const ago = Math.round((entry.startedAt - Date.now()) / 1000);
+    const relative = new Intl.RelativeTimeFormat(_.lang, { numeric: "auto" });
+    // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare. The
+    // token goes to the account signed in here, which the account menu hides on phones.
     return c.html(
       <section class="panel device-check" aria-labelledby="device-check">
         <h2 id="device-check">{_("Check this sign-in")}</h2>
@@ -1221,8 +1226,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <div>
             <dt>{_("Started")}</dt>
             <dd>
-              <When at={new Date(entry.startedAt)} lang={_.lang} />
+              <Stamp at={new Date(entry.startedAt)} lang={_.lang} /> ·{" "}
+              {Math.abs(ago) < 60 ? relative.format(ago, "second") : relative.format(Math.round(ago / 60), "minute")}
             </dd>
+          </div>
+          <div>
+            <dt>{_("Signed in as")}</dt>
+            <dd>{c.get("principal").user.email}</dd>
           </div>
         </dl>
         <p class="warn-line">
