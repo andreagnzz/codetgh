@@ -24,7 +24,7 @@ const MAX_SEALED_BYTES = 12 * 1024;
 const MAX_REFS = 20;
 const TEAM_SCALE = 10; // a team sends as much as ten busy people
 const MAX_SUBJECT = 200;
-const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before the loop guard mutes it
+export const MAX_AGENT_MESSAGES = 5; // agent messages in a row in one thread before the loop guard mutes it
 // Agent messages between two people, all threads, both ways. shortcut: fixed numbers; a team setting if teams need more.
 const PAIR_LIMIT = 12;
 const PAIR_WINDOW_MS = 10 * 60_000;
