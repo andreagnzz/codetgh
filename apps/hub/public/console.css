@@ -85,7 +85,7 @@
   --hover: 100ms;
   --busy-after: 300ms;
   --loading-after: 400ms;
-  --measure: 56ch; /* Inter at 14 px: under 80 characters a line */
+  --measure: 31.5rem; /* 56 ch of Inter at 14 px, under 80 characters a line; in rem, so captions keep the same width */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
