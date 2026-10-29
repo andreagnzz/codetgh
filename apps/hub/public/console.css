@@ -707,9 +707,11 @@ textarea:focus-visible {
   outline-offset: 0;
   border-color: var(--accent);
 }
+/* Read-only: the inset surface and a dashed edge, which reads in dark mode too, where the inset step is slight. */
 input[readonly],
 textarea[readonly] {
   background: var(--surface-inset);
+  border-style: dashed;
 }
 input:disabled,
 select:disabled,

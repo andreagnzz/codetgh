@@ -136,8 +136,14 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
         <Field id="demo-note" label="Note" lang={lang} help="One regular expression per line.">
           <textarea id="demo-note" name="note" rows={3} {...fieldAria("demo-note", { help: 1 })} />
         </Field>
-        <Field id="demo-readonly" label="Project id" lang={lang}>
-          <input id="demo-readonly" name="readonly" value="prj_01JD8Y6F2Q0M7XW3V5N9T4K2RA" readonly />
+        <Field id="demo-readonly" label="Project id" lang={lang} help="Read-only: the hub sets it.">
+          <input
+            id="demo-readonly"
+            name="readonly"
+            value="prj_01JD8Y6F2Q0M7XW3V5N9T4K2RA"
+            readonly
+            {...fieldAria("demo-readonly", { help: 1 })}
+          />
         </Field>
         <Field id="demo-disabled" label="Team name" lang={lang}>
           <input id="demo-disabled" name="disabled" value="Acme web" disabled />
