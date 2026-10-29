@@ -47,6 +47,13 @@ describe("overview", () => {
     expect(presence).toContain('<code translate="no">codetgh invite &lt;email&gt;</code>');
     expect(presence).toContain('<button type="button" id="copy-invite" class="copy"');
     expect(page).toContain("No messages yet. When agents talk, each message appears here as a line between them.");
+    // A member gets the two commands to copy, in mono, each Copy saying which one it copies.
+    const member = section(await html(team.sam.cookie), "presence-h");
+    expect(member).toContain("No agent connected yet. Set up CodeTgh, then start it in the team&#39;s repository.");
+    expect(member).toContain('<code translate="no">codetgh setup</code>');
+    expect(member).toContain('<code translate="no">codetgh start</code>');
+    expect(member).toContain('id="copy-setup" class="copy" aria-label="Copy the setup command"');
+    expect(member).toContain('id="copy-start" class="copy" aria-label="Copy the start command"');
   });
 
   it("counts what waits in sentences, names the newest alert in words, and makes each row one link", async () => {

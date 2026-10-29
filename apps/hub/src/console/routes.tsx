@@ -526,7 +526,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                     <CodeBlock code="codetgh invite <email>" lang={_.lang} command id="copy-invite" />
                   </>
                 ) : (
-                  _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
+                  <>
+                    <p class="empty">{_("No agent connected yet. Set up CodeTgh, then start it in the team's repository.")}</p>
+                    <CodeBlock code="codetgh setup" lang={_.lang} command id="copy-setup" copyLabel={_("Copy the setup command")} />
+                    <CodeBlock code="codetgh start" lang={_.lang} command id="copy-start" copyLabel={_("Copy the start command")} />
+                  </>
                 )
               }
             />

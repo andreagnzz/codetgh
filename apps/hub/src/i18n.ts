@@ -354,6 +354,10 @@ const FR: Record<string, string> = {
   "See all agents": "Voir tous les agents",
   "No agent connected right now.": "Aucun agent connecté pour l'instant.",
   "No agent connected. Copy the invitation command to add one.": "Aucun agent connecté. Copie la commande d'invitation pour en ajouter un.",
+  "No agent connected yet. Set up CodeTgh, then start it in the team's repository.":
+    "Aucun agent connecté pour l'instant. Installe CodeTgh, puis lance-le dans le dépôt de l'équipe.",
+  "Copy the setup command": "Copier la commande d'installation",
+  "Copy the start command": "Copier la commande de démarrage",
   // Agent traffic.
   "Agent traffic": "Trafic des agents",
   "Flowing.": "Le trafic circule.",
