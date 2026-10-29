@@ -155,49 +155,73 @@
   }
 }
 
-/* Projects: each project's head is one row, its name (and for the owner its id) on the left, its Remote Control and runner on
-   the right, each a state then its action. */
+/* Projects: a project's head is its name across the row, with its "…" at the end; under it, for the owner, its Remote Control
+   and its runner in two columns that line up from one project to the next, each a state then its action, then the line
+   that goes with the state (the machine's report, the link to claude.ai/code). */
 .project-head {
-  display: grid;
-  grid-template-columns: minmax(0, 26fr) minmax(0, 74fr);
-  align-items: baseline;
-  gap: var(--sp-2) var(--sp-3);
   margin: var(--sp-8) 0 var(--sp-3);
 }
-.project-head h2 {
-  margin: 0;
+.project-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
 }
-.project-name {
+.project-title h2 {
   min-width: 0;
-}
-.tool-id {
   margin: 0;
-  max-width: none;
   overflow-wrap: anywhere;
 }
+.project-title .tool-id {
+  margin: 0;
+  max-width: none;
+  padding: var(--sp-2) var(--sp-3);
+  overflow-wrap: anywhere;
+}
+.project-title li + li > .tool-id {
+  margin-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
 .project-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-2) var(--sp-6);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-6);
+  margin-top: var(--sp-2);
 }
 .tool {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2) var(--sp-3);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.tool-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  max-width: 100%;
 }
 .tool-state {
   color: var(--text-muted);
 }
 .tool-report {
-  flex-basis: 100%;
   margin: 0;
-  max-width: none;
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
-@media (max-width: 1023px) {
-  .project-head {
+/* From a wide screen, a state and its action share a line, as tall as a button, so both columns read on one line. */
+@media (min-width: 1024px) {
+  .tool-line {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2) var(--sp-3);
+    min-height: 32px;
+  }
+}
+@media (max-width: 639px) {
+  .project-tools {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -271,7 +295,7 @@
   }
 }
 /* A refused action says why under the line it was on. */
-.tool > .field-error {
+.tool-line > .field-error {
   flex-basis: 100%;
   margin: 0;
 }

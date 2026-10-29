@@ -201,13 +201,16 @@ export const NoSessions: FC<{ _: Tr }> = ({ _ }) => (
   </EmptyState>
 );
 
-// A project's Remote Control or runner: its state in words, then the action that changes it. Stopped, the usual state, is
-// plain text; running, waiting and failed are pills, and a failure has the machine's report under it.
+// A project's Remote Control or runner: its state in words, then the action that changes it, then what goes with the state.
+// Stopped, the usual state, is plain text and its Start waits in the project's "…"; running, waiting and failed are pills
+// with their action at hand, and a failure has the machine's report on the line under it.
 export type ToolState = { tone: Tone; text: string; report?: string | null; action: Child };
 const Tool: FC<{ state: ToolState; link?: Child }> = ({ state, link }) => (
   <div class="tool">
-    {state.tone === "neutral" ? <span class="tool-state">{state.text}</span> : <Pill tone={state.tone}>{state.text}</Pill>}
-    {state.action}
+    <div class="tool-line">
+      {state.tone === "neutral" ? <span class="tool-state">{state.text}</span> : <Pill tone={state.tone}>{state.text}</Pill>}
+      {state.tone !== "neutral" && state.action}
+    </div>
     {link}
     {state.report && (
       <p class="tool-report meta">
@@ -216,8 +219,8 @@ const Tool: FC<{ state: ToolState; link?: Child }> = ({ state, link }) => (
     )}
   </div>
 );
-// The head of a project: its name, then for the owner its id (the launcher and runner lists name projects by it) and, on the
-// same row from a wide screen, its Remote Control and runner.
+// The head of a project: its name across the row. For the owner, its Remote Control and runner in two columns, and a "…"
+// with what is rarely needed: the Start of a stopped tool, and the project id that the launcher and runner lists use.
 export const ProjectHead: FC<{ id: string; name: string; tools?: { remote: ToolState; runner: ToolState }; _: Tr }> = ({
   id,
   name,
@@ -225,12 +228,18 @@ export const ProjectHead: FC<{ id: string; name: string; tools?: { remote: ToolS
   _,
 }) => (
   <div class="project-head">
-    <div class="project-name">
+    <div class="project-title">
       <h2 id={`p-${id}`}>{name}</h2>
       {tools && (
-        <p class="tool-id meta">
-          {_("Project id")} <code>{id}</code>
-        </p>
+        <RowMenu
+          label={named(_("Actions for {project}"), "{project}", name)}
+          items={[
+            ...[tools.remote, tools.runner].filter((t) => t.tone === "neutral").map((t) => t.action),
+            <p class="tool-id meta">
+              {_("Project id")} <code>{id}</code>
+            </p>,
+          ]}
+        />
       )}
     </div>
     {tools && (

@@ -96,13 +96,21 @@ test("add an external agent: the form opens under the page header, the token sho
   expect(await tab(page)).toBe("Copy the two lines");
 });
 
-test("projects, wide: the owner's Remote Control and runner, a state then its action, by keyboard", async ({ page }) => {
+test("projects, wide: Remote Control and the runner in columns that line up, a stopped one started from the project's …", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/projects`);
   await expect(page.locator(".tool-state", { hasText: "Remote Control stopped" }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Start Remote Control" }).first().focus();
-  expect(await tab(page)).toBe("Start the runner");
+  const runners = await page
+    .locator(".project-tools > .tool:nth-child(2)")
+    .evaluateAll((tools) => [...new Set(tools.map((t) => Math.round(t.getBoundingClientRect().left)))]);
+  expect(runners).toHaveLength(1);
+  await page.locator('summary[aria-label="Actions for acme/api"]').focus();
+  await page.keyboard.press("Enter");
+  expect(await tab(page)).toBe("Start Remote Control acme/api");
+  expect(await tab(page)).toBe("Start the runner acme/api");
 });
 
 test("delegations, wide: turning one off asks first, and Escape gives the keyboard back", async ({ page }) => {

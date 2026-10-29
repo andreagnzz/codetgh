@@ -355,6 +355,7 @@ const FR: Record<string, string> = {
   "It appears to the team as {handle}.": "L'équipe le voit sous le pseudo {handle}.",
   // Projects.
   "Each team repository and the sessions working in it.": "Chaque dépôt de l'équipe et les sessions qui y travaillent.",
+  "Actions for {project}": "Actions pour {project}",
   "Remote Control and the runner start on your machine, only in the folders you listed there.":
     "Remote Control et le runner démarrent sur ta machine, seulement dans les dossiers que tu y as listés.",
   "Remote Control failed": "Remote Control en échec",

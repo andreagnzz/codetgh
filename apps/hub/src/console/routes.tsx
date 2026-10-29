@@ -848,7 +848,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
     const runs = p.role === "owner" ? await runStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
-    const launch = (projectId: string): ToolState => {
+    const launch = (projectId: string, name: string): ToolState => {
       const l = launches.find((x) => x.projectId === projectId);
       const fresh = l?.reportedAt && Date.now() - l.reportedAt.getTime() < 60_000;
       const state: Omit<ToolState, "action"> =
@@ -862,14 +862,24 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       return {
         ...state,
         action: l?.desired ? (
-          <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "0" }} label={_("Stop Remote Control")} />
+          <Action
+            post={`/console/projects/${projectId}/launch`}
+            vals={{ on: "0" }}
+            label={_("Stop Remote Control")}
+            name={`${_("Stop Remote Control")} ${name}`}
+          />
         ) : (
-          <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
+          <Action
+            post={`/console/projects/${projectId}/launch`}
+            vals={{ on: "1" }}
+            label={_("Start Remote Control")}
+            name={`${_("Start Remote Control")} ${name}`}
+          />
         ),
       };
     };
     // Same reading for the runner: its last report, with the count of agents it runs.
-    const runner = (projectId: string): ToolState => {
+    const runner = (projectId: string, name: string): ToolState => {
       const r = runs.find((x) => x.projectId === projectId);
       const fresh = r?.reportedAt && Date.now() - r.reportedAt.getTime() < 60_000;
       const state: Omit<ToolState, "action"> =
@@ -889,9 +899,19 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       return {
         ...state,
         action: r?.desired ? (
-          <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "0" }} label={_("Stop the runner")} />
+          <Action
+            post={`/console/projects/${projectId}/runner`}
+            vals={{ on: "0" }}
+            label={_("Stop the runner")}
+            name={`${_("Stop the runner")} ${name}`}
+          />
         ) : (
-          <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "1" }} label={_("Start the runner")} />
+          <Action
+            post={`/console/projects/${projectId}/runner`}
+            vals={{ on: "1" }}
+            label={_("Start the runner")}
+            name={`${_("Start the runner")} ${name}`}
+          />
         ),
       };
     };
@@ -928,7 +948,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <ProjectHead
               id={g.id}
               name={g.name}
-              tools={p.role === "owner" && g.id !== "none" ? { remote: launch(g.id), runner: runner(g.id) } : undefined}
+              tools={p.role === "owner" && g.id !== "none" ? { remote: launch(g.id, g.name), runner: runner(g.id, g.name) } : undefined}
               _={_}
             />
             {g.id === "none" && (

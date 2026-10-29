@@ -34,6 +34,13 @@ const section = (html: string, id: string) => {
   return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
 };
 const short = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
+// A project's head on Projects: what its "…" holds, and what shows without opening it.
+const head = (part: string) => {
+  const below = [part.indexOf('<ul class="session-list">'), part.indexOf('<p class="empty">')].filter((i) => i >= 0);
+  const top = part.slice(part.indexOf("</h2>"), Math.min(...below));
+  const menu = top.slice(top.indexOf('<details class="row-menu">'), top.indexOf("</details>") + "</details>".length);
+  return { menu, outside: top.replace(menu, "") };
+};
 
 beforeAll(async () => {
   // The writes below come faster than people write: a clock that moves an hour per call keeps the quotas out of the way.
@@ -214,13 +221,30 @@ describe("projects", () => {
     expect(section(html, `p-${projects["acme/billing"]}`)).toContain(
       '<span class="pill" data-tone="ok">Runner on · 1\u00a0agent running</span>',
     );
-    // Never switched on: stopped, and the way to start it.
+    // Never switched on: stopped, in words; the way to start it and the project id wait behind the project's "…".
     const latency = section(html, `p-${projects["acme/latency"]}`);
     expect(latency).toContain('<span class="tool-state">Remote Control stopped</span>');
     expect(latency).toContain('<span class="tool-state">Runner stopped</span>');
-    expect(latency).toContain(">Start Remote Control</button>");
-    expect(latency).toContain(`<code>${projects["acme/latency"]}</code>`);
     expect(latency).toContain("No session on this project right now.");
+    const { menu, outside } = head(latency);
+    expect(menu).toContain('<summary aria-label="Actions for acme/latency">');
+    expect(menu).toContain('aria-label="Start Remote Control acme/latency"');
+    expect(menu).toContain('aria-label="Start the runner acme/latency"');
+    expect(menu).toContain(`<code>${projects["acme/latency"]}</code>`);
+    expect(outside).not.toContain("<button");
+    expect(outside).not.toContain(projects["acme/latency"]);
+  });
+
+  it("gives a project's head one direct action per tool that is on, named after the project", async () => {
+    const html = main(await page("/console/projects", team.lea.cookie));
+    const webapp = head(section(html, `p-${projects["acme/webapp"]}`));
+    expect(webapp.outside).toMatch(/<button[^>]*aria-label="Stop Remote Control acme\/webapp"[^>]*>Stop Remote Control<\/button>/);
+    expect(webapp.outside.match(/<button/g)).toHaveLength(1);
+    expect(webapp.menu).toContain('aria-label="Start the runner acme/webapp"');
+    expect(webapp.menu).not.toContain("Remote Control");
+    // A failed launcher keeps its action at hand, with the report on the line under it.
+    const api = head(section(html, `p-${projects["acme/api"]}`));
+    expect(api.outside).toContain('aria-label="Stop Remote Control acme/api"');
   });
 
   it("lists each project's sessions for every member, what they said they do, and no owner tools", async () => {
