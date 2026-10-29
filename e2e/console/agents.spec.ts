@@ -25,6 +25,7 @@ test.beforeAll(async () => {
   await session(team.sam.token, "sam-web", { ...repo("webapp"), branch: "feat/login", push_mode: "rewake", client_version: "2.1.14" });
   await session(team.malik.token, "malik-delegate", { ...repo("api"), branch: "main", accept_requests_from: ["@sam", "@lea"] });
   await session(team.lea.token, "lea-loose", { branch: "scratch" });
+  await session(team.sam.token, "sam-long", { ...repo("webapp"), branch: "feat/invoice-rounding-for-the-billing-exports" });
 });
 test.afterAll(() => hub.stop());
 
@@ -139,6 +140,18 @@ for (const [lang, width] of [
           .map((th) => th.textContent),
       );
       expect(spilled, path).toEqual([]);
+    }
+  });
+
+for (const width of [640, 768, 1023])
+  test(`${width} px: a session's label shows in full, wrapped rather than cut`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signIn(page, hub.url, team.lea);
+    for (const path of ["/console/agents", "/console/projects"]) {
+      await page.goto(`${hub.url}${path}`);
+      const label = page.locator(".session-head .chip", { hasText: "sam@feat/invoice-rounding" });
+      await expect(label, path).toHaveText("sam@feat/invoice-rounding-for-the-billing-exports");
+      expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth), path).toBe(true);
     }
   });
 

@@ -48,8 +48,11 @@
 .session-name {
   font-weight: 500;
 }
+/* The label is what tells sessions apart: it wraps in full rather than being cut, since a phone shows no tooltip. */
 .session-head .chip {
   min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .machine {
   font-family: var(--mono);
@@ -250,7 +253,7 @@
   min-height: 32px;
   padding-block: var(--sp-1);
 }
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .session-row,
   .session-row:not(:has(> .session-doing)) {
     grid-template-columns: minmax(0, 1fr) auto;
