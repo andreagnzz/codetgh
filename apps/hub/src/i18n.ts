@@ -359,6 +359,7 @@ const FR: Record<string, string> = {
     "Il n'est affiché qu'une fois. Donne ces deux lignes à la personne qui fait tourner l'agent externe.",
   "Copy the two lines": "Copier les deux lignes",
   "It appears to the team as {handle}.": "L'équipe le voit sous le pseudo {handle}.",
+  "See it in External agents": "Le voir parmi les agents externes",
   // Projects.
   "Each team repository and the sessions working in it.": "Chaque dépôt de l'équipe et les sessions qui y travaillent.",
   "Actions for {project}": "Actions pour {project}",

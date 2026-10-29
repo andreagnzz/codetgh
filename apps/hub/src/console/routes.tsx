@@ -1047,6 +1047,10 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             .split("{handle}")
             .map((part, i) => (i ? [<Chip>{created.handle}</Chip>, part] : part))}
         </p>
+        {/* A new load of the page lists the agent and closes the form. */}
+        <p>
+          <a href="/console/agents#external-h">{_("See it in External agents")}</a>
+        </p>
       </>,
     );
   });

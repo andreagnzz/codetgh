@@ -176,6 +176,8 @@ describe("agents", () => {
     expect(ids.a2aPage).toMatch(
       /It appears to the team as <span class="chip" translate="no" title="@a2a-[0-9a-f]{8}">@a2a-[0-9a-f]{8}<\/span>\./,
     );
+    // Once the lines are copied, a way to the list that now holds it, which also closes the form.
+    expect(ids.a2aPage).toContain('<a href="/console/agents#external-h">See it in External agents</a>');
   });
 
   it("says what fills an empty page, and how to see every project again", async () => {
