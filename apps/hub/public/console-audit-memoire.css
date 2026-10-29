@@ -15,5 +15,7 @@ main > nav:not([class]) {
 main > nav:not([class]) a {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 24px;
   min-height: 40px;
 }
