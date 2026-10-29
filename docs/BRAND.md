@@ -82,7 +82,7 @@ Components use the semantic tokens of `apps/hub/public/console.css`, never `--te
 ### Type, space, shape, depth, motion
 
 - **Type**: 12/16 caption, 14/20 body (14/22 for reading), 16/24 subheading, 20/28 heading, 28/32 page title, 40/44 public title (32/36 under 640 px). Weights 400, 500, 600. The two large roles are Inter Display through the variable font's optical size axis (`"opsz" 32`); no second font file. Mono only for what a machine reads.
-- **Space**: a 4 px grid: 4, 8, 12, 16, 24, 32, 48, 64.
+- **Space**: a 4 px grid: 4, 8, 12, 16, 24, 32, 48, 64. Prose is at most 31.5 rem wide (56 ch of Inter at 14 px).
 - **Radius**: 4 px for tokens (handle chip, `kbd`), 6 px for controls, 8 px for containers, 12 px for floating layers and the public column, full round for a state pill only. No pill-shaped button.
 - **Depth**: no shadow by default; a tonal step and 1 px rules. Only dialogs, menus and toasts have a shadow. Rules that carry information use `--border-strong` or the accent.
 - **Motion**: hover changes color in 100 ms; the busy ring and the loading bar show only after 300 and 400 ms; the activity line traces a new message once. `prefers-reduced-motion` stops every movement.
@@ -94,22 +94,22 @@ Components use the semantic tokens of `apps/hub/public/console.css`, never `--te
 
 ### Components
 
-Built once in `apps/hub/src/console/pages.tsx` (and plain classes for buttons), shown in every state on `/console/catalogue`, a page served in development and tests only, never when `NODE_ENV` is `production`.
+Built once in `apps/hub/src/console/pages.tsx` (and plain classes for buttons), shown in every state on `/console/catalogue`, a page that only the test harness and the demo hub built on it mount; the hub's own configuration never turns it on. Its own texts are English only, as a development page.
 
 | Component | Markup | States |
 | --- | --- | --- |
-| Shell | `Layout`: side navigation in three groups, top bar (team, live state, account menu), Menu under 1024 px, page banner | current page, live / reconnecting, menus open and closed (Escape closes, focus returns) |
+| Shell | `Layout`: side navigation in three groups, top bar (team, live state, account menu), Menu under 1024 px, page banner, project filter menu | current page, live / reconnecting / offline since a time, menus open and closed (Escape, a click outside or the keyboard leaving them closes them, focus returns) |
 | Button | `<button>` with `primary`, `secondary` (default), `tertiary`, `danger`, `danger-fill`; `icon-button` | hover, active, focus, busy (`aria-busy`), disabled (`aria-disabled`); one primary per area |
-| Field | `Field` + `fieldAria` | help, optional, invalid (`aria-invalid`, icon and sentence), read-only, disabled; checkbox and radio in a 44 px row; a unit after the field |
+| Field | `Field` + `fieldAria` | help, optional, placeholder (muted text), invalid (`aria-invalid`, icon and sentence), read-only (dashed edge), disabled; checkbox and radio in a 44 px row; a unit after the field |
 | Status pill | `Pill` | success, warning, error, neutral (hollow dot); always a word |
 | Handle chip | `Chip` | person, session, you, external, former member, truncated |
-| Table | `Table` (+ `Pager`) | caption, sorted column (`aria-sort`), numbers, row link over the whole row, current and unread rows, actions and row menu, loading, error banner, empty state instead of the table; stacked records under 640 px |
+| Table | `Table` (+ `Pager`) | caption, sorted column (`aria-sort`), numbers, row link over the whole row, current and unread rows ("Unread" for screen readers), actions under a hidden header and a row menu that floats over the frame, loading, error banner, empty state instead of the table; a frame that scrolls shows its edge and takes the keyboard; stacked records under 640 px, led by the primary cell, empty cells dropped |
 | Tabs | `Tabs`, `ArchiveTabs` | current (`aria-current`), counts, wrapped |
 | Banner | `Banner` | information (dismissible), success, warning, error; with actions |
 | Panel | `Panel`, `Collapsible`, `RowMenu` | default, danger, folded create form, menu open |
 | Toast | layout region + `data-done` on the action | shown, paused on hover or focus, closed |
-| Confirmation dialog | layout `<dialog>` + `Action` with `confirm` | open with Cancel focused, busy, refused (the reason in the dialog), closed (focus back on the trigger) |
-| Code block | `CodeBlock` | command (prompt not copied), secret, long content, copied, copy refused (selected, with the shortcut) |
+| Confirmation dialog | layout `<dialog>` + `Action` with `confirm` (the trigger ends in "…"), or a `form` with the same `data-confirm` texts | open with Cancel focused, busy, refused (the reason in the dialog), closed (focus back on the trigger) |
+| Code block | `CodeBlock` | command (prompt not copied), secret, long content, copied, copy refused (selected, with the shortcut); `copyLabel` when a page has several |
 | Empty state | `EmptyState`, or `.empty` inline | first use, no results, cleared, no permission, error with Retry |
 | Loading | `aria-busy` on the control and the region | busy ring, loading bar, "Loading…" in words under reduced motion |
 | Timeline | `Timeline` | state change, note, current state, long (oldest folded), empty |

@@ -614,7 +614,8 @@ button:is(:disabled, [aria-disabled="true"]):hover {
   }
 }
 
-/* Busy: the control dims and keeps its label and width; a ring turns beside the label once the wait lasts. */
+/* Busy: the control dims and keeps its label and width; a ring turns beside the label once the wait lasts. A busy control is
+   inactive while its request runs, so its dimmed label is outside the contrast minimum (WCAG 1.4.3). */
 [aria-busy="true"] {
   opacity: 0.6;
   cursor: progress;

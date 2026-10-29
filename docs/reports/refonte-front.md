@@ -92,8 +92,8 @@ Notes:
 | `text` on `surface` | body text, titles, table cells | 4.5:1 | 16.38 | 16.38 |
 | `text` on `surface-raised` | dialogs, menus, toasts, panels | 4.5:1 | 17.66 | 13.69 |
 | `text` on `surface-inset` | code, sidebar, hovered or current row, banner body | 4.5:1 | 15.14 | 14.88 |
-| `text-muted` on `surface` | metadata, captions, column headers | 4.5:1 | 6.77 | 8.91 |
-| `text-muted` on `surface-raised` | metadata in panels and dialogs | 4.5:1 | 7.30 | 7.44 |
+| `text-muted` on `surface` | metadata, captions, column headers, placeholders | 4.5:1 | 6.77 | 8.91 |
+| `text-muted` on `surface-raised` | metadata and placeholders in panels and dialogs | 4.5:1 | 7.30 | 7.44 |
 | `text-muted` on `surface-inset` | sidebar links, metadata in a current row | 4.5:1 | 6.25 | 8.09 |
 | `accent` on `surface` | links, tertiary buttons | 4.5:1 | 4.55 | 11.18 |
 | `accent` on `surface-raised` | links in panels, dialogs and public pages | 4.5:1 | 4.90 | 9.34 |
@@ -133,7 +133,7 @@ Notes:
 
 | Rejected | Ratio | Replacement |
 | --- | --- | --- |
-| Teal link on an inset surface (sidebar, hovered row, code block) | 4.20 | Link in `--text` with an underline (16.38 / 15.12). Table rows link through their primary cell in `--text` anyway (section 5.5). |
+| Teal link on an inset surface (sidebar, hovered row, code block) | 4.20 | Link in `--text` with an underline (16.38 / 15.12). Table rows link through their primary cell in `--text` anyway (section 5.5); any other link or text action in a hovered or current row turns `--text` with the row. |
 | Teal label on a selected chip (`--accent-soft`) | 3.99 | Label in `--text` at 600 (14.38), a 1 px `--accent` edge (4.55 against the page) and a check icon: the selection reads in three ways, none of them a hue. |
 | Teal link inside a warning banner | 3.93 | Link in `--text` with an underline (14.15). |
 | Teal link inside an error banner | 3.87 | Link in `--text` with an underline (13.95). |
@@ -178,7 +178,7 @@ Inter is already self-hosted as a variable font. The two shipped subsets were pa
 
 ### 2.3 Spacing grid
 
-4 px base. Tokens `--sp-1` to `--sp-16`: **4, 8, 12, 16, 24, 32, 48, 64**. No other value in the stylesheet.
+4 px base. Tokens `--sp-1` to `--sp-16`: **4, 8, 12, 16, 24, 32, 48, 64**. No other spacing value in the stylesheet. The exceptions are optical offsets, not spacing: the 1 or 2 px that center a 16 px icon on a 20 px line (field errors, banners, toasts), the timeline's node and rule positions, the 6 px that center the 44 px Menu button in the 56 px bar, and the −6 px that let the toast's close button keep its 32 px target inside the toast's padding.
 
 | Range | Values | Where |
 | --- | --- | --- |
@@ -262,7 +262,7 @@ From 1024 px: a side navigation, a top bar over the content, then the content.
 
 ### 3.3 Reading width and alignment
 
-- Paragraphs, help text, empty-state text and message bodies: at most **56 ch** (Inter at 14 px: 78 characters at most on the demo thread, under the 80-character limit; 72 ch measured 86 characters in the first prototype, 60 ch still 81). Form fields: at most 32 rem.
+- Paragraphs, help text, empty-state text and message bodies: at most **31.5 rem**, 56 ch of Inter at 14 px (78 characters at most on the demo thread, under the 80-character limit; 72 ch measured 86 characters in the first prototype, 60 ch still 81). The measure is in rem, not ch, so a 12 px caption gets the same width instead of wrapping at about 360 px. Form fields: at most 32 rem.
 - Everything is left-aligned. Numbers in table columns are right-aligned. Nothing in the console is centered or justified. On public pages the column is centered on the screen, as BRAND.md asks for the stacked lockup, but its text stays left-aligned.
 - Today's mix (lists capped at 80 ch, tables full width, "Offline" rules full width) becomes one rule: rules span the block they belong to, never more.
 
@@ -531,7 +531,7 @@ About 72 px per event: roughly 3 600 px for 50 events, against 13 973 px today.
 
 ## 5. Component catalogue
 
-Built once, in the foundations batch, shown on a development-only catalogue page, and used by every screen. Each entry lists its states. "Focus" always means the same thing: a 2 px solid accent outline with a 2 px offset (4.20:1 or more on every surface), on `:focus-visible`.
+Built once, in the foundations batch, shown on a catalogue page that only the test harness and the demo hub built on it mount (`/console/catalogue`; the hub's own configuration never does), and used by every screen. Each entry lists its states. "Focus" always means the same thing: a 2 px solid accent outline with a 2 px offset (4.20:1 or more on every surface), on `:focus-visible`.
 
 ### 5.1 Button, three levels
 
@@ -544,16 +544,16 @@ Built once, in the foundations batch, shown on a development-only catalogue page
 
 - Sizes: 32 px in dense rows, 40 px in forms, 44 px on coarse pointers. Icon-only buttons are square, with an `aria-label` and a tooltip.
 - The level comes from importance, not from the HTML type: today every `type="submit"` is painted primary, which gives four primaries on the sign-in page and makes "Erase my data" look like "Save". The CSS selector `button[type="submit"]` stops meaning primary.
-- States: default; hover (`--surface-inset` behind secondary and tertiary, a darker mix for primary); active (inset, no movement); focus; busy (`aria-busy="true"`, set by `console.js`; the label stays, a ring drawn by the stylesheet shows after 300 ms and stands still under reduced motion; no new `hx-disabled-elt`, since htmx attributes do not change in this redesign); disabled (`aria-disabled`, 50 % opacity, `cursor: not-allowed`, no hover; used rarely, since submit is never pre-disabled); "opens more" (label ends in "…").
+- States: default; hover (`--surface-inset` behind secondary and tertiary, a darker mix for primary); active (inset, no movement); focus; busy (`aria-busy="true"`, set by `console.js`; the label stays, a ring drawn by the stylesheet shows after 300 ms and stands still under reduced motion; no new `hx-disabled-elt`, since htmx attributes do not change in this redesign); disabled (`aria-disabled`, 50 % opacity, `cursor: not-allowed`, no hover; used rarely, since submit is never pre-disabled); "opens more" (label ends in "…"). A busy control is inactive while its request runs: its label dims with it (60 %, about 2.4:1 for the white primary label), which WCAG 1.4.3 exempts for inactive components; the ring says it is working.
 - Adjacent buttons keep an 8 px gap (today provider buttons, Accept and Reject touch each other).
 
 ### 5.2 Form field
 
 - Anatomy: label above (`label`, 500), optional help line under the label (`caption`, muted), the control, then the error line. Optional fields say "optional" after the label; nothing uses an asterisk.
-- Controls: input, textarea, select (with explicit `background-color` and `color`, or Windows dark mode breaks), checkbox and radio (20 px box inside a 44 px row target; today's checkboxes are 13 × 13 px), unit suffix ("days"), read-only value (inset surface).
-- States: default; hover (border `--text-muted`); focus; filled; invalid (`aria-invalid="true"`, `--error` border, `circle-alert` icon, a sentence in `--error`, linked by `aria-describedby`; focus moves to the first invalid field); disabled; read-only; busy (the form's submit button is busy).
+- Controls: input, textarea, select (with explicit `background-color` and `color`, or Windows dark mode breaks), checkbox and radio (20 px box inside a 44 px row target; today's checkboxes are 13 × 13 px), unit suffix ("days"), read-only value (inset surface and a dashed edge: the edge reads in dark mode, where the inset step is slight; a help line can say why it is read-only).
+- States: default; hover (border `--text-muted`); focus; filled; invalid (`aria-invalid="true"`, `--error` border, kept on hover and focus, `circle-alert` icon, a sentence in `--error`, linked by `aria-describedby`; focus moves to the first invalid field); disabled; read-only; busy (the form's submit button is busy).
 - A form with several errors gets a summary banner above it, with a link to each field. Errors that `console.js` places after an htmx refusal keep `.field-error` and `role="alert"`.
-- `autocomplete`, `name`, `spellcheck="false"` on emails, handles and codes; placeholders show an example and end with "…".
+- `autocomplete`, `name`, `spellcheck="false"` on emails, handles and codes; placeholders show an example and end with "…", in `--text-muted` at full opacity (the browser's own gray is 3.22:1 to 4.27:1 on these surfaces).
 
 ### 5.3 Status pill
 
@@ -578,7 +578,7 @@ Built once, in the foundations batch, shown on a development-only catalogue page
 
 - `@lea` in mono 13, `--surface-inset`, radius 4, `translate="no"`. Square corners on purpose: a handle is a token you could type in a terminal, not a state.
 - Variants: person (`@lea`); session (`lea@main`, no "@"); yourself (`@lea` plus the word "you"); external agent (name plus the word "external"); former member (muted, "former member").
-- States: default; truncated (ellipsis, full text in `title` and readable by screen readers); in a selected row. Not a link: no route lists a person's activity.
+- States: default; truncated (ellipsis, full text in `title`, set whenever the chip holds plain text, and readable by screen readers); in a selected row. Not a link: no route lists a person's activity.
 
 ### 5.5 Dense table
 
@@ -588,20 +588,22 @@ Built once, in the foundations batch, shown on a development-only catalogue page
 - Missing values say "None" or "Nobody", or the cell is dropped in the stacked layout; never a bare empty cell.
 - Sort: the column the server orders by carries `aria-sort` and an arrow. Clickable sorting needs a query parameter the routes do not have (section 12), so it ships only where the owner approves one.
 - Pagination: the existing "Older" links become "‹ Newer" / "Older ›" in a `nav` with an `aria-label`, next to the existing "Showing 50 of 210" text.
-- Under 640 px: stacked records (primary line, meta line, pill, actions), empty cells dropped, `--border-strong` between records. The current `data-label` on each cell stays.
-- States: default; hovered row (if it links); current or selected row (2 px accent left rule, inset surface); unread row (title at 600 plus a visually hidden "Unread"); loading (the region keeps its rows, `aria-busy`, loading bar); empty (the empty state replaces the whole table, headers included, so a screen reader never reads an empty header row); error (an error banner above the kept rows: "Couldn't refresh. Showing data from 21:40." with "Retry"); truncated cell (ellipsis plus full text).
+- Under 640 px: stacked records (primary line, meta line, pill, actions), empty cells dropped, `--border-strong` between records. The current `data-label` on each cell stays. Built in the foundations: `Table` takes `primary` (that cell leads the record on its own line, without a label) and `actions` (the last column: its header is visually hidden, its cells close the record without a label); the other cells keep their label, and an empty cell is dropped. A batch that wants a meta line puts several values in one cell.
+- Wider than its frame (today's agents and audit tables at 768 and 1280 px, until batches 4 and 6 rebuild them): the table scrolls inside its frame, a 2 px `--border-strong` rule stands on each side that has more, and `console.js` makes the frame a named region (`role="region"`, the caption or the page title) that takes the keyboard (`tabindex="0"`, the arrows scroll it). A frame that fits gets none of this.
+- Trade-off kept: WebKit drops table semantics once table parts are `display: block`, so VoiceOver reads a stacked record as text, each value after its label. Restoring them takes explicit `role` attributes on every table element, which Biome's `noRedundantRoles` refuses; the labels carry the structure meanwhile.
+- States: default; hovered row (if it links); current or selected row (2 px accent left rule, inset surface); unread row (title at 600 plus a visually hidden "Unread", which `Table` renders in the primary cell); loading (the region keeps its rows, `aria-busy`, loading bar); empty (the empty state replaces the whole table, headers included, so a screen reader never reads an empty header row); error (an error banner above the kept rows: "Couldn't refresh. Showing data from 21:40." with "Retry"); truncated cell (ellipsis plus full text).
 
 ### 5.6 Panel
 
 - A bordered group (1 px `--border`, radius 8, padding 16 or 24) for spacious pages: settings, My data, token creation, the sign-in panel. Never around a dense table, never nested in another panel.
 - Variants: default; danger (2 px `--error` rule on the left edge, `octagon-alert` icon, a title that names the risk: "Erase my data", "Agent traffic" while stopped); collapsible create form (`<details>` opened by a page-header button such as "Invite a member", "Create a token", "New task", "Add an external agent": the form no longer pushes the list down).
 - States: default; open and closed (collapsible); with an error banner inside; busy.
-- The row menu ("…") and the project filter are small `<details>` menus built on the same overlay surface: closed, open, focused item, and closed on Escape or on a choice.
+- The row menu ("…") and the project filter are small `<details>` menus built on the same overlay surface: closed, open, focused item, and closed on Escape, on a click outside, or when the keyboard leaves them (so an open menu never covers the next stop). An open row menu floats over the table's frame and the rows below it: the frame stops clipping while it is open.
 
 ### 5.7 Tabs
 
 - Two kinds, never mixed. **Link tabs** for anything that changes the URL (Current / Archives, memory statuses, settings sections): a `nav` of links with `aria-current="page"`, the selected one in `--text` at 600 with a 2 px accent underline, each with its count when known ("Proposed 3"). **ARIA tabs** only for panels inside one page, with the APG keyboard model (left and right arrows on a horizontal list) and manual activation, since htmx panels load with a delay. None is planned yet.
-- The project filter, today a row of up to 8 links with no selected state, becomes a menu: "Project: All projects ▾", the choice shown in the button.
+- The project filter, today a row of up to 8 links with no selected state, becomes a menu: "Project: All projects ▾", the choice shown in the button. Built in the foundations, as part of the shell: the same links, `href`s and `aria-current`, in a `nav` inside the menu.
 - States: default; hover; selected; focus; wrapped (French labels at 360 px wrap to a second row; the page never scrolls sideways).
 
 ### 5.8 Alert (banner and inline message)
@@ -622,15 +624,17 @@ Built once, in the foundations batch, shown on a development-only catalogue page
 
 - For every one-click destructive or hard-to-undo action: revoke a member, a token or an invitation; remove or quarantine an agent; release a claim; turn off a delegation; reject a memory item; stop agent traffic; change a role. Today they all fire on one click. Muting a thread is not on the list: "Reopen thread" undoes it at once.
 - Built on native `<dialog>` and htmx's `htmx:confirm` event: the trigger keeps its `hx-post`, `console.js` cancels the request, opens the dialog, and calls `issueRequest(true)` on confirmation (both exist in the vendored htmx 2.0.11, appendix B). Texts come from `i18n.ts` through data attributes on the trigger.
-- Anatomy: the title names the action and its object as a question ("Revoke the token laptop-cli?"); the body says the consequence and what it does not do ("Terminals using it stop at their next request. Sessions already open are not closed."); buttons "Cancel" (secondary, focused first) and the action with exactly the trigger's label ("Revoke token"), filled `--error` when destructive.
+- Anatomy: the title names the action and its object as a question ("Revoke the token laptop-cli?"); the body says the consequence and what it does not do ("Terminals using it stop at their next request. Sessions already open are not closed."); buttons "Cancel" (secondary, focused first) and the action with the trigger's label ("Revoke token"), filled `--error` when destructive. The trigger opens the dialog, so its label ends in "…" ("Revoke token…", rule 11); `Action` adds it and keeps the bare label for the dialog's button.
 - The two actions that already ask for a typed word keep their fields and labels in the page, which tests use ("Type erase to confirm", "Type yes to resume agent traffic"); no second dialog on top. Fields that belong to a confirmed action (the "Reason" of agent traffic) stay in the page form too, so `issueRequest` sends them unchanged.
-- States: open; busy (the action button); error (an inline error inside the dialog, which stays open); closed (focus returns to the trigger, or to the next row after a deletion).
+- States: open; busy (the action button; one request per confirmation, a second click does nothing while it runs); error (an inline error inside the dialog, which stays open and can be confirmed again); closed (focus returns to the trigger, or to the next row after a deletion). While the dialog is open, a live refresh does not replace the part of the page that holds its trigger.
+- A form can be the trigger: "Stop agent traffic…" carries the dialog's texts on its `form`, and its submit button's level gives the dialog's button its fill.
 
 ### 5.11 Code block with copy
 
 - `pre` on `--surface-inset`, radius 8, mono 13, padding 12/16, wrapping (`pre-wrap`, `overflow-wrap: anywhere`) so a 360 px screen never scrolls. A Copy button in the top-right corner, with the `copy` icon and the word "Copy".
 - Variants: command (`codetgh invite <email>`, `codetgh setup`; the prompt sign is drawn by CSS and not copied); secret shown once (a warning banner above: "Copy it now. You won't see it again."; the token, the Slack code); key or config (the audit public key).
 - States: default; hover; copied (the label becomes "Copied" with `check` for 2 s, announced politely); copy failed (the text is selected and a line says "Press Ctrl+C to copy"; ⌘ on macOS); long content.
+- With several blocks on a page (the token and its setup command), `copyLabel` names what each Copy copies ("Copy the token"), starting with the visible word.
 
 ### 5.12 Empty state
 
@@ -642,7 +646,7 @@ Built once, in the foundations batch, shown on a development-only catalogue page
 
 - On the region being swapped: `aria-busy="true"` (today's only signal, a 60 % opacity, is kept for the control) and a 2 px accent bar at the top of the region, which appears after 400 ms and slides while it lasts. Fast swaps never flash. Reduced motion: a still bar and the visible text "Loading…".
 - On a button: see 5.1. The button keeps its label and its width.
-- The live connection: the top bar shows "Live" (success dot), "Reconnecting…" (warning) or "Offline since 21:40" (error), driven by the sse extension's `htmx:sseOpen` and `htmx:sseError` events, in a `role="status"` element. When the line refreshes, `console.js` puts focus back on the element that had it (rows get stable ids) and reopens the disclosures that were open, so a live refresh no longer drops the keyboard user.
+- The live connection: the top bar shows "Live" (success dot), "Reconnecting…" (warning) or "Offline since 21:40" (error), driven by the sse extension's `htmx:sseOpen`, `htmx:sseError` and `htmx:sseClose` events. Built in the foundations: offline after three failed attempts in a row or a closed stream, with the reader's clock time of the first failure; the element is hidden until `console.js` runs (no "Connecting…" left forever without it), and becomes a `role="status"` region only after the first connection, so a page load announces nothing. When the line refreshes, `console.js` puts focus back on the element that had it (rows get stable ids) and reopens the disclosures that were open, so a live refresh no longer drops the keyboard user.
 - States: idle; pending (under 400 ms, invisible); loading; failed (error banner with "Retry", previous content kept).
 
 ### 5.14 Timeline
@@ -805,7 +809,7 @@ Strings that must still go through `i18n.ts` and do not today: the whole thread 
 
 - **Scope:** sign-in, overview, one thread (the long team thread of the demo, and the 360 px variant), light and dark, 360 and 1280 px, English plus the French 360 px check. Built on a first cut of the tokens and the shell; screens not in scope keep working but are not restyled yet.
 - **Prerequisite found by the inventory:** no page sends a doctype, so every page renders in quirks mode (table cells at 16 px while the body is 15). The prototypes add `<!doctype html>` to both layouts; this changes rendering everywhere and is captured before and after.
-- **Error pages:** a page load (no `HX-Request` header) that fails gets a full page; an htmx call keeps the bare reason that `console.js` shows under the form. Decided at gate A: the full page uses the public layout (stacked logo, both themes, English and French), with a title per status (400, 403, 404), the hub's reason and a link back to the overview.
+- **Error pages:** a page load (no `HX-Request` header) that fails gets a full page; an htmx call keeps the bare reason that `console.js` shows under the form. Decided at gate A: the full page uses the public layout (stacked logo, both themes, English and French), with a title per status (400, 403, 404), the hub's reason and a link back to the overview. Built in the foundations: the hub's reason reads as a sentence in body text ("The hub said: thread not found."); a caller that knows more gives its own title, next step and link (the invitation's join: "You can't join with this invitation.", then "Sign in with another account"); an unknown page opened in a browser gets the 404 page too, while API, MCP and htmx clients keep the bare 404. The thread page's own words ("This thread doesn't exist, or you're not one of its participants.", section 9) come with batch 3.
 - **Tests that will change, said here and again in the PR:** `e2e/console/journeys.spec.ts` ("Agent traffic paused" becomes "Agent traffic stopped by …"; "Stop agent traffic…" now asks for a confirmation, so the test confirms in the dialog; the button "Resume" becomes "Resume agent traffic"); `e2e/console/draft.spec.ts` (label "Reply as a human" becomes "Reply to the thread"); `apps/hub/test/i18n.test.ts` (it uses "Dashboard" as its sample key, which becomes "Overview" / « Vue d'ensemble »). Kept as they are: `.wire-row`, `.fresh`, `.link`, `#line-announce` and the `trace` animation name, "Skip to content", `.field-error` with `role="alert"`, the sign-in labels "Email", "Password", "Sign in" and their French versions, `.people`, `.brand img`, the CSRF `hx-headers` on `body`.
 
 ---
@@ -824,7 +828,7 @@ What changed in the prototypes (same three screens, same routes, fields and htmx
 
 Deferred to the foundations batch, said here so nobody reads the prototype as finished:
 
-- **The confirmation dialog** (section 5.10). "Stop agent traffic" still fires on submit; only the required Reason slows it down, so the label has no "…" yet (rule 11). The dialog, and the test change it brings to `journeys.spec.ts`, land with the foundations.
+- **The confirmation dialog** (section 5.10). "Stop agent traffic" still fires on submit; only the required Reason slows it down, so the label has no "…" yet (rule 11). The dialog, and the test change it brings to `journeys.spec.ts`, land with the foundations. Done there: the button reads "Stop agent traffic…", and the page banner's "Resume agent traffic" goes to the section (`/console#agent-traffic`).
 - **Who stopped agent traffic, when and why** in the page banner: the principal only knows that traffic is stopped; the banner says so without a name.
 - **The Paused pill** (`codetgh pause`): `listAgents` does not select the membership's pause; adding it is a display-only column for the agents batch.
 - **The magic-link result** still lands in the sign-in form's `#error`, which `/assets/oauth.js` fills for every public form.
@@ -918,7 +922,7 @@ Per screen, the inventory's main points are folded into the wireframes (section 
 
 ## Appendix B. How this plan was checked
 
-- **Contrast:** `node contrast.mjs` at step 1, outside the repository; the foundations turned it into `apps/hub/test/contrast.test.ts`, which reads the tokens from `console.css` itself. It mixes tokens the way CSS `color-mix(in srgb, …)` does, computes WCAG 2.x ratios for the 40 pairs of section 2.1, and exits non-zero if an allowed pair is under its minimum. Last run: exit 0, no allowed pair under its minimum, 4 pairs rejected in light mode and replaced. It also prints the OKLCH hues and the white-on-Teal figures used in Q1 and Q2.
+- **Contrast:** `node contrast.mjs` at step 1, outside the repository; the foundations turned it into `apps/hub/test/contrast.test.ts`, which reads the tokens from `console.css` itself. It mixes tokens the way CSS `color-mix(in srgb, …)` does, computes WCAG 2.x ratios for the 38 checked pairs of section 2.1 (the decorative hairline is listed, not checked), and exits non-zero if an allowed pair is under its minimum. Last run: exit 0, no allowed pair under its minimum, 4 pairs rejected in light mode and replaced. It also prints the OKLCH hues and the white-on-Teal figures used in Q1 and Q2.
 - **Inter's axes:** the `fvar` table of both shipped files (`inter-latin-opsz-normal.woff2`, `inter-latin-ext-opsz-normal.woff2`) was read by decompressing the WOFF2 stream: `opsz` 14 to 32 (default 14), `wght` 100 to 900 (default 400).
 - **Icon licences:** `LICENSE` and `package.json` read from the `lucide-static` 1.56.0 and 1.63.0 tarballs and from the `@tabler/icons` 3.50.0 tarball, downloaded from the npm registry into an isolated folder and never executed. The 22 icon names were checked in both Lucide versions, and in Tabler.
 - **htmx facts:** in the vendored htmx 2.0.11, `htmx:confirm` carries `issueRequest(skipConfirmation)` and `hx-disabled-elt` exists; the vendored sse extension 2.2.4 fires `htmx:sseOpen`, `htmx:sseError` and `htmx:sseClose`.
