@@ -139,3 +139,21 @@ for (const lang of ["en", "fr"] as const)
     await expect(about).toContainText("@lea");
     await expect(about).toContainText(lang === "fr" ? "Dernier message" : "Last message");
   });
+
+test("a message's head: from 640 px the recipient follows the author on one line; on a phone it goes under", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  for (const [width, oneLine] of [
+    [1280, true],
+    [768, true],
+    [360, false],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${hub.url}/console/threads/${question.thread}`);
+    // Sam's answer, to @lea.
+    const head = page.locator(".convo-row .msg-head").nth(1);
+    const top = async (part: string) => (await head.locator(part).boundingBox())?.y ?? Number.NaN;
+    const gap = (await top(".msg-to")) - (await top(".msg-who"));
+    if (oneLine) expect(Math.abs(gap), `${width} px`).toBeLessThan(8);
+    else expect(gap, `${width} px`).toBeGreaterThan(8);
+  }
+});

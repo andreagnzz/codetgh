@@ -131,7 +131,7 @@
 }
 @media (min-width: 1280px) {
   .thread {
-    grid-template-columns: minmax(0, 1fr) 240px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     column-gap: var(--sp-12);
   }
   .thread > * {
@@ -274,8 +274,9 @@
     animation: none;
   }
 }
-/* A message: who wrote and when, then the session, the recipient, the kind and the priority; then what the hub noticed,
-   and the text as written, in reading type, its line breaks kept. */
+/* A message: who wrote, the session, the recipient, the kind and the priority, then when, on one line from 640 px (on a phone
+   who and when, the rest under them); then what the hub noticed, and the text as written, in reading type, its line breaks
+   kept. */
 .msg {
   min-width: 0;
   padding: var(--sp-2) 0 var(--sp-6);
@@ -296,15 +297,21 @@
   overflow-wrap: anywhere;
 }
 .msg > .msg-head > time {
+  order: 3;
   margin-left: auto;
-}
-.msg-head::after {
-  content: "";
-  order: 1;
-  flex-basis: 100%;
 }
 .msg-head > :is(.chip, .msg-to, .msg-kind, .pill) {
   order: 2;
+}
+@media (max-width: 639px) {
+  .msg > .msg-head > time {
+    order: 0;
+  }
+  .msg-head::after {
+    content: "";
+    order: 1;
+    flex-basis: 100%;
+  }
 }
 .msg-by,
 .msg-to,
