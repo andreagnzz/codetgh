@@ -21,7 +21,7 @@ describe("invitations", () => {
     const html = await (
       await consolePost(hub.url, team.lea.cookie, "/console/members/invite", { email: "nina@acme.test", role: "member", days: "2" })
     ).text();
-    expect(html).toContain("valid 2 days");
+    expect(html).toContain("valid for 2\u00a0days");
     const [inv] = await hub.db.select().from(invitation).where(eq(invitation.email, "nina@acme.test"));
     expect(days(inv?.expiresAt ?? new Date())).toBe(2);
     const res = await consolePost(hub.url, team.lea.cookie, "/console/members/invite", {

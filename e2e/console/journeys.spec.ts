@@ -13,6 +13,8 @@ test.afterEach(() => hub.stop());
 test("join the team: invitation, account, token, agent online", async ({ page, browser }) => {
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/members`);
+  // The invitation form waits behind its button in the page header.
+  await page.locator("summary", { hasText: "Invite a member" }).click();
   await page.getByLabel("Email").fill("nina@acme.test");
   await page.getByRole("button", { name: "Invite" }).click();
   const link = (await page.locator("#invite-result pre").textContent())?.trim() ?? "";
@@ -66,7 +68,12 @@ test("remove a member: their console session ends at once", async ({ page, brows
 
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/members`);
-  await page.getByRole("row", { name: /Malik/ }).getByRole("button", { name: "Revoke" }).click();
+  // Revoking access waits in the person's menu and asks first; the dialog's button runs it.
+  await page.locator('summary[aria-label="Actions for Malik"]').click();
+  await page.getByRole("button", { name: "Revoke access Malik…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Revoke Malik's access?" });
+  await expect(dialog).toContainText("They're signed out at once");
+  await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Revoke access", exact: true }).click()]);
   await expect(page.getByRole("row", { name: /Malik/ })).toHaveCount(0);
 
   await malik.goto(`${hub.url}/console/tokens`);

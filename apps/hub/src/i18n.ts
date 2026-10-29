@@ -318,6 +318,55 @@ const FR: Record<string, string> = {
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----
+  // Members.
+  "Everyone on the team and what each person can do. Invite someone, change a role, or revoke access.":
+    "Tout le monde dans l'équipe et ce que chacun peut faire. Invite quelqu'un, change un rôle ou révoque un accès.",
+  "Invite a member": "Inviter un membre",
+  "name@example.com…": "nom@exemple.com…",
+  "Admins also manage members, alerts and settings. Guests see only their own threads.":
+    "Les admins gèrent aussi les membres, les alertes et les paramètres. Les invités ne voient que leurs propres fils.",
+  Owner: "Propriétaire",
+  Admin: "Admin",
+  Member: "Membre",
+  Guest: "Invité",
+  "Valid for": "Valable",
+  "From 1 to 30\u00a0days.": "De 1 à 30\u00a0jours.",
+  "Invitation emailed to {email}.": "Invitation envoyée par courriel à {email}.",
+  "Invitation ready for {email}.": "Invitation prête pour {email}.",
+  "The link is valid for {days}\u00a0days. You can also send it yourself:":
+    "Le lien est valable {days}\u00a0jours. Tu peux aussi l'envoyer toi-même\u00a0:",
+  "Send them this link. It's valid for {days}\u00a0days.": "Envoie-lui ce lien. Il est valable {days}\u00a0jours.",
+  "Copy the invitation link": "Copier le lien d'invitation",
+  "Pending invitations": "Invitations en attente",
+  "Revoke the invitation for {email}": "Révoquer l'invitation de {email}",
+  "Revoke the invitation for {email}?": "Révoquer l'invitation de {email}\u202f?",
+  "Its link stops working at once. You can invite them again later.":
+    "Son lien cesse de fonctionner tout de suite. Tu pourras inviter cette personne de nouveau plus tard.",
+  "Invitation for {email} revoked.": "Invitation de {email} révoquée.",
+  "Team members": "Membres de l'équipe",
+  Joined: "Arrivée",
+  You: "Toi",
+  "External agent": "Agent externe",
+  "Slack bridge": "Pont Slack",
+  "Actions for {name}": "Actions pour {name}",
+  "Lowercase letters, digits and dashes.": "Minuscules, chiffres et tirets.",
+  "Make {name} an owner?": "Faire de {name} un propriétaire\u202f?",
+  "Owners can do everything admins do, and also manage the other owners.":
+    "Les propriétaires font tout ce que font les admins, et gèrent aussi les autres propriétaires.",
+  "Make {name} an admin?": "Faire de {name} un admin\u202f?",
+  "Admins manage members, alerts, the audit log and the team's settings.":
+    "Les admins gèrent les membres, les alertes, le journal d'audit et les paramètres de l'équipe.",
+  "Make {name} a member?": "Faire de {name} un membre\u202f?",
+  "Members work with agents, threads, tasks, claims and team memory, without managing the team. Their pending invitations are revoked.":
+    "Les membres travaillent avec les agents, les fils, les tâches, les réservations et la mémoire d'équipe, sans gérer l'équipe. Ses invitations en attente sont révoquées.",
+  "Make {name} a guest?": "Faire de {name} un invité\u202f?",
+  "Guests see only the threads they take part in: no projects, tasks, claims or team memory. Their delegate sessions stop taking requests, and their pending invitations are revoked.":
+    "Les invités ne voient que les fils auxquels ils participent\u00a0: ni projets, ni tâches, ni réservations, ni mémoire d'équipe. Ses sessions déléguées cessent de prendre des demandes, et ses invitations en attente sont révoquées.",
+  "Revoke access": "Révoquer l'accès",
+  "Revoke {name}'s access?": "Révoquer l'accès de {name}\u202f?",
+  "They're signed out at once: their tokens stop working, their sessions end and their claims are released. What they wrote stays with the team.":
+    "Sa connexion se ferme tout de suite\u00a0: ses jetons ne marchent plus, ses sessions s'arrêtent et ses réservations sont libérées. Ce que cette personne a écrit reste à l'équipe.",
+  "{name}'s access revoked.": "Accès de {name} révoqué.",
   // ---- End of batch 5. ----
 
   // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----

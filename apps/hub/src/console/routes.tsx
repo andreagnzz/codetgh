@@ -93,6 +93,7 @@ import {
   toneOf,
   When,
 } from "./pages.js";
+import { Invitations, Invited, InviteForm, Members } from "./team.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -1222,94 +1223,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Members",
       <>
-        <form hx-post="/console/members/invite" hx-target="#invite-result">
-          <label>
-            {_("Email")} <input name="email" type="email" required autocomplete="off" />
-          </label>
-          <label>
-            {_("Role")}{" "}
-            <select name="role">
-              {ROLES.filter((r) => r !== "owner" || p.role === "owner").map((r) => (
-                <option value={r} selected={r === "member"}>
-                  {_(r)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {_("Valid for (days)")} <input name="days" type="number" min={1} max={30} value="7" required />
-          </label>
-          <button type="submit">{_("Invite")}</button>
-        </form>
-        <div id="invite-result" />
-        <h2>{_("Invitations")}</h2>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Email"), _("Role"), _("Sent"), _("Expires"), _("Actions")]}
-          rows={invites.map((i) => [
-            i.email,
-            <Pill>{_(i.role)}</Pill>,
-            <When at={i.createdAt} lang={_.lang} />,
-            <When at={i.expiresAt} lang={_.lang} />,
-            <Action post={`/console/invitations/${i.id}/revoke`} label={_("Revoke invitation")} />,
-          ])}
-          empty={_("No pending invitations. Invite someone with the form above, or run codetgh invite <email>.")}
-        />
-        <h2>{_("Members")}</h2>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
-          rows={rows.map((r) => [
-            r.name,
-            // Only an owner renames an owner.
-            r.membership.role === "owner" && p.role !== "owner" ? (
-              `@${r.membership.handle}`
-            ) : (
-              <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
-                <label>
-                  <span class="sr-only">{_("Handle")}</span>@
-                  <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
-                </label>
-                <button type="submit" class="tertiary">
-                  {_("Rename")}
-                </button>
-              </form>
-            ),
-            r.email,
-            <Pill>{_(r.membership.role)}</Pill>,
-            r.membership.userId !== p.user.id && (
-              <>
-                {ROLES.filter((role) => role !== r.membership.role && (role !== "owner" || p.role === "owner")).map((role) => (
-                  <Action post={`/console/members/${r.membership.id}/role`} vals={{ role }} label={_(`Make ${role}`)} />
-                ))}
-                <Action post={`/console/members/${r.membership.id}/revoke`} label={_("Revoke")} />
-              </>
-            ),
-          ])}
-          empty={_("Nothing yet.")}
-        />
+        <Invitations _={_} rows={invites} />
+        <Members _={_} rows={rows} viewer={p} />
       </>,
+      undefined,
+      {
+        head: <p class="lede">{_("Everyone on the team and what each person can do. Invite someone, change a role, or revoke access.")}</p>,
+        actions: <InviteForm _={_} owner={p.role === "owner"} />,
+      },
     );
   });
 
   consoleApp.post("/members/invite", async (c) => {
     const f = await form(c);
-    const _ = tr(c);
     const { link, emailed, days } = await inviteMember(
       { db, mailer, publicUrl: config.publicUrl },
       c.get("principal"),
       { email: f.email ?? "", role: f.role || "member", days: f.days ? Number(f.days) : undefined },
       "console",
     );
-    return c.html(
-      <Result>
-        <p>
-          {emailed ? `${_("Invitation emailed to")} ${f.email}.` : `${_("Send this link to")} ${f.email}`} ({_("valid")} {days} {_("days")}
-          ):
-        </p>
-        <pre>{link}</pre>
-      </Result>,
-    );
+    return c.html(<Invited _={tr(c)} email={f.email ?? ""} link={link} days={days} emailed={emailed} />);
   });
 
   consoleApp.post("/invitations/:id/revoke", async (c) => {

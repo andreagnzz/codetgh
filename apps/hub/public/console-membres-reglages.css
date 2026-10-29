@@ -1,2 +1,176 @@
 /* Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this file; the tokens, base
    and components are in console.css. */
+
+/* The page's create form (Invite a member) is its main job: the button that opens it is filled. Open, the form
+   takes the width of the page header, under the title. */
+.head-form {
+  flex: 1;
+  min-width: 0;
+}
+.head-form > details[open] {
+  margin: 0;
+}
+.head-form > details:not([open]) > summary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.head-form > details:not([open]) > summary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.page-actions:has(> .head-form > details[open]) {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: var(--sp-6);
+}
+/* In the panel, whose paragraphs are muted, a refusal keeps the error color. */
+.head-form .field-error {
+  color: var(--error);
+}
+
+/* What a form answers, shown once: a banner that says it, then the blocks to copy. */
+#invite-result:not(:empty) {
+  margin-top: var(--sp-6);
+}
+#invite-result .banner {
+  margin-bottom: var(--sp-4);
+}
+:where(#invite-result) > :last-child {
+  margin-bottom: 0;
+}
+
+/* A person: the name, "You" for the reader, then the email (or what a system member is) under it. */
+.person p {
+  margin: 0;
+  max-width: none;
+}
+.person-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+}
+.person-name,
+.invitation-email {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.person-you {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.person-email {
+  overflow-wrap: anywhere;
+}
+
+/* A field that starts with "@": the sign is drawn in the field, never sent. Handles and ids are machine values, in mono. */
+.with-prefix {
+  position: relative;
+  display: block;
+  width: min(100%, 20rem);
+  margin-top: var(--sp-1);
+}
+.with-prefix > span {
+  position: absolute;
+  left: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  pointer-events: none;
+}
+.with-prefix input {
+  width: 100%;
+  padding-left: calc(var(--sp-3) + 1ch + var(--sp-1));
+  font-family: var(--mono);
+}
+
+/* A person's menu: their handle to change first, then the roles, then revoking access apart, under a rule. */
+.team-members .row-menu .pop {
+  width: 18rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+}
+.team-members .menu-items > li:has(> .handle-form) + li,
+.team-members .menu-items > li:has(> .danger) {
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+.handle-form {
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+}
+.handle-form label {
+  margin: 0;
+}
+.handle-form .help {
+  margin: 0 0 var(--sp-2);
+}
+.handle-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+.handle-row .with-prefix {
+  flex: 1;
+  margin: 0;
+}
+.menu-items .handle-form button {
+  flex: none;
+  width: auto;
+  justify-content: center;
+  border-color: var(--border-strong);
+}
+
+/* Under 640 px a row is a short record: its name and, in its top corner, its action; under them the other values on one line
+   that wraps, a time with its word ("Joined", "Expires"). */
+@media (max-width: 639px) {
+  .records tr {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-3) 0;
+  }
+  .records td,
+  .records td:is(.primary-cell, .actions-cell) {
+    display: block;
+    padding: 0;
+  }
+  .records td::before {
+    content: none;
+  }
+  .records td > .cell {
+    display: inline;
+  }
+  .records td.primary-cell {
+    flex: 1 0 100%;
+    padding-right: calc(6.5rem + var(--sp-2));
+  }
+  .team-members td.primary-cell {
+    padding-right: calc(32px + var(--sp-2));
+  }
+  .records td.actions-cell {
+    position: absolute;
+    top: var(--sp-2);
+    right: 0;
+  }
+  .records td.actions-cell button {
+    margin: 0;
+  }
+  .records td:has(> .cell > time)::before {
+    content: attr(data-label);
+    margin-right: var(--sp-1);
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+  }
+  .records .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
+}
+@media (max-width: 639px) and (pointer: coarse) {
+  .team-members td.primary-cell {
+    padding-right: calc(44px + var(--sp-2));
+  }
+}
