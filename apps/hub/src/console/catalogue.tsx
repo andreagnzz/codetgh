@@ -209,6 +209,7 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
         title="Couldn't refresh."
         actions={
           <button type="button" class="tertiary">
+            <Icon name="refresh-cw" />
             Retry
           </button>
         }
@@ -418,6 +419,7 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
         icon="triangle-alert"
         action={
           <button type="button" class="secondary">
+            <Icon name="refresh-cw" />
             Retry
           </button>
         }
