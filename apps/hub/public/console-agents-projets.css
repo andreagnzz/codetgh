@@ -63,6 +63,10 @@
 .state-off {
   color: var(--text-muted);
 }
+/* What a session did not report is a caption, not a value. */
+.not-reported {
+  font-size: var(--fs-caption);
+}
 .state-line {
   display: flex;
   flex-wrap: wrap;
@@ -88,13 +92,13 @@
 }
 @media (min-width: 640px) {
   .agents-table.sessions th:nth-child(1) {
-    width: 28%;
+    width: 26%;
   }
   .agents-table.sessions th:nth-child(2) {
     width: 18%;
   }
   .agents-table.sessions th:nth-child(3) {
-    width: 20%;
+    width: 22%;
   }
   .agents-table.sessions th:nth-child(4),
   .agents-table.sessions th:nth-child(5) {
@@ -102,13 +106,13 @@
   }
   /* External agents: their state spans the setup columns, which do not apply to them. */
   .agents-table.external th:nth-child(1) {
-    width: 28%;
+    width: 26%;
   }
   .agents-table.external th:nth-child(2) {
-    width: 62%;
+    width: 64%;
   }
   .agents-table.delegations th:nth-child(1) {
-    width: 28%;
+    width: 26%;
   }
   .agents-table.delegations th:nth-child(2) {
     width: 20%;
@@ -146,7 +150,7 @@
    the right, each a state then its action. */
 .project-head {
   display: grid;
-  grid-template-columns: minmax(0, 28fr) minmax(0, 72fr);
+  grid-template-columns: minmax(0, 26fr) minmax(0, 74fr);
   align-items: baseline;
   gap: var(--sp-2) var(--sp-3);
   margin: var(--sp-8) 0 var(--sp-3);
@@ -196,26 +200,26 @@
   font-weight: 500;
 }
 
-/* A project's sessions: one grid for the list, so the columns line up from row to row, the attach form in a last column as
-   wide as it needs. */
+/* A project's sessions: a list on the Agents columns, without their headers. The attach form takes the third column, under
+   what the session said it is doing, or in its place. */
 .session-list {
-  display: grid;
-  grid-template-columns: minmax(0, 28fr) minmax(0, 18fr) minmax(0, 54fr) auto;
-  column-gap: var(--sp-3);
   list-style: none;
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--border);
 }
 .session-row {
-  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: subgrid;
-  grid-template-areas: "session state doing action";
+  grid-template-columns: minmax(0, 26fr) minmax(0, 18fr) minmax(0, 56fr);
+  grid-template-areas: "session state doing" "session state action";
+  column-gap: var(--sp-3);
   row-gap: var(--sp-1);
   align-items: baseline;
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);
+}
+.session-row:not(:has(> .session-doing)) {
+  grid-template-areas: "session state action";
 }
 .session-row > .session-cell {
   grid-area: session;
@@ -231,25 +235,26 @@
 }
 .session-action {
   grid-area: action;
+  min-width: 0;
 }
+/* The menu keeps its width whatever the longest project name: the button stays beside it. */
 .attach select {
-  min-height: 32px;
+  width: 12rem;
   max-width: 100%;
+  min-height: 32px;
   padding-block: var(--sp-1);
 }
 @media (max-width: 767px) {
-  .session-list {
+  .session-row,
+  .session-row:not(:has(> .session-doing)) {
     grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .session-row {
     grid-template-areas: "session state" "doing doing" "action action";
   }
 }
 @media (max-width: 639px) {
-  .session-list {
+  .session-row,
+  .session-row:not(:has(> .session-doing)) {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .session-row {
     grid-template-areas: "session" "state" "doing" "action";
   }
   .session-action {
