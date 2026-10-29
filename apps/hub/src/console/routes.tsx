@@ -8,6 +8,7 @@ import { diffLines } from "diff";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import type { Child } from "hono/jsx";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import type { Auth } from "../auth.js";
@@ -211,7 +212,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
   const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
   // A guest never sees the list of the team's projects.
-  const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
+  // A detail page adds a way back, a meta line and its one action to the page header.
+  const page = (
+    c: Context<Env>,
+    title: string,
+    body: unknown,
+    filter?: ProjectFilter,
+    detail?: { back?: Child; head?: Child; actions?: Child },
+  ) =>
     c.html(
       <Layout
         p={c.get("principal")}
@@ -222,6 +230,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         filter={c.get("principal").role === "guest" ? undefined : filter}
         keep={filter ? filter.selected : kept(c)}
         archived={c.req.query("archived") === "1"}
+        {...detail}
       >
         {body as never}
       </Layout>,
@@ -1876,7 +1885,18 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   // Development and tests only: the component catalogue, and two actions that let it show a confirmation, a toast and a
   // refusal. Never mounted in production.
   if (process.env.NODE_ENV !== "production") {
-    consoleApp.get("/catalogue", (c) => page(c, "Components", <Catalogue lang={tr(c).lang} />));
+    consoleApp.get("/catalogue", (c) =>
+      page(c, "Components", <Catalogue lang={tr(c).lang} />, undefined, {
+        back: <a href="/console">{tr(c)("Overview")}</a>,
+        head: (
+          <>
+            <span>Development and tests only</span>
+            <Pill>Not served in production</Pill>
+          </>
+        ),
+        actions: <button type="button">Page action</button>,
+      }),
+    );
     consoleApp.post("/catalogue/done", (c) => refresh(c));
     consoleApp.post("/catalogue/refused", () => {
       throw new HubError("E_INVALID", "The hub refuses this demo action, to show where its reason appears.");
