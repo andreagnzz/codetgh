@@ -115,7 +115,7 @@ export const Invited: FC<{ _: Tr; email: string; link: string; days: number; ema
 
 export type InvitationRow = { id: string; email: string; role: Role; createdAt: Date; expiresAt: Date };
 export const Invitations: FC<{ _: Tr; rows: InvitationRow[] }> = ({ _, rows }) => (
-  <section aria-labelledby="invitations-h" class="records">
+  <section aria-labelledby="invitations-h" class="team-records team-invitations">
     <h2 id="invitations-h">
       {_("Pending invitations")}
       {rows.length > 0 && (
@@ -222,7 +222,7 @@ const MemberMenu: FC<{ r: MemberRow; viewer: Principal; _: Tr }> = ({ r, viewer,
 };
 
 export const Members: FC<{ _: Tr; rows: MemberRow[]; viewer: Principal }> = ({ _, rows, viewer }) => (
-  <section aria-labelledby="members-h" class="records team-members">
+  <section aria-labelledby="members-h" class="team-records team-members">
     <h2 id="members-h">
       {_("Team members")} <span class="count">{rows.length}</span>
     </h2>
@@ -236,12 +236,12 @@ export const Members: FC<{ _: Tr; rows: MemberRow[]; viewer: Principal }> = ({ _
         const m = r.membership;
         const system = systemOf(m.handle);
         return [
-          <div class="person">
-            <p class="person-head">
-              <span class="person-name">{r.name}</span>
-              {m.userId === viewer.user.id && <span class="person-you">{_("You")}</span>}
+          <div class="member">
+            <p class="member-head">
+              <span class="member-name">{r.name}</span>
+              {m.userId === viewer.user.id && <span class="member-you">{_("You")}</span>}
             </p>
-            <p class="meta person-email">
+            <p class="meta member-email">
               {system === "external"
                 ? _("External agent")
                 : system === "bridge"
@@ -290,7 +290,7 @@ export const TokenCreated: FC<{ _: Tr; token: string; url: string }> = ({ _, tok
 
 export type TokenRow = { id: string; label: string; createdAt: Date; expiresAt: Date };
 export const Tokens: FC<{ _: Tr; rows: TokenRow[] }> = ({ _, rows }) => (
-  <div class="records">
+  <div class="team-records team-tokens">
     <Table
       lang={_.lang}
       caption={_("Personal tokens")}
@@ -331,7 +331,7 @@ export const Tokens: FC<{ _: Tr; rows: TokenRow[] }> = ({ _, rows }) => (
 // ---- My data ----
 
 export const MyData: FC<{ _: Tr; p: Principal }> = ({ _, p }) => (
-  <>
+  <div class="team-me">
     <Panel title={_("Profile")}>
       <form hx-post="/console/me/profile" hx-swap="none">
         <Field
@@ -385,7 +385,7 @@ export const MyData: FC<{ _: Tr; p: Principal }> = ({ _, p }) => (
         </button>
       </form>
     </Panel>
-  </>
+  </div>
 );
 
 export const SlackCode: FC<{ _: Tr; code: string }> = ({ _, code }) => (
@@ -429,8 +429,8 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
   const claims = ["warn", "off"].includes(s.claims_enforcement ?? "") ? "warn" : "ask";
   const [before, after] = _("To check an audit export offline, pass this key to {command}.").split("{command}");
   return (
-    <>
-      <form hx-post="/console/settings" hx-swap="none" class="settings" data-done={_("Settings saved.")}>
+    <div class="team-settings">
+      <form hx-post="/console/settings" hx-swap="none" data-done={_("Settings saved.")}>
         <Panel title={_("Agent rules")}>
           <fieldset class="choices">
             <legend>{_("When an agent edits a file someone else claimed")}</legend>
@@ -612,7 +612,7 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
         </p>
         <CodeBlock code={auditKey.publicKey} lang={_.lang} copyLabel={_("Copy the public key")} />
       </Panel>
-    </>
+    </div>
   );
 };
 
