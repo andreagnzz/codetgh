@@ -18,9 +18,9 @@ const kindOf = (a: Agent) => (a.sessionId.startsWith("cli-") ? "CLI" : KIND[a.ki
 // How a teammate's message reaches the session (push_mode): read while it works, or it wakes up for it, or a live channel.
 const PUSH: Record<string, string> = { hooks: "While working", rewake: "Wakes up", channel: "Live channel" };
 const named = (s: string, key: string, value: string) => s.replace(key, () => value);
-// A sentence with a command in it: its placeholder becomes the command, set as code.
-export const withCommand = (s: string, key: string, command: string): Child[] =>
-  s.split(key).flatMap((part, i) => (i ? [<code>{command}</code>, part] : [part]));
+// A translated sentence with markup in it, such as a command set as code: its placeholder becomes that markup.
+export const inSentence = (s: string, key: string, child: Child): Child[] =>
+  s.split(key).flatMap((part, i) => (i ? [child, part] : [part]));
 
 export const Session: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
   const a = r.agent;
@@ -67,9 +67,7 @@ export const SessionState: FC<{ r: SessionRow; _: Tr; bypass?: boolean }> = ({ r
         {bypass && r.agent.permissionMode === "bypassPermissions" && <Pill tone="warn">{_("Prompts off")}</Pill>}
       </p>
       {state !== "online" && (
-        <p class="meta">
-          {_("Last seen")} <When at={r.agent.lastSeenAt} lang={_.lang} />
-        </p>
+        <p class="meta">{inSentence(_("Last seen {time}"), "{time}", <When at={r.agent.lastSeenAt} lang={_.lang} />)}</p>
       )}
     </div>
   );

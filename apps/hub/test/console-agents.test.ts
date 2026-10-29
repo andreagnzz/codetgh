@@ -246,6 +246,8 @@ describe("agents", () => {
     expect(html).toContain("<span>Se réveille</span>");
     expect(html).toContain("Non transmis");
     expect(await page("/console/agents", team.malik.cookie, "fr")).toContain(">En pause</span>");
+    // Words that describe a session agree with it, as a feminine noun.
+    expect(html).toMatch(/<p class="meta">Vue <time/);
   });
 });
 
