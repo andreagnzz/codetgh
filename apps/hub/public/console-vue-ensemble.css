@@ -161,8 +161,9 @@ main > #live + .field-error {
   color: var(--text);
 }
 
-/* The line. Lanes: 14 px apart on phones (six at most), 24 px from 640 px, 48 px from 1280 px, narrowing to 32 px past six
-   people, so the lanes never take more than 288 px of the column. The count comes from data-lanes (no inline style). */
+/* The line. Lanes: 14 px apart on phones (six at most), 32 px from 640 px (28.8 px for ten), 48 px from 1280 px, narrowing
+   to 32 px past six people, so the lanes never take more than 288 px of the column and three staggered names keep about
+   90 px each. The count comes from data-lanes (no inline style). */
 .lanes {
   --lanes: 1;
   --pitch: 14px;
@@ -375,7 +376,7 @@ main > #live + .field-error {
    the width of two lanes (three) before it is cut: row k starts (k + 1/2 - rows/2) lanes from the first caret's lane. */
 @media (min-width: 640px) {
   .lanes {
-    --pitch: 24px;
+    --pitch: clamp(24px, 288px / var(--lanes), 32px);
   }
   .lane-caption {
     display: none;
@@ -409,6 +410,12 @@ main > #live + .field-error {
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* The first name starts over the first lane instead of spilling left of the column, and runs on to its right. */
+  .lane-row:first-child > .lane-name:first-child {
+    padding-left: calc((var(--rows) / 2 - 0.5) * var(--pitch));
+    overflow: visible;
+    text-align: left;
   }
 }
 @media (min-width: 1280px) {
