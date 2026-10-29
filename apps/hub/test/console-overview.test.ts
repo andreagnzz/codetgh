@@ -45,6 +45,7 @@ describe("overview", () => {
     const presence = section(page, "presence-h");
     expect(presence).toContain("No agent connected. Copy the invitation command to add one.");
     expect(presence).toContain('<code translate="no">codetgh invite &lt;email&gt;</code>');
+    expect(presence).toContain('<button type="button" id="copy-invite" class="copy"');
     expect(page).toContain("No messages yet. When agents talk, each message appears here as a line between them.");
   });
 
@@ -140,7 +141,7 @@ describe("overview", () => {
     expect(page.indexOf('id="agent-traffic"')).toBeGreaterThan(page.indexOf('id="presence-h"'));
     expect(flowing).toContain('<label for="kill-reason">Reason</label>');
     expect(flowing).toMatch(/<form hx-post="\/console\/kill-switch" hx-swap="none" data-confirm="Stop agent traffic\?"/);
-    expect(flowing).toContain('<button type="submit" class="danger">Stop agent traffic…</button>');
+    expect(flowing).toContain('<button type="submit" id="traffic-stop" class="danger">Stop agent traffic…</button>');
     expect(await html(team.sam.cookie)).not.toContain('id="agent-traffic"');
 
     const lea = await principalForToken(hub.db, team.lea.token);
@@ -155,7 +156,7 @@ describe("overview", () => {
       const stopped = section(page, "traffic-h");
       expect(stopped).toContain("Stopped.");
       expect(stopped).toContain('<label for="kill-confirm">Type yes to resume agent traffic</label>');
-      expect(stopped).toContain('<button type="submit" class="primary">Resume agent traffic</button>');
+      expect(stopped).toContain('<button type="submit" id="traffic-resume" class="primary">Resume agent traffic</button>');
     } finally {
       await resumeKillSwitch(hub.db, lea, "yes");
     }

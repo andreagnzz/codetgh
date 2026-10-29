@@ -380,7 +380,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
               <input id="kill-confirm" name="confirm" required autocomplete="off" />
             </Field>
-            <button type="submit" class="primary">
+            <button type="submit" id="traffic-resume" class="primary">
               {_("Resume agent traffic")}
             </button>
           </form>
@@ -399,7 +399,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
               <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
             </Field>
-            <button type="submit" class="danger">
+            <button type="submit" id="traffic-stop" class="danger">
               {_("Stop agent traffic…")}
             </button>
           </form>
@@ -500,7 +500,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 ) : isAdmin(p) ? (
                   <>
                     <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
-                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
+                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command id="copy-invite" />
                   </>
                 ) : (
                   _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")

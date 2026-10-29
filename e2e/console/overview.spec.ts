@@ -5,8 +5,8 @@ import { RateLimiter } from "../../apps/hub/src/domain/limits.js";
 import { call, type Hub, mcpClient, startHub, startSession } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
 
-// The overview with the keyboard and on a phone: what needs me, the line, then agent traffic; the line keeps the keyboard
-// where it was when a message arrives live.
+// The overview with the keyboard and on a phone: what needs me, the line, presence, then agent traffic; a live refresh keeps
+// the keyboard where it was and the offline sessions open, and a slow one moves nothing.
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
 let clock = 0;
@@ -67,7 +67,7 @@ for (const scheme of ["light", "dark"] as const)
     const offline = await tab(page);
     expect(offline).toMatchObject({ id: "offline-toggle", text: "1\u00a0offline", outline: "solid 2px" });
     expect((await tab(page)).id).toBe("kill-reason");
-    expect((await tab(page)).text).toBe("Stop agent traffic…");
+    expect(await tab(page)).toMatchObject({ id: "traffic-stop", text: "Stop agent traffic…" });
     // What needs me runs across the top; presence starts beside the line.
     const box = (s: string) => page.locator(s).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
     expect((await box(".needs")).width).toBe((await box("#live")).width);
@@ -150,7 +150,7 @@ test("a live refresh the hub refuses says so above the overview, with Retry, whi
   await expect(page.locator(".wire-row")).toHaveCount(13);
 });
 
-test("a message that arrives live keeps the keyboard on the row it was on", async ({ page }) => {
+test("a live refresh keeps the keyboard where it was, and the offline sessions open", async ({ page }) => {
   await signIn(page, hub.url, team.lea);
   const row = page.locator(".wire-text").nth(2);
   const id = await row.getAttribute("id");
@@ -159,4 +159,11 @@ test("a message that arrives live keeps the keyboard on the row it was on", asyn
   await expect(page.locator(".wire-row.fresh")).toHaveCount(1);
   await expect(page.locator(".wire-row").first()).toContainText("Arrives live");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe(id);
+  // On agent traffic's button, with the offline sessions open.
+  await page.locator("#offline-toggle").click();
+  await page.locator("#traffic-stop").focus();
+  await send("sam", { to: "@lea", subject: "Arrives later", body: "Another message." });
+  await expect(page.locator(".wire-row").first()).toContainText("Arrives later");
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("traffic-stop");
+  await expect(page.locator("#offline")).toHaveAttribute("open", "");
 });
