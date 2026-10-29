@@ -89,7 +89,10 @@ describe("agents", () => {
     expect(webapp).toMatch(/Last seen <time/);
     // Idle and paused are pills; trusted and the kind of a Claude Code session are never shown.
     expect(section(html, `p-${projects["acme/api"]}`)).toContain('<span class="pill" data-tone="neutral">Idle</span>');
-    expect(section(html, `p-${projects["acme/billing"]}`)).toContain('<span class="pill" data-tone="warn">Paused</span>');
+    // Paused carries Lucide's pause sign in place of the pill's dot.
+    expect(section(html, `p-${projects["acme/billing"]}`)).toMatch(
+      /<span class="pill" data-tone="warn"><svg class="icon"[^>]*><rect x="14" y="3"[^<]*<\/rect><rect x="5"[^<]*<\/rect><\/svg>Paused<\/span>/,
+    );
     expect(html).not.toContain("trusted");
     expect(html).not.toContain("claude-code");
     expect(section(html, "p-none")).toContain(">lea@scratch</span>");
@@ -373,7 +376,7 @@ describe("delegations", () => {
     expect(html).toContain("acme/api");
     expect(html).toContain('<span class="chip" translate="no" title="@lea">@lea</span>');
     expect(html).toContain('<span class="chip" translate="no" title="@sam">@sam</span>');
-    expect(html).toContain('<span class="pill" data-tone="warn">Paused</span>');
+    expect(html).toMatch(/<span class="pill" data-tone="warn"><svg class="icon".*?<\/svg>Paused<\/span>/);
     const off = html.match(/<button[^>]*hx-post="\/console\/delegations\/[^"]+\/stop"[^>]*>/)?.[0] ?? "";
     // Turning one off is hard to undo (unfinished requests expire): a danger action, named as its dialog asks.
     expect(off).toContain('class="danger"');

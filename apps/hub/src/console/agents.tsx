@@ -62,7 +62,12 @@ export const SessionState: FC<{ r: SessionRow; _: Tr; bypass?: boolean }> = ({ r
         ) : (
           <span class="state-off">{_("Offline")}</span>
         )}
-        {r.paused && <Pill tone="warn">{_("Paused")}</Pill>}
+        {r.paused && (
+          <Pill tone="warn">
+            <Icon name="pause" />
+            {_("Paused")}
+          </Pill>
+        )}
         {external ? <Pill>{_("External")}</Pill> : r.agent.trustLevel === "quarantined" && <Pill tone="danger">{_("Quarantined")}</Pill>}
         {bypass && r.agent.permissionMode === "bypassPermissions" && <Pill tone="warn">{_("Prompts off")}</Pill>}
       </p>

@@ -83,6 +83,14 @@
   gap: var(--sp-1);
   min-height: 20px;
 }
+/* Paused (codetgh pause): the pause sign takes the place of the pill's dot. */
+:is(.agents-table, .session-list) .pill > .icon {
+  width: 12px;
+  height: 12px;
+}
+:is(.agents-table, .session-list) .pill:has(> .icon)::before {
+  content: none;
+}
 .agents-table .setting {
   display: flex;
   flex-direction: column;
