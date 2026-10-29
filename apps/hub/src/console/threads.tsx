@@ -34,14 +34,14 @@ export const MutedPill: FC<{ t: { mutedAt: Date | null; mutedReason: string | nu
   ) : null;
 
 // The loop guard's count, in words; the ticks only repeat it.
-export const Streak: FC<{ n: number; max: number; _: Tr; short?: boolean }> = ({ n, max, _, short }) => (
+export const Streak: FC<{ n: number; max: number; _: Tr }> = ({ n, max, _ }) => (
   <span class="streak">
     <span class="ticks" aria-hidden="true">
       {Array.from({ length: max }, (__, i) => (
         <span class={i < n ? "on" : undefined} />
       ))}
     </span>
-    {fill(_(short ? "{n} of {max}" : "Agent streak {n} of {max}"), { n, max })}
+    {fill(_("Agent streak {n} of {max}"), { n, max })}
   </span>
 );
 

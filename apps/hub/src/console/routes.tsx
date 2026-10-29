@@ -585,53 +585,53 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       ]
         .filter(Boolean)
         .join(" · ");
-    const table = (of: typeof rows) => (
-      <div class="threads-list">
+    // The agent streak only as it nears the loop guard's limit: below that it reads the same on every row.
+    const nearLimit = (t: (typeof rows)[number]) => t.agentStreak >= MAX_AGENT_MESSAGES - 2;
+    // One header on screen for the whole page: the later tables keep theirs for screen readers, and each caption names its
+    // group.
+    let tables = 0;
+    const table = (of: typeof rows, caption: string) => (
+      <div class={tables++ ? "threads-list later" : "threads-list"}>
         <Table
           lang={_.lang}
-          caption={_("Threads")}
-          head={[_("Thread"), _("People"), _("Agent streak"), _("Last message")]}
+          caption={caption}
+          head={[_("Thread"), _("People"), _("Last message")]}
           primary={0}
-          numeric={[3]}
-          sort={{ column: 3, dir: "descending" }}
+          numeric={[2]}
+          sort={{ column: 2, dir: "descending" }}
           rows={of.map((t) => [
             <>
               <a class="row-link" href={withProject(`/console/threads/${t.id}`, f.selected)}>
                 {threadName(hidden(t) ? { kind: t.kind, subject: null } : t, people.get(t.id), me, _)}
               </a>
-              {(about(t) || t.mutedAt) && (
+              {(about(t) || t.mutedAt || nearLimit(t)) && (
                 <span class="thread-meta">
                   {about(t)}
                   <MutedPill t={t} _={_} />
+                  {nearLimit(t) && <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} />}
                 </span>
               )}
             </>,
             hidden(t) ? <span class="meta">{_("Not shown")}</span> : <Handles handles={people.get(t.id) ?? []} _={_} />,
-            <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} short />,
             <Stamp at={t.lastMessageAt} lang={_.lang} />,
           ])}
           empty=""
         />
       </div>
     );
-    // Current threads quiet for more than a day (some of their messages are still unread) come after a rule.
+    // Current threads quiet for more than a day (some of their messages are still unread) come last, after one rule. With
+    // every project shown, each part is grouped by project; a guest never sees the team's projects, their names included.
     const dayAgo = Date.now() - 86_400_000;
-    const split = (of: typeof rows, heading: "h2" | "h3") => {
-      const recent = of.filter((t) => t.lastMessageAt.getTime() >= dayAgo || archived);
-      const earlier = of.filter((t) => t.lastMessageAt.getTime() < dayAgo && !archived);
-      const Rule = heading;
-      return (
-        <>
-          {recent.length > 0 && table(recent)}
-          {earlier.length > 0 && (
-            <>
-              <Rule class="earlier">{_("Earlier threads")}</Rule>
-              {table(earlier)}
-            </>
-          )}
-        </>
-      );
-    };
+    const quiet = (t: (typeof rows)[number]) => !archived && t.lastMessageAt.getTime() < dayAgo;
+    const part = (of: typeof rows, caption: string, inProject: string, id: string, Heading: "h2" | "h3") =>
+      f.selected || p.role === "guest"
+        ? of.length > 0 && table(of, _(caption))
+        : byProject(f, of, (t) => t.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`${id}-${g.id}`}>
+              <Heading id={`${id}-${g.id}`}>{g.name}</Heading>
+              {table(g.rows, fill(_(inProject), { project: g.name }))}
+            </section>
+          ));
     const filtered = f.projects.find((pr) => pr.id === f.selected)?.name;
     // Older pages go back with ?before=; an older page links back to the latest threads, in the same tab and project.
     const params = [archived && "archived=1", f.selected && `project=${encodeURIComponent(f.selected)}`].filter(Boolean);
@@ -665,17 +665,27 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Threads",
       <>
         <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
-        {/* A guest never sees the team's projects, their names as headings included. */}
-        {rows.length === 0
-          ? empty
-          : f.selected || p.role === "guest"
-            ? split(rows, "h2")
-            : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
-                <section aria-labelledby={`p-${g.id}`}>
-                  <h2 id={`p-${g.id}`}>{g.name}</h2>
-                  {split(g.rows, "h3")}
-                </section>
-              ))}
+        {rows.length === 0 ? (
+          empty
+        ) : (
+          <>
+            {part(
+              rows.filter((t) => !quiet(t)),
+              "Threads",
+              "Threads in {project}",
+              "p",
+              "h2",
+            )}
+            {rows.some(quiet) && (
+              <section aria-labelledby="earlier-threads">
+                <h2 class="earlier" id="earlier-threads">
+                  {_("Earlier threads")}
+                </h2>
+                {part(rows.filter(quiet), "Earlier threads", "Earlier threads in {project}", "e", "h3")}
+              </section>
+            )}
+          </>
+        )}
         {(older || newer) && <Pager lang={_.lang} newer={newer} older={older} />}
       </>,
       f,

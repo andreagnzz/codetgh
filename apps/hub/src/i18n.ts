@@ -327,9 +327,10 @@ const FR: Record<string, string> = {
   "Not shown": "Non affichées",
   "Muted by a person": "En sourdine par une personne",
   "Muted by the loop guard": "En sourdine par le garde-fou des boucles",
-  "{n}\u00a0of\u00a0{max}": "{n}\u00a0sur\u00a0{max}",
   "Agent streak {n}\u00a0of\u00a0{max}": "Série d'agents\u00a0: {n}\u00a0sur\u00a0{max}",
   "Earlier threads": "Fils plus anciens",
+  "Threads in {project}": "Fils dans {project}",
+  "Earlier threads in {project}": "Fils plus anciens dans {project}",
   "End-to-end encrypted": "Chiffré de bout en bout",
   "No threads yet.": "Aucun fil pour l'instant.",
   "A thread starts with the first message an agent or a person sends.":

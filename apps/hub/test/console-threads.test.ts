@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consolePost } from "../../../e2e/helpers.js";
-import { alert, message, thread } from "../src/db/schema.js";
+import { alert, message, project, thread } from "../src/db/schema.js";
 import { RateLimiter } from "../src/domain/limits.js";
 import { call, type Hub, mcpClient, setRole, startHub, startSession } from "./harness.js";
 
@@ -78,6 +78,49 @@ describe("threads", () => {
     const archives = await html("/console/threads?archived=1");
     expect(archives).not.toContain("Earlier threads");
     expect(archives).toContain("A thread moves here after a day without messages, once every message in it is read.");
+  });
+
+  it("puts every project's quiet threads in one Earlier threads section, after the current ones, under one visible header", async () => {
+    const projectId = async (name: string) =>
+      (
+        await hub.db
+          .select()
+          .from(project)
+          .where(and(eq(project.teamId, team.teamId), eq(project.name, name)))
+      )[0]?.id;
+    const apiNow = await send("sam", { to: "@lea", subject: "Api now", body: "b" }, 3);
+    const apiQuiet = await send("sam", { to: "@lea", subject: "Api quiet", body: "b" }, 30 * 60);
+    const billingNow = await send("malik", { to: "@lea", subject: "Billing now", body: "b" }, 4);
+    await hub.db
+      .update(thread)
+      .set({ projectId: await projectId("acme/api") })
+      .where(inArray(thread.id, [apiNow.thread, apiQuiet.thread]));
+    await hub.db
+      .update(thread)
+      .set({ projectId: await projectId("acme/billing") })
+      .where(eq(thread.id, billingNow.thread));
+    const list = await html("/console/threads?project=");
+    expect(list.match(/>Earlier threads<\/h2>/g)).toHaveLength(1);
+    const rule = list.indexOf(">Earlier threads</h2>");
+    expect(list.indexOf(billingNow.thread)).toBeLessThan(rule);
+    expect(list.indexOf(apiQuiet.thread)).toBeGreaterThan(rule);
+    // Each table names its group for screen readers; only the first shows its header row.
+    expect(list).toContain('<caption class="sr-only">Threads in acme/api</caption>');
+    expect(list).toContain('<caption class="sr-only">Earlier threads in acme/api</caption>');
+    expect(list.match(/<div class="threads-list">/g)).toHaveLength(1);
+    expect(list.match(/<div class="threads-list later">/g)?.length).toBeGreaterThan(1);
+  });
+
+  it("shows the agent streak only as it nears the loop guard's limit, under the thread's name", async () => {
+    const calm = await send("sam", { to: "@lea", subject: "Calm one", body: "b" }, 2);
+    const near = await send("sam", { to: "@lea", subject: "Near the limit", body: "b" }, 2);
+    await hub.db.update(thread).set({ agentStreak: 3 }).where(eq(thread.id, near.thread));
+    const list = await html("/console/threads");
+    const row = (id: string) =>
+      list.slice(list.indexOf(`/console/threads/${id}"`), list.indexOf("</tr>", list.indexOf(`/console/threads/${id}"`)));
+    expect(row(near.thread)).toMatch(/<span class="thread-meta">.*Agent streak 3 of 5/);
+    expect(row(calm.thread)).not.toContain("Agent streak");
+    expect(list).not.toMatch(/<th scope="col"[^>]*>Agent streak/);
   });
 
   it("shows a muted thread's state in words, and the agent streak against the loop guard's limit", async () => {

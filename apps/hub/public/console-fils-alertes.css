@@ -559,8 +559,9 @@ main:has(> .thread + .field-error) > .live-reload {
   margin-top: var(--sp-1);
 }
 
-/* Both lists keep their columns from one table to the next (one per project, then the earlier ones). Under 640 px a record
-   is its name and what it is, then its values on one line, and its actions: no label where the value says what it is. */
+/* Both lists keep their columns from one table to the next (one per project, then the earlier ones), so the threads show
+   their header row once: a later table keeps its header for screen readers, at no height. Under 640 px a record is its name
+   and what it is, then its values on one line, and its actions: no label where the value says what it is. */
 @media (min-width: 640px) {
   .threads-list table,
   .alerts-list table {
@@ -570,10 +571,16 @@ main:has(> .thread + .field-error) > .live-reload {
     width: 30%;
   }
   .threads-list th:nth-child(3) {
-    width: 8.5rem;
-  }
-  .threads-list th:nth-child(4) {
     width: 8rem;
+  }
+  .threads-list.later th {
+    padding-block: 0;
+    border: 0;
+    line-height: 0;
+    clip-path: inset(50%);
+  }
+  .threads-list.later th .icon {
+    display: none;
   }
   .alerts-list th:nth-child(2) {
     width: 6.5rem;
@@ -605,17 +612,6 @@ main:has(> .thread + .field-error) > .live-reload {
   }
   :is(.threads-list, .alerts-list) td.primary-cell {
     padding-bottom: var(--sp-1);
-  }
-  /* The streak alone would be a bare count: it keeps its label, on its line. */
-  .threads-list td:nth-child(3) {
-    display: flex;
-    align-items: center;
-  }
-  .threads-list td:nth-child(3)::before {
-    content: attr(data-label);
-    margin-right: var(--sp-2);
-    color: var(--text-muted);
-    font-size: var(--fs-caption);
   }
   .threads-list td.num {
     margin-left: auto;
