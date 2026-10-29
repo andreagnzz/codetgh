@@ -42,33 +42,34 @@ h3.rule::before {
 }
 
 /* Overview: one column, in the order of the page (what needs me, the line, presence, agent traffic); from 1280 px what needs
-   me and the line on the left, presence and agent traffic in a column beside them. */
+   me across the top, then the line on the left and presence and agent traffic beside it, in the order of the page. */
 .overview {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-8);
   align-items: start;
 }
+.overview > * {
+  min-width: 0;
+}
 .overview h2 {
   margin: 0 0 var(--sp-3);
-}
-.overview-side {
-  display: grid;
-  gap: var(--sp-8);
-  min-width: 0;
 }
 @media (min-width: 1280px) {
   .overview {
     grid-template-columns: minmax(0, 1fr) 320px;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto auto 1fr;
     column-gap: var(--sp-12);
   }
   .needs {
-    grid-column: 1;
+    grid-column: 1 / -1;
   }
-  .overview-side {
+  .line-section {
+    grid-column: 1;
+    grid-row: 2 / -1;
+  }
+  .overview > :is(.presence, .traffic) {
     grid-column: 2;
-    grid-row: 1 / span 2;
   }
 }
 /* A live refresh that takes its time: the bar sweeps in the gap above the region, not across its first heading. Under

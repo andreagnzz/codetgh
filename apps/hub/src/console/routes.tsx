@@ -437,77 +437,75 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               </p>
             )}
           </section>
-          <div class="overview-side">
-            <section class="presence" aria-labelledby="presence-h">
-              <div class="section-head">
-                <h2 id="presence-h">{_("Presence")}</h2>
-                {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
-              </div>
-              <People
-                rows={agents}
-                lang={_.lang}
-                cap={PRESENCE_CAP}
-                more={
-                  <a id="presence-more" href="/console/agents">
-                    {_("See all agents")}
-                  </a>
-                }
-                empty={
-                  agents.length > 0 ? (
-                    _("No agent connected right now.")
-                  ) : isAdmin(p) ? (
-                    <>
-                      <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
-                      <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
-                    </>
-                  ) : (
-                    _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
-                  )
-                }
-              />
-            </section>
-            {isAdmin(p) && (
-              <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
-                <h2 id="traffic-h">
-                  {p.paused && <Icon name="octagon-alert" />}
-                  {_("Agent traffic")}
-                </h2>
-                {p.paused ? (
-                  <form hx-post="/console/kill-switch/resume" hx-swap="none">
-                    <p>
-                      <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
-                      {_("Agents can't send messages or claim files until you resume agent traffic.")}
-                    </p>
-                    <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
-                      <input id="kill-confirm" name="confirm" required autocomplete="off" />
-                    </Field>
-                    <button type="submit" class="primary">
-                      {_("Resume agent traffic")}
-                    </button>
-                  </form>
+          <section class="presence" aria-labelledby="presence-h">
+            <div class="section-head">
+              <h2 id="presence-h">{_("Presence")}</h2>
+              {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
+            </div>
+            <People
+              rows={agents}
+              lang={_.lang}
+              cap={PRESENCE_CAP}
+              more={
+                <a id="presence-more" href="/console/agents">
+                  {_("See all agents")}
+                </a>
+              }
+              empty={
+                agents.length > 0 ? (
+                  _("No agent connected right now.")
+                ) : isAdmin(p) ? (
+                  <>
+                    <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
+                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
+                  </>
                 ) : (
-                  <form
-                    hx-post="/console/kill-switch"
-                    hx-swap="none"
-                    data-confirm={_("Stop agent traffic?")}
-                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
-                    data-confirm-action={_("Stop agent traffic")}
-                  >
-                    <p>
-                      <strong>{_("Flowing.")}</strong>{" "}
-                      {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
-                    </p>
-                    <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
-                      <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
-                    </Field>
-                    <button type="submit" class="danger">
-                      {_("Stop agent traffic…")}
-                    </button>
-                  </form>
-                )}
-              </section>
-            )}
-          </div>
+                  _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
+                )
+              }
+            />
+          </section>
+          {isAdmin(p) && (
+            <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
+              <h2 id="traffic-h">
+                {p.paused && <Icon name="octagon-alert" />}
+                {_("Agent traffic")}
+              </h2>
+              {p.paused ? (
+                <form hx-post="/console/kill-switch/resume" hx-swap="none">
+                  <p>
+                    <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
+                    {_("Agents can't send messages or claim files until you resume agent traffic.")}
+                  </p>
+                  <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
+                    <input id="kill-confirm" name="confirm" required autocomplete="off" />
+                  </Field>
+                  <button type="submit" class="primary">
+                    {_("Resume agent traffic")}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  hx-post="/console/kill-switch"
+                  hx-swap="none"
+                  data-confirm={_("Stop agent traffic?")}
+                  data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+                  data-confirm-action={_("Stop agent traffic")}
+                >
+                  <p>
+                    <strong>{_("Flowing.")}</strong>{" "}
+                    {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
+                  </p>
+                  <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
+                    <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
+                  </Field>
+                  <button type="submit" class="danger">
+                    {_("Stop agent traffic…")}
+                  </button>
+                </form>
+              )}
+            </section>
+          )}
         </div>
         {/* Shown by the stylesheet only after a live refresh failed (console.js writes why after the region): a full reload. */}
         <p class="live-retry">

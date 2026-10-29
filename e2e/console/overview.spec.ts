@@ -60,6 +60,10 @@ for (const scheme of ["light", "dark"] as const)
     // Thirteen rows fit on a wide screen: the way to every thread is a phone's only.
     expect((await tab(page)).id).toBe("kill-reason");
     expect((await tab(page)).text).toBe("Stop agent traffic…");
+    // What needs me runs across the top; presence starts beside the line.
+    const box = (s: string) => page.locator(s).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
+    expect((await box(".needs")).width).toBe((await box("#live")).width);
+    expect((await box(".presence")).top).toBe((await box(".line-section")).top);
   });
 
 for (const lang of ["en", "fr"] as const)
