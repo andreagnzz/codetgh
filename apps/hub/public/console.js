@@ -33,7 +33,15 @@
   dialog?.addEventListener("click", (e) => {
     const button = e.target.closest("button");
     if (button?.value === "cancel") dialog.close();
-    if (button === go && pending) pending.issue(true);
+    // One request per confirmation: a second click while it runs would queue another, which asks again.
+    if (button === go && pending && !pending.sent) {
+      pending.sent = true;
+      pending.issue(true);
+    }
+  });
+  // While the dialog asks, a live refresh does not replace its trigger: the confirmation would have nothing left to send.
+  document.body.addEventListener("htmx:beforeSwap", (e) => {
+    if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
   // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger.
   dialog?.addEventListener("close", () => {
@@ -75,7 +83,11 @@
     errorAfter(hostOf(e.detail.elt))?.remove();
     busy(e, true);
   });
-  document.body.addEventListener("htmx:afterRequest", (e) => busy(e, false));
+  document.body.addEventListener("htmx:afterRequest", (e) => {
+    busy(e, false);
+    // Refused, the dialog stays open and can be confirmed again.
+    if (pending?.elt === e.detail.elt) pending.sent = false;
+  });
   // The hub answers a refused action with its reason (4xx); anything else gets a generic next step.
   document.body.addEventListener("htmx:responseError", (e) => {
     const { status, responseText } = e.detail.xhr;
