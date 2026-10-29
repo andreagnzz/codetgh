@@ -181,7 +181,13 @@ describe("members", () => {
     expect(html).toContain("Membres de l&#39;équipe");
     expect(html).toContain("Invitations en attente");
     expect(html).toContain("<summary>Inviter un membre</summary>");
-    expect(html).toContain("Rendre Sam admin\u202f?");
+    // A role change in French takes no agreement with the person: "Passer Sam en invité ?", and the menu says it the same way.
+    expect(html).toContain("Passer Sam en admin\u202f?");
+    expect(html).toContain("Passer Sam en invité\u202f?");
+    expect(html).toContain(">Passer en invité…</button>");
+    expect(html).toContain("Les sessions déléguées de cette personne cessent de prendre des demandes");
+    expect(html).not.toContain("Ses ");
+    expect(html).toContain(">Date d&#39;arrivée</th>");
     expect(html).toContain("Révoquer l&#39;invitation de ines@acme.test\u202f?");
     expect(html).toContain(">Propriétaire<");
     expect(html).toContain(">Toi</span>");
@@ -261,7 +267,8 @@ describe("my data", () => {
     expect(html).toContain(">Link Slack</button>");
     const erase = html.slice(html.indexOf('data-tone="danger"'));
     expect(erase).toContain("Erase my data</h2>");
-    expect(erase).toContain('<label for="me-erase">Type erase to confirm</label>');
+    // The word to type is set apart, in mono; the label still reads "Type erase to confirm".
+    expect(erase).toContain('<label for="me-erase">Type <code>erase</code> to confirm</label>');
     expect(erase).toContain('<button type="submit" class="danger">Erase my data</button>');
   });
 
@@ -276,7 +283,7 @@ describe("my data", () => {
     const html = main(await page("/console/me", team.sam.cookie, "fr"));
     expect(html).toContain("<h1>Mes données</h1>");
     expect(html).toContain("Effacer mes données</h2>");
-    expect(html).toContain("Tape erase pour confirmer");
+    expect(html).toContain("Tape <code>erase</code> pour confirmer");
     expect(html).toContain(">Relier Slack</button>");
   });
 });

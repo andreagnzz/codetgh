@@ -412,7 +412,7 @@ export const MyData: FC<{ _: Tr; p: Principal }> = ({ _, p }) => (
         )}
       </p>
       <form hx-post="/console/me/erase" hx-swap="none">
-        <Field id="me-erase" label={_("Type erase to confirm")} lang={_.lang} help={_("This can't be undone.")}>
+        <Field id="me-erase" label={withCommand(_("Type {command} to confirm"), "erase")} lang={_.lang} help={_("This can't be undone.")}>
           <input id="me-erase" name="confirm" required autocomplete="off" spellcheck={false} {...fieldAria("me-erase", { help: 1 })} />
         </Field>
         <button type="submit" class="danger">
