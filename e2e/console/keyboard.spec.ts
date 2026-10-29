@@ -126,6 +126,8 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await page.locator(".toasts button").focus();
   await page.keyboard.press("Enter");
   await expect(page.locator(".toasts .toast")).toHaveCount(0);
+  // The focus does not fall back to the body with the toast that held it.
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("main");
 
   // Refused after confirmation: the reason shows in the dialog, which stays open.
   await page.getByRole("button", { name: "Remove agent…", exact: true }).focus();

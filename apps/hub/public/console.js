@@ -98,6 +98,23 @@
   });
   document.body.addEventListener("htmx:sendError", (e) => show(e.detail.elt, OFFLINE));
 
+  // Removing what holds the focus (a toast, a dismissed banner) gives it back to where it came from, or to the page.
+  const cameFrom = new WeakMap();
+  document.addEventListener("focusin", (e) => {
+    const host = e.target.closest?.(".toast, .banner");
+    if (host && !host.contains(e.relatedTarget)) cameFrom.set(host, e.relatedTarget);
+  });
+  const removeKeepingFocus = (node) => {
+    const had = node.contains(document.activeElement);
+    const back = cameFrom.get(node);
+    node.remove();
+    if (!had) return;
+    if (back?.isConnected) return back.focus();
+    const main = document.getElementById("main");
+    main?.setAttribute("tabindex", "-1");
+    main?.focus();
+  };
+
   // Toast: the result of an action that the page does not show (data-done on the trigger). Most actions reload the page,
   // so the sentence waits in sessionStorage; without it, the page works the same and says nothing.
   const KEY = "codetgh:toast";
@@ -109,7 +126,7 @@
     node.querySelector("p").textContent = text;
     const close = () => {
       clearTimeout(timer);
-      node.remove();
+      removeKeepingFocus(node);
     };
     const wait = () => {
       clearTimeout(timer);
@@ -167,7 +184,10 @@
     }
   });
   // A banner that can be dismissed (information only).
-  document.addEventListener("click", (e) => e.target.closest("[data-dismiss]")?.closest(".banner")?.remove());
+  document.addEventListener("click", (e) => {
+    const banner = e.target.closest("[data-dismiss]")?.closest(".banner");
+    if (banner) removeKeepingFocus(banner);
+  });
 
   // A table wider than its frame scrolls inside it: the frame then takes the keyboard (arrows scroll it) and its name.
   const frames = () => {
