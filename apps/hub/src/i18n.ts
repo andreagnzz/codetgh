@@ -337,6 +337,10 @@ const FR: Record<string, string> = {
     "Le lien est valable {days}\u00a0jours. Tu peux aussi l'envoyer toi-même\u00a0:",
   "It's valid for {days}\u00a0days.": "Il est valable {days}\u00a0jours.",
   "Copy the invitation link": "Copier le lien d'invitation",
+  "This email address isn't valid. Enter the address to invite, like name@example.com.":
+    "Cette adresse de courriel n'est pas valable. Saisis l'adresse à inviter, comme nom@exemple.com.",
+  "An invitation lasts 1 to 30\u00a0days. Enter a number of days in that range.":
+    "Une invitation dure de 1 à 30\u00a0jours. Saisis un nombre de jours dans cet intervalle.",
   "Pending invitations": "Invitations en attente",
   "Revoke the invitation for {email}": "Révoquer l'invitation de {email}",
   "Revoke the invitation for {email}?": "Révoquer l'invitation de {email}\u202f?",
@@ -410,6 +414,7 @@ const FR: Record<string, string> = {
     "Tes messages, sujets, motifs de réservation et notes de tâche deviennent [erased], ton nom devient Former member, tes réservations sont libérées, tes tâches reviennent à l'équipe et ton accès prend fin. Les tâches et la mémoire d'équipe que tu as écrites restent à l'équipe\u202f; le journal d'audit ne garde que des identifiants.",
   "Type erase to confirm": "Tape erase pour confirmer",
   "This can't be undone.": "C'est définitif.",
+  "Nothing was erased. Type erase in the box to confirm.": "Rien n'a été effacé. Tape erase dans le champ pour confirmer.",
   // Settings.
   "How agents work on this team, and the bridges to Slack and GitHub.":
     "Comment les agents travaillent dans l'équipe, et les ponts vers Slack et GitHub.",

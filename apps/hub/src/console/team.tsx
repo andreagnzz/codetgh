@@ -2,6 +2,7 @@
 import { CLAIM_ENFORCEMENT, ROLES, type Role } from "@codetgh/shared";
 import type { Child, FC } from "hono/jsx";
 import type { TeamSettings } from "../db/schema.js";
+import { HubError } from "../errors.js";
 import type { Lang } from "../i18n.js";
 import type { Principal } from "../principal.js";
 import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldAria, Panel, Pill, RowMenu, Table, When } from "./pages.js";
@@ -13,6 +14,20 @@ import { Action, Banner, Chip, CodeBlock, Collapsible, EmptyState, Field, fieldA
 type Tr = ((s: string) => string) & { lang: Lang };
 const named = (s: string, values: Record<string, string>) => s.replace(/\{(\w+)\}/g, (key, k: string) => values[k] ?? key);
 const ROLE: Record<Role, string> = { owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" };
+
+// The hub's refusals that this batch's forms can cause, in the page's words: what happened and how to fix it. Any other refusal
+// keeps the hub's own words; the checks themselves stay in the domain.
+const REFUSALS = new Map([
+  ["invalid email", "This email address isn't valid. Enter the address to invite, like name@example.com."],
+  ["an invitation lasts between 1 and 30 days", "An invitation lasts 1 to 30\u00a0days. Enter a number of days in that range."],
+  ["type erase to confirm", "Nothing was erased. Type erase in the box to confirm."],
+]);
+export const reworded =
+  (_: Tr) =>
+  (e: unknown): never => {
+    const said = e instanceof HubError ? REFUSALS.get(e.message) : undefined;
+    throw e instanceof HubError && said ? new HubError(e.code, _(said)) : e;
+  };
 
 // The page header's form: folded behind its button, open across the header.
 const HeadForm: FC<{ summary: string; open?: boolean; children?: Child }> = ({ summary, open, children }) => (

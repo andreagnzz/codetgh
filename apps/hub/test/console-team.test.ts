@@ -353,3 +353,34 @@ describe("settings", () => {
     expect(html).toContain("Membres, admins et propriétaires");
   });
 });
+
+describe("refusals", () => {
+  // The hub's own refusals of this batch's forms say what happened and how to fix it, in the page's language.
+  const refused = async (cookie: string, path: string, form: Record<string, string>) => {
+    const res = await consolePost(hub.url, cookie, path, form);
+    expect(res.status).toBe(400);
+    return res.text();
+  };
+
+  it("an invitation to an address that isn't one, or for too long", async () => {
+    const invite = { role: "member", days: "7" };
+    expect(await refused(team.lea.cookie, "/console/members/invite", { ...invite, email: "not-an-email" })).toContain(
+      "This email address isn&#39;t valid. Enter the address to invite, like name@example.com.",
+    );
+    expect(await refused(team.lea.cookie, "/console/members/invite", { ...invite, email: "zoe@acme.test", days: "31" })).toContain(
+      "An invitation lasts 1 to 30 days. Enter a number of days in that range.",
+    );
+    expect(await refused(`${team.lea.cookie}; lang=fr`, "/console/members/invite", { ...invite, email: "not-an-email" })).toContain(
+      "Cette adresse de courriel n&#39;est pas valable. Saisis l&#39;adresse à inviter, comme nom@exemple.com.",
+    );
+  });
+
+  it("erasing without the typed word", async () => {
+    expect(await refused(team.sam.cookie, "/console/me/erase", { confirm: "nope" })).toContain(
+      "Nothing was erased. Type erase in the box to confirm.",
+    );
+    expect(await refused(`${team.sam.cookie}; lang=fr`, "/console/me/erase", { confirm: "nope" })).toContain(
+      "Rien n&#39;a été effacé. Tape erase dans le champ pour confirmer.",
+    );
+  });
+});

@@ -47,10 +47,10 @@ describe("console errors say what happened and how to fix it", () => {
   it("returns the reason for a refused action, which the page shows next to the form", async () => {
     const bad = await consolePost(hub.url, team.lea.cookie, "/console/members/invite", { email: "not-an-email", role: "member" });
     expect(bad.status).toBe(400);
-    expect(await bad.text()).toContain("invalid email");
+    expect(await bad.text()).toContain("This email address isn&#39;t valid. Enter the address to invite, like name@example.com.");
     const erase = await consolePost(hub.url, team.sam.cookie, "/console/me/erase", { confirm: "nope" });
     expect(erase.status).toBe(400);
-    expect(await erase.text()).toContain("type erase to confirm");
+    expect(await erase.text()).toContain("Nothing was erased. Type erase in the box to confirm.");
   });
 
   it("refuses a form without its CSRF token, with a message", async () => {

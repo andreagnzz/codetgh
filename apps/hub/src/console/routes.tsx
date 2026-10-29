@@ -100,6 +100,7 @@ import {
   InviteForm,
   Members,
   MyData,
+  reworded,
   Settings,
   SlackCode,
   TokenCreated,
@@ -1056,7 +1057,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/me/erase", async (c) => {
     requireFresh(c);
     const p = c.get("principal");
-    await eraseMe(db, p, (await form(c)).confirm ?? "");
+    await eraseMe(db, p, (await form(c)).confirm ?? "").catch(reworded(tr(c)));
     bus.emit("revoked", { teamId: p.teamId, userId: p.user.id });
     bus.emit("presence", { teamId: p.teamId });
     return c.body(null, 204, { "HX-Redirect": "/login" });
@@ -1197,7 +1198,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c.get("principal"),
       { email: f.email ?? "", role: f.role || "member", days: f.days ? Number(f.days) : undefined },
       "console",
-    );
+    ).catch(reworded(tr(c)));
     return c.html(<Invited _={tr(c)} email={f.email ?? ""} link={link} days={days} emailed={emailed} />);
   });
 
