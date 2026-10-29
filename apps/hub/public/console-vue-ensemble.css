@@ -89,7 +89,11 @@ h3.rule::before {
   opacity: 0;
   animation: appear 1ms var(--loading-after) forwards;
 }
-/* A live refresh that fails: console.js writes the hub's words after the region; they show above it, where the eye is. */
+/* A live refresh that fails: console.js writes why after the region; it shows above the region, where the eye is, with the
+   way to load the page again. */
+.live-retry {
+  display: none;
+}
 main:has(> #live + .field-error) {
   display: flex;
   flex-direction: column;
@@ -100,11 +104,16 @@ main:has(> #live + .field-error) > .page-head {
 main > #live + .field-error {
   order: -1;
   max-width: none;
-  margin: 0 0 var(--sp-6);
+  margin: 0 0 var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--error);
   border-radius: var(--r-md);
   background: var(--error-soft);
+}
+main:has(> #live + .field-error) > .live-retry {
+  display: block;
+  order: -1;
+  margin: 0 0 var(--sp-6);
 }
 
 /* What needs me: one link per row, a sentence with its count, the way to act on it. */

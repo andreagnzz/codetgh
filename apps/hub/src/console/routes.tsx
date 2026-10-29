@@ -326,7 +326,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   const PRESENCE_CAP = 12;
 
   // The overview: what needs me first, then the line of the last day, who is connected, and agent traffic for admins. Every
-  // focusable part has a stable id, so htmx gives the focus back to it after a live refresh.
+  // focusable part of the live region has a stable id, so htmx gives the focus back to it after a live refresh; a refresh
+  // that fails keeps the region and offers to retry.
   consoleApp.get("/", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
@@ -367,146 +368,155 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       "Overview",
-      <div
-        id="live"
-        hx-get="/console"
-        hx-select="#live"
-        hx-target="#live"
-        hx-swap="outerHTML"
-        hx-trigger="sse:presence, sse:attention, sse:activity"
-        class="overview"
-      >
-        <p class="loading-text">{_("Loading…")}</p>
-        <section class="needs" aria-labelledby="needs-h">
-          <h2 id="needs-h">{_("Needs you")}</h2>
-          {nAlerts === 0 && toValidate.length === 0 && invites.length === 0 ? (
-            <p class="empty">{_("Nothing needs you right now.")}</p>
-          ) : (
-            <ul class="needs-list">
-              {nAlerts > 0 &&
-                need(
-                  "need-alerts",
-                  "/console/alerts",
-                  n(nAlerts, "1\u00a0open alert.", "{n}\u00a0open alerts."),
-                  _("Review alerts"),
-                  true,
-                  newest && (
-                    <span class="need-more">
-                      {" "}
-                      {_("Newest:")} {_(ALERT_KIND[newest.kind] ?? newest.kind)}, <When at={newest.createdAt} lang={_.lang} />.
-                    </span>
-                  ),
-                )}
-              {toValidate.length > 0 &&
-                need(
-                  "need-memory",
-                  "/console/memory?status=proposed",
-                  n(toValidate.length, "1\u00a0memory proposal waits for a decision.", "{n}\u00a0memory proposals wait for a decision."),
-                  _("Review memory"),
-                )}
-              {invites.length > 0 &&
-                need(
-                  "need-invitations",
-                  "/console/members",
-                  n(invites.length, "1\u00a0invitation not accepted yet.", "{n}\u00a0invitations not accepted yet."),
-                  _("Open members"),
-                )}
-            </ul>
-          )}
-        </section>
-        <section class="line-section" aria-labelledby="line-h">
-          <div class="section-head">
-            <h2 id="line-h">{_("On the line")}</h2>
-            <p class="section-note">{_("Last 24\u00a0h")}</p>
-          </div>
-          {line.length === 0 ? (
-            <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
-          ) : shown.length === 0 ? (
-            <p class="empty">{_("No messages in the last 24 hours. Older ones are on the threads page.")}</p>
-          ) : (
-            <Line rows={shown} _={_} />
-          )}
-          {/* Phones show the first rows only: the way to the rest is theirs alone when wide screens show it all. */}
-          {(line.length > shown.length || shown.length > LINE_PHONE) && (
-            <p class={line.length > shown.length ? "line-more" : "line-more phone"}>
-              <a id="line-more" href="/console/threads">
-                {_("See all threads")}
-              </a>
-            </p>
-          )}
-        </section>
-        <div class="overview-side">
-          <section class="presence" aria-labelledby="presence-h">
-            <div class="section-head">
-              <h2 id="presence-h">{_("Presence")}</h2>
-              {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
-            </div>
-            <People
-              rows={agents}
-              lang={_.lang}
-              cap={PRESENCE_CAP}
-              more={
-                <a id="presence-more" href="/console/agents">
-                  {_("See all agents")}
-                </a>
-              }
-              empty={
-                agents.length > 0 ? (
-                  _("No agent connected right now.")
-                ) : isAdmin(p) ? (
-                  <>
-                    <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
-                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
-                  </>
-                ) : (
-                  _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
-                )
-              }
-            />
+      <>
+        <div
+          id="live"
+          hx-get="/console"
+          hx-select="#live"
+          hx-target="#live"
+          hx-swap="outerHTML"
+          hx-trigger="sse:presence, sse:attention, sse:activity"
+          class="overview"
+        >
+          <p class="loading-text">{_("Loading…")}</p>
+          <section class="needs" aria-labelledby="needs-h">
+            <h2 id="needs-h">{_("Needs you")}</h2>
+            {nAlerts === 0 && toValidate.length === 0 && invites.length === 0 ? (
+              <p class="empty">{_("Nothing needs you right now.")}</p>
+            ) : (
+              <ul class="needs-list">
+                {nAlerts > 0 &&
+                  need(
+                    "need-alerts",
+                    "/console/alerts",
+                    n(nAlerts, "1\u00a0open alert.", "{n}\u00a0open alerts."),
+                    _("Review alerts"),
+                    true,
+                    newest && (
+                      <span class="need-more">
+                        {" "}
+                        {_("Newest:")} {_(ALERT_KIND[newest.kind] ?? newest.kind)}, <When at={newest.createdAt} lang={_.lang} />.
+                      </span>
+                    ),
+                  )}
+                {toValidate.length > 0 &&
+                  need(
+                    "need-memory",
+                    "/console/memory?status=proposed",
+                    n(toValidate.length, "1\u00a0memory proposal waits for a decision.", "{n}\u00a0memory proposals wait for a decision."),
+                    _("Review memory"),
+                  )}
+                {invites.length > 0 &&
+                  need(
+                    "need-invitations",
+                    "/console/members",
+                    n(invites.length, "1\u00a0invitation not accepted yet.", "{n}\u00a0invitations not accepted yet."),
+                    _("Open members"),
+                  )}
+              </ul>
+            )}
           </section>
-          {isAdmin(p) && (
-            <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
-              <h2 id="traffic-h">
-                {p.paused && <Icon name="octagon-alert" />}
-                {_("Agent traffic")}
-              </h2>
-              {p.paused ? (
-                <form hx-post="/console/kill-switch/resume" hx-swap="none">
-                  <p>
-                    <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
-                    {_("Agents can't send messages or claim files until you resume agent traffic.")}
-                  </p>
-                  <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
-                    <input id="kill-confirm" name="confirm" required autocomplete="off" />
-                  </Field>
-                  <button type="submit" class="primary">
-                    {_("Resume agent traffic")}
-                  </button>
-                </form>
-              ) : (
-                <form
-                  hx-post="/console/kill-switch"
-                  hx-swap="none"
-                  data-confirm={_("Stop agent traffic?")}
-                  data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
-                  data-confirm-action={_("Stop agent traffic")}
-                >
-                  <p>
-                    <strong>{_("Flowing.")}</strong>{" "}
-                    {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
-                  </p>
-                  <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
-                    <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
-                  </Field>
-                  <button type="submit" class="danger">
-                    {_("Stop agent traffic…")}
-                  </button>
-                </form>
-              )}
+          <section class="line-section" aria-labelledby="line-h">
+            <div class="section-head">
+              <h2 id="line-h">{_("On the line")}</h2>
+              <p class="section-note">{_("Last 24\u00a0h")}</p>
+            </div>
+            {line.length === 0 ? (
+              <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
+            ) : shown.length === 0 ? (
+              <p class="empty">{_("No messages in the last 24 hours. Older ones are on the threads page.")}</p>
+            ) : (
+              <Line rows={shown} _={_} />
+            )}
+            {/* Phones show the first rows only: the way to the rest is theirs alone when wide screens show it all. */}
+            {(line.length > shown.length || shown.length > LINE_PHONE) && (
+              <p class={line.length > shown.length ? "line-more" : "line-more phone"}>
+                <a id="line-more" href="/console/threads">
+                  {_("See all threads")}
+                </a>
+              </p>
+            )}
+          </section>
+          <div class="overview-side">
+            <section class="presence" aria-labelledby="presence-h">
+              <div class="section-head">
+                <h2 id="presence-h">{_("Presence")}</h2>
+                {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
+              </div>
+              <People
+                rows={agents}
+                lang={_.lang}
+                cap={PRESENCE_CAP}
+                more={
+                  <a id="presence-more" href="/console/agents">
+                    {_("See all agents")}
+                  </a>
+                }
+                empty={
+                  agents.length > 0 ? (
+                    _("No agent connected right now.")
+                  ) : isAdmin(p) ? (
+                    <>
+                      <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
+                      <CodeBlock code="codetgh invite <email>" lang={_.lang} command />
+                    </>
+                  ) : (
+                    _("No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.")
+                  )
+                }
+              />
             </section>
-          )}
+            {isAdmin(p) && (
+              <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
+                <h2 id="traffic-h">
+                  {p.paused && <Icon name="octagon-alert" />}
+                  {_("Agent traffic")}
+                </h2>
+                {p.paused ? (
+                  <form hx-post="/console/kill-switch/resume" hx-swap="none">
+                    <p>
+                      <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
+                      {_("Agents can't send messages or claim files until you resume agent traffic.")}
+                    </p>
+                    <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
+                      <input id="kill-confirm" name="confirm" required autocomplete="off" />
+                    </Field>
+                    <button type="submit" class="primary">
+                      {_("Resume agent traffic")}
+                    </button>
+                  </form>
+                ) : (
+                  <form
+                    hx-post="/console/kill-switch"
+                    hx-swap="none"
+                    data-confirm={_("Stop agent traffic?")}
+                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+                    data-confirm-action={_("Stop agent traffic")}
+                  >
+                    <p>
+                      <strong>{_("Flowing.")}</strong>{" "}
+                      {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
+                    </p>
+                    <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
+                      <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
+                    </Field>
+                    <button type="submit" class="danger">
+                      {_("Stop agent traffic…")}
+                    </button>
+                  </form>
+                )}
+              </section>
+            )}
+          </div>
         </div>
-      </div>,
+        {/* Shown by the stylesheet only after a live refresh failed (console.js writes why after the region): a full reload. */}
+        <p class="live-retry">
+          <a id="live-retry" class="button tertiary" href="/console">
+            <Icon name="refresh-cw" />
+            {_("Retry")}
+          </a>
+        </p>
+      </>,
     );
   });
 

@@ -111,6 +111,33 @@ for (const width of [360, 1280])
     await expect(page.locator("#live")).not.toHaveAttribute("aria-busy", "true");
   });
 
+test("a live refresh the hub refuses says so above the overview, with Retry, which loads the page again", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  const retry = page.locator("#live-retry");
+  await expect(retry).toBeHidden();
+  await page.route("**/console", (route) =>
+    route.request().headers()["hx-request"] ? route.fulfill({ status: 500, body: "boom" }) : route.continue(),
+  );
+  await page.evaluate(() =>
+    (window as unknown as { htmx: { trigger: (e: Element, n: string) => void } }).htmx.trigger(
+      document.getElementById("live") as Element,
+      "sse:activity",
+    ),
+  );
+  const error = page.locator("#live + .field-error");
+  await expect(error).toHaveText(/^Couldn't refresh\. Showing data from \d\d:\d\d\.$/);
+  await expect(retry).toBeVisible();
+  await expect(retry).toHaveAttribute("href", "/console");
+  const box = (s: string) => page.locator(s).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
+  // The words, then Retry, both above the region they are about.
+  expect((await box("#live + .field-error")).bottom).toBeLessThanOrEqual((await box("#live-retry")).top);
+  expect((await box("#live-retry")).bottom).toBeLessThanOrEqual((await box("#live")).top);
+  await page.unroute("**/console");
+  await retry.click();
+  await expect(error).toHaveCount(0);
+  await expect(page.locator(".wire-row")).toHaveCount(13);
+});
+
 test("a message that arrives live keeps the keyboard on the row it was on", async ({ page }) => {
   await signIn(page, hub.url, team.lea);
   const row = page.locator(".wire-text").nth(2);

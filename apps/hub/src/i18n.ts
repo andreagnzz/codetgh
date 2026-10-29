@@ -359,6 +359,8 @@ const FR: Record<string, string> = {
   "Stopped.": "Coupé.",
   "Agents can't send messages or claim files until you resume agent traffic.":
     "Les agents ne peuvent plus envoyer de messages ni réserver de fichiers tant que tu n'as pas rétabli le trafic.",
+  // A live refresh that failed.
+  Retry: "Réessayer",
   // ---- End of batch 2. ----
 
   // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
