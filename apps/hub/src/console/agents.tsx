@@ -162,7 +162,8 @@ export const AgentsTable: FC<{ rows: SessionRow[]; _: Tr; admin: boolean; captio
   </div>
 );
 
-// External agents (A2A) are not sessions of a teammate: their own table, whose one action removes them, token included.
+// External agents (A2A) are not sessions of a teammate: their own table, whose one action, at hand as on Delegations,
+// removes them, token included.
 export const ExternalTable: FC<{ rows: SessionRow[]; _: Tr }> = ({ rows, _ }) => (
   <div class="agents-table external">
     <Table
@@ -175,21 +176,16 @@ export const ExternalTable: FC<{ rows: SessionRow[]; _: Tr }> = ({ rows, _ }) =>
       rows={rows.map((r) => [
         <Session r={r} _={_} />,
         <SessionState r={r} _={_} />,
-        <RowMenu
-          label={named(_("Actions for {session}"), "{session}", r.name)}
-          items={[
-            <Action
-              post={`/console/agents/${r.agent.id}/remove`}
-              label={_("Remove")}
-              level="danger"
-              name={`${_("Remove")} ${r.name}…`}
-              confirm={{
-                title: named(_("Remove the external agent {name}?"), "{name}", r.name),
-                body: _("Its token stops working at once. Its messages stay in their threads."),
-              }}
-              done={named(_("External agent {name} removed."), "{name}", r.name)}
-            />,
-          ]}
+        <Action
+          post={`/console/agents/${r.agent.id}/remove`}
+          label={_("Remove")}
+          level="danger"
+          name={`${_("Remove")} ${r.name}…`}
+          confirm={{
+            title: named(_("Remove the external agent {name}?"), "{name}", r.name),
+            body: _("Its token stops working at once. Its messages stay in their threads."),
+          }}
+          done={named(_("External agent {name} removed."), "{name}", r.name)}
         />,
       ])}
     />

@@ -154,6 +154,9 @@ describe("agents", () => {
     expect(external).toContain("Partner bot");
     expect(external).toContain('<span class="pill" data-tone="neutral">External</span>');
     expect(external).toContain('data-confirm="Remove the external agent Partner bot?"');
+    // Its one action is at hand, as on Delegations: a menu holds a row's actions only when there are several.
+    expect(external).toMatch(/<button[^>]*class="danger" aria-label="Remove Partner bot…"/);
+    expect(external).not.toContain("row-menu");
     expect(section(main(html), "p-none")).not.toContain("Partner bot");
     // What an external agent may do is said once, in the form that adds one.
     expect(html.split("An external agent can ask the team questions").length).toBe(2);

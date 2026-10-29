@@ -117,12 +117,12 @@
   .agents-table.sessions th:nth-child(5) {
     width: 12%;
   }
-  /* External agents: their state spans the setup columns, which do not apply to them. */
+  /* External agents: their state spans the setup columns, which do not apply to them; their Remove has the room of a button. */
   .agents-table.external th:nth-child(1) {
     width: 26%;
   }
   .agents-table.external th:nth-child(2) {
-    width: 64%;
+    width: 56%;
   }
   .agents-table.delegations th:nth-child(1) {
     width: 26%;
@@ -143,19 +143,19 @@
   .agents-table td:has(> .cell > .not-reported:only-child) {
     display: none;
   }
-  .agents-table:is(.sessions, .external) tr {
+  .agents-table.sessions tr {
     position: relative;
   }
-  .agents-table:is(.sessions, .external) td.primary-cell {
+  .agents-table.sessions td.primary-cell {
     padding-right: calc(32px + var(--sp-2));
   }
-  .agents-table:is(.sessions, .external) td.actions-cell {
+  .agents-table.sessions td.actions-cell {
     position: absolute;
     top: var(--sp-2);
     right: 0;
     padding: 0;
   }
-  .agents-table:is(.sessions, .external) .row-menu .pop {
+  .agents-table.sessions .row-menu .pop {
     left: auto;
     right: 0;
   }
