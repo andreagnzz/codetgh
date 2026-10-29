@@ -155,6 +155,20 @@
   // A banner that can be dismissed (information only).
   document.addEventListener("click", (e) => e.target.closest("[data-dismiss]")?.closest(".banner")?.remove());
 
+  // A table wider than its frame scrolls inside it: the frame then takes the keyboard (arrows scroll it) and its name.
+  const frames = () => {
+    for (const wrap of document.querySelectorAll(".table-wrap")) {
+      if (wrap.scrollWidth > wrap.clientWidth + 1) {
+        wrap.setAttribute("role", "region");
+        wrap.setAttribute("tabindex", "0");
+        wrap.setAttribute("aria-label", wrap.querySelector("caption")?.textContent || document.querySelector("h1")?.textContent || "");
+      } else for (const a of ["role", "tabindex", "aria-label"]) wrap.removeAttribute(a);
+    }
+  };
+  frames();
+  addEventListener("resize", frames);
+  document.body.addEventListener("htmx:afterSettle", frames);
+
   // Activity line: a message seen for the first time after a live refresh traces its line once.
   const seen = new Set();
   const announce = document.getElementById("line-announce");

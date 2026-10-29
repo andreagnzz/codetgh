@@ -884,10 +884,17 @@ form.inline input {
 .chip.former {
   color: var(--text-muted);
 }
-/* Tables: dense; a strong rule under the header, hairlines between rows, no zebra, no vertical rules, no box. */
+/* Tables: dense; a strong rule under the header, hairlines between rows, no zebra, no vertical rules, no box. A table wider
+   than its frame scrolls inside it: a 2 px rule stands on each side that has more (the page-colored covers travel with the
+   content and hide it at the ends), and console.js gives the frame the keyboard and a name. */
 .table-wrap {
   overflow-x: auto;
   max-width: 100%;
+  background:
+    linear-gradient(var(--surface), var(--surface)) left / 2px 100% no-repeat local,
+    linear-gradient(var(--surface), var(--surface)) right / 2px 100% no-repeat local,
+    linear-gradient(var(--border-strong), var(--border-strong)) left / 2px 100% no-repeat scroll,
+    linear-gradient(var(--border-strong), var(--border-strong)) right / 2px 100% no-repeat scroll;
 }
 /* An open row menu floats over the frame and the rows below it: the frame stops clipping while it is open. */
 .table-wrap:has(details.row-menu[open]) {

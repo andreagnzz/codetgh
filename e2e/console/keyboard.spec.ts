@@ -190,3 +190,18 @@ test("a menu closes when the keyboard leaves it, so it never covers the next sto
   expect((await focused(page)).text).toBe("ci (GitHub Actions)");
   await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
 });
+
+test("a table wider than its frame is a named stop whose arrows scroll it; one that fits is not a stop", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/audit`);
+  const frame = page.locator(".table-wrap").first();
+  await expect(frame).toHaveAttribute("role", "region");
+  await expect(frame).toHaveAttribute("tabindex", "0");
+  await expect(frame).toHaveAccessibleName(/\S/);
+  await frame.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => frame.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  await page.goto(`${hub.url}/console/catalogue`);
+  await expect(page.locator(".table-wrap").first()).not.toHaveAttribute("tabindex", "0");
+});
