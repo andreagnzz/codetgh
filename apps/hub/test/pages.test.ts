@@ -115,6 +115,10 @@ describe("pages", () => {
     const html = await res.text();
     expect(html).not.toContain("<!doctype html>");
     expect(html).toContain("thread not found");
+    // In the page's language, as the error page gives it.
+    const fr = await get("/console/members", { cookie: team.sam.cookie, "HX-Request": "true", "accept-language": "fr" });
+    expect(fr.status).toBe(403);
+    expect(await fr.text()).toContain("réservé aux admins");
   });
 
   it("serves the component catalogue only on a hub the test harness starts, never from the hub's own configuration", async () => {

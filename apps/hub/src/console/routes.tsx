@@ -197,12 +197,13 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     }
     await next();
   });
-  // An htmx request gets the bare reason, which console.js shows where the action was; a page load gets a page.
+  // An htmx request gets the bare reason in the page's language, which console.js shows where the action was; a page load
+  // gets a page.
   consoleApp.onError((e, c) => {
     if (!(e instanceof HubError)) throw e;
     const status = HTTP_STATUS[e.code] as 400;
-    if (c.req.header("HX-Request") === "true") return c.html(<Result>{e.message}</Result>, status);
     const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+    if (c.req.header("HX-Request") === "true") return c.html(<Result>{t(lang, e.message)}</Result>, status);
     return c.html(<ErrorPage status={status} reason={e.message} lang={lang} />, status);
   });
   for (const section of ["/tasks", "/memory", "/claims", "/projects", "/delegations", "/tokens"])
