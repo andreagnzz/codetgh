@@ -535,8 +535,14 @@ export const Field: FC<{ id: string; label: Child; lang: Lang; help?: Child; err
 
 // Code to copy: wraps instead of scrolling; a command's prompt is drawn, never copied. console.js copies, or selects the text
 // and says how when the browser refuses. With several blocks on a page, copyLabel names what each Copy copies ("Copy the
-// token"): it starts with the visible word.
-export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLabel?: string }> = ({ code, lang, command, copyLabel }) => {
+// token"): it starts with the visible word. In a region a live refresh replaces, id keeps Copy's place for the keyboard.
+export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLabel?: string; id?: string }> = ({
+  code,
+  lang,
+  command,
+  copyLabel,
+  id,
+}) => {
   const _ = (s: string) => t(lang, s);
   return (
     <div class="code" data-kind={command ? "command" : undefined}>
@@ -545,6 +551,7 @@ export const CodeBlock: FC<{ code: string; lang: Lang; command?: boolean; copyLa
       </pre>
       <button
         type="button"
+        id={id}
         class="copy"
         aria-label={copyLabel}
         data-copy

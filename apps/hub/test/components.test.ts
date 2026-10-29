@@ -141,6 +141,9 @@ describe("components", () => {
     // Several blocks on one page: each Copy says what it copies.
     const named = await render(CodeBlock, { code: "ctgh_x", lang: "en", copyLabel: "Copy the token" });
     expect(named).toContain('<button type="button" class="copy" aria-label="Copy the token" data-copy');
+    // In a region a live refresh replaces, Copy keeps an id: htmx gives the keyboard back to it.
+    const kept = await render(CodeBlock, { code: "codetgh setup", lang: "en", command: true, id: "copy-setup" });
+    expect(kept).toContain('<button type="button" id="copy-setup" class="copy" data-copy');
   });
 
   it("stamp: the clock alone for a time from today, the day and month before it on another day", async () => {
