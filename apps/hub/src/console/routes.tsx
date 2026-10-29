@@ -1963,7 +1963,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         project={inProject?.name ?? null}
         creator={who(t.createdByUser, t.createdByAgent)}
         events={events.map((e, i) => ({ ...e, now: i === current }))}
-        form={<TaskUpdateForm t={t} moves={ALLOWED[t.status].filter((s) => s !== "claimed")} _={_} />}
+        // A blocked task also offers Blocked, with which its reason changes.
+        form={
+          <TaskUpdateForm
+            t={t}
+            moves={t.status === "blocked" ? ["blocked", ...ALLOWED.blocked] : ALLOWED[t.status].filter((s) => s !== "claimed")}
+            _={_}
+          />
+        }
         _={_}
       />,
       undefined,

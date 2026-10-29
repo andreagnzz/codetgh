@@ -375,4 +375,26 @@ describe("tasks", () => {
     expect(html).toContain(">Non attribuée<");
     expect(main(await page(`/console/tasks/${ids.doing}`, team.lea.cookie, "fr"))).toContain(">a créé la tâche<");
   });
+
+  it("lets a person change why a blocked task is blocked, from its page", async () => {
+    const html = main(await page(`/console/tasks/${ids.blocked}`, team.lea.cookie));
+    const select = html.slice(html.indexOf('<select id="task-status" name="status">'), html.indexOf("</select>"));
+    for (const [value, label] of [
+      ["blocked", "Blocked"],
+      ["in_progress", "In progress"],
+      ["todo", "To do"],
+      ["cancelled", "Cancelled"],
+    ])
+      expect(select).toContain(`<option value="${value}">${label}</option>`);
+    expect(html).toMatch(/<input id="task-reason" name="reason" maxlength="200"/);
+    const version = html.match(/name="expected_version" value="(\d+)"/)?.[1] ?? "";
+    await post(team.lea.cookie, `/console/tasks/${ids.blocked}`, {
+      expected_version: version,
+      status: "blocked",
+      reason: "Waiting for the credentials of the new host",
+    });
+    const after = main(await page(`/console/tasks/${ids.blocked}`, team.lea.cookie));
+    expect(after).toContain('<p class="banner-body">Waiting for the credentials of the new host</p>');
+    expect(after).toContain("blocked because: Waiting for the credentials of the new host");
+  });
 });

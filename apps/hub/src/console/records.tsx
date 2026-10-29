@@ -776,7 +776,8 @@ export const TaskDetail: FC<{
   </div>
 );
 
-// The update form offers only the moves the task allows; the reason only where Blocked is one of them.
+// The update form offers only the moves the task allows, and Blocked on a blocked task, to change its reason; the reason only
+// where Blocked is one of them.
 export const TaskUpdateForm: FC<{ t: Task; moves: TaskStatus[]; _: Tr }> = ({ t, moves, _ }) => (
   <Panel title={_("Update the task")}>
     <form hx-post={`/console/tasks/${t.id}`} hx-swap="none">
@@ -801,7 +802,13 @@ export const TaskUpdateForm: FC<{ t: Task; moves: TaskStatus[]; _: Tr }> = ({ t,
         <input id="task-assignee" name="assignee" autocomplete="off" spellcheck={false} {...fieldAria("task-assignee", { help: true })} />
       </Field>
       {moves.includes("blocked") && (
-        <Field id="task-reason" label={_("Why it's blocked")} lang={_.lang} optional help={_("Needed for Blocked, and only then.")}>
+        <Field
+          id="task-reason"
+          label={_("Why it's blocked")}
+          lang={_.lang}
+          optional
+          help={_(t.status === "blocked" ? "To change it, choose Blocked and write the new reason." : "Needed for Blocked, and only then.")}
+        >
           <input id="task-reason" name="reason" maxlength={200} autocomplete="off" {...fieldAria("task-reason", { help: true })} />
         </Field>
       )}

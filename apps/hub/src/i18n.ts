@@ -568,6 +568,7 @@ const FR: Record<string, string> = {
   "A handle like @lea, or none to unassign. Leave it empty to keep it as it is.":
     "Un pseudo comme @lea, ou none pour retirer l'attribution. Laisse vide pour ne rien changer.",
   "Needed for Blocked, and only then.": "Nécessaire pour Bloquée, et seulement dans ce cas.",
+  "To change it, choose Blocked and write the new reason.": "Pour le changer, choisis Bloquée et écris le nouveau motif.",
   "Added to the history, for the whole team.": "Ajoutée à l'historique, pour toute l'équipe.",
   // ---- End of batch 6. ----
 };
