@@ -246,6 +246,11 @@
   .project-head .project-tools {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* The "…" ends the title line: its menu opens towards the page, where a phone's table records open theirs to the right. */
+  .project-head .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
 }
 .project-head .claude-link {
   display: inline-flex;

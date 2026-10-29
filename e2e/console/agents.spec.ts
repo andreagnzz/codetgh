@@ -172,6 +172,12 @@ for (const lang of ["en", "fr"])
       await page.goto(`${hub.url}${path}`);
       expect(await page.evaluate(() => document.documentElement.scrollWidth), path).toBeLessThanOrEqual(360);
     }
+    // A project's "…", at the end of its title line, opens towards the page, not past its edge.
+    await page.goto(`${hub.url}/console/projects`);
+    await page.locator(".project-head summary").first().click();
+    const pop = await page.locator(".project-head details[open] .pop").boundingBox();
+    expect((pop?.x ?? 0) + (pop?.width ?? 0)).toBeLessThanOrEqual(360);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
     // The external agent's form, open, fits too.
     await page.goto(`${hub.url}/console/agents`);
     await page.locator("summary", { hasText: lang === "fr" ? "Ajouter un agent externe" : "Add an external agent" }).click();
