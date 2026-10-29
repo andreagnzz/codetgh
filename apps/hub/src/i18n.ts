@@ -350,16 +350,16 @@ const FR: Record<string, string> = {
   "Slack bridge": "Pont Slack",
   "Actions for {name}": "Actions pour {name}",
   "Lowercase letters, digits and dashes.": "Minuscules, chiffres et tirets.",
-  "Make {name} an owner?": "Faire de {name} un propriétaire\u202f?",
+  "Make {name} an owner?": "Rendre {name} propriétaire\u202f?",
   "Owners can do everything admins do, and also manage the other owners.":
     "Les propriétaires font tout ce que font les admins, et gèrent aussi les autres propriétaires.",
-  "Make {name} an admin?": "Faire de {name} un admin\u202f?",
+  "Make {name} an admin?": "Rendre {name} admin\u202f?",
   "Admins manage members, alerts, the audit log and the team's settings.":
     "Les admins gèrent les membres, les alertes, le journal d'audit et les paramètres de l'équipe.",
-  "Make {name} a member?": "Faire de {name} un membre\u202f?",
+  "Make {name} a member?": "Rendre {name} membre\u202f?",
   "Members work with agents, threads, tasks, claims and team memory, without managing the team. Their pending invitations are revoked.":
     "Les membres travaillent avec les agents, les fils, les tâches, les réservations et la mémoire d'équipe, sans gérer l'équipe. Ses invitations en attente sont révoquées.",
-  "Make {name} a guest?": "Faire de {name} un invité\u202f?",
+  "Make {name} a guest?": "Rendre {name} invité\u202f?",
   "Guests see only the threads they take part in: no projects, tasks, claims or team memory. Their delegate sessions stop taking requests, and their pending invitations are revoked.":
     "Les invités ne voient que les fils auxquels ils participent\u00a0: ni projets, ni tâches, ni réservations, ni mémoire d'équipe. Ses sessions déléguées cessent de prendre des demandes, et ses invitations en attente sont révoquées.",
   "Revoke access": "Révoquer l'accès",

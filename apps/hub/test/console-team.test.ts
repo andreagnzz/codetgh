@@ -169,7 +169,7 @@ describe("members", () => {
     expect(html).toContain("Membres de l&#39;équipe");
     expect(html).toContain("Invitations en attente");
     expect(html).toContain("<summary>Inviter un membre</summary>");
-    expect(html).toContain("Faire de Sam un admin\u202f?");
+    expect(html).toContain("Rendre Sam admin\u202f?");
     expect(html).toContain("Révoquer l&#39;invitation de ines@acme.test\u202f?");
     expect(html).toContain(">Propriétaire<");
     expect(html).toContain(">Toi</span>");
