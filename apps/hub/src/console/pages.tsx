@@ -189,7 +189,7 @@ export const Layout: FC<{
           <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">
             <h2 id="confirm-title">{_("Confirm")}</h2>
             <p id="confirm-body" />
-            <p id="confirm-error" class="field-error" role="alert" />
+            <p id="confirm-error" role="alert" />
             <div class="actions">
               <button type="button" class="secondary" value="cancel" autofocus>
                 {_("Cancel")}

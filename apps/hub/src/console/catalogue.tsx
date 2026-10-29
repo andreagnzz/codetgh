@@ -94,6 +94,12 @@ export const Catalogue: FC<{ lang: Lang }> = ({ lang }) => {
           done="Invitation emailed to ines@acme.test."
         />
         <Action post="/console/catalogue/refused" label="An action the hub refuses" />
+        <Action
+          post="/console/catalogue/refused"
+          label="Remove agent"
+          level="danger"
+          confirm={{ title: "Remove the agent sam@main?", body: "The hub refuses this one, so the dialog shows why and stays open." }}
+        />
       </p>
 
       <h2>Fields</h2>

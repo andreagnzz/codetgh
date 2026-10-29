@@ -115,6 +115,14 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await page.locator(".toasts button").focus();
   await page.keyboard.press("Enter");
   await expect(page.locator(".toasts .toast")).toHaveCount(0);
+
+  // Refused after confirmation: the reason shows in the dialog, which stays open.
+  await page.getByRole("button", { name: "Remove agent", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("dialog").getByRole("button", { name: "Remove agent" }).click();
+  await expect(page.locator("#confirm-error")).toHaveText("The hub refuses this demo action, to show where its reason appears.");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 
 test("a refused action shows the hub's reason under it; Copy copies and says so", async ({ page, context }) => {

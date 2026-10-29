@@ -22,7 +22,10 @@
     pending = { elt, issue: e.detail.issueRequest };
     document.getElementById("confirm-title").textContent = elt.dataset.confirm;
     document.getElementById("confirm-body").textContent = elt.dataset.confirmBody ?? "";
-    if (dialogError) dialogError.textContent = "";
+    if (dialogError) {
+      dialogError.textContent = "";
+      dialogError.className = "";
+    }
     go.textContent = elt.dataset.confirmAction ?? elt.textContent;
     go.className = elt.classList.contains("danger") ? "danger-fill" : "primary";
     dialog.showModal();
@@ -45,6 +48,7 @@
   const show = (elt, text) => {
     // A refusal of a confirmed action shows in the dialog, which stays open.
     if (dialog?.open && pending?.elt === elt && dialogError) {
+      dialogError.className = "field-error";
       dialogError.replaceChildren(errorIcon(), text);
       return;
     }
