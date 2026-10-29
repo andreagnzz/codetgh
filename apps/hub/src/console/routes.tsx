@@ -158,7 +158,18 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     } catch (e) {
       if (!(e instanceof HubError)) throw e;
       const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
-      return c.html(<ErrorPage status={HTTP_STATUS[e.code]} reason={e.message} lang={lang} />, HTTP_STATUS[e.code] as 403);
+      // Whoever opens an invitation may have no team yet: no word about roles, and a way to sign in with the right account.
+      return c.html(
+        <ErrorPage
+          status={HTTP_STATUS[e.code]}
+          reason={e.message}
+          lang={lang}
+          title="You can't join with this invitation."
+          next="Sign in with the account it was sent to, or ask the person who invited you for a new link."
+          back={{ href: "/login", label: "Sign in with another account" }}
+        />,
+        HTTP_STATUS[e.code] as 403,
+      );
     }
     return c.redirect("/console", 303);
   });

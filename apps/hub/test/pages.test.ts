@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
+import { createInvitation } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
 import { type Hub, setRole, startHub } from "./harness.js";
 
@@ -43,7 +44,35 @@ describe("pages", () => {
       expect(html, path).toContain(`<h1>${title.replace("'", "&#39;")}</h1>`);
       expect(html, path).toContain('href="/console"');
     }
-    expect(await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text()).toContain("thread not found");
+    // The hub's reason reads as a sentence in body text, not as a muted caption.
+    expect(await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text()).toContain(
+      "<p>The hub said: thread not found.</p>",
+    );
+  });
+
+  it("tells someone an invitation refuses what happened and where to go, in their language", async () => {
+    const { token } = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "nina@acme.test",
+      role: "member",
+      invitedBy: team.lea.userId,
+      via: "console",
+    });
+    const headers = { cookie: team.sam.cookie, "accept-language": "fr" };
+    const invite = await (await get(`/invite/${token}`, headers)).text();
+    const csrf = invite.match(/name="csrf" value="([^"]+)"/)?.[1] ?? "";
+    const res = await fetch(`${hub.url}/invite/${token}/join`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
+      body: `csrf=${encodeURIComponent(csrf)}`,
+      redirect: "manual",
+    });
+    expect(res.status).toBe(403);
+    const html = await res.text();
+    expect(html).toContain("<h1>Tu ne peux pas rejoindre l&#39;équipe avec cette invitation.</h1>");
+    expect(html).toContain("<p>Réponse du hub\u00a0: Cette invitation est pour une autre adresse de courriel.</p>");
+    expect(html).toContain('<a href="/login">Se connecter avec un autre compte</a>');
+    expect(html).not.toContain("Ton rôle ne le permet pas");
   });
 
   it("writes the error page in French for a French reader", async () => {

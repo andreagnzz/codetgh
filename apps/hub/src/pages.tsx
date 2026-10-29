@@ -26,25 +26,41 @@ export const Layout = ({ lang, title = "CodeTgh", children }: { lang: Lang; titl
   </>
 );
 
-// What happened, and what to do about it.
+// What happened, and what to do about it, by status; a caller that knows more gives its own words.
 const ERROR_TEXT: Record<number, [string, string]> = {
   400: ["This request isn't valid.", "Check the link, or go back and try again."],
   403: ["You can't open this page.", "Your role doesn't allow it. Ask an admin of your team if you need it."],
   404: ["This page doesn't exist.", "Check the link, or start again from the overview."],
 };
 
-// A page load the hub refuses: what happened, what to do, the hub's own reason, and a way back. An htmx request keeps the
-// bare reason.
-export const ErrorPage = ({ status, reason, lang }: { status: number; reason: string; lang: Lang }) => {
+// A page load the hub refuses: what happened, the hub's own reason as a sentence, what to do, and a way back. An htmx
+// request keeps the bare reason.
+export const ErrorPage = ({
+  status,
+  reason,
+  lang,
+  title,
+  next,
+  back = { href: "/console", label: "Back to the overview" },
+}: {
+  status: number;
+  reason?: string;
+  lang: Lang;
+  title?: string;
+  next?: string;
+  back?: { href: string; label: string };
+}) => {
   const _ = (s: string) => t(lang, s);
-  const [title, next] = ERROR_TEXT[status] ?? ["The hub refused this request.", "Go back and try again."];
+  const [byStatus, nextByStatus] = ERROR_TEXT[status] ?? ["The hub refused this request.", "Go back and try again."];
+  const heading = _(title ?? byStatus);
+  const why = reason && _(reason);
   return (
-    <Layout lang={lang} title={`${_(title)} · CodeTgh`}>
-      <h1>{_(title)}</h1>
-      <p class="lede">{_(next)}</p>
-      <p class="meta">{_(reason)}</p>
+    <Layout lang={lang} title={`${heading} · CodeTgh`}>
+      <h1>{heading}</h1>
+      {why && <p>{_("The hub said: {reason}").replace("{reason}", () => (/[.!?]$/.test(why) ? why : `${why}.`))}</p>}
+      <p class="lede">{_(next ?? nextByStatus)}</p>
       <p>
-        <a href="/console">{_("Back to the overview")}</a>
+        <a href={back.href}>{_(back.label)}</a>
       </p>
     </Layout>
   );

@@ -289,6 +289,17 @@ const FR: Record<string, string> = {
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
   Unread: "Non lu",
+  "The hub said: {reason}": "Réponse du hub\u00a0: {reason}",
+  "You can't join with this invitation.": "Tu ne peux pas rejoindre l'équipe avec cette invitation.",
+  "Sign in with the account it was sent to, or ask the person who invited you for a new link.":
+    "Connecte-toi avec le compte auquel elle a été envoyée, ou demande un nouveau lien à la personne qui t'a invité.",
+  "Sign in with another account": "Se connecter avec un autre compte",
+  "This invitation is for another email address.": "Cette invitation est pour une autre adresse de courriel.",
+  "Your email address is not verified: sign in with an email link, then open the invitation again.":
+    "Ton adresse de courriel n'est pas vérifiée\u00a0: connecte-toi avec un lien reçu par courriel, puis rouvre l'invitation.",
+  "You are already in a team.": "Tu fais déjà partie d'une équipe.",
+  "This invitation was sent before your removal: ask for a new one.":
+    "Cette invitation a été envoyée avant ton retrait\u00a0: demandes-en une nouvelle.",
   // ---- End of the foundations block. ----
 
   // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----
