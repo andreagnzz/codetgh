@@ -123,6 +123,26 @@ for (const width of [360, 1280])
     await expect(page.locator("#live")).not.toHaveAttribute("aria-busy", "true");
   });
 
+for (const width of [360, 1280])
+  test(`${width} px: going back up the line with the keyboard, each row stops below the lanes' head`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 640 });
+    await signIn(page, hub.url, team.lea);
+    const rows = page.locator(".wire-text:visible");
+    const n = await rows.count();
+    await rows.last().focus();
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+    for (let i = 1; i < n; i++) {
+      await page.keyboard.press("Shift+Tab");
+      const at = await page.evaluate(() => ({
+        id: document.activeElement?.id ?? "",
+        top: document.activeElement?.getBoundingClientRect().top ?? 0,
+        head: document.querySelector(".lane-heads")?.getBoundingClientRect().bottom ?? 0,
+      }));
+      expect(at.id).toMatch(/^line-msg_/);
+      expect(at.top, at.id).toBeGreaterThanOrEqual(at.head);
+    }
+  });
+
 test("a live refresh the hub refuses says so above the overview, with Retry, which loads the page again", async ({ page }) => {
   await signIn(page, hub.url, team.lea);
   const retry = page.locator("#live-retry");

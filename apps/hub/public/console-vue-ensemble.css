@@ -217,6 +217,10 @@ main:has(> #live + .field-error) > .live-retry {
 .lanes[data-lanes="10"] {
   --lanes: 10;
 }
+/* A row brought into view from below (Shift+Tab up the line) stops under the head that stays in view, not behind it. */
+.wire-text {
+  scroll-margin-top: calc(2 * var(--sp-12));
+}
 /* The names stay in view while the line scrolls. */
 .lane-heads {
   position: sticky;
