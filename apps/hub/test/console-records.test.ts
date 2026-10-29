@@ -204,12 +204,13 @@ describe("team memory", () => {
     expect(html).toContain(`<a class="row-link" href="/console/memory/${ids.d1v2}">Dates</a>`);
     expect(html).toContain(">Decision<");
     expect(html).toContain(">sam@feat/login</span>");
-    // On a status's tab the status column would repeat it; only All shows it, as a pill.
+    // On a status's tab the status column would repeat it; only All shows it, a pill only for what waits for a person.
     expect(html).not.toContain('class="pill"');
     const all = main(await page("/console/memory?status=all", team.lea.cookie));
     expect(all).toContain('<span class="pill" data-tone="warn">Proposed</span>');
-    expect(all).toContain('<span class="pill" data-tone="ok">Accepted</span>');
-    expect(all).toContain('<span class="pill" data-tone="neutral">Pinned</span>');
+    expect(all).toContain(">Accepted · Pinned</span>");
+    expect(all).not.toContain('data-tone="ok"');
+    expect(all).not.toContain('data-tone="neutral"');
   });
 
   it("says what fills an empty tab", async () => {

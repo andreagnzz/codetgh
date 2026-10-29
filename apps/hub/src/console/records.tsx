@@ -281,6 +281,13 @@ const MemoryState: FC<{ item: Pick<MemoryItem, "status" | "pinned">; _: Tr }> = 
     {item.pinned && <Pill>{_("Pinned")}</Pill>}
   </span>
 );
+// In a list, only a proposal waits for a person: its state is a pill; the other states, and a pin, read as words.
+const ListState: FC<{ item: Pick<MemoryItem, "status" | "pinned">; _: Tr }> = ({ item, _ }) =>
+  item.status === "proposed" ? (
+    <Pill tone="warn">{_("Proposed")}</Pill>
+  ) : (
+    <span>{dots([_(STATUS_WORD[item.status] ?? item.status), item.pinned && _("Pinned")])}</span>
+  );
 // Who proposed: the person, then the session their agent wrote from, or that they wrote it themselves.
 const Proposer: FC<{ name: string; agentLabel: string | null; item: Pick<MemoryItem, "authoredBy">; _: Tr }> = ({
   name,
@@ -319,19 +326,9 @@ export const MemoryTable: FC<{ rows: MemoryRow[]; status: string; _: Tr }> = ({ 
             </a>
           </>
         }
-        sub={
-          <>
-            {_(KIND[item.kind] ?? item.kind)}
-            {status !== "all" && item.pinned && (
-              <>
-                {" "}
-                <Pill>{_("Pinned")}</Pill>
-              </>
-            )}
-          </>
-        }
+        sub={dots([_(KIND[item.kind] ?? item.kind), status !== "all" && item.pinned && _("Pinned")])}
       />,
-      ...(status === "all" ? [<MemoryState item={item} _={_} />] : []),
+      ...(status === "all" ? [<ListState item={item} _={_} />] : []),
       <Proposer name={name} agentLabel={agentLabel} item={item} _={_} />,
       <When at={item.createdAt} lang={_.lang} />,
     ])}
