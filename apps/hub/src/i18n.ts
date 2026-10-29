@@ -325,8 +325,8 @@ const FR: Record<string, string> = {
   "+{n} more": "+{n}\u00a0autres",
   "You're not in it. Opening it is recorded in the audit log.": "Tu n'y participes pas. L'ouvrir l'inscrit au journal d'audit.",
   "People not shown": "Personnes non affichées",
-  "Muted by a person": "En sourdine par une personne",
-  "Muted by the loop guard": "En sourdine par le garde-fou des boucles",
+  "Muted by a person": "Mis en sourdine par une personne",
+  "Muted by the loop guard": "Mis en sourdine par le garde-fou des boucles",
   "Agent streak {n}\u00a0of\u00a0{max}": "Série d'agents\u00a0: {n}\u00a0sur\u00a0{max}",
   "Earlier threads": "Fils plus anciens",
   "Threads in {project}": "Fils dans {project}",
@@ -389,7 +389,6 @@ const FR: Record<string, string> = {
   "What the hub flagged or stopped, newest first. Decide on each open alert: dismiss it once handled, or mark it a false positive.":
     "Ce que le hub a signalé ou arrêté, du plus récent au plus ancien. Décide pour chaque alerte ouverte\u00a0: ignore-la une fois traitée, ou marque-la comme faux positif.",
   Alert: "Alerte",
-  From: "De",
   Raised: "Levée",
   "Secret blocked": "Secret bloqué",
   "Agent loop": "Boucle d'agents",
@@ -402,6 +401,7 @@ const FR: Record<string, string> = {
     "L'orchestrateur de boucles a déjà rouvert ce fil une fois\u00a0: une personne décide maintenant.",
   "The hub": "Le hub",
   Nobody: "Personne",
+  // An alert's status and decision, in the feminine of « alerte »: a masculine entity (a thread, a task) needs its own key.
   Open: "Ouverte",
   Dismissed: "Ignorée",
   Decided: "Décidée",

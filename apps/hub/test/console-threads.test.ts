@@ -161,6 +161,9 @@ describe("threads", () => {
     expect(list).toContain("Fil direct avec @sam");
     expect(list).toContain("Fils plus anciens");
     expect(list).toContain("Dernier message");
+    // A pill qualifies the thread: « fil », masculine.
+    expect(list).toContain(">Mis en sourdine par une personne</span>");
+    expect(list).toContain("Personnes non affichées");
   });
 });
 
