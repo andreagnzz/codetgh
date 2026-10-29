@@ -52,6 +52,11 @@
   margin: var(--sp-4) 0 var(--sp-2);
   color: var(--text);
 }
+#github-hook > .code-label {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text);
+  font-weight: 500;
+}
 
 /* A person: the name, "You" for the reader, then the email (or what a system member is) under it. */
 .member p {

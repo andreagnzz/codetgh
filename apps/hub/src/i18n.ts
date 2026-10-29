@@ -457,7 +457,10 @@ const FR: Record<string, string> = {
   "Copy the secret now: you won't see it again.": "Copie le secret maintenant\u00a0: tu ne le reverras plus.",
   "In your GitHub App, under Settings → Webhook, set these two values. Then subscribe to the Pull request, Check suite and Create events.":
     "Dans ton application GitHub, sous Settings → Webhook, saisis ces deux valeurs. Puis abonne-la aux événements Pull request, Check suite et Create.",
-  "Copy the URL and the secret": "Copier l'adresse et le secret",
+  "Webhook URL": "URL du webhook",
+  "Copy the webhook URL": "Copier l'URL du webhook",
+  "Webhook secret": "Secret du webhook",
+  "Copy the secret": "Copier le secret",
   "To check an audit export offline, pass this key to {command}.":
     "Pour vérifier un export d'audit hors ligne, donne cette clé à {command}.",
   "Key id": "Identifiant de clé",

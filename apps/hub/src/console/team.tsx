@@ -616,7 +616,8 @@ export const Settings: FC<{ _: Tr; p: Principal; s: TeamSettings; auditKey: { ke
   );
 };
 
-// Shown once: where GitHub sends its events, and the secret it signs them with.
+// Shown once: where GitHub sends its events, and the secret it signs them with, each in its own block since GitHub takes them
+// in two fields.
 export const GithubHook: FC<{ _: Tr; url: string; secret: string }> = ({ _, url, secret }) => (
   <>
     <Banner tone="warn" title={_("Copy the secret now: you won't see it again.")}>
@@ -624,6 +625,9 @@ export const GithubHook: FC<{ _: Tr; url: string; secret: string }> = ({ _, url,
         "In your GitHub App, under Settings → Webhook, set these two values. Then subscribe to the Pull request, Check suite and Create events.",
       )}
     </Banner>
-    <CodeBlock code={`Webhook URL: ${url}\nSecret: ${secret}`} lang={_.lang} copyLabel={_("Copy the URL and the secret")} />
+    <p class="code-label">{_("Webhook URL")}</p>
+    <CodeBlock code={url} lang={_.lang} copyLabel={_("Copy the webhook URL")} />
+    <p class="code-label">{_("Webhook secret")}</p>
+    <CodeBlock code={secret} lang={_.lang} copyLabel={_("Copy the secret")} />
   </>
 );

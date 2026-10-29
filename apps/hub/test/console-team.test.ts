@@ -300,7 +300,13 @@ describe("settings", () => {
     const created = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
     expect(created).toContain('<div class="banner" data-tone="warn" role="status">');
     expect(created).toContain("Copy the secret now: you won&#39;t see it again.");
-    expect(created).toMatch(/Webhook URL: http:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+\nSecret: [A-Za-z0-9_-]{20,}/);
+    // GitHub takes them in two fields: each value in its own block, under its name, with its own Copy.
+    expect(created).toMatch(
+      /Webhook URL<\/p>\s*<div class="code">\s*<pre>\s*<code translate="no">http:\/\/[^<\s]+\/bridges\/github\/[A-Za-z0-9_-]+<\/code>/,
+    );
+    expect(created).toMatch(/Webhook secret<\/p>\s*<div class="code">\s*<pre>\s*<code translate="no">[A-Za-z0-9_-]{20,}<\/code>/);
+    expect(created).toContain('aria-label="Copy the webhook URL"');
+    expect(created).toContain('aria-label="Copy the secret"');
     const after = main(await page("/console/settings", team.lea.cookie));
     expect(after).toContain('<span class="pill" data-tone="ok">Webhook configured</span>');
     const replace = button(after, "/console/settings/github");
