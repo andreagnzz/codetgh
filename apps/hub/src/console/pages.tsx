@@ -759,7 +759,7 @@ type Msg = { id: string; createdAt: Date; kind: string; priority: string; author
 // At most ten lanes from 640 px and six under it; past that the people seen least recently share the last lane, "+n".
 const MAX_LANES = 10;
 const MAX_NARROW = 6;
-const WIRE_Y = 16; // the middle of the row's first line of text
+const WIRE_Y = 18; // the middle of the row's first line of text
 
 const wireOf = (m: Pick<Msg, "authoredBy" | "to">, from: string): Wire => ({
   from,

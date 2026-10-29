@@ -302,7 +302,7 @@ main:has(> #live + .field-error) > .live-retry {
   grid-template-areas: "who when" "what what";
   column-gap: var(--sp-3);
   margin-left: calc(-1 * var(--sp-2));
-  padding: 6px var(--sp-2);
+  padding: var(--sp-2);
   border-radius: var(--r-sm);
   color: var(--text);
   text-decoration: none;
