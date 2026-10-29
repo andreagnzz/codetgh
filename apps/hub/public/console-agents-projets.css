@@ -33,7 +33,8 @@
 /* A session: the person and the label they would type, then its short id; machine values in mono. */
 .session-cell p,
 .session-state p,
-.setting {
+.setting,
+.senders {
   margin: 0;
   max-width: none;
 }
@@ -75,6 +76,11 @@
   align-items: flex-start;
   gap: var(--sp-1);
 }
+.senders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
 
 /* Every project's table has the same columns at the same widths, so the groups line up as one table. */
 .agents-table table {
@@ -100,6 +106,16 @@
   }
   .agents-table.external th:nth-child(2) {
     width: 62%;
+  }
+  .agents-table.delegations th:nth-child(1) {
+    width: 28%;
+  }
+  .agents-table.delegations th:nth-child(2) {
+    width: 20%;
+  }
+  .agents-table.delegations th:nth-child(3),
+  .agents-table.delegations th:nth-child(4) {
+    width: 18%;
   }
 }
 /* A phone drops what a session did not report, as it drops an empty cell, and puts the session's "…" in the corner of its

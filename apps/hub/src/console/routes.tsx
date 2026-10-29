@@ -48,7 +48,7 @@ import {
   stopDelegate,
   updateSettings,
 } from "../domain/admin.js";
-import { listAgents, listDelegates, presence } from "../domain/agents.js";
+import { listAgents, listDelegates } from "../domain/agents.js";
 import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
@@ -77,7 +77,16 @@ import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
-import { AgentsTable, ExternalTable, NoSessions, ProjectHead, SessionList, type SessionRow, type ToolState } from "./agents.js";
+import {
+  AgentsTable,
+  DelegationsTable,
+  ExternalTable,
+  NoSessions,
+  ProjectHead,
+  SessionList,
+  type SessionRow,
+  type ToolState,
+} from "./agents.js";
 import { Catalogue } from "./catalogue.js";
 import {
   Action,
@@ -1002,26 +1011,27 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       "Delegations",
-      <>
-        <p>{_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}</p>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Who"), _("Label"), _("Project"), _("Accepts requests from"), _("Last seen"), _("Actions")]}
-          empty={_("No delegate session. A member starts one with codetgh start --accept-requests-from @handle.")}
-          rows={rows.map((r) => [
-            r.name,
-            <>
-              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-            </>,
-            r.project ?? "",
-            r.senders.join(", "),
-            <>
-              <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-            </>,
-            <Action post={`/console/delegations/${r.agent.id}/stop`} label={_("Turn off")} />,
-          ])}
-        />
-      </>,
+      rows.length === 0 ? (
+        <EmptyState
+          title={_("No delegate sessions.")}
+          icon="terminal"
+          action={<CodeBlock lang={_.lang} command code="codetgh start --accept-requests-from @<handle>" />}
+        >
+          {_(
+            "A delegate session does the tasks that the teammates you name send it, without a human, on its project only. Start one in the project's repository:",
+          )}
+        </EmptyState>
+      ) : (
+        <DelegationsTable rows={rows} _={_} />
+      ),
+      undefined,
+      {
+        head: (
+          <p class="lede list-lede">
+            {_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}
+          </p>
+        ),
+      },
     );
   });
 

@@ -287,3 +287,37 @@ export const SessionList: FC<{ rows: SessionRow[]; _: Tr; empty: string; action?
       })}
     </ul>
   );
+
+// Sessions that take requests from teammates without a human: who may send them work, and the way to turn one off.
+type DelegateRow = SessionRow & { senders: string[] };
+export const DelegationsTable: FC<{ rows: DelegateRow[]; _: Tr }> = ({ rows, _ }) => (
+  <div class="agents-table delegations">
+    <Table
+      lang={_.lang}
+      head={[_("Session"), _("Project"), _("Accepts requests from"), _("State"), _("Actions")]}
+      primary={0}
+      actions
+      empty=""
+      rows={rows.map((r) => [
+        <Session r={r} _={_} />,
+        r.project ?? _("Outside a project"),
+        <p class="senders">
+          {r.senders.map((s) => (s === "?" ? <span class="not-reported">{_("a former member")}</span> : <Chip>{s}</Chip>))}
+        </p>,
+        <SessionState r={r} _={_} />,
+        <Action
+          post={`/console/delegations/${r.agent.id}/stop`}
+          label={_("Turn off")}
+          name={`${_("Turn off")} ${r.agent.label}…`}
+          confirm={{
+            title: named(_("Turn off delegation for {session}?"), "{session}", r.agent.label),
+            body: _(
+              "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start --accept-requests-from delegates it again.",
+            ),
+          }}
+          done={named(_("Delegation of {session} turned off."), "{session}", r.agent.label)}
+        />,
+      ])}
+    />
+  </div>
+);

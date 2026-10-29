@@ -104,6 +104,18 @@ test("projects, wide: the owner's Remote Control and runner, a state then its ac
   expect(await tab(page)).toBe("Start the runner");
 });
 
+test("delegations, wide: turning one off asks first, and Escape gives the keyboard back", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/delegations`);
+  const off = page.getByRole("button", { name: "Turn off malik@main…" });
+  await off.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Turn off delegation for malik@main?" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(off).toBeFocused();
+});
+
 for (const lang of ["en", "fr"])
   test(`phone, ${lang}: no page of the batch scrolls sideways at 360 px`, async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });

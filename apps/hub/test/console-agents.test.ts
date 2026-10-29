@@ -261,3 +261,25 @@ describe("projects", () => {
     }
   });
 });
+
+describe("delegations", () => {
+  it("names each delegate session, who may send it work, and asks before turning it off", async () => {
+    const html = main(await page("/console/delegations", team.lea.cookie));
+    expect(html).toContain(">malik@main</span>");
+    expect(html).toContain("acme/api");
+    expect(html).toContain('<span class="chip" translate="no" title="@lea">@lea</span>');
+    expect(html).toContain('<span class="chip" translate="no" title="@sam">@sam</span>');
+    expect(html).toContain('<span class="pill" data-tone="warn">Paused</span>');
+    const off = html.match(/<button[^>]*hx-post="\/console\/delegations\/[^"]+\/stop"[^>]*>/)?.[0] ?? "";
+    expect(off).toContain('aria-label="Turn off malik@main…"');
+    expect(off).toContain('data-confirm="Turn off delegation for malik@main?"');
+    expect(off).toContain('data-done="Delegation of malik@main turned off."');
+  });
+
+  it("says how to start a delegate session when there is none", async () => {
+    const html = main(await page("/console/delegations", team.sam.cookie));
+    expect(html).toContain("No delegate sessions.");
+    expect(html).toContain('<code translate="no">codetgh start --accept-requests-from @&lt;handle&gt;</code>');
+    expect(main(await page("/console/delegations", team.sam.cookie, "fr"))).toContain("Aucune session déléguée.");
+  });
+});

@@ -368,6 +368,15 @@ const FR: Record<string, string> = {
   "No projects yet.": "Aucun projet pour l'instant.",
   "A project appears when a member starts a session with codetgh start in a team repository, or runs this command there:":
     "Un projet apparaît quand un membre lance une session avec codetgh start dans un dépôt de l'équipe, ou y lance cette commande\u00a0:",
+  // Delegations.
+  "a former member": "un ancien membre",
+  "Turn off delegation for {session}?": "Couper la délégation de {session}\u202f?",
+  "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start --accept-requests-from delegates it again.":
+    "Elle cesse aussitôt de prendre des demandes, et celles qu'elle n'a pas finies expirent. La session continue\u202f; seul un nouveau codetgh start --accept-requests-from la rend de nouveau déléguée.",
+  "Delegation of {session} turned off.": "Délégation de {session} coupée.",
+  "No delegate sessions.": "Aucune session déléguée.",
+  "A delegate session does the tasks that the teammates you name send it, without a human, on its project only. Start one in the project's repository:":
+    "Une session déléguée fait les tâches que lui envoient les coéquipiers que tu nommes, sans humain, sur son seul projet. Lance-en une dans le dépôt du projet\u00a0:",
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----
