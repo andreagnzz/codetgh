@@ -181,7 +181,10 @@ describe("public pages", () => {
       via: "console",
     });
     const page = await html(`/invite/${token}`);
+    expect(page).toContain("<title>Join Acme web · CodeTgh</title>");
     expect(page).toContain("<h1>Join Acme web</h1>");
+    // A link that no longer works names no team, in the tab title either.
+    expect(await html("/invite/not-a-token", "fr")).toContain("<title>Cette invitation n&#39;est plus valable. · CodeTgh</title>");
     expect(page).toContain("You&#39;re invited as a guest. A guest sees only the threads they take part in.");
     // Read whole as text, however long; the sign-up script and password managers read it from a field kept out of sight.
     expect(page).toContain('<p class="value" translate="no">ines@acme.test</p>');

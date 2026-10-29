@@ -774,7 +774,7 @@ export const InvitePage: FC<{
   const named = (s: string) => _(s).replace("{team}", () => team);
   const heading = named("Join {team}");
   return (
-    <PublicLayout lang={lang} title={named("Join {team} on CodeTgh")} ownError={valid && !join}>
+    <PublicLayout lang={lang} title={`${valid ? heading : _("This invitation is no longer valid.")} · CodeTgh`} ownError={valid && !join}>
       {valid ? (
         <>
           <h1>{heading}</h1>

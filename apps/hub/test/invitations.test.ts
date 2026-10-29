@@ -67,7 +67,7 @@ async function join(token: string, cookie: string, pageOf = token) {
 it("shows a team name with $ in it as typed, never read as a replacement pattern", async () => {
   const { token } = await invite(await createTeam(hub.db, "R$'D"), "rd@acme.test", "member");
   const html = await (await fetch(`${hub.url}/invite/${token}`, { headers: { cookie: nora.cookie } })).text();
-  expect(html).toContain("Join R$&#39;D on CodeTgh");
+  expect(html).toContain("<title>Join R$&#39;D · CodeTgh</title>");
   expect(html).toContain(">Join R$&#39;D<");
   expect(html).not.toContain("on CodeTghD");
 });
