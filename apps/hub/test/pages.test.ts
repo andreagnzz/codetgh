@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { task } from "../src/db/schema.js";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
@@ -107,6 +108,16 @@ describe("pages", () => {
     expect(html).toContain("Demande à un admin de ton équipe");
     expect(html).toContain("réservé aux admins");
     expect(html).toContain("Retour à la vue d&#39;ensemble");
+  });
+
+  it("shows a task's title as written, never looked up in the translations", async () => {
+    const [created] = await hub.db
+      .insert(task)
+      .values({ id: "tsk_01NAMEDTITLE000000000000000", teamId: team.teamId, title: "Overview", createdByUser: team.lea.userId })
+      .returning();
+    const html = await (await get(`/console/tasks/${created?.id}`, { cookie: team.lea.cookie, "accept-language": "fr" })).text();
+    expect(html).toContain("<h1>Overview</h1>");
+    expect(html).toContain("<title>Overview · CodeTgh</title>");
   });
 
   it("keeps the bare reason for an htmx request, which console.js shows under the form", async () => {

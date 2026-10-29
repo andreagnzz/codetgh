@@ -224,19 +224,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
   const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
   // A guest never sees the list of the team's projects.
-  // A detail page adds a way back, a meta line and its one action to the page header.
+  // A detail page adds a way back, a meta line and its one action to the page header. A title that is a record's own name
+  // (named: a task's or a memory item's title) shows as written, never looked up in i18n.
   const page = (
     c: Context<Env>,
     title: string,
     body: unknown,
     filter?: ProjectFilter,
-    detail?: { back?: Child; head?: Child; actions?: Child },
+    { named, ...detail }: { back?: Child; head?: Child; actions?: Child; named?: boolean } = {},
   ) =>
     c.html(
       <Layout
         p={c.get("principal")}
         csrf={c.get("csrf")}
-        title={t(tr(c).lang, title)}
+        title={named ? title : t(tr(c).lang, title)}
         path={c.req.path}
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
@@ -1666,6 +1667,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <Action post={`/console/memory/${item.id}/pin`} vals={{ pinned: String(!item.pinned) }} label={item.pinned ? "Unpin" : "Pin"} />
         )}
       </>,
+      undefined,
+      { named: true },
     );
   });
 
@@ -1877,6 +1880,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <button type="submit">Save</button>
         </form>
       </>,
+      undefined,
+      { named: true },
     );
   });
 
