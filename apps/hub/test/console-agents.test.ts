@@ -107,7 +107,7 @@ describe("agents", () => {
     expect(webapp).toContain("acceptEdits");
     // A push mode in words, with CodeTgh's own name for it under them.
     expect(webapp).toContain('<span>Wakes up</span><span class="machine meta">rewake</span>');
-    expect(webapp).toContain("2.1.14");
+    expect(webapp).toContain('<span class="machine">2.1.14</span>');
     expect(section(html, `p-${projects["acme/billing"]}`)).toContain("Not reported");
   });
 

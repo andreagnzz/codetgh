@@ -9,7 +9,7 @@ import { Action, Chip, CodeBlock, EmptyState, Pill, RowMenu, Table, type Tone, W
 // Agents, Projects and Delegations. A session reads the same on the three pages: the person, the session's label as typed in
 // a terminal, its short id as the startup line prints it, then its state in words; pills only for what needs a look (idle,
 // paused, quarantined, external, prompts off). Every value is rendered by JSX, which escapes text: agent-written labels,
-// branches and statuses never become HTML.
+// branches and statuses never become HTML. A " · " separator keeps to what follows it, so no line ends on it.
 type Tr = ((s: string) => string) & { lang: Lang };
 export type SessionRow = { agent: Agent; name: string; handle?: string | null; project?: string | null; paused: Date | null };
 
@@ -36,10 +36,10 @@ export const Session: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
       <p class="session-id meta">
         {/* "agt_01M5…ABCD", as `CodeTgh ✓` prints it when the session starts. */}
         <span class="machine">{shortAgentId(a.id)}</span>
-        {kind && ` · ${_(kind)}`}
+        {kind && ` ·\u00a0${_(kind)}`}
         {branch && (
           <>
-            {" · "}
+            {" ·\u00a0"}
             <span class="machine">{branch}</span>
           </>
         )}
@@ -156,7 +156,7 @@ export const AgentsTable: FC<{ rows: SessionRow[]; _: Tr; admin: boolean; captio
           ) : (
             notReported(_)
           ),
-          a.clientVersion ?? notReported(_),
+          a.clientVersion ? <span class="machine">{a.clientVersion}</span> : notReported(_),
           <SessionActions r={r} _={_} admin={admin} />,
         ];
       })}
@@ -297,7 +297,7 @@ export const SessionList: FC<{ rows: SessionRow[]; _: Tr; empty: string; action?
                 {status.text}
                 {status.at && (
                   <span class="meta">
-                    {" · "}
+                    {" ·\u00a0"}
                     <When at={status.at} lang={_.lang} />
                   </span>
                 )}
