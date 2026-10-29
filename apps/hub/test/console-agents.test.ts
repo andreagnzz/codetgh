@@ -315,7 +315,9 @@ describe("projects", () => {
   it("lets a member attach a session outside a project, in words that say it happens at once", async () => {
     const html = main(await page("/console/projects", team.lea.cookie));
     const loose = section(html, "p-none");
-    expect(loose).toContain("Start claude inside the project&#39;s repository folder to link a session, or attach one to a project here.");
+    expect(loose).toContain(
+      "Start <code>claude</code> inside the project&#39;s repository folder to link a session, or attach one to a project here.",
+    );
     expect(loose).toContain(`hx-post="/console/agents/${ids.lea}/project"`);
     // Each control says which session it moves, and no project is chosen for the person.
     expect(loose).toContain('<select name="project_id" aria-label="Project for lea@scratch">');
@@ -327,9 +329,18 @@ describe("projects", () => {
     expect(refused.status).toBe(400);
     expect(await refused.text()).toContain("Choose a project for this session.");
     const french = section(main(await page("/console/projects", team.lea.cookie, "fr")), "p-none");
-    expect(french).toContain("Lance claude dans le dossier du dépôt du projet");
+    expect(french).toContain("Lance <code>claude</code> dans le dossier du dépôt du projet");
     expect(french).toContain("Rattacher au projet");
     expect(french).toContain("Choisis un projet…");
+  });
+
+  it("offers to attach a session outside a project only to someone who can", async () => {
+    // Léa's session is the only one outside a project: Sam reads how to link one, without an offer he cannot take.
+    const loose = section(main(await page("/console/projects", team.sam.cookie)), "p-none");
+    expect(loose).toContain(">lea@scratch</span>");
+    expect(loose).not.toContain("<form");
+    expect(loose).toContain("Start <code>claude</code> inside the project&#39;s repository folder to link a session.</p>");
+    expect(loose).not.toContain("attach one");
   });
 
   it("says how a project appears when there is none", async () => {
@@ -339,6 +350,7 @@ describe("projects", () => {
       await fresh.db.delete(project);
       const empty = main(await (await fetch(`${fresh.url}/console/projects`, { headers: { cookie: other.sam.cookie } })).text());
       expect(empty).toContain("No projects yet.");
+      expect(empty).toContain("A project appears when a member starts a session with <code>codetgh start</code> in a team repository");
       expect(empty).toContain('<code translate="no">codetgh project new</code>');
     } finally {
       await fresh.stop();

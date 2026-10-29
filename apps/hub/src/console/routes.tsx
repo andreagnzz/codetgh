@@ -86,6 +86,7 @@ import {
   SessionList,
   type SessionRow,
   type ToolState,
+  withCommand,
 } from "./agents.js";
 import { Catalogue } from "./catalogue.js";
 import {
@@ -952,7 +953,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Projects",
       projects.length === 0 && sessions.length === 0 ? (
         <EmptyState title={_("No projects yet.")} icon="terminal" action={<CodeBlock lang={_.lang} command code="codetgh project new" />}>
-          {_("A project appears when a member starts a session with codetgh start in a team repository, or runs this command there:")}
+          {withCommand(
+            _("A project appears when a member starts a session with {start} in a team repository, or runs this command there:"),
+            "{start}",
+            "codetgh start",
+          )}
         </EmptyState>
       ) : (
         groups.map((g) => (
@@ -965,7 +970,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             />
             {g.id === "none" && (
               <p class="help">
-                {_("Start claude inside the project's repository folder to link a session, or attach one to a project here.")}
+                {withCommand(
+                  _(
+                    g.rows.some((r) => attach(r))
+                      ? "Start {claude} inside the project's repository folder to link a session, or attach one to a project here."
+                      : "Start {claude} inside the project's repository folder to link a session.",
+                  ),
+                  "{claude}",
+                  "claude",
+                )}
               </p>
             )}
             <SessionList

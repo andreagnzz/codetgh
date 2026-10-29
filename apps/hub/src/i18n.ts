@@ -366,15 +366,17 @@ const FR: Record<string, string> = {
   "Runner failed": "Runner en échec",
   "Runner on · 1\u00a0agent running": "Runner en marche · 1\u00a0agent en cours",
   "Runner on · {n}\u00a0agents running": "Runner en marche · {n}\u00a0agents en cours",
-  "Start claude inside the project's repository folder to link a session, or attach one to a project here.":
-    "Lance claude dans le dossier du dépôt du projet pour y rattacher la session, ou rattache-la à un projet ici.",
+  "Start {claude} inside the project's repository folder to link a session, or attach one to a project here.":
+    "Lance {claude} dans le dossier du dépôt du projet pour y rattacher la session, ou rattache-la à un projet ici.",
+  "Start {claude} inside the project's repository folder to link a session.":
+    "Lance {claude} dans le dossier du dépôt du projet pour y rattacher la session.",
   "Attach to project": "Rattacher au projet",
   "Project for {session}": "Projet pour {session}",
   "Choose a project…": "Choisis un projet…",
   "Choose a project for this session.": "Choisis un projet pour cette session.",
   "No projects yet.": "Aucun projet pour l'instant.",
-  "A project appears when a member starts a session with codetgh start in a team repository, or runs this command there:":
-    "Un projet apparaît quand un membre lance une session avec codetgh start dans un dépôt de l'équipe, ou y lance cette commande\u00a0:",
+  "A project appears when a member starts a session with {start} in a team repository, or runs this command there:":
+    "Un projet apparaît quand un membre lance une session avec {start} dans un dépôt de l'équipe, ou y lance cette commande\u00a0:",
   // Delegations.
   "a former member": "un ancien membre",
   "Turn off delegation for {session}?": "Couper la délégation de {session}\u202f?",
