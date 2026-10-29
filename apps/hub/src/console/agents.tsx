@@ -1,4 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { shortAgentId } from "@codetgh/shared";
 import type { Child, FC } from "hono/jsx";
 import { type Agent, presence, statusOf } from "../domain/agents.js";
 import type { Lang } from "../i18n.js";
@@ -12,8 +13,6 @@ import { Action, Chip, CodeBlock, EmptyState, Pill, RowMenu, Table, type Tone, W
 type Tr = ((s: string) => string) & { lang: Lang };
 export type SessionRow = { agent: Agent; name: string; handle?: string | null; project?: string | null; paused: Date | null };
 
-// "agt_01M5…ABCD": the first 8 and the last 4 characters, as `CodeTgh ✓` prints it when the session starts.
-const short = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
 const KIND: Record<string, string> = { "claude-ai": "claude.ai", "agent-sdk": "Agent SDK", bridge: "Bridge", other: "Other client" };
 const kindOf = (a: Agent) => (a.sessionId.startsWith("cli-") ? "CLI" : KIND[a.kind]);
 // How a teammate's message reaches the session (push_mode): read while it works, or it wakes up for it, or a live channel.
@@ -35,7 +34,8 @@ export const Session: FC<{ r: SessionRow; _: Tr }> = ({ r, _ }) => {
         {a.kind === "a2a" ? r.handle && <Chip>{`@${r.handle}`}</Chip> : <Chip>{a.label}</Chip>}
       </p>
       <p class="session-id meta">
-        <span class="machine">{short(a.id)}</span>
+        {/* "agt_01M5…ABCD", as `CodeTgh ✓` prints it when the session starts. */}
+        <span class="machine">{shortAgentId(a.id)}</span>
         {kind && ` · ${_(kind)}`}
         {branch && (
           <>
