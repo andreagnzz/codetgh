@@ -1470,7 +1470,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {(before || found.length > PAGE) && (
           <Pager
             lang={_.lang}
-            newer={before ? "/console/audit" : undefined}
+            newest={before ? "/console/audit" : undefined}
             older={found.length > PAGE && last ? `/console/audit?before=${last.seq}` : undefined}
           />
         )}
@@ -1697,7 +1697,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {(older || found.length > PAGE) && (
           <Pager
             lang={_.lang}
-            newer={older ? `/console/memory?status=${status}` : undefined}
+            newest={older ? `/console/memory?status=${status}` : undefined}
             older={
               found.length > PAGE && last
                 ? `/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`
