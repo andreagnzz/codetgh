@@ -25,8 +25,8 @@
   grid-row: 4;
   margin-top: var(--sp-6);
 }
-/* In the panel, whose paragraphs are muted, a refusal keeps the error color. */
-.head-form .field-error {
+/* In a panel, whose paragraphs are muted, a refusal that console.js places after a form keeps the error color. */
+:is(.head-form, .team-me, .team-settings) .field-error {
   color: var(--error);
 }
 

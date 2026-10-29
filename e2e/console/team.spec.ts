@@ -148,6 +148,19 @@ test("my data and settings: every field in order, each named, each with a visibl
   await expect(page.locator('input[name="claims_enforcement"][value="warn"]')).toBeChecked();
 });
 
+test("a refusal under a form in a panel keeps the error color, not the panel's muted text", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.sam);
+  await page.goto(`${hub.url}/console/me`);
+  await page.getByLabel("Type erase to confirm").fill("nope");
+  await page.getByRole("button", { name: "Erase my data" }).click();
+  const error = page.locator(".panel > .field-error");
+  await expect(error).toBeVisible();
+  // The danger panel's icon is drawn in the error color.
+  const expected = await page.locator(".panel[data-tone='danger'] > h2 .icon").evaluate((el) => getComputedStyle(el).color);
+  expect(await error.evaluate((el) => getComputedStyle(el).color)).toBe(expected);
+});
+
 for (const lang of ["en", "fr"])
   test(`phone, ${lang}: no page of the batch scrolls sideways at 360 px, with its forms and menus open`, async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
