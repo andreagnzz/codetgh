@@ -154,6 +154,8 @@ describe("agents", () => {
     expect(external).toContain('<span class="pill" data-tone="neutral">External</span>');
     expect(external).toContain('data-confirm="Remove the external agent Partner bot?"');
     expect(section(main(html), "p-none")).not.toContain("Partner bot");
+    // What an external agent may do is said once, in the form that adds one.
+    expect(html.split("An external agent can ask the team questions").length).toBe(2);
     // A member sees their own sessions, and nothing to add.
     const member = await page("/console/agents", team.sam.cookie);
     expect(member).toContain("Your sessions on this hub, by project.");
@@ -372,11 +374,17 @@ describe("delegations", () => {
     expect(off).toContain('aria-label="Turn off delegation for malik@main…"');
     expect(off).toContain('data-confirm="Turn off delegation for malik@main?"');
     expect(off).toContain('data-done="Delegation of malik@main turned off."');
+    // The dialog's prose names no option whose hyphens would break it across lines.
+    expect(off).toContain("only a new codetgh start that names who may send it requests delegates it again.");
+    expect(off).not.toContain("--accept-requests-from");
   });
 
   it("says how to start a delegate session when there is none", async () => {
     const html = main(await page("/console/delegations", team.sam.cookie));
     expect(html).toContain("No delegate sessions.");
+    // The page's description says what one does; the empty state, how to start one.
+    expect(html).toContain("Start one in the project&#39;s repository, with the handles of the teammates who may send it tasks:");
+    expect(html).not.toContain("A delegate session does the tasks");
     expect(html).toContain('<code translate="no">codetgh start --accept-requests-from @&lt;handle&gt;</code>');
     expect(main(await page("/console/delegations", team.sam.cookie, "fr"))).toContain("Aucune session déléguée.");
   });

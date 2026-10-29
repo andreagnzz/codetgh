@@ -805,9 +805,6 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {external.length > 0 && (
           <section aria-labelledby="external-h">
             <h2 id="external-h">{_("External agents")}</h2>
-            <p class="lede">
-              {_("An external agent can ask the team questions and read the answers. It stays in quarantine: no claims, memory or tasks.")}
-            </p>
             <ExternalTable rows={external} _={_} />
           </section>
         )}
@@ -1080,9 +1077,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           icon="terminal"
           action={<CodeBlock lang={_.lang} command code="codetgh start --accept-requests-from @<handle>" />}
         >
-          {_(
-            "A delegate session does the tasks that the teammates you name send it, without a human, on its project only. Start one in the project's repository:",
-          )}
+          {_("Start one in the project's repository, with the handles of the teammates who may send it tasks:")}
         </EmptyState>
       ) : (
         <DelegationsTable rows={rows} _={_} />

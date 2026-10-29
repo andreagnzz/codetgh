@@ -335,7 +335,7 @@ export const DelegationsTable: FC<{ rows: DelegateRow[]; _: Tr }> = ({ rows, _ }
           confirm={{
             title: named(_("Turn off delegation for {session}?"), "{session}", r.agent.label),
             body: _(
-              "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start --accept-requests-from delegates it again.",
+              "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start that names who may send it requests delegates it again.",
             ),
           }}
           done={named(_("Delegation of {session} turned off."), "{session}", r.agent.label)}

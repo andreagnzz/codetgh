@@ -381,12 +381,12 @@ const FR: Record<string, string> = {
   "a former member": "un ancien membre",
   "Turn off delegation for {session}?": "Couper la délégation de {session}\u202f?",
   "Turn off delegation for {session}…": "Couper la délégation de {session}…",
-  "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start --accept-requests-from delegates it again.":
-    "Elle cesse aussitôt de prendre des demandes, et celles qu'elle n'a pas finies expirent. La session continue\u202f; seul un nouveau codetgh start --accept-requests-from la rend de nouveau déléguée.",
+  "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start that names who may send it requests delegates it again.":
+    "Elle cesse aussitôt de prendre des demandes, et celles qu'elle n'a pas finies expirent. La session continue\u202f; seul un nouveau codetgh start qui nomme qui peut lui envoyer des demandes la rend de nouveau déléguée.",
   "Delegation of {session} turned off.": "Délégation de {session} coupée.",
   "No delegate sessions.": "Aucune session déléguée.",
-  "A delegate session does the tasks that the teammates you name send it, without a human, on its project only. Start one in the project's repository:":
-    "Une session déléguée fait les tâches que lui envoient les coéquipiers que tu nommes, sans humain, sur son seul projet. Lance-en une dans le dépôt du projet\u00a0:",
+  "Start one in the project's repository, with the handles of the teammates who may send it tasks:":
+    "Lance-en une dans le dépôt du projet, avec les pseudos des coéquipiers qui peuvent lui envoyer des tâches\u00a0:",
   // A refused action, in the reader's words (routes.tsx READER).
   "This agent is no longer on the hub. Reload the page to see the current list.":
     "Cet agent n'est plus sur le hub. Recharge la page pour voir la liste à jour.",
