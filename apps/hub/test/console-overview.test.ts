@@ -139,6 +139,8 @@ describe("overview", () => {
     expect(row(newest?.id)).toMatch(
       /<strong>Sam&#39;s agent<\/strong> <span aria-hidden="true">→<\/span><span class="sr-only">to<\/span> @lea/,
     );
+    // The live announcement names the sender as the row does.
+    expect(row(newest?.id)).toContain('data-summary="New message: Sam&#39;s agent → @lea"');
     expect(row(newest?.id)).toContain("Item 17");
     // A message from today shows the clock alone.
     expect(row(newest?.id)).toMatch(/data-local="true">\d\d:\d\d<\/time>/);

@@ -886,19 +886,15 @@ export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
           const wire = wireOf(m, handle ?? name);
           const to = recipients(m.to, _);
           const what = [m.kind !== "note" && _(m.kind), PRIORITY[m.priority] && _(PRIORITY[m.priority] ?? ""), subject].filter(Boolean);
+          const who = m.authoredBy === "agent" ? _("{name}'s agent").replace("{name}", () => name) : name;
           return (
-            <li
-              class={i < LINE_PHONE ? "wire-row" : "wire-row later"}
-              data-mid={m.id}
-              data-summary={`${_("New message")}: ${name}${m.authoredBy === "agent" ? ` ${_("(agent)")}` : ""} → ${to}`}
-            >
+            <li class={i < LINE_PHONE ? "wire-row" : "wire-row later"} data-mid={m.id} data-summary={`${_("New message")}: ${who} → ${to}`}>
               {both((set) => (
                 <WireSvg lanes={set === "narrow" ? (lanes.narrow ?? []) : lanes.wide} wire={wire} set={set} />
               ))}
               <a id={`line-${m.id}`} class="wire-text" href={`/console/threads/${m.threadId}`}>
                 <span class="wire-who">
-                  <strong>{m.authoredBy === "agent" ? _("{name}'s agent").replace("{name}", () => name) : name}</strong>{" "}
-                  <span aria-hidden="true">→</span>
+                  <strong>{who}</strong> <span aria-hidden="true">→</span>
                   <span class="sr-only">{_("to")}</span> {to}
                 </span>
                 <Stamp at={m.createdAt} lang={_.lang} />
