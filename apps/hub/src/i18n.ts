@@ -327,6 +327,23 @@ const FR: Record<string, string> = {
   "The hub could not handle the request. Try again; if it keeps failing, check the hub logs.":
     "Le hub n'a pas pu traiter la demande. Réessaie\u202f; si ça continue, regarde les journaux du hub.",
   "The hub does not answer. Check your connection, then try again.": "Le hub ne répond pas. Vérifie ta connexion, puis réessaie.",
+  // OAuth consent
+  "Allow access to your account?": "Autoriser l'accès à ton compte\u202f?",
+  "An app asks to use this hub as you. Allow it only if you just connected it yourself.":
+    "Une application demande à utiliser ce hub en ton nom. Autorise-la seulement si tu viens de la connecter toi-même.",
+  "Asked by": "Demandé par",
+  "Access asked for": "Accès demandé",
+  "Then you go back to": "Ensuite, retour vers",
+  "Use this hub as you, with your role: messages, claims, tasks and team memory":
+    "Utiliser ce hub en ton nom, avec ton rôle\u00a0: messages, réservations, tâches et mémoire d'équipe",
+  "Know who you are": "Savoir qui tu es",
+  "See your name": "Voir ton nom",
+  "See your email address": "Voir ton adresse de courriel",
+  "Keep its access without asking you again": "Garder son accès sans te redemander",
+  "Not described by this hub": "Non décrit par ce hub",
+  "Nothing beyond your sign-in": "Rien de plus que ta connexion",
+  "This request has expired or was changed. Start again from your app.":
+    "Cette demande a expiré ou a été modifiée. Recommence depuis ton application.",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----

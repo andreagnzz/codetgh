@@ -58,3 +58,59 @@
   margin-top: 2px;
   color: var(--success);
 }
+
+/* Facts: a label over its value, one per row, between hairlines. */
+.facts {
+  max-width: var(--measure);
+  margin: 0 0 var(--sp-6);
+}
+.facts > div {
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--border);
+}
+.facts > div:last-child {
+  border-bottom: 1px solid var(--border);
+}
+.facts dt {
+  margin-bottom: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  font-weight: 500;
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.facts .help {
+  margin: var(--sp-1) 0 0;
+}
+
+/* Consent: what the client gets, in words, each with its scope's key; Allow and Deny share the width. */
+.scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.scopes li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+}
+.scopes code {
+  max-width: 10rem;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  text-align: right;
+}
+.public .actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+}
+.public .actions button {
+  min-height: 44px;
+}

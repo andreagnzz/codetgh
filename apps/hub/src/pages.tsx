@@ -178,6 +178,17 @@ export const LoginPage = ({
   );
 };
 
+// Each scope a client can ask for, in words, next to its key; a scope the hub does not describe shows its key alone.
+const SCOPE_WORDS: Record<string, string> = {
+  codetgh: "Use this hub as you, with your role: messages, claims, tasks and team memory",
+  openid: "Know who you are",
+  profile: "See your name",
+  email: "See your email address",
+  offline_access: "Keep its access without asking you again",
+};
+
+const CONSENT_WORDS = { invalid_signature: "This request has expired or was changed. Start again from your app." };
+
 export const ConsentPage = ({
   clientId,
   scope,
@@ -190,26 +201,53 @@ export const ConsentPage = ({
   lang?: Lang;
 }) => {
   const _ = (s: string) => t(lang, s);
+  const scopes = scope.split(/\s+/).filter(Boolean);
   return (
-    <Layout lang={lang}>
-      <h1>{_("Allow access to CodeTgh?")}</h1>
-      <p>
-        {_("Client")}: <code>{clientId}</code>
-      </p>
-      <p>
-        {_("Scopes")}: <code>{scope}</code>
-      </p>
-      <p>
-        {_("You will be sent back to")}: <strong>{redirectHost}</strong>
-      </p>
+    <Layout lang={lang} title={`${_("Allow access to your account?")} · CodeTgh`} ownError>
+      <h1>{_("Allow access to your account?")}</h1>
+      <p class="lede">{_("An app asks to use this hub as you. Allow it only if you just connected it yourself.")}</p>
+      <dl class="facts">
+        <div>
+          <dt>{_("Asked by")}</dt>
+          <dd>
+            <code translate="no">{clientId}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>{_("Access asked for")}</dt>
+          <dd>
+            {scopes.length > 0 ? (
+              <ul class="scopes">
+                {scopes.map((s) => (
+                  <li>
+                    <span>{_((Object.hasOwn(SCOPE_WORDS, s) && SCOPE_WORDS[s]) || "Not described by this hub")}</span>{" "}
+                    <code translate="no">{s}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              _("Nothing beyond your sign-in")
+            )}
+          </dd>
+        </div>
+        {redirectHost && (
+          <div>
+            <dt>{_("Then you go back to")}</dt>
+            <dd>
+              <code translate="no">{redirectHost}</code>
+            </dd>
+          </div>
+        )}
+      </dl>
       <p class="actions">
         <button type="button" class="primary" data-consent="accept">
           {_("Allow")}
-        </button>{" "}
-        <button type="button" data-consent="deny">
+        </button>
+        <button type="button" class="secondary" data-consent="deny">
           {_("Deny")}
         </button>
       </p>
+      <HubAnswer lang={lang} words={CONSENT_WORDS} />
     </Layout>
   );
 };

@@ -148,6 +148,21 @@ describe("public pages", () => {
     expect(answer).toBeLessThan(page.indexOf(">Sign in</button>"));
     expect(await html("/login", "fr")).toContain("L&#39;e-mail ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
   });
+
+  it("consent: the access asked for in words next to each scope, an unknown scope said as such, and the way back", async () => {
+    const page = await html(
+      `/consent?client_id=${encodeURIComponent("https://client.example/meta.json")}&scope=codetgh+email+calendar.read&redirect_uri=${encodeURIComponent("https://client.example/cb")}`,
+    );
+    expect(page).toContain("<h1>Allow access to your account?</h1>");
+    expect(page).toContain('<code translate="no">https://client.example/meta.json</code>');
+    expect(page).toContain('<li><span>See your email address</span> <code translate="no">email</code></li>');
+    expect(page).toContain('<li><span>Not described by this hub</span> <code translate="no">calendar.read</code></li>');
+    expect(page).toContain('<code translate="no">client.example</code>');
+    expect(page).toContain('<button type="button" class="primary" data-consent="accept">Allow</button>');
+    expect(page).toContain('<button type="button" class="secondary" data-consent="deny">Deny</button>');
+    // A scope named like an object's own property is not described by accident.
+    expect(await html("/consent?client_id=c&scope=constructor")).toContain("<span>Not described by this hub</span>");
+  });
 });
 
 describe("shell", () => {

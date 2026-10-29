@@ -92,3 +92,21 @@ test("sign-in with the keyboard: providers, the form, then the folded emailed li
   );
   expect(await tab(page)).toBe("Email me a link");
 });
+
+test("consent with the keyboard: the access asked for in words, then Allow and Deny", async ({ page }) => {
+  const scope = "codetgh openid email";
+  await page.goto(
+    `${hub.url}/consent?client_id=${encodeURIComponent("https://client.example/oauth/client-metadata.json")}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent("https://client.example/cb")}`,
+  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Allow access to your account?");
+  await expect(page.locator(".scopes li")).toHaveText([
+    /Use this hub as you, with your role: messages, claims, tasks and team memory\s*codetgh/,
+    /Know who you are\s*openid/,
+    /See your email address\s*email/,
+  ]);
+  for (const name of ["CodeTgh", "Allow", "Deny"]) expect(await tab(page)).toBe(name);
+  // Opened without the hub's signed request (as here), the consent is refused, and the page says what to do.
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#error[role=alert]")).toHaveText("This request has expired or was changed. Start again from your app.");
+});
