@@ -47,11 +47,13 @@
   document.body.addEventListener("htmx:beforeSwap", (e) => {
     if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
-  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger.
+  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger, or to the button of the row menu that
+  // held it, which closed when the dialog took the focus.
   dialog?.addEventListener("close", () => {
     const back = pending && triggerOf(pending.elt);
     pending = null;
-    if (back?.isConnected) back.focus();
+    if (!back?.isConnected) return;
+    (back.closest("details:not([open])")?.querySelector("summary") ?? back).focus();
   });
 
   const hostOf = (elt) => elt.closest("form") ?? elt;
