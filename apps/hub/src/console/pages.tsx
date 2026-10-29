@@ -583,13 +583,17 @@ export const EmptyState: FC<{ title: Child; icon?: IconName; action?: Child; chi
   </div>
 );
 
-// What happened to one object, oldest first. Times are absolute (console.js puts them in the reader's time zone); a filled
-// node is a state change, a hollow one a note; the current state reads in bold. Past fold events, the oldest are folded.
+// What happened to one object, oldest first. Times are absolute (console.js puts them in the reader's time zone): the clock
+// alone for a time from today, the day and month before it on another day. A filled node is a state change, a hollow one a
+// note; the current state reads in bold. Past fold events, the oldest are folded.
 export type TimelineEvent = { at: Date; text: Child; actor?: Child; body?: Child; change?: boolean; now?: boolean };
-const STAMP: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+const CLOCK: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 export const Stamp: FC<{ at: Date; lang: Lang }> = ({ at, lang }) => (
   <time datetime={at.toISOString()} data-local>
-    {new Intl.DateTimeFormat(lang === "fr" ? "fr-FR" : "en-GB", STAMP).format(at)}
+    {new Intl.DateTimeFormat(
+      lang === "fr" ? "fr-FR" : "en-GB",
+      at.toDateString() === new Date().toDateString() ? CLOCK : { day: "numeric", month: "short", ...CLOCK },
+    ).format(at)}
   </time>
 );
 export const Timeline: FC<{ events: TimelineEvent[]; lang: Lang; empty: Child; fold?: number }> = ({ events, lang, empty, fold = 10 }) => {

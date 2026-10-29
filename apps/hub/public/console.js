@@ -9,6 +9,7 @@
   const OFFLINE = fr
     ? "Le hub ne répond pas. Vérifie ta connexion, puis réessaie."
     : "The hub does not answer. Check your connection, then try again.";
+  const CLOCK = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 
   // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation.
   const dialog = document.getElementById("confirm");
@@ -218,11 +219,15 @@
   mark(false);
   document.body.addEventListener("htmx:afterSettle", () => mark(true));
 
-  // Absolute times: the hub writes them in its own time zone, the reader gets them in theirs, in the same format.
-  const STAMP = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  // Absolute times: the hub writes them in its own time zone, the reader gets them in theirs, in the same format: the clock
+  // alone for a time from today, the day and month before it on another day.
   const clocks = () => {
-    for (const t of document.querySelectorAll("time[data-local]"))
-      t.textContent = new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", STAMP).format(new Date(t.dateTime));
+    const today = new Date().toDateString();
+    for (const t of document.querySelectorAll("time[data-local]")) {
+      const d = new Date(t.dateTime);
+      const format = d.toDateString() === today ? CLOCK : { day: "numeric", month: "short", ...CLOCK };
+      t.textContent = new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", format).format(d);
+    }
   };
   clocks();
   document.body.addEventListener("htmx:afterSettle", clocks);

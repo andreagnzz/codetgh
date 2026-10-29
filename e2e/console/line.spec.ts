@@ -63,3 +63,29 @@ test("the live state: shown by console.js, a live region only once connected, of
   await expect(live).toHaveAttribute("data-state", "offline");
   await expect(live).not.toHaveAttribute("role", "status");
 });
+
+test("times read in the reader's time zone: the clock alone for today, the day and month before it on another day", async ({ browser }) => {
+  const zone = "America/Sao_Paulo";
+  const context = await browser.newContext({ timezoneId: zone });
+  const page = await context.newPage();
+  const clock = (iso: string | null, day?: boolean) =>
+    new Intl.DateTimeFormat("en-GB", {
+      ...(day && { day: "numeric", month: "short" }),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: zone,
+    }).format(new Date(iso ?? ""));
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  const earlier = page.locator(".timeline time").first();
+  await expect(earlier).toHaveText(clock(await earlier.getAttribute("datetime"), true));
+  // A time from today, as a live refresh brings it.
+  await page.evaluate((iso) => {
+    document.querySelector(".timeline")?.insertAdjacentHTML("afterbegin", `<li><time id="now" datetime="${iso}" data-local></time></li>`);
+    document.body.dispatchEvent(new Event("htmx:afterSettle"));
+  }, new Date().toISOString());
+  const now = page.locator("#now");
+  await expect(now).toHaveText(clock(await now.getAttribute("datetime")));
+  await context.close();
+});
