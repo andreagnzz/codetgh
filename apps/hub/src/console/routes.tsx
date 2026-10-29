@@ -844,9 +844,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             <dl>
               <div>
                 <dt>{_("People")}</dt>
-                <dd>
-                  <Handles handles={lanes.keys} _={_} />
-                </dd>
+                <dd>{lanes.keys.length ? <Handles handles={lanes.keys} _={_} /> : <span class="meta">{_("Nobody yet")}</span>}</dd>
               </div>
               {inProject && (
                 <div class="props-project">
@@ -936,8 +934,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               </form>
             )}
             {t.encrypted && !adminRead && (
-              <Banner title={_("End-to-end encrypted")}>
-                {_("The console can't write into this thread: reply from your terminal, where codetgh encrypts for every participant.")}
+              <Banner title={_("The console can't write into this thread.")}>
+                {_("Reply from your terminal: codetgh encrypts the reply for every participant.")}
               </Banner>
             )}
           </div>

@@ -345,6 +345,7 @@ const FR: Record<string, string> = {
   "Check the link, or find the thread in the list.": "Vérifie le lien, ou retrouve le fil dans la liste.",
   "About this thread": "À propos de ce fil",
   "First message": "Premier message",
+  "Nobody yet": "Personne pour l'instant",
   "Mute thread": "Mettre le fil en sourdine",
   "Reopen thread": "Rouvrir le fil",
   "Left to right: {names}": "De gauche à droite\u00a0: {names}",
@@ -362,8 +363,9 @@ const FR: Record<string, string> = {
   "Read it in a participant's terminal with codetgh inbox.": "Lis-le dans le terminal d'un participant avec codetgh inbox.",
   "End-to-end encrypted. Read it in a participant's terminal with codetgh inbox.":
     "Chiffré de bout en bout. Lis-le dans le terminal d'un participant avec codetgh inbox.",
-  "The console can't write into this thread: reply from your terminal, where codetgh encrypts for every participant.":
-    "La console ne peut pas écrire dans ce fil\u00a0: réponds depuis ton terminal, où codetgh chiffre pour chaque participant.",
+  "The console can't write into this thread.": "La console ne peut pas écrire dans ce fil.",
+  "Reply from your terminal: codetgh encrypts the reply for every participant.":
+    "Réponds depuis ton terminal\u00a0: codetgh chiffre la réponse pour chaque participant.",
   "Older messages": "Messages précédents",
   "Latest messages": "Derniers messages",
   "No messages here yet.": "Aucun message ici pour l'instant.",

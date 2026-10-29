@@ -273,6 +273,17 @@ describe("a thread", () => {
     expect(page).toContain("Read it in a participant&#39;s terminal with codetgh inbox.");
     expect(page).not.toContain("ciphertext");
     expect(page).not.toContain('id="reply-body"');
+    // Said once under the title and once in the message, not a third time by the note on replies.
+    expect(page.split("End-to-end encrypted")).toHaveLength(3);
+    expect(page).toContain('<p class="banner-title">The console can&#39;t write into this thread.</p>');
+  });
+
+  it("says Nobody yet for the people of a thread with no message to show", async () => {
+    await hub.db
+      .insert(thread)
+      .values({ id: "thr_quiet", teamId: team.teamId, kind: "team", subject: "Nothing yet", createdByUser: team.lea.userId });
+    const page = await html("/console/threads/thr_quiet");
+    expect(page).toMatch(/<dt>People<\/dt><dd><span class="meta">Nobody yet<\/span><\/dd>/);
   });
 
   it("puts the way to older messages above the conversation, and the way back to the latest below it", async () => {
