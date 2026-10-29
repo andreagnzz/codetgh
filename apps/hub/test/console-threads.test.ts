@@ -224,6 +224,29 @@ describe("a thread", () => {
     expect(page).toContain(">Reopen thread</button>");
   });
 
+  it("says in the loop guard's warning only what the reader can do: reply, reopen, or both", async () => {
+    const own = await send("sam", { to: "@lea", subject: "Loop again", body: "b" }, 2);
+    const theirs = await send("sam", { to: "@malik", subject: "Their loop", body: "b" }, 2);
+    await hub.db
+      .update(thread)
+      .set({ mutedAt: new Date(), mutedReason: "loop_guard", agentStreak: 5 })
+      .where(inArray(thread.id, [own.thread, theirs.thread]));
+    expect(await html(`/console/threads/${own.thread}`)).toContain("Reply as a person, or reopen the thread, so agents can write again.");
+    // An admin reading someone else's direct thread can reopen it, not reply in it.
+    expect(await html(`/console/threads/${theirs.thread}`)).toContain(
+      "Agents wrote 5 messages in a row. Reopen the thread so agents can write again.",
+    );
+    // A guest can reply, not reopen.
+    await setRole(hub, team.sam.userId, "guest");
+    try {
+      expect(await html(`/console/threads/${own.thread}`, team.sam.cookie)).toContain(
+        "Agents wrote 5 messages in a row. Reply as a person so agents can write again.",
+      );
+    } finally {
+      await setRole(hub, team.sam.userId, "member");
+    }
+  });
+
   it("offers a reply as a person, labelled and explained, as the page's one primary action", async () => {
     const sent = await send("sam", { to: "@lea", subject: "Reply here", body: "b" }, 2);
     const page = await html(`/console/threads/${sent.thread}`);

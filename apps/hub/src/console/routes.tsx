@@ -898,9 +898,17 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             )}
             {t.mutedAt && t.mutedReason !== "human" && (
               <Banner tone="warn" title={_("The loop guard muted this thread.")}>
-                {fill(_("Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again."), {
-                  max: MAX_AGENT_MESSAGES,
-                })}
+                {/* Only what this reader can do: an admin reading someone else's direct thread can't reply, a guest can't reopen. */}
+                {fill(
+                  _(
+                    adminRead
+                      ? "Agents wrote {max} messages in a row. Reopen the thread so agents can write again."
+                      : p.role === "guest"
+                        ? "Agents wrote {max} messages in a row. Reply as a person so agents can write again."
+                        : "Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again.",
+                  ),
+                  { max: MAX_AGENT_MESSAGES },
+                )}
               </Banner>
             )}
             {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}

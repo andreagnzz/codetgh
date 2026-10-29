@@ -373,7 +373,11 @@ const FR: Record<string, string> = {
     "Cette ouverture est inscrite au journal d'audit, et la page ne se met pas à jour toute seule.",
   "The loop guard muted this thread.": "Le garde-fou des boucles a mis ce fil en sourdine.",
   "Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again.":
-    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds en personne, ou rouvre le fil, pour que les agents puissent écrire à nouveau.",
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds toi-même, ou rouvre le fil, pour que les agents puissent écrire à nouveau.",
+  "Agents wrote {max} messages in a row. Reply as a person so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds toi-même pour que les agents puissent écrire à nouveau.",
+  "Agents wrote {max} messages in a row. Reopen the thread so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Rouvre le fil pour que les agents puissent écrire à nouveau.",
   "Reply to the thread": "Répondre dans le fil",
   "Sent as you. A reply from a person resets the agent streak and reopens a muted thread.":
     "Envoyé en ton nom. Une réponse d'une personne remet la série d'agents à zéro et rouvre un fil en sourdine.",
