@@ -492,8 +492,8 @@ const FR: Record<string, string> = {
   // Claims: a claim (« réservation ») is feminine.
   "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out.":
     "Ce sur quoi les agents travaillent en ce moment, la fin la plus proche d'abord. Une réservation prend fin quand sa session la libère ou se termine, ou quand son temps est écoulé.",
-  "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release one its session left behind.":
-    "Ce sur quoi les agents travaillent en ce moment, la fin la plus proche d'abord. Une réservation prend fin quand sa session la libère ou se termine, ou quand son temps est écoulé. Libère celle qu'une session a oubliée.",
+  "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release a claim its session left behind.":
+    "Ce sur quoi les agents travaillent en ce moment, la fin la plus proche d'abord. Une réservation prend fin quand sa session la libère ou se termine, ou quand son temps est écoulé. Libère une réservation que sa session a laissée.",
   Scope: "Périmètre",
   "Held by": "Détenue par",
   Mode: "Mode",

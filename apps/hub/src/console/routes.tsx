@@ -1814,7 +1814,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <p class="lede rec-lede">
             {_(
               isAdmin(p)
-                ? "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release one its session left behind."
+                ? "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release a claim its session left behind."
                 : "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out.",
             )}
           </p>
