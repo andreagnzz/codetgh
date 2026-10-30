@@ -6,7 +6,7 @@ import type { Db } from "../db/index.js";
 import { membership, project, task, team, thread } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
-import { requireAdmin } from "./admin.js";
+import { byUser, requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { bridgeAuthor, projectThread } from "./bridges.js";
 import { type MessagingDeps, sendMessage } from "./messages.js";
@@ -25,14 +25,7 @@ export async function createGithubHook(db: Db, p: Principal, hubSecret: string) 
       .update(team)
       .set({ settings: sql`${team.settings} || ${JSON.stringify({ github_hook: hook })}::jsonb` })
       .where(eq(team.id, p.teamId));
-    await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
-      action: "github.webhook_created",
-      subjectId: p.teamId,
-    });
+    await appendAudit(tx, { ...byUser(p), action: "github.webhook_created", subjectId: p.teamId });
   });
   return { id: hook.id, secret: githubSecret(hubSecret, p.teamId, hook.nonce) };
 }

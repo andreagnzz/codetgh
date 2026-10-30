@@ -7,7 +7,7 @@ import { claim, membership, user } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import { newId } from "../ids.js";
 import type { Principal } from "../principal.js";
-import { requireMember } from "./admin.js";
+import { byUser, requireMember } from "./admin.js";
 import type { Agent } from "./agents.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps, sendMessage } from "./messages.js";
@@ -503,14 +503,7 @@ export async function adminReleaseClaim(db: Db, p: Principal, claimId: string) {
       .where(and(eq(claim.id, claimId), eq(claim.teamId, p.teamId), isNull(claim.releasedAt)))
       .returning({ id: claim.id });
     if (!row) throw new HubError("E_NOT_FOUND", "no active claim with this id");
-    await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
-      action: "claim.released",
-      subjectId: row.id,
-    });
+    await appendAudit(tx, { ...byUser(p), action: "claim.released", subjectId: row.id });
   });
 }
 
