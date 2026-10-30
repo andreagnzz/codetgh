@@ -136,14 +136,14 @@ The hub keeps the last audit checkpoint it signed for each team (team id, seq, h
 
 What the log and the console say:
 - `audit witness started now: trust on first use of the chain in the database` (warning, once per team): the file was missing, on the first start with the volume or on a new volume. The hub checked the chain as usual and recorded its head; it trusts what the database held at that moment.
-- Alert **audit log not signed: audit chain does not extend the last signed checkpoint (seq N)** (`audit_tamper`, also logged with the team id): the event at seq N is gone or changed, or the chain breaks after it. The database was written outside the hub, or restored from a dump older than seq N. The hub keeps serving but signs no checkpoint for that team, so **Verify chain** and `codetgh audit verify` show the problem.
+- Alert **audit log not signed: audit chain does not extend the last signed checkpoint (seq N)** (`audit_tamper`, also logged with the team id): the event at seq N is gone or changed, or the chain breaks after it. The database was written outside the hub, or restored from a dump older than seq N. The hub keeps serving but signs no checkpoint for that team. **Audit log › Verify chain** says "No checkpoint was signed", with the reason and a pointer here, and **Export JSON** answers 409 with the same text instead of a file, since the chain left in the database can still pass `codetgh audit verify`. The timer logs `audit log not signed` with the team id and the reason every 10 minutes while it lasts.
 - **signed checkpoint N is gone**: checkpoint rows were deleted from the database.
 - **the audit witness file cannot be read**: the file is damaged or unreadable; the hub signs nothing for that team until it is fixed.
 - `CODETGH_STATE_DIR is unset or not writable` at start: no volume (an older `compose.yaml`) or a volume the hub cannot write. The witness then lives in memory and a restart forgets it, as before this feature.
 
 To recover:
 1. Find out why. After a restore you ran on purpose, this is expected (the `rm` in [Restore](#restore) avoids it). Otherwise treat it as an incident: `codetgh backup` to keep the database as it is now, then compare it with an older dump or a saved export (`codetgh audit verify <file>`) to see what changed.
-2. Once the database holds a chain you trust (restored from a good dump, or checked and accepted), delete that team's witness file. The team id is in the alert's log line and in the export's file name:
+2. Once the database holds a chain you trust (restored from a good dump, or checked and accepted), delete that team's witness file. The team id is the `team_id` of the `audit log not signed` log line, and in the file name of any earlier export:
    ```
    docker compose -f deploy/compose.yaml --env-file deploy/.env exec hub ls /var/lib/codetgh
    docker compose -f deploy/compose.yaml --env-file deploy/.env exec hub rm /var/lib/codetgh/audit-<team id>.json
