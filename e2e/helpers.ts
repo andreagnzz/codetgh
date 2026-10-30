@@ -85,6 +85,12 @@ export const hubRest = (url: string, token: string, method: string, path: string
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+// The section of the page under a heading: from its <h2> to the end of its <section>.
+export const section = (html: string, id: string) => {
+  const start = html.indexOf(`id="p-${id}"`);
+  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
+};
+
 export async function csrfToken(url: string, cookie: string) {
   const html = await (await fetch(`${url}/console`, { headers: { cookie } })).text();
   const m = html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;|"X-CSRF-Token":"([^"]+)"/);

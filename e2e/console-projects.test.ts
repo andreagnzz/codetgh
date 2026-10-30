@@ -3,7 +3,7 @@ import { and, eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, auditEvent, membership, project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, section } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -57,12 +57,6 @@ describe("console: sessions by project", () => {
     expect(await page(team.sam.cookie, "fr")).toContain("Projets");
   });
 });
-
-// The section of the page under a heading: from its <h2> to the end of its <section>.
-const section = (html: string, id: string) => {
-  const start = html.indexOf(`id="p-${id}"`);
-  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
-};
 
 describe("console: sessions outside a project", () => {
   it("lists sessions started outside a linked repository, without the CLI's REST agent", async () => {

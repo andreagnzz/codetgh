@@ -3,6 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { membership, message, project, receipt, task, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
 import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { section } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -40,10 +41,6 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const get = async (path: string, cookie = team.lea.cookie) => (await fetch(`${hub.url}${path}`, { headers: { cookie } })).text();
-const section = (html: string, id: string) => {
-  const start = html.indexOf(`id="p-${id}"`);
-  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
-};
 
 describe("console: one project at a time", () => {
   it("filters threads, tasks and sessions with ?project=", async () => {
