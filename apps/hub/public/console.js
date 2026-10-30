@@ -104,6 +104,9 @@
     // Refused, the dialog stays open and can be confirmed again.
     if (pending?.elt === e.detail.elt) pending.sent = false;
     if (e.detail.successful && liveRegion(e.detail.elt)) loadedAt = new Date();
+    // A form folded behind its button (add an external agent, invite, create a token) shows its result under it, then
+    // empties for the next one; refused, it keeps what was typed.
+    if (e.detail.successful && e.detail.elt.matches?.("details.panel form[hx-target]")) e.detail.elt.reset();
   });
   // The hub answers a refused action with its reason (4xx); anything else gets a generic next step.
   document.body.addEventListener("htmx:responseError", (e) => {
