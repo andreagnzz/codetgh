@@ -8,7 +8,7 @@ import {
   ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/index.js";
 import { a2aTask, agent, membership, message, receipt, user } from "../db/schema.js";
@@ -212,10 +212,16 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
         history: [...task.history, ...answers.map((r) => agentMessage(task, r.message.id, envelope({ seq: 0, ...r })))],
       };
     },
-    async list(_params, ctx) {
+    async list(params, ctx) {
       const { agent: a } = caller(ctx);
       // shortcut: the 50 latest tasks without paging; add a cursor if external agents keep many open tasks.
-      const rows = await db.select().from(a2aTask).where(eq(a2aTask.agentId, a.id)).orderBy(desc(a2aTask.createdAt)).limit(50);
+      // A context id (empty when not given) keeps the tasks of that conversation.
+      const rows = await db
+        .select()
+        .from(a2aTask)
+        .where(and(eq(a2aTask.agentId, a.id), params.contextId ? sql`${a2aTask.task}->>'contextId' = ${params.contextId}` : undefined))
+        .orderBy(desc(a2aTask.createdAt))
+        .limit(50);
       const tasks = await Promise.all(rows.map(async (r) => (await store.load(r.id, ctx)) ?? r.task));
       return { tasks, nextPageToken: "", pageSize: tasks.length, totalSize: tasks.length };
     },
