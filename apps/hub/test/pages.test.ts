@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { task } from "../src/db/schema.js";
 import { resumeKillSwitch, setKillSwitch } from "../src/domain/admin.js";
 import { createInvitation } from "../src/domain/teams.js";
 import { principalForToken } from "../src/principal.js";
@@ -116,12 +117,26 @@ describe("pages", () => {
     expect(html).toContain("Retour à la vue d&#39;ensemble");
   });
 
+  it("shows a task's title as written, never looked up in the translations", async () => {
+    const [created] = await hub.db
+      .insert(task)
+      .values({ id: "tsk_01NAMEDTITLE000000000000000", teamId: team.teamId, title: "Overview", createdByUser: team.lea.userId })
+      .returning();
+    const html = await (await get(`/console/tasks/${created?.id}`, { cookie: team.lea.cookie, "accept-language": "fr" })).text();
+    expect(html).toContain("<h1>Overview</h1>");
+    expect(html).toContain("<title>Overview · CodeTgh</title>");
+  });
+
   it("keeps the bare reason for an htmx request, which console.js shows under the form", async () => {
     const res = await get("/console/threads/thr_unknown", { cookie: team.lea.cookie, "HX-Request": "true" });
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).not.toContain("<!doctype html>");
     expect(html).toContain("thread not found");
+    // In the page's language, as the error page gives it.
+    const fr = await get("/console/members", { cookie: team.sam.cookie, "HX-Request": "true", "accept-language": "fr" });
+    expect(fr.status).toBe(403);
+    expect(await fr.text()).toContain("réservé aux admins");
   });
 
   it("serves the component catalogue only on a hub the test harness starts, never from the hub's own configuration", async () => {
@@ -308,7 +323,8 @@ describe("shell", () => {
     try {
       const admin = await html(team.lea.cookie, "/console/threads");
       expect(admin).toMatch(/<div class="banner" data-tone="danger" role="alert">.*Agent traffic stopped/s);
-      expect(admin).toContain("Agents can&#39;t send messages until an admin resumes agent traffic.");
+      // The same words as the confirmation that stopped it: claims are refused too.
+      expect(admin).toContain("Agents can&#39;t send messages or claim files until an admin resumes agent traffic.");
       // Straight to the form, which sits below the line and the presence on a phone.
       expect(admin).toContain('<a href="/console#agent-traffic">Resume agent traffic</a>');
       expect(await html(team.lea.cookie)).toContain('id="agent-traffic"');

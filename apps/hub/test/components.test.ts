@@ -12,6 +12,7 @@ import {
   Pager,
   Panel,
   RowMenu,
+  Stamp,
   Table,
   Tabs,
   Timeline,
@@ -92,6 +93,10 @@ describe("components", () => {
     expect(pager).toContain('<nav class="pager" aria-label="Pages">');
     expect(pager).toContain("50 affichés sur 128");
     expect(pager).toContain("Plus récents");
+    // A list that can't step back one page links to its newest rows, and says so.
+    const back = await render(Pager, { lang: "en", newest: "/a", older: "/b" });
+    expect(back).toMatch(/<a class="button" href="\/a">.*Newest<\/a>/);
+    expect(back).not.toContain("Newer");
     expect(pager).toContain("Plus anciens");
     const tabs = await render(Tabs, {
       label: "Memory",
@@ -140,6 +145,19 @@ describe("components", () => {
     // Several blocks on one page: each Copy says what it copies.
     const named = await render(CodeBlock, { code: "ctgh_x", lang: "en", copyLabel: "Copy the token" });
     expect(named).toContain('<button type="button" class="copy" aria-label="Copy the token" data-copy');
+    // In a region a live refresh replaces, Copy keeps an id: htmx gives the keyboard back to it.
+    const kept = await render(CodeBlock, { code: "codetgh setup", lang: "en", command: true, id: "copy-setup" });
+    expect(kept).toContain('<button type="button" id="copy-setup" class="copy" data-copy');
+  });
+
+  it("stamp: the clock alone for a time from today, the day and month before it on another day", async () => {
+    const today = new Date();
+    today.setHours(9, 34, 0, 0);
+    expect(await render(Stamp, { at: today, lang: "en" })).toBe(`<time datetime="${today.toISOString()}" data-local="true">09:34</time>`);
+    const earlier = new Date(today);
+    earlier.setDate(today.getDate() - 3);
+    for (const lang of ["en", "fr"])
+      expect(await render(Stamp, { at: earlier, lang })).toMatch(/data-local="true">\d{1,2} \S+, 09:34<\/time>$/);
   });
 
   it("empty state, chip, panel, collapsible, row menu", async () => {

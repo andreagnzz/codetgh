@@ -9,27 +9,34 @@
   const OFFLINE = fr
     ? "Le hub ne répond pas. Vérifie ta connexion, puis réessaie."
     : "The hub does not answer. Check your connection, then try again.";
+  const STALE = fr ? "Impossible d'actualiser. Les données affichées datent de {time}." : "Couldn't refresh. Showing data from {time}.";
+  const CLOCK = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 
-  // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation.
+  // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation. In a
+  // form, the button that sent it may ask instead of the form, with its own words.
   const dialog = document.getElementById("confirm");
   const go = dialog?.querySelector("button[value='confirm']");
   const dialogError = document.getElementById("confirm-error");
   let pending = null;
-  // A form asks through its submit button, which carries the level and takes the focus back.
-  const triggerOf = (elt) => (elt.matches("form") ? elt.querySelector("[type=submit]") : elt);
+  // A form asks through the button that sent it (its first one otherwise), which carries the level and takes the focus back.
+  const triggerOf = (elt, by) => (elt.matches("form") ? (by ?? elt.querySelector("[type=submit]")) : elt);
   document.body.addEventListener("htmx:confirm", (e) => {
     const elt = e.detail.elt;
-    if (!dialog || !go || !elt.dataset.confirm) return;
+    const by = elt.matches("form") ? e.detail.triggeringEvent?.submitter : null;
+    const ask = elt.dataset.confirm ? elt : by?.dataset.confirm ? by : null;
+    if (!dialog || !go || !ask) return;
     e.preventDefault();
-    pending = { elt, issue: e.detail.issueRequest };
-    document.getElementById("confirm-title").textContent = elt.dataset.confirm;
-    document.getElementById("confirm-body").textContent = elt.dataset.confirmBody ?? "";
+    // htmx forgets which button sent the form once the dialog takes the focus: the confirmed request carries its value.
+    if (by?.name) e.detail.etc.values = { ...e.detail.etc.values, [by.name]: by.value };
+    pending = { elt, by, issue: e.detail.issueRequest };
+    document.getElementById("confirm-title").textContent = ask.dataset.confirm;
+    document.getElementById("confirm-body").textContent = ask.dataset.confirmBody ?? "";
     if (dialogError) {
       dialogError.textContent = "";
       dialogError.className = "";
     }
-    go.textContent = elt.dataset.confirmAction ?? elt.textContent;
-    go.className = triggerOf(elt)?.classList.contains("danger") ? "danger-fill" : "primary";
+    go.textContent = ask.dataset.confirmAction ?? ask.textContent;
+    go.className = triggerOf(elt, by)?.classList.contains("danger") ? "danger-fill" : "primary";
     dialog.showModal();
   });
   dialog?.addEventListener("click", (e) => {
@@ -45,11 +52,13 @@
   document.body.addEventListener("htmx:beforeSwap", (e) => {
     if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
-  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger.
+  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger, or to the button of the row menu that
+  // held it, which closed when the dialog took the focus.
   dialog?.addEventListener("close", () => {
-    const back = pending && triggerOf(pending.elt);
+    const back = pending && triggerOf(pending.elt, pending.by);
     pending = null;
-    if (back?.isConnected) back.focus();
+    if (!back?.isConnected) return;
+    (back.closest("details:not([open])")?.querySelector("summary") ?? back).focus();
   });
 
   const hostOf = (elt) => elt.closest("form") ?? elt;
@@ -85,18 +94,24 @@
     errorAfter(hostOf(e.detail.elt))?.remove();
     busy(e, true);
   });
+  // A region the stream refreshes keeps what it shows when a refresh fails: the words say so, with the reader's clock time of
+  // its last load.
+  const liveRegion = (elt) => elt.matches?.("[hx-trigger*='sse:']");
+  let loadedAt = new Date();
+  const stale = () => STALE.replace("{time}", new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", CLOCK).format(loadedAt));
   document.body.addEventListener("htmx:afterRequest", (e) => {
     busy(e, false);
     // Refused, the dialog stays open and can be confirmed again.
     if (pending?.elt === e.detail.elt) pending.sent = false;
+    if (e.detail.successful && liveRegion(e.detail.elt)) loadedAt = new Date();
   });
   // The hub answers a refused action with its reason (4xx); anything else gets a generic next step.
   document.body.addEventListener("htmx:responseError", (e) => {
     const { status, responseText } = e.detail.xhr;
     const reason = new DOMParser().parseFromString(responseText, "text/html").body.textContent?.trim();
-    show(e.detail.elt, status < 500 && reason ? reason : GENERIC);
+    show(e.detail.elt, liveRegion(e.detail.elt) ? stale() : status < 500 && reason ? reason : GENERIC);
   });
-  document.body.addEventListener("htmx:sendError", (e) => show(e.detail.elt, OFFLINE));
+  document.body.addEventListener("htmx:sendError", (e) => show(e.detail.elt, liveRegion(e.detail.elt) ? stale() : OFFLINE));
 
   // Removing what holds the focus (a toast, a dismissed banner) gives it back to where it came from, or to the page.
   const cameFrom = new WeakMap();
@@ -218,11 +233,24 @@
   mark(false);
   document.body.addEventListener("htmx:afterSettle", () => mark(true));
 
-  // Absolute times: the hub writes them in its own time zone, the reader gets them in theirs, in the same format.
-  const STAMP = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  // A live refresh opens again the disclosures that were open in what it replaces (those with an id).
+  let opened = [];
+  document.body.addEventListener("htmx:beforeSwap", (e) => {
+    opened = [...(e.detail.target?.querySelectorAll("details[open][id]") ?? [])].map((d) => d.id);
+  });
+  document.body.addEventListener("htmx:afterSwap", () => {
+    for (const id of opened) document.getElementById(id)?.setAttribute("open", "");
+  });
+
+  // Absolute times: the hub writes them in its own time zone, the reader gets them in theirs, in the same format: the clock
+  // alone for a time from today, the day and month before it on another day.
   const clocks = () => {
-    for (const t of document.querySelectorAll("time[data-local]"))
-      t.textContent = new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", STAMP).format(new Date(t.dateTime));
+    const today = new Date().toDateString();
+    for (const t of document.querySelectorAll("time[data-local]")) {
+      const d = new Date(t.dateTime);
+      const format = d.toDateString() === today ? CLOCK : { day: "numeric", month: "short", ...CLOCK };
+      t.textContent = new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", format).format(d);
+    }
   };
   clocks();
   document.body.addEventListener("htmx:afterSettle", clocks);

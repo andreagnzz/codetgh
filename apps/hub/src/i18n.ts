@@ -275,8 +275,6 @@ const FR: Record<string, string> = {
   "Connecting…": "Connexion…",
   "Reconnecting…": "Reconnexion…",
   "Agent traffic stopped": "Trafic des agents coupé",
-  "Agents can't send messages until an admin resumes agent traffic.":
-    "Les agents ne peuvent plus envoyer de messages tant qu'un admin n'a pas rétabli le trafic.",
   "Resume agent traffic": "Rétablir le trafic des agents",
   Cancel: "Annuler",
   Copy: "Copier",
@@ -285,6 +283,7 @@ const FR: Record<string, string> = {
   "Press ⌘C to copy": "Appuie sur ⌘C pour copier",
   Pages: "Pages",
   Newer: "Plus récents",
+  Newest: "Les plus récents",
   optional: "facultatif",
   "Loading…": "Chargement…",
   "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
