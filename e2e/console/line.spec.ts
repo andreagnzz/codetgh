@@ -47,7 +47,7 @@ test("a refused action shows its reason under the form; the skip link comes firs
   await page.goto(`${hub.url}/console/me`);
   await page.getByLabel("Type erase to confirm").fill("nope");
   await page.getByRole("button", { name: "Erase my data" }).click();
-  await expect(page.locator(".field-error")).toHaveText("type erase to confirm");
+  await expect(page.locator(".field-error")).toHaveText("Nothing was erased. Type erase in the box to confirm.");
   await expect(page.locator(".field-error")).toHaveAttribute("role", "alert");
 });
 

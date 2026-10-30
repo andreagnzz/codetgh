@@ -19,7 +19,7 @@ beforeAll(async () => {
   // The admin creates the team's webhook in the console and pastes the URL and secret into their GitHub App.
   const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
   hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-  SECRET = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
+  SECRET = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
   // Léa works in the repository: the hook registered its project under the origin's fingerprint.
   await startSession(hub.url, team.lea.token, "lea-gh", { repo: repoFingerprint("git@github.com:Acme/WebApp.git") });
 });
