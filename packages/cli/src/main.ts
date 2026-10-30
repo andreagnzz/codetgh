@@ -1453,6 +1453,12 @@ async function pluginOffAtUserScope() {
     inGoalState,
   );
 }
+// The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
+const configurePlugin = (values: Record<string, string>) =>
+  exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], { timeout: 30_000, input: JSON.stringify(values) }).then(
+    () => true,
+    () => false,
+  );
 const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
 const REWAKE_OFF = "push mode hooks: an admin can allow rewake in the console Settings, so an idle session wakes up for a message";
 
@@ -1643,16 +1649,7 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
         }
       })();
     if (ok && !autoUpdate) io.out("turn on plugin updates in Claude Code: /plugin → Marketplaces → codetgh → Enable auto-update");
-    // The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
-    const configured =
-      ok &&
-      (await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
-        timeout: 30_000,
-        input: JSON.stringify(oneCommand ? { codetgh_token: token } : options),
-      }).then(
-        () => true,
-        () => false,
-      ));
+    const configured = ok && (await configurePlugin(oneCommand ? { codetgh_token: token } : options));
     if (configured)
       io.out(
         `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): launch Claude with codetgh start to use it`,
@@ -2688,13 +2685,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       // Rewake as soon as the team allows it; an unreachable hub leaves the push mode as it is.
       const who = token ? await whoami(url, token).catch(() => null) : null;
       if (who?.push_allowed_modes?.includes("rewake")) {
-        const set = await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
-          timeout: 30_000,
-          input: JSON.stringify({ push_mode: "rewake" }),
-        }).then(
-          () => true,
-          () => false,
-        );
+        const set = await configurePlugin({ push_mode: "rewake" });
         io.out(set ? "push mode rewake: an idle session wakes up for a message" : "set push mode rewake in Claude Code: /config");
       } else if (who) io.out(REWAKE_OFF);
       io.out("launch Claude with codetgh start to load the new plugin");
