@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
@@ -22,9 +22,7 @@ const start = async (env: Record<string, string>, session: string, source = "sta
 const row = async (session: string) => (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0];
 // What a teammate (Léa) reads of Sam's session in team_overview.
 const sessionsOfSam = async () => {
-  const client = await mcpClient(hub.url, team.lea.token);
-  const ov = JSON.parse((await call(client, "team_overview", { handle: "@sam" })).text);
-  await client.close();
+  const ov = JSON.parse((await callOnce(hub.url, team.lea.token, "team_overview", { handle: "@sam" })).text);
   return ov.people[0]?.sessions as Array<{ agent: string; activity: Record<string, unknown> }>;
 };
 const activityOf = async (session: string) => (await sessionsOfSam()).find((s) => s.agent === (id[session] ?? ""))?.activity;

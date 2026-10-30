@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, claim, task } from "../apps/hub/src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -16,9 +16,7 @@ afterAll(() => hub.stop());
 describe("console claims", () => {
   it("lists active claims to members and lets only an admin release one", async () => {
     await startSession(hub.url, team.sam.token, "sam-c", { repo: ACME_REPO });
-    const sam = await mcpClient(hub.url, team.sam.token);
-    await call(sam, "claim", { scope: ["api/console.ts"], reason: "refactor" });
-    await sam.close();
+    await callOnce(hub.url, team.sam.token, "claim", { scope: ["api/console.ts"], reason: "refactor" });
     const [c] = await hub.db.select().from(claim).where(eq(claim.scope, "api/console.ts"));
     if (!c) throw new Error("no claim");
 

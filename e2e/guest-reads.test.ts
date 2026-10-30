@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
-import { ACME_REPO, call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, callOnce, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
@@ -50,9 +50,10 @@ it("keeps tasks, memory, claims and the team view from a guest's agent", async (
   const own = await startSession(hub.url, team.malik.token, "malik-g3");
   expect(own.agent_id).toMatch(/^agt_/);
   expect(own.context).not.toMatch(/src\/billing|Billing moves/);
-  const lea = await mcpClient(hub.url, team.lea.token);
-  expect((await call(lea, "send_message", { to: `agent:${own.agent_id}`, kind: "note", body: "for your session" })).isError).toBe(false);
-  await lea.close();
+  expect(
+    (await callOnce(hub.url, team.lea.token, "send_message", { to: `agent:${own.agent_id}`, kind: "note", body: "for your session" }))
+      .isError,
+  ).toBe(false);
   const read = (await call(malik, "inbox_read", { agent: own.agent_id })).text;
   expect(read).toContain("for your session");
   expect(read).not.toContain("team only plan");
@@ -79,9 +80,7 @@ it("keeps the same pages and thread actions from a guest in the console", async 
 });
 
 it("shows a guest only their own agents on the dashboard", async () => {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  expect((await call(lea, "status_set", { text: "rotating billing keys quietly" })).isError).toBe(false);
-  await lea.close();
+  expect((await callOnce(hub.url, team.lea.token, "status_set", { text: "rotating billing keys quietly" })).isError).toBe(false);
   await hubRest(hub.url, team.sam.token, "POST", "/v1/agents/session", {
     session_id: "sam-g",
     repo_fingerprint: "b".repeat(64),
@@ -105,11 +104,17 @@ it("lists a guest's threads without project headings, which would name the team'
     repo_name: "acme/ledger-secret",
   });
   const { agent_id } = (await session.json()) as { agent_id: string };
-  const sam = await mcpClient(hub.url, team.sam.token);
   const sent = JSON.parse(
-    (await call(sam, "send_message", { agent: agent_id, to: "@malik", kind: "note", body: "from the ledger", allow_offline: true })).text,
+    (
+      await callOnce(hub.url, team.sam.token, "send_message", {
+        agent: agent_id,
+        to: "@malik",
+        kind: "note",
+        body: "from the ledger",
+        allow_offline: true,
+      })
+    ).text,
   );
-  await sam.close();
   const html = await (await fetch(`${hub.url}/console/threads`, { headers: { cookie: team.malik.cookie } })).text();
   expect(html).toContain(sent.thread);
   expect(html).not.toContain("acme/ledger-secret");

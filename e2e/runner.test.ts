@@ -24,7 +24,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program, runnerOwner, runnerTiming, stopRunner } from "../packages/cli/src/main.js";
 import { alive, consolePost, fakeCommand, hookEnv, hubRest, runHook } from "./helpers.js";
 
@@ -329,9 +329,13 @@ afterAll(async () => {
 
 // Created by Léa's agent (the owner), as /codetgh:split --run would.
 async function create(title: string, args: Record<string, unknown> = {}) {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const r = await call(lea, "task_create", { agent: agentId, title, body: `Done when ${title} works.`, runner: true, ...args });
-  await lea.close();
+  const r = await callOnce(hub.url, team.lea.token, "task_create", {
+    agent: agentId,
+    title,
+    body: `Done when ${title} works.`,
+    runner: true,
+    ...args,
+  });
   if (r.isError) throw new Error(r.text);
   return (JSON.parse(r.text) as { id: string }).id;
 }

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFile
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, callOnce, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -102,8 +102,6 @@ it("marks the agent offline at session end", async () => {
   const { agent_id } = await startSession(hub.url, team.sam.token, session, { repo: ACME_REPO });
   const r = await runHook("session-end", { session_id: session, reason: "prompt_input_exit" }, hookEnv(hub.url, team.sam.token));
   expect(r.code).toBe(0);
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const overview = (await call(lea, "team_overview")).json();
+  const overview = (await callOnce(hub.url, team.lea.token, "team_overview")).json();
   expect(overview.people.flatMap((p: { sessions: { agent: string }[] }) => p.sessions.map((s) => s.agent))).not.toContain(agent_id);
-  await lea.close();
 });

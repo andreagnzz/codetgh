@@ -1,7 +1,7 @@
 import { and, asc, eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, auditEvent } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { hubRest } from "./helpers.js";
 
 let hub: Hub;
@@ -27,9 +27,7 @@ it("audits an ack with the channel it came through", async () => {
     .select({ id: agent.id })
     .from(agent)
     .where(and(eq(agent.userId, team.lea.userId), like(agent.sessionId, "cli-%")));
-  const lea = await mcpClient(hub.url, team.lea.token);
-  expect((await call(lea, "ack", { agent: rest?.id, message_ids: [viaMcp] })).json()).toEqual({ acked: 1 });
-  await lea.close();
+  expect((await callOnce(hub.url, team.lea.token, "ack", { agent: rest?.id, message_ids: [viaMcp] })).json()).toEqual({ acked: 1 });
 
   const acks = await hub.db
     .select({ via: auditEvent.via })

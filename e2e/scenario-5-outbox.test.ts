@@ -7,7 +7,7 @@ import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { message } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { daemon, program } from "../packages/cli/src/main.js";
 import { hubRest } from "./helpers.js";
 
@@ -114,11 +114,16 @@ describe("stream", () => {
   it("pushes ids of new messages and resumes from Last-Event-ID without text", async () => {
     const live = sse(team.lea.token, null, (e) => e.length >= 1);
     await new Promise((r) => setTimeout(r, 200));
-    const sam = await mcpClient(hub.url, team.sam.token);
     const sent = JSON.parse(
-      (await call(sam, "send_message", { to: "@lea", kind: "note", body: "streamed secret-free text", allow_offline: true })).text,
+      (
+        await callOnce(hub.url, team.sam.token, "send_message", {
+          to: "@lea",
+          kind: "note",
+          body: "streamed secret-free text",
+          allow_offline: true,
+        })
+      ).text,
     );
-    await sam.close();
     const [first] = await live;
     expect(JSON.parse(first?.data ?? "{}")).toMatchObject({ message_id: sent.id, kind: "note" });
     expect(first?.data).not.toContain("streamed");
@@ -221,9 +226,9 @@ describe("outbox (scenario 5, phase 2)", () => {
     for (let i = 0; i < 50 && !(await bodies("flushed by the daemon")); i++) await new Promise((r) => setTimeout(r, 100));
     expect(await bodies("flushed by the daemon")).toBe(1);
 
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body: "ping", allow_offline: true })).text);
-    await lea.close();
+    const sent = JSON.parse(
+      (await callOnce(hub.url, team.lea.token, "send_message", { to: "@sam", kind: "question", body: "ping", allow_offline: true })).text,
+    );
     for (let i = 0; i < 50 && !lines.some((l) => l.includes(sent.id)); i++) await new Promise((r) => setTimeout(r, 100));
     ctl.abort();
     await running;

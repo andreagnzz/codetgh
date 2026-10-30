@@ -283,9 +283,7 @@ describe("only a member's own launch turns a session into a delegate", () => {
     expect(sam?.id).toBe(samId);
     expect(sam?.acceptRequestsFrom ?? null).toBeNull();
     // And MCP has no field that sets the mode: an extra argument is dropped.
-    const client = await mcpClient(hub.url, team.lea.token);
-    await call(client, "status_set", { agent: ids.lea, text: "working", accept_requests_from: ["@malik"] });
-    await client.close();
+    await callOnce(hub.url, team.lea.token, "status_set", { agent: ids.lea, text: "working", accept_requests_from: ["@malik"] });
     expect(
       (
         await hub.db

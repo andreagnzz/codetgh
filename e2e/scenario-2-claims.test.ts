@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, auditEvent, claim } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, callOnce, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -110,9 +110,7 @@ it("checks a file whose name starts with two dots, and leaves a path outside the
   await runHook("session-start", { session_id: "lea-dots", source: "startup", cwd: repo }, lea);
   await runHook("session-start", { session_id: "sam-dots", source: "startup", cwd: repo }, sam);
   const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-dots"));
-  const leaMcp = await mcpClient(hub.url, team.lea.token);
-  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["..cache/x.txt"], mode: "exclusive", ttl_s: 1800 });
-  await leaMcp.close();
+  await callOnce(hub.url, team.lea.token, "claim", { agent: leaAgent?.id, scope: ["..cache/x.txt"], mode: "exclusive", ttl_s: 1800 });
 
   const edit = (file_path: string) => ({
     session_id: "sam-dots",
@@ -129,9 +127,7 @@ it("checks edits against the session's repository, even when the first edit is i
   const lea = hookEnv(hub.url, team.lea.token);
   await runHook("session-start", { session_id: "lea-root", source: "startup", cwd: repo }, lea);
   const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-root"));
-  const leaMcp = await mcpClient(hub.url, team.lea.token);
-  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["src/index.ts"], mode: "exclusive", ttl_s: 1800 });
-  await leaMcp.close();
+  await callOnce(hub.url, team.lea.token, "claim", { agent: leaAgent?.id, scope: ["src/index.ts"], mode: "exclusive", ttl_s: 1800 });
   // A submodule or a folder added with /add-dir: another git repository, with a file at the same relative path.
   const other = gitRepo("git@github.com:acme/vendored-lib.git");
   const edit = (session_id: string, file_path: string) => ({
@@ -178,9 +174,12 @@ it("reads renames in the shell report, and reports a claimed file moved away", a
   const lea = hookEnv(hub.url, team.lea.token);
   await runHook("session-start", { session_id: "lea-mv", source: "startup", cwd: repo }, lea);
   const [leaAgent] = await hub.db.select().from(agent).where(eq(agent.sessionId, "lea-mv"));
-  const leaMcp = await mcpClient(hub.url, team.lea.token);
-  await call(leaMcp, "claim", { agent: leaAgent?.id, scope: ["lib/legacy.ts", "lib/util.ts"], mode: "exclusive", ttl_s: 1800 });
-  await leaMcp.close();
+  await callOnce(hub.url, team.lea.token, "claim", {
+    agent: leaAgent?.id,
+    scope: ["lib/legacy.ts", "lib/util.ts"],
+    mode: "exclusive",
+    ttl_s: 1800,
+  });
   // Another clone of the same repository, with the files committed so git can see them move.
   const work = gitRepo();
   const git = (...args: string[]) =>

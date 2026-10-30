@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, team as teamTable } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { consolePost, fakeGithubToken, gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
@@ -66,15 +66,11 @@ it("still blocks secrets in bypass, and warns on a claim conflict", async () => 
   expect(secret?.hookSpecificOutput?.permissionDecision).toBe("deny");
 
   // The hub refuses the secret whatever the session's mode.
-  const samMcp = await mcpClient(hub.url, team.sam.token);
-  const r = await call(samMcp, "send_message", { to: "@lea", kind: "note", body: `key ${key}` });
+  const r = await callOnce(hub.url, team.sam.token, "send_message", { to: "@lea", kind: "note", body: `key ${key}` });
   expect(JSON.parse(r.text).code).toBe("E_SECRET_BLOCKED");
-  await samMcp.close();
 
   // A team that stored the old block level now asks, and in bypass an ask turns into a warning.
-  const lea = await mcpClient(hub.url, team.lea.token);
-  expect((await call(lea, "claim", { scope: ["src/**"], mode: "exclusive" })).isError).toBe(false);
-  await lea.close();
+  expect((await callOnce(hub.url, team.lea.token, "claim", { scope: ["src/**"], mode: "exclusive" })).isError).toBe(false);
   await hub.db
     .update(teamTable)
     .set({ settings: { claims_enforcement: "block" } })

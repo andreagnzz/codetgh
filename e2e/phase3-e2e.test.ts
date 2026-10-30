@@ -6,7 +6,7 @@ import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codet
 import { and, eq, like, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agent, message, thread, threadKey } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { type Keyring, program } from "../packages/cli/src/main.js";
 import { hubRest } from "./helpers.js";
 
@@ -219,9 +219,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
       .select({ id: agent.id })
       .from(agent)
       .where(and(eq(agent.userId, team.lea.userId), like(agent.sessionId, "cli-%")));
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const r = await call(lea, "inbox_read", { agent: rest?.id });
-    await lea.close();
+    const r = await callOnce(hub.url, team.lea.token, "inbox_read", { agent: rest?.id });
     expect(r.text).not.toContain("v1.");
     expect(r.text).toContain("encrypted");
   });

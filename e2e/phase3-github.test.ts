@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, message, project, task, thread } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { call, callOnce, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -80,9 +80,7 @@ describe("GitHub bridge (phase 3)", () => {
     expect(rows[0]).toMatchObject({ kind: "status", refs: [{ type: "url", path: "https://github.com/acme/webapp/pull/7" }] });
     expect(JSON.stringify(rows)).not.toContain("CODE_SNIPPET");
 
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const inbox = (await call(lea, "inbox_read", {})).text;
-    await lea.close();
+    const inbox = (await callOnce(hub.url, team.lea.token, "inbox_read", {})).text;
     expect(inbox).toContain("PR #7 opened by octocat: Add &lt;b&gt;pagination&lt;/b&gt;");
     expect(inbox).toContain('from="GitHub"');
   });
