@@ -521,7 +521,7 @@ export function createApp({
   v1.post("/messages", async (c) => {
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
-    const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
+    const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, input);
     return c.json(sentView(m));
   });
 

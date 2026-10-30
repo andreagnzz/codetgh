@@ -146,7 +146,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
             "E_INVALID",
             "encrypted messages are sent with codetgh send --encrypt, which scans the text before sealing it",
           );
-        const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, { ...input, agent });
+        const m = await sendMessage(deps, { p, agent: await me(agent), via: "mcp" }, input);
         return sentView(m);
       }),
   );
