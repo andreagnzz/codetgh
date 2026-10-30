@@ -202,26 +202,16 @@ export function createApp({
       logger.error({ err: (e as Error).name }, "checkpoint failed");
     }
   };
-  const checkpointTimer = setInterval(
-    () => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")),
-    CHECKPOINT_EVERY_MS,
-  );
-  checkpointTimer.unref();
-  const purgeTimer = setInterval(
-    () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),
-    PURGE_EVERY_MS,
-  );
-  purgeTimer.unref();
-  const leaseTimer = setInterval(
-    () => expireLeases(db).catch((e: Error) => logger.error({ err: e.name }, "lease expiry failed")),
-    LEASE_SWEEP_MS,
-  );
-  leaseTimer.unref();
-  const sessionTimer = setInterval(
-    () => expireStaleSessions(db).catch((e: Error) => logger.error({ err: e.name }, "session expiry failed")),
-    SESSION_SWEEP_MS,
-  );
-  sessionTimer.unref();
+  const timers = [
+    setInterval(() => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")), CHECKPOINT_EVERY_MS),
+    setInterval(() => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")), PURGE_EVERY_MS),
+    setInterval(() => expireLeases(db).catch((e: Error) => logger.error({ err: e.name }, "lease expiry failed")), LEASE_SWEEP_MS),
+    setInterval(
+      () => expireStaleSessions(db).catch((e: Error) => logger.error({ err: e.name }, "session expiry failed")),
+      SESSION_SWEEP_MS,
+    ),
+  ];
+  for (const t of timers) t.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
@@ -967,10 +957,7 @@ export function createApp({
     deps,
     auditKey,
     close: () => {
-      clearInterval(checkpointTimer);
-      clearInterval(purgeTimer);
-      clearInterval(leaseTimer);
-      clearInterval(sessionTimer);
+      for (const t of timers) clearInterval(t);
       stopSlack();
       return mcp.close();
     },
