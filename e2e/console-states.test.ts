@@ -39,7 +39,7 @@ describe("console empty states say what to do", () => {
     expect(page).toContain('<html lang="fr">');
     expect(page).toContain("Aucun agent connecté. Copie la commande d&#39;invitation pour en ajouter un");
     expect(page).toContain("Vue d&#39;ensemble");
-    expect(await get("/login", "", "fr")).toContain("Se connecter à CodeTgh");
+    expect(await get("/login", "", "fr")).toContain("<h1>Se connecter</h1>");
     expect(await get("/console/alerts", team.lea.cookie, "fr")).toContain("Aucune alerte.");
   });
 });

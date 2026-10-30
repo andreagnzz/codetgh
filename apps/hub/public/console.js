@@ -12,26 +12,31 @@
   const STALE = fr ? "Impossible d'actualiser. Les données affichées datent de {time}." : "Couldn't refresh. Showing data from {time}.";
   const CLOCK = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 
-  // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation.
+  // The confirmation dialog: a trigger with data-confirm is asked about first; its request leaves only on confirmation. In a
+  // form, the button that sent it may ask instead of the form, with its own words.
   const dialog = document.getElementById("confirm");
   const go = dialog?.querySelector("button[value='confirm']");
   const dialogError = document.getElementById("confirm-error");
   let pending = null;
-  // A form asks through its submit button, which carries the level and takes the focus back.
-  const triggerOf = (elt) => (elt.matches("form") ? elt.querySelector("[type=submit]") : elt);
+  // A form asks through the button that sent it (its first one otherwise), which carries the level and takes the focus back.
+  const triggerOf = (elt, by) => (elt.matches("form") ? (by ?? elt.querySelector("[type=submit]")) : elt);
   document.body.addEventListener("htmx:confirm", (e) => {
     const elt = e.detail.elt;
-    if (!dialog || !go || !elt.dataset.confirm) return;
+    const by = elt.matches("form") ? e.detail.triggeringEvent?.submitter : null;
+    const ask = elt.dataset.confirm ? elt : by?.dataset.confirm ? by : null;
+    if (!dialog || !go || !ask) return;
     e.preventDefault();
-    pending = { elt, issue: e.detail.issueRequest };
-    document.getElementById("confirm-title").textContent = elt.dataset.confirm;
-    document.getElementById("confirm-body").textContent = elt.dataset.confirmBody ?? "";
+    // htmx forgets which button sent the form once the dialog takes the focus: the confirmed request carries its value.
+    if (by?.name) e.detail.etc.values = { ...e.detail.etc.values, [by.name]: by.value };
+    pending = { elt, by, issue: e.detail.issueRequest };
+    document.getElementById("confirm-title").textContent = ask.dataset.confirm;
+    document.getElementById("confirm-body").textContent = ask.dataset.confirmBody ?? "";
     if (dialogError) {
       dialogError.textContent = "";
       dialogError.className = "";
     }
-    go.textContent = elt.dataset.confirmAction ?? elt.textContent;
-    go.className = triggerOf(elt)?.classList.contains("danger") ? "danger-fill" : "primary";
+    go.textContent = ask.dataset.confirmAction ?? ask.textContent;
+    go.className = triggerOf(elt, by)?.classList.contains("danger") ? "danger-fill" : "primary";
     dialog.showModal();
   });
   dialog?.addEventListener("click", (e) => {
@@ -47,11 +52,13 @@
   document.body.addEventListener("htmx:beforeSwap", (e) => {
     if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
-  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger.
+  // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger, or to the button of the row menu that
+  // held it, which closed when the dialog took the focus.
   dialog?.addEventListener("close", () => {
-    const back = pending && triggerOf(pending.elt);
+    const back = pending && triggerOf(pending.elt, pending.by);
     pending = null;
-    if (back?.isConnected) back.focus();
+    if (!back?.isConnected) return;
+    (back.closest("details:not([open])")?.querySelector("summary") ?? back).focus();
   });
 
   const hostOf = (elt) => elt.closest("form") ?? elt;
