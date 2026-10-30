@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { bridgeLink, message, slackLink } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { hubRest } from "./helpers.js";
 
 const SIGNING = "test-slack-signing-secret";
 const lines: string[] = [];
@@ -18,10 +19,11 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 it("never writes a Slack reply's text to the logs when the database refuses it", async () => {
-  const sent = await fetch(`${hub.url}/v1/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${team.sam.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ to: "@lea", kind: "question", body: "Ready?", allow_offline: true }),
+  const sent = await hubRest(hub.url, team.sam.token, "POST", "/v1/messages", {
+    to: "@lea",
+    kind: "question",
+    body: "Ready?",
+    allow_offline: true,
   });
   const [question] = await hub.db.select().from(message).where(eq(message.body, "Ready?"));
   expect(sent.status).toBe(200);
