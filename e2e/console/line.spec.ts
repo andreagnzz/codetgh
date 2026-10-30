@@ -50,3 +50,68 @@ test("a refused action shows its reason under the form; the skip link comes firs
   await expect(page.locator(".field-error")).toHaveText("type erase to confirm");
   await expect(page.locator(".field-error")).toHaveAttribute("role", "alert");
 });
+
+test("the live state: shown by console.js, a live region only once connected, offline after three failed attempts", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  const live = page.locator(".live");
+  await expect(live).toHaveText("Live");
+  await expect(live).toHaveAttribute("role", "status");
+  await page.route("**/console/stream", (route) => route.abort());
+  await page.reload();
+  // Never connected on this load: the words change, nothing is announced, and it ends with the time it was lost.
+  await expect(live).toHaveText(/^Offline since \d\d:\d\d$/, { timeout: 20_000 });
+  await expect(live).toHaveAttribute("data-state", "offline");
+  await expect(live).not.toHaveAttribute("role", "status");
+});
+
+test("times read in the reader's time zone: the clock alone for today, the day and month before it on another day", async ({ browser }) => {
+  const zone = "America/Sao_Paulo";
+  const context = await browser.newContext({ timezoneId: zone });
+  const page = await context.newPage();
+  const clock = (iso: string | null, day?: boolean) =>
+    new Intl.DateTimeFormat("en-GB", {
+      ...(day && { day: "numeric", month: "short" }),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: zone,
+    }).format(new Date(iso ?? ""));
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  const earlier = page.locator(".timeline time").first();
+  await expect(earlier).toHaveText(clock(await earlier.getAttribute("datetime"), true));
+  // A time from today, as a live refresh brings it.
+  await page.evaluate((iso) => {
+    document.querySelector(".timeline")?.insertAdjacentHTML("afterbegin", `<li><time id="now" datetime="${iso}" data-local></time></li>`);
+    document.body.dispatchEvent(new Event("htmx:afterSettle"));
+  }, new Date().toISOString());
+  const now = page.locator("#now");
+  await expect(now).toHaveText(clock(await now.getAttribute("datetime")));
+  await context.close();
+});
+
+test("a live refresh the hub refuses keeps what the page shows and says from when it is", async ({ page }) => {
+  await signIn(page, hub.url, team.lea);
+  await page.route("**/console", (route) =>
+    route.request().headers()["hx-request"] ? route.fulfill({ status: 500, body: "boom" }) : route.continue(),
+  );
+  await send("second");
+  await expect(page.locator("#live + .field-error")).toHaveText(/^Couldn't refresh\. Showing data from \d\d:\d\d\.$/);
+  await expect(page.locator("#live + .field-error")).toHaveAttribute("role", "alert");
+  await expect(page.locator(".wire-row")).toHaveCount(1);
+});
+
+test("a live refresh opens again the disclosures that were open", async ({ page }) => {
+  // A disclosure with an id at the top of the live region, in the page and in each refresh of it.
+  await page.route("**/console", async (route) => {
+    const res = await route.fetch();
+    const { "content-length": _, "content-encoding": __, ...headers } = res.headers();
+    const fold = '<details id="fold" class="disclosure"><summary>More</summary><p>Inside</p></details>';
+    await route.fulfill({ status: res.status(), headers, body: (await res.text()).replace(/(<div id="live"[^>]*>)/, `$1${fold}`) });
+  });
+  await signIn(page, hub.url, team.lea);
+  await page.locator("#fold > summary").click();
+  await send("second");
+  await expect(page.locator(".wire-row")).toHaveCount(2);
+  await expect(page.locator("#fold")).toHaveAttribute("open", "");
+});

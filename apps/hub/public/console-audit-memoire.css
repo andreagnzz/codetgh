@@ -1,0 +1,21 @@
+/* Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this file; the tokens, base and
+   components are in console.css. Until it restyles its screens, the rules below keep today's memory diff and status links. */
+.add {
+  background: var(--success-soft);
+}
+.del {
+  text-decoration: line-through;
+}
+main > nav:not([class]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-6);
+  margin: 0 0 var(--sp-6);
+}
+main > nav:not([class]) a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 40px;
+}

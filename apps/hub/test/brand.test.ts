@@ -32,11 +32,12 @@ describe("brand", () => {
     expect((await fetch(`${hub.url}/brand/..%2F..%2Fpackage.json`)).status).toBe(404);
   });
 
-  it("puts the favicon, theme color and stacked logo on the public pages", async () => {
+  it("puts the favicon, a theme color per scheme and the stacked logo on the public pages", async () => {
     for (const path of ["/login", "/invite/not-a-token"]) {
       const html = await (await fetch(`${hub.url}${path}`)).text();
       expect(html).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml"');
-      expect(html).toContain('<meta name="theme-color" content="#087F70"');
+      expect(html).toContain('<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F7F6"');
+      expect(html).toContain('<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D1B1A"');
       expect(html).toContain('<link rel="stylesheet" href="/console.css"');
       expect(html).toContain('srcset="/brand/lockup-stacked-on-dark.svg"');
       expect(html).toContain('src="/brand/lockup-stacked-color.svg"');

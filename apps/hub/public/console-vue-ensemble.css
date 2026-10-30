@@ -1,0 +1,99 @@
+/* Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this file; the tokens, base and components are in
+   console.css. Until it restyles its screens, the rules below keep today's overview markup (presence is also on Projects). */
+.dash {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--sp-8);
+  align-items: start;
+}
+.dash h2:first-child {
+  margin-top: 0;
+}
+.dash-side > section + section {
+  border-top: 1px solid var(--border);
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-2);
+}
+@media (max-width: 1023px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.people,
+.todo {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.people li,
+.todo li {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.who-name {
+  font-weight: 600;
+}
+.people .status {
+  display: block;
+}
+.people.archived {
+  color: var(--text-muted);
+}
+/* A rule that carries meaning: what is below it is no longer live. */
+h3.rule {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  font-weight: 500;
+  border-top: 1px solid var(--border-strong);
+  padding-top: var(--sp-2);
+}
+
+/* The activity line: a wire per message, sender caret to recipient caret, in the accent color. */
+.line {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.wire-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-1) 0;
+}
+.wire-row p {
+  margin: 0;
+}
+.wire {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wire .link {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.line.archived .wire {
+  stroke: var(--text-muted);
+}
+.line.archived .wire-who {
+  color: var(--text-muted);
+}
+/* The one expressive motion of the console: a new message traces its wire in 300 ms. */
+.fresh .wire .link {
+  animation: trace 300ms ease-out;
+}
+@keyframes trace {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh .wire .link {
+    animation: none;
+  }
+}

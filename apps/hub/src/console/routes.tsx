@@ -8,6 +8,7 @@ import { diffLines } from "diff";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import type { Child } from "hono/jsx";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import type { Auth } from "../auth.js";
@@ -73,8 +74,10 @@ import {
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
 import type { Mailer } from "../mailer.js";
+import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
+import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
@@ -154,7 +157,19 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       await joinWithInvitation(db, session.user, c.req.param("token"));
     } catch (e) {
       if (!(e instanceof HubError)) throw e;
-      return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 403);
+      const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+      // Whoever opens an invitation may have no team yet: no word about roles, and a way to sign in with the right account.
+      return c.html(
+        <ErrorPage
+          status={HTTP_STATUS[e.code]}
+          reason={e.message}
+          lang={lang}
+          title="You can't join with this invitation."
+          next="Sign in with the account it was sent to, or ask the person who invited you for a new link."
+          back={{ href: "/login", label: "Sign in with another account" }}
+        />,
+        HTTP_STATUS[e.code] as 403,
+      );
     }
     return c.redirect("/console", 303);
   });
@@ -182,9 +197,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     }
     await next();
   });
+  // An htmx request gets the bare reason in the page's language, which console.js shows where the action was; a page load
+  // gets a page.
   consoleApp.onError((e, c) => {
     if (!(e instanceof HubError)) throw e;
-    return c.html(<Result>{e.message}</Result>, HTTP_STATUS[e.code] as 400);
+    const status = HTTP_STATUS[e.code] as 400;
+    const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
+    if (c.req.header("HX-Request") === "true") return c.html(<Result>{t(lang, e.message)}</Result>, status);
+    return c.html(<ErrorPage status={status} reason={e.message} lang={lang} />, status);
   });
   for (const section of ["/tasks", "/memory", "/claims", "/projects", "/delegations", "/tokens"])
     consoleApp.use(`${section}/*`, async (c, next) => {
@@ -204,17 +224,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
   const withProject = (href: string, project: string | undefined) => (project ? `${href}?project=${encodeURIComponent(project)}` : href);
   // A guest never sees the list of the team's projects.
-  const page = (c: Context<Env>, title: string, body: unknown, filter?: ProjectFilter) =>
+  // A detail page adds a way back, a meta line and its one action to the page header. A title that is a record's own name
+  // (named: a task's or a memory item's title) shows as written, never looked up in i18n.
+  const page = (
+    c: Context<Env>,
+    title: string,
+    body: unknown,
+    filter?: ProjectFilter,
+    { named, ...detail }: { back?: Child; head?: Child; actions?: Child; named?: boolean } = {},
+  ) =>
     c.html(
       <Layout
         p={c.get("principal")}
         csrf={c.get("csrf")}
-        title={t(tr(c).lang, title)}
+        title={named ? title : t(tr(c).lang, title)}
         path={c.req.path}
         lang={tr(c).lang}
         filter={c.get("principal").role === "guest" ? undefined : filter}
         keep={filter ? filter.selected : kept(c)}
         archived={c.req.query("archived") === "1"}
+        {...detail}
       >
         {body as never}
       </Layout>,
@@ -302,7 +331,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const earlier = line.filter((r) => r.message.createdAt.getTime() < dayAgo);
     return page(
       c,
-      "Dashboard",
+      "Overview",
       <div
         id="live"
         hx-get="/console"
@@ -378,7 +407,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             </ul>
             {isAdmin(p) && (
               <>
-                <h3>{_("Kill switch")}</h3>
+                <h3 id="agent-traffic">{_("Kill switch")}</h3>
                 {p.paused ? (
                   <form hx-post="/console/kill-switch/resume" hx-swap="none">
                     <label>
@@ -387,11 +416,19 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                     <button type="submit">{_("Resume")}</button>
                   </form>
                 ) : (
-                  <form hx-post="/console/kill-switch" hx-swap="none">
+                  <form
+                    hx-post="/console/kill-switch"
+                    hx-swap="none"
+                    data-confirm={_("Stop agent traffic?")}
+                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+                    data-confirm-action={_("Stop agent traffic")}
+                  >
                     <label>
                       {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
                     </label>
-                    <button type="submit">{_("Stop agent traffic")}</button>
+                    <button type="submit" class="danger">
+                      {_("Stop agent traffic…")}
+                    </button>
                   </form>
                 )}
               </>
@@ -489,6 +526,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const last = rows.at(-1);
     const table = (of: typeof rows) => (
       <Table
+        lang={tr(c).lang}
         head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
         rows={of.map((t) => [
           <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
@@ -583,6 +621,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           {t.kind} thread · {state} · agent streak {t.agentStreak}
         </p>
         <Table
+          lang={tr(c).lang}
           head={["From", "Kind", "Message", "Sent"]}
           rows={rows.map(({ message: m, name }) => [
             `${name}${m.authoredBy === "agent" ? " (agent)" : ""}`,
@@ -669,6 +708,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Alerts",
       <>
         <Table
+          lang={tr(c).lang}
           head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
           empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
           rows={rows.map(({ alert: a, name }) => [
@@ -715,6 +755,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     });
     const table = (of: typeof rows) => (
       <Table
+        lang={tr(c).lang}
         head={[
           _("Who"),
           _("Label"),
@@ -753,7 +794,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             ) : (
               <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
             )}{" "}
-            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="quiet" />
+            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="tertiary" />
           </>,
         ])}
       />
@@ -952,6 +993,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       <>
         <p>{_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}</p>
         <Table
+          lang={tr(c).lang}
           head={[_("Who"), _("Label"), _("Project"), _("Accepts requests from"), _("Last seen"), _("Actions")]}
           empty={_("No delegate session. A member starts one with codetgh start --accept-requests-from @handle.")}
           rows={rows.map((r) => [
@@ -1062,6 +1104,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </form>
         <div id="new-token" />
         <Table
+          lang={tr(c).lang}
           head={["Label", "Created", "Expires", "Actions"]}
           rows={rows.map((t) => [
             t.label,
@@ -1132,7 +1175,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
           {_("Approve")}
         </button>{" "}
-        <button type="button" class="quiet" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+        <button type="button" class="tertiary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
           {_("Deny")}
         </button>
       </Result>,
@@ -1203,6 +1246,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         <div id="invite-result" />
         <h2>{_("Invitations")}</h2>
         <Table
+          lang={tr(c).lang}
           head={[_("Email"), _("Role"), _("Sent"), _("Expires"), _("Actions")]}
           rows={invites.map((i) => [
             i.email,
@@ -1215,6 +1259,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         />
         <h2>{_("Members")}</h2>
         <Table
+          lang={tr(c).lang}
           head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
           rows={rows.map((r) => [
             r.name,
@@ -1227,7 +1272,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                   <span class="sr-only">{_("Handle")}</span>@
                   <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
                 </label>
-                <button type="submit" class="quiet">
+                <button type="submit" class="tertiary">
                   {_("Rename")}
                 </button>
               </form>
@@ -1333,6 +1378,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         <div id="verify-result" />
         <Table
+          lang={tr(c).lang}
           head={["#", "At", "Actor", "Via", "Action", "Subject", "Hash"]}
           rows={rows.map((e) => [
             e.seq,
@@ -1550,6 +1596,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           ))}
         </nav>
         <Table
+          lang={tr(c).lang}
           head={["Ref", "Version", "Kind", "Status", "Title", "Proposed by", "When"]}
           rows={rows.map(({ item, name }) => [
             memoryRef(item),
@@ -1620,6 +1667,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <Action post={`/console/memory/${item.id}/pin`} vals={{ pinned: String(!item.pinned) }} label={item.pinned ? "Unpin" : "Pin"} />
         )}
       </>,
+      undefined,
+      { named: true },
     );
   });
 
@@ -1650,6 +1699,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       "Claims",
       <>
         <Table
+          lang={tr(c).lang}
           head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
           rows={rows.map((r) => [
             r.claim.scope,
@@ -1705,6 +1755,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
                 {s} ({countOf(s, projectId)})
               </Heading>
               <Table
+                lang={tr(c).lang}
                 head={["Title", "Assignee", "Version", "Updated"]}
                 rows={of.map((r) => [
                   <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
@@ -1774,7 +1825,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .select()
       .from(task)
       .where(and(eq(task.id, c.req.param("id")), eq(task.teamId, p.teamId)));
-    if (!t) return c.notFound();
+    if (!t) throw new HubError("E_NOT_FOUND", "task not found");
     const history = await db
       .select()
       .from(auditEvent)
@@ -1792,9 +1843,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         <pre>{t.body}</pre>
         <h2>Notes</h2>
-        <Table head={["When", "Note"]} rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])} empty={tr(c)("Nothing yet.")} />
+        <Table
+          lang={tr(c).lang}
+          head={["When", "Note"]}
+          rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])}
+          empty={tr(c)("Nothing yet.")}
+        />
         <h2>History</h2>
         <Table
+          lang={tr(c).lang}
           head={["#", "Action", "Via", "At"]}
           rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])}
           empty={tr(c)("Nothing yet.")}
@@ -1823,6 +1880,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           <button type="submit">Save</button>
         </form>
       </>,
+      undefined,
+      { named: true },
     );
   });
 
@@ -1865,6 +1924,27 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       release();
     });
   });
+
+  // Development and tests only: the component catalogue, and two actions that let it show a confirmation, a toast and a
+  // refusal. Mounted only when the test harness (or the demo hub built on it) asks; the hub's own configuration never does.
+  if (config.catalogue) {
+    consoleApp.get("/catalogue", (c) =>
+      page(c, "Components", <Catalogue lang={tr(c).lang} />, undefined, {
+        back: <a href="/console">{tr(c)("Overview")}</a>,
+        head: (
+          <>
+            <span>Development and tests only</span>
+            <Pill>Not served in production</Pill>
+          </>
+        ),
+        actions: <button type="button">Page action</button>,
+      }),
+    );
+    consoleApp.post("/catalogue/done", (c) => refresh(c));
+    consoleApp.post("/catalogue/refused", () => {
+      throw new HubError("E_INVALID", "The hub refuses this demo action, to show where its reason appears.");
+    });
+  }
 
   app.route("/console", consoleApp);
   return app;

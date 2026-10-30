@@ -1,25 +1,70 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import { raw } from "hono/html";
 import type { Child } from "hono/jsx";
 import { BrandHead, Logo } from "./brand.js";
 import { type Lang, t } from "./i18n.js";
 
+// The doctype keeps every browser out of quirks mode.
 export const Layout = ({ lang, title = "CodeTgh", children }: { lang: Lang; title?: string; children?: Child }) => (
-  <html lang={lang}>
-    <head>
-      <meta charset="utf-8" />
-      <BrandHead />
-      <title>{title}</title>
-    </head>
-    <body>
-      <main class="public">
-        <Logo kind="stacked" />
-        {children}
-        <p id="error" class="field-error" role="alert" />
-      </main>
-      <script src="/assets/oauth.js" />
-    </body>
-  </html>
+  <>
+    {raw("<!doctype html>")}
+    <html lang={lang}>
+      <head>
+        <meta charset="utf-8" />
+        <BrandHead />
+        <title>{title}</title>
+      </head>
+      <body>
+        <main class="public">
+          <Logo kind="stacked" />
+          {children}
+          <p id="error" class="field-error" role="alert" />
+        </main>
+        <script src="/assets/oauth.js" />
+      </body>
+    </html>
+  </>
 );
+
+// What happened, and what to do about it, by status; a caller that knows more gives its own words.
+const ERROR_TEXT: Record<number, [string, string]> = {
+  400: ["This request isn't valid.", "Check the link, or go back and try again."],
+  403: ["You can't open this page.", "Your role doesn't allow it. Ask an admin of your team if you need it."],
+  404: ["This page doesn't exist.", "Check the link, or start again from the overview."],
+};
+
+// A page load the hub refuses: what happened, the hub's own reason as a sentence, what to do, and a way back. An htmx
+// request keeps the bare reason.
+export const ErrorPage = ({
+  status,
+  reason,
+  lang,
+  title,
+  next,
+  back = { href: "/console", label: "Back to the overview" },
+}: {
+  status: number;
+  reason?: string;
+  lang: Lang;
+  title?: string;
+  next?: string;
+  back?: { href: string; label: string };
+}) => {
+  const _ = (s: string) => t(lang, s);
+  const [byStatus, nextByStatus] = ERROR_TEXT[status] ?? ["The hub refused this request.", "Go back and try again."];
+  const heading = _(title ?? byStatus);
+  const why = reason && _(reason);
+  return (
+    <Layout lang={lang} title={`${heading} · CodeTgh`}>
+      <h1>{heading}</h1>
+      {why && <p>{_("The hub said: {reason}").replace("{reason}", () => (/[.!?]$/.test(why) ? why : `${why}.`))}</p>}
+      <p class="lede">{_(next ?? nextByStatus)}</p>
+      <p>
+        <a href={back.href}>{_(back.label)}</a>
+      </p>
+    </Layout>
+  );
+};
 
 const PROVIDER_LABEL = { github: "Sign in with GitHub", google: "Sign in with Google", sso: "Sign in with your organization" };
 

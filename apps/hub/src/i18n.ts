@@ -10,7 +10,7 @@ const FR: Record<string, string> = {
   // Layout
   "Skip to content": "Aller au contenu",
   Console: "Console",
-  Dashboard: "Tableau de bord",
+  Overview: "Vue d'ensemble",
   Threads: "Fils",
   Agents: "Agents",
   Projects: "Projets",
@@ -72,7 +72,6 @@ const FR: Record<string, string> = {
   Members: "Membres",
   Audit: "Audit",
   Settings: "Paramètres",
-  "Agent traffic paused": "Trafic des agents coupé",
   "Nothing yet.": "Rien pour l'instant.",
   // French puts a space before a colon.
   ": ": " : ",
@@ -252,6 +251,78 @@ const FR: Record<string, string> = {
   "Already have an account?": "Déjà un compte ?",
   "This invitation is no longer valid.": "Cette invitation n'est plus valable.",
   "Ask the person who invited you for a new link.": "Demande un nouveau lien à la personne qui t'a invité.",
+
+  // ---- Foundations (refonte/fondations): shell, components, error pages. ----
+  "This request isn't valid.": "Cette demande n'est pas valable.",
+  "You can't open this page.": "Tu ne peux pas ouvrir cette page.",
+  "This page doesn't exist.": "Cette page n'existe pas.",
+  "The hub refused this request.": "Le hub a refusé cette demande.",
+  "Check the link, or go back and try again.": "Vérifie le lien, ou reviens en arrière et réessaie.",
+  "Your role doesn't allow it. Ask an admin of your team if you need it.":
+    "Ton rôle ne le permet pas. Demande à un admin de ton équipe si tu en as besoin.",
+  "Check the link, or start again from the overview.": "Vérifie le lien, ou repars de la vue d'ensemble.",
+  "Go back and try again.": "Reviens en arrière et réessaie.",
+  "Back to the overview": "Retour à la vue d'ensemble",
+  "admins only": "réservé aux admins",
+  "guests see only their own threads": "un invité ne voit que ses propres fils",
+  "thread not found": "fil introuvable",
+  "task not found": "tâche introuvable",
+  "no such item": "élément introuvable",
+  "unknown status": "état inconnu",
+  Menu: "Menu",
+  Close: "Fermer",
+  Live: "En direct",
+  "Connecting…": "Connexion…",
+  "Reconnecting…": "Reconnexion…",
+  "Agent traffic stopped": "Trafic des agents coupé",
+  "Resume agent traffic": "Rétablir le trafic des agents",
+  Cancel: "Annuler",
+  Copy: "Copier",
+  Copied: "Copié",
+  "Press Ctrl+C to copy": "Appuie sur Ctrl+C pour copier",
+  "Press ⌘C to copy": "Appuie sur ⌘C pour copier",
+  Pages: "Pages",
+  Newer: "Plus récents",
+  Newest: "Les plus récents",
+  optional: "facultatif",
+  "Loading…": "Chargement…",
+  "Show {n} earlier events": "Afficher les {n}\u00a0événements précédents",
+  Unread: "Non lu",
+  "Offline since {time}": "Hors ligne depuis {time}",
+  "Stop agent traffic…": "Couper le trafic des agents…",
+  "Stop agent traffic?": "Couper le trafic des agents\u202f?",
+  "Agents can't send messages or claim files until an admin resumes agent traffic.":
+    "Les agents ne peuvent plus envoyer de messages ni réserver de fichiers tant qu'un admin n'a pas rétabli le trafic.",
+  "The hub said: {reason}": "Réponse du hub\u00a0: {reason}",
+  "You can't join with this invitation.": "Tu ne peux pas rejoindre l'équipe avec cette invitation.",
+  "Sign in with the account it was sent to, or ask the person who invited you for a new link.":
+    "Connecte-toi avec le compte auquel elle a été envoyée, ou demande un nouveau lien à la personne qui t'a invité.",
+  "Sign in with another account": "Se connecter avec un autre compte",
+  "This invitation is for another email address.": "Cette invitation est pour une autre adresse de courriel.",
+  "Your email address is not verified: sign in with an email link, then open the invitation again.":
+    "Ton adresse de courriel n'est pas vérifiée\u00a0: connecte-toi avec un lien reçu par courriel, puis rouvre l'invitation.",
+  "You are already in a team.": "Tu fais déjà partie d'une équipe.",
+  "This invitation was sent before your removal: ask for a new one.":
+    "Cette invitation a été envoyée avant ton retrait\u00a0: demandes-en une nouvelle.",
+  // ---- End of the foundations block. ----
+
+  // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----
+  // ---- End of batch 1. ----
+
+  // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----
+  // ---- End of batch 2. ----
+
+  // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
+  // ---- End of batch 3. ----
+
+  // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
+  // ---- End of batch 4. ----
+
+  // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----
+  // ---- End of batch 5. ----
+
+  // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----
+  // ---- End of batch 6. ----
 };
 
 export const t = (lang: Lang, s: string) => (lang === "fr" && Object.hasOwn(FR, s) ? (FR[s] ?? s) : s);
