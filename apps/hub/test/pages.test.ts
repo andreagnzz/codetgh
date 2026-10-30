@@ -46,10 +46,9 @@ describe("pages", () => {
       expect(html, path).toContain(`<h1>${title.replace("'", "&#39;")}</h1>`);
       expect(html, path).toContain('href="/console"');
     }
-    // The hub's reason reads as a sentence in body text, not as a muted caption.
-    expect(await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text()).toContain(
-      "<p>The hub said: thread not found.</p>",
-    );
+    // What to do is the body text; the hub's own reason follows as a muted caption.
+    const thread = await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text();
+    expect(thread).toContain('<p>Check the link, or start again from the overview.</p><p class="meta">The hub said: thread not found.</p>');
   });
 
   it("answers an unknown page opened in a browser with the 404 page, and an API, MCP or htmx client with the bare 404", async () => {
@@ -85,7 +84,15 @@ describe("pages", () => {
       via: "console",
     });
     const headers = { cookie: team.sam.cookie, "accept-language": "fr" };
-    const invite = await (await get(`/invite/${token}`, headers)).text();
+    // The page of an invitation for another address has no Join: the session's CSRF token comes from one for Sam's own.
+    const own = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: team.sam.email,
+      role: "member",
+      invitedBy: null,
+      via: "system",
+    });
+    const invite = await (await get(`/invite/${own.token}`, headers)).text();
     const csrf = invite.match(/name="csrf" value="([^"]+)"/)?.[1] ?? "";
     const res = await fetch(`${hub.url}/invite/${token}/join`, {
       method: "POST",
@@ -96,7 +103,7 @@ describe("pages", () => {
     expect(res.status).toBe(403);
     const html = await res.text();
     expect(html).toContain("<h1>Tu ne peux pas rejoindre l&#39;équipe avec cette invitation.</h1>");
-    expect(html).toContain("<p>Réponse du hub\u00a0: Cette invitation est pour une autre adresse de courriel.</p>");
+    expect(html).toContain('<p class="meta">Réponse du hub\u00a0: Cette invitation est pour une autre adresse de courriel.</p>');
     expect(html).toContain('<a href="/login">Se connecter avec un autre compte</a>');
     expect(html).not.toContain("Ton rôle ne le permet pas");
   });
@@ -145,6 +152,89 @@ describe("pages", () => {
     } finally {
       await plain.stop();
     }
+  });
+});
+
+describe("public pages", () => {
+  const html = async (path: string, lang = "en", cookie = "") => (await get(path, { "accept-language": lang, cookie })).text();
+
+  it("sign-in: one primary button, and the hub's answer under the fields that point at it, in the reader's words", async () => {
+    const page = await html("/login");
+    expect(page).toContain("<h1>Sign in</h1>");
+    expect(page.match(/class="primary"/g)).toHaveLength(1);
+    expect(page).toContain('<button type="submit" class="primary">Sign in</button>');
+    expect(page).toMatch(/<input name="email"[^>]*aria-describedby="error"/);
+    expect(page).toMatch(/<input name="password"[^>]*aria-describedby="error"/);
+    const answer = page.indexOf('id="error"');
+    expect(answer).toBeGreaterThan(page.indexOf('name="password"'));
+    expect(answer).toBeLessThan(page.indexOf(">Sign in</button>"));
+    expect(await html("/login", "fr")).toContain("Le courriel ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.");
+    expect(await html("/login", "fr")).toContain("Trop d&#39;essais. Attends quelques secondes, puis réessaie.");
+  });
+
+  it("consent: the access asked for in words next to each scope, an unknown scope said as such, and the way back", async () => {
+    const page = await html(
+      `/consent?client_id=${encodeURIComponent("https://client.example/meta.json")}&scope=codetgh+email+calendar.read&redirect_uri=${encodeURIComponent("https://client.example/cb")}`,
+    );
+    expect(page).toContain("<h1>Allow access to your account?</h1>");
+    expect(page).toContain('<code translate="no">https://client.example/meta.json</code>');
+    expect(page).toContain('<li><span>See your email address</span> <code translate="no">email</code></li>');
+    expect(page).toContain('<li><span>Not described by this hub</span> <code translate="no">calendar.read</code></li>');
+    expect(page).toContain('<code translate="no">client.example</code>');
+    expect(page).toContain('<button type="button" class="primary" data-consent="accept">Allow</button>');
+    expect(page).toContain('<button type="button" class="secondary" data-consent="deny">Deny</button>');
+    // A scope named like an object's own property is not described by accident.
+    expect(await html("/consent?client_id=c&scope=constructor")).toContain("<span>Not described by this hub</span>");
+  });
+
+  it("invitation: the invited address is the new account's sign-in, read-only; signed in, the account it joins with", async () => {
+    const { token } = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "ines@acme.test",
+      role: "guest",
+      invitedBy: team.lea.userId,
+      via: "console",
+    });
+    const page = await html(`/invite/${token}`);
+    expect(page).toContain("<title>Join Acme web · CodeTgh</title>");
+    expect(page).toContain("<h1>Join Acme web</h1>");
+    // A link that no longer works names no team, in the tab title either.
+    expect(await html("/invite/not-a-token", "fr")).toContain("<title>Cette invitation n&#39;est plus valable. · CodeTgh</title>");
+    expect(page).toContain("You&#39;re invited as a guest. A guest sees only the threads they take part in.");
+    // Read whole as text, however long; the sign-up script and password managers read it from a field kept out of sight.
+    expect(page).toContain('<p class="value" translate="no">ines@acme.test</p>');
+    const field = page.match(/<input name="email"[^>]*>/)?.[0] ?? "";
+    for (const attr of ['type="email"', 'value="ines@acme.test"', 'autocomplete="username"', 'hidden=""']) expect(field).toContain(attr);
+    expect(page).toContain('<p class="help" id="invite-password-help">At least 12 characters.</p>');
+    // Signed in with another address: no Join the hub is sure to refuse; the page says why, and the way on is another account.
+    const other = await html(`/invite/${token}`, "fr", team.sam.cookie);
+    expect(other).toMatch(
+      /<div class="banner" data-tone="warn" role="status">.*Cette invitation est pour une autre adresse de courriel\./s,
+    );
+    expect(other).toContain("Elle a été envoyée à ines@acme.test. Compte connecté : sam@acme.test.");
+    expect(other).toContain('<a class="button primary" href="/login">Se connecter avec un autre compte</a>');
+    expect(other).not.toContain('id="invite-join"');
+    // Signed in with the invited address: the account it joins with, and Join as the one primary button.
+    const own = await createInvitation(hub.db, {
+      teamId: team.teamId,
+      email: "SAM@acme.test",
+      role: "member",
+      invitedBy: team.lea.userId,
+      via: "console",
+    });
+    const mine = await html(`/invite/${own.token}`, "fr", team.sam.cookie);
+    expect(mine).toContain("<dd>sam@acme.test</dd>");
+    expect(mine).toContain('<button type="submit" class="primary">Rejoindre Acme web</button>');
+    expect(mine.match(/class="(button )?primary"/g)).toHaveLength(1);
+    expect(mine).not.toContain('class="banner"');
+  });
+
+  it("device: the description under the title, and a polite live region the check panel and its answers land in", async () => {
+    const page = await html("/console/device", "en", team.lea.cookie);
+    expect(page).toContain(
+      '<div class="page-meta"><p class="lede">When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.</p></div>',
+    );
+    expect(page).toContain('<div id="device" aria-live="polite"></div>');
   });
 });
 

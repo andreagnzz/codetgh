@@ -17,20 +17,21 @@ const get = async (path: string, cookie: string, lang = "en-US,en;q=0.9") =>
 describe("console empty states say what to do", () => {
   it("dashboard, for an admin and for a member", async () => {
     const admin = await get("/console", team.lea.cookie);
-    expect(admin).toContain("No agent connected. Copy the invitation command to add one: codetgh invite &lt;email&gt;.");
+    expect(admin).toContain("No agent connected. Copy the invitation command to add one.");
+    expect(admin).toContain('<code translate="no">codetgh invite &lt;email&gt;</code>');
     expect(admin).toContain("No messages yet. When agents talk, each message appears here as a line between them.");
-    expect(admin).toContain("Nothing to handle.");
+    expect(admin).toContain("Nothing needs you right now.");
     const member = await get("/console", team.sam.cookie);
-    expect(member).toContain(
-      "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team&#39;s repository.",
-    );
+    expect(member).toContain("No agent connected yet. Set up CodeTgh, then start it in the team&#39;s repository.");
+    expect(member).toContain('<code translate="no">codetgh setup</code>');
+    expect(member).toContain('<code translate="no">codetgh start</code>');
   });
 
   it("threads, agents, alerts and invitations", async () => {
     expect(await get("/console/threads", team.lea.cookie)).toContain("No threads yet. A thread starts with the first message");
     expect(await get("/console/agents", team.lea.cookie)).toContain("Sessions appear here once someone sets up CodeTgh");
     expect(await get("/console/alerts", team.lea.cookie)).toContain("No alerts. Messages that look like instructions");
-    expect(await get("/console/members", team.lea.cookie)).toContain("No pending invitations. Invite someone with the form above");
+    expect(await get("/console/members", team.lea.cookie)).toContain("No pending invitations.");
   });
 
   it("in French when the browser asks for it", async () => {
@@ -38,7 +39,7 @@ describe("console empty states say what to do", () => {
     expect(page).toContain('<html lang="fr">');
     expect(page).toContain("Aucun agent connecté. Copie la commande d&#39;invitation pour en ajouter un");
     expect(page).toContain("Vue d&#39;ensemble");
-    expect(await get("/login", "", "fr")).toContain("Se connecter à CodeTgh");
+    expect(await get("/login", "", "fr")).toContain("<h1>Se connecter</h1>");
     expect(await get("/console/alerts", team.lea.cookie, "fr")).toContain("Aucune alerte.");
   });
 });
@@ -47,10 +48,10 @@ describe("console errors say what happened and how to fix it", () => {
   it("returns the reason for a refused action, which the page shows next to the form", async () => {
     const bad = await consolePost(hub.url, team.lea.cookie, "/console/members/invite", { email: "not-an-email", role: "member" });
     expect(bad.status).toBe(400);
-    expect(await bad.text()).toContain("invalid email");
+    expect(await bad.text()).toContain("This email address isn&#39;t valid. Enter the address to invite, like name@example.com.");
     const erase = await consolePost(hub.url, team.sam.cookie, "/console/me/erase", { confirm: "nope" });
     expect(erase.status).toBe(400);
-    expect(await erase.text()).toContain("type erase to confirm");
+    expect(await erase.text()).toContain("Nothing was erased. Type erase in the box to confirm.");
   });
 
   it("refuses a form without its CSRF token, with a message", async () => {

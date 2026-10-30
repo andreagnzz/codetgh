@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, count, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Child } from "hono/jsx";
@@ -48,7 +48,7 @@ import {
   stopDelegate,
   updateSettings,
 } from "../domain/admin.js";
-import { listAgents, listDelegates } from "../domain/agents.js";
+import { listAgents, listDelegates, presence } from "../domain/agents.js";
 import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
@@ -73,6 +73,7 @@ import {
 } from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
+import { Icon } from "../icons.js";
 import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
@@ -96,19 +97,38 @@ import {
   Chip,
   CodeBlock,
   Collapsible,
+  counted,
   EmptyState,
   Field,
+  fieldAria,
   InvitePage,
   Layout,
+  LINE_CAP,
+  LINE_PHONE,
   Line,
   People,
   Pill,
   type ProjectFilter,
   Result,
+  Stamp,
   Table,
   toneOf,
   When,
 } from "./pages.js";
+import {
+  GithubHook,
+  Invitations,
+  Invited,
+  InviteForm,
+  Members,
+  MyData,
+  reworded,
+  Settings,
+  SlackCode,
+  TokenCreated,
+  TokenForm,
+  Tokens,
+} from "./team.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -153,11 +173,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(
       <InvitePage
         team={inv?.teamName ?? ""}
-        role={inv?.role ?? ""}
+        role={inv?.role}
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}
-        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id) } : undefined}
+        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id), user: session.user.email } : undefined}
         lang={langOf(c.req.header("accept-language"), c.req.header("cookie"))}
       />,
     );
@@ -325,6 +345,21 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       )
       .orderBy(desc(invitation.createdAt));
 
+  // "Needs you" names an alert's kind inside a sentence.
+  const ALERT_KIND: Record<string, string> = {
+    instruction_like: "looks like an instruction",
+    secret_blocked: "secret blocked",
+    loop_guard: "agent loop",
+    loop_needs_human: "loop waiting for a person",
+    audit_tamper: "audit log tampered with",
+  };
+
+  // Presence on the overview: the sessions seen last, live ones first; the Agents page has them all.
+  const PRESENCE_CAP = 12;
+
+  // The overview: what needs me first, then the line of the last day, who is connected, and agent traffic for admins (right
+  // after what needs me while it is stopped). Every focusable part of the live region has a stable id, so htmx gives the
+  // focus back to it after a live refresh; a refresh that fails keeps the region and offers to retry.
   consoleApp.get("/", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
@@ -338,120 +373,210 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
           .where(and(eq(memoryItem.teamId, p.teamId), eq(memoryItem.status, "proposed")))
       : [];
     const openAlerts = and(eq(alert.teamId, p.teamId), eq(alert.status, "open"));
-    const alerts = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(5) : [];
+    const [newest] = isAdmin(p) ? await db.select().from(alert).where(openAlerts).orderBy(desc(alert.createdAt)).limit(1) : [];
     const [alertCount] = isAdmin(p) ? await db.select({ n: count() }).from(alert).where(openAlerts) : [];
     const nAlerts = alertCount?.n ?? 0;
-    const line = await recentLine(p);
+    // Threads the loop guard muted where this person can reply, which reopens them: team threads and their own.
+    const mine = (await participantThreads(p)).map((r) => r.id);
+    const muted = await db
+      .select({ id: thread.id })
+      .from(thread)
+      .where(
+        and(
+          eq(thread.teamId, p.teamId),
+          isNotNull(thread.mutedAt),
+          or(isNull(thread.mutedReason), ne(thread.mutedReason, "human")),
+          or(p.role === "guest" ? undefined : eq(thread.kind, "team"), inArray(thread.id, mine)),
+          not(archivedThread()),
+        ),
+      )
+      .orderBy(desc(thread.lastMessageAt));
+    // The line keeps the last day; older messages wait on the threads page, as do the ones past the cap.
+    const line = await recentLine(p, mine);
     const dayAgo = Date.now() - 86_400_000;
-    const recent = line.filter((r) => r.message.createdAt.getTime() >= dayAgo);
-    const earlier = line.filter((r) => r.message.createdAt.getTime() < dayAgo);
+    const shown = line.filter((r) => r.message.createdAt.getTime() >= dayAgo).slice(0, LINE_CAP);
+    const online = agents.filter((r) => presence(r.agent) === "online").length;
+    const n = (k: number, one: string, many: string) => counted(_.lang, k, one, many);
+    const need = (id: string, href: string, text: string, go: string, warn?: boolean, more?: Child) => (
+      <li>
+        <a id={id} href={href} data-tone={warn ? "warn" : undefined}>
+          {warn ? <Icon name="triangle-alert" /> : <span class="dot" />}
+          <span class="need-text">
+            <strong>{text}</strong>
+            {more}
+          </span>
+          <span class="need-go">
+            <span>{go}</span>
+            <Icon name="chevron-right" />
+          </span>
+        </a>
+      </li>
+    );
+    const traffic = isAdmin(p) && (
+      <section id="agent-traffic" class="traffic" data-tone={p.paused ? "danger" : undefined} aria-labelledby="traffic-h">
+        <h2 id="traffic-h">
+          {p.paused && <Icon name="octagon-alert" />}
+          {_("Agent traffic")}
+        </h2>
+        {p.paused ? (
+          <form hx-post="/console/kill-switch/resume" hx-swap="none">
+            <p>
+              <strong class="traffic-state">{_("Stopped.")}</strong>{" "}
+              {_("Agents can't send messages or claim files until you resume agent traffic.")}
+            </p>
+            <Field id="kill-confirm" label={_("Type yes to resume agent traffic")} lang={_.lang}>
+              <input id="kill-confirm" name="confirm" required autocomplete="off" />
+            </Field>
+            <button type="submit" id="traffic-resume" class="primary">
+              {_("Resume agent traffic")}
+            </button>
+          </form>
+        ) : (
+          <form
+            hx-post="/console/kill-switch"
+            hx-swap="none"
+            data-confirm={_("Stop agent traffic?")}
+            data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
+            data-confirm-action={_("Stop agent traffic")}
+          >
+            <p>
+              <strong>{_("Flowing.")}</strong>{" "}
+              {_("Stopping it refuses every agent message and claim, for the whole team, until an admin resumes it.")}
+            </p>
+            <Field id="kill-reason" label={_("Reason")} lang={_.lang}>
+              <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
+            </Field>
+            <button type="submit" id="traffic-stop" class="danger">
+              {_("Stop agent traffic…")}
+            </button>
+          </form>
+        )}
+      </section>
+    );
     return page(
       c,
       "Overview",
-      <div
-        id="live"
-        hx-get="/console"
-        hx-select="#live"
-        hx-target="#live"
-        hx-swap="outerHTML"
-        hx-trigger="sse:presence, sse:attention, sse:activity"
-        class="dash"
-      >
-        <section class="dash-line" aria-labelledby="line-h">
-          <h2 id="line-h">{_("On the line")}</h2>
-          {line.length === 0 && (
-            <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
-          )}
-          {recent.length > 0 && <Line rows={recent} _={_} />}
-          {earlier.length > 0 && (
-            <>
-              <h3 class="rule">{_("Earlier")}</h3>
-              <Line rows={earlier} _={_} archived />
-            </>
-          )}
-        </section>
-        <div class="dash-side">
-          <section aria-labelledby="presence-h">
-            <h2 id="presence-h">{_("Presence")}</h2>
+      <>
+        <div
+          id="live"
+          hx-get="/console"
+          hx-select="#live"
+          hx-target="#live"
+          hx-swap="outerHTML"
+          hx-trigger="sse:presence, sse:attention, sse:activity"
+          class="overview"
+        >
+          <p class="loading-text">{_("Loading…")}</p>
+          <section class="needs" aria-labelledby="needs-h">
+            <h2 id="needs-h">{_("Needs you")}</h2>
+            {nAlerts === 0 && muted.length === 0 && toValidate.length === 0 && invites.length === 0 ? (
+              <p class="empty">{_("Nothing needs you right now.")}</p>
+            ) : (
+              <ul class="needs-list">
+                {nAlerts > 0 &&
+                  need(
+                    "need-alerts",
+                    "/console/alerts",
+                    n(nAlerts, "1\u00a0open alert.", "{n}\u00a0open alerts."),
+                    _("Review alerts"),
+                    true,
+                    newest && (
+                      <span class="need-more">
+                        {" "}
+                        {_("Newest:")} {_(ALERT_KIND[newest.kind] ?? newest.kind)}, <When at={newest.createdAt} lang={_.lang} />.
+                      </span>
+                    ),
+                  )}
+                {muted.length > 0 &&
+                  need(
+                    "need-muted",
+                    muted.length === 1 ? `/console/threads/${muted[0]?.id}` : "/console/threads",
+                    n(muted.length, "1\u00a0thread muted by the loop guard.", "{n}\u00a0threads muted by the loop guard."),
+                    _(muted.length === 1 ? "Open thread" : "Open threads"),
+                    true,
+                  )}
+                {toValidate.length > 0 &&
+                  need(
+                    "need-memory",
+                    "/console/memory?status=proposed",
+                    n(toValidate.length, "1\u00a0memory proposal waits for a decision.", "{n}\u00a0memory proposals wait for a decision."),
+                    _("Review memory"),
+                  )}
+                {invites.length > 0 &&
+                  need(
+                    "need-invitations",
+                    "/console/members",
+                    n(invites.length, "1\u00a0invitation not accepted yet.", "{n}\u00a0invitations not accepted yet."),
+                    _("Open members"),
+                  )}
+              </ul>
+            )}
+          </section>
+          {p.paused && traffic}
+          <section class="line-section" aria-labelledby="line-h">
+            <div class="section-head">
+              <h2 id="line-h">{_("On the line")}</h2>
+              <p class="section-note">{_("Last 24\u00a0h")}</p>
+            </div>
+            {line.length === 0 ? (
+              <p class="empty">{_("No messages yet. When agents talk, each message appears here as a line between them.")}</p>
+            ) : shown.length === 0 ? (
+              <p class="empty">{_("No messages in the last 24 hours. Older ones are on the threads page.")}</p>
+            ) : (
+              <Line rows={shown} _={_} />
+            )}
+            {/* Phones show the first rows only: the way to the rest is theirs alone when wide screens show it all. */}
+            {(line.length > shown.length || shown.length > LINE_PHONE) && (
+              <p class={line.length > shown.length ? "line-more" : "line-more phone"}>
+                <a id="line-more" href="/console/threads">
+                  {_("See all threads")}
+                </a>
+              </p>
+            )}
+          </section>
+          <section class="presence" aria-labelledby="presence-h">
+            <div class="section-head">
+              <h2 id="presence-h">{_("Presence")}</h2>
+              {online > 0 && <p class="section-note">{n(online, "1\u00a0online", "{n}\u00a0online")}</p>}
+            </div>
             <People
               rows={agents}
               lang={_.lang}
-              empty={_(
-                isAdmin(p)
-                  ? "No agent connected. Copy the invitation command to add one: codetgh invite <email>."
-                  : "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team's repository.",
-              )}
+              cap={PRESENCE_CAP}
+              fold="offline"
+              more={
+                <a id="presence-more" href="/console/agents">
+                  {_("See all agents")}
+                </a>
+              }
+              empty={
+                agents.length > 0 ? (
+                  _("No agent connected right now.")
+                ) : isAdmin(p) ? (
+                  <>
+                    <p class="empty">{_("No agent connected. Copy the invitation command to add one.")}</p>
+                    <CodeBlock code="codetgh invite <email>" lang={_.lang} command id="copy-invite" />
+                  </>
+                ) : (
+                  <>
+                    <p class="empty">{_("No agent connected yet. Set up CodeTgh, then start it in the team's repository.")}</p>
+                    <CodeBlock code="codetgh setup" lang={_.lang} command id="copy-setup" copyLabel={_("Copy the setup command")} />
+                    <CodeBlock code="codetgh start" lang={_.lang} command id="copy-start" copyLabel={_("Copy the start command")} />
+                  </>
+                )
+              }
             />
           </section>
-          <section aria-labelledby="todo-h">
-            <h2 id="todo-h">{_("To handle")}</h2>
-            {toValidate.length === 0 && nAlerts === 0 && invites.length === 0 && <p class="empty">{_("Nothing to handle.")}</p>}
-            <ul class="todo">
-              {toValidate.length > 0 && (
-                <li>
-                  <Pill tone="warn">{_("to validate")}</Pill>{" "}
-                  <a href="/console/memory?status=proposed">
-                    {_("Team memory to validate")}
-                    {_(": ")}
-                    {toValidate.length}
-                  </a>
-                </li>
-              )}
-              {alerts.map((a) => (
-                <li>
-                  <Pill tone="danger">{_(a.kind)}</Pill> <span class="excerpt">{a.excerpt.slice(0, 120)}</span>{" "}
-                  <When at={a.createdAt} lang={_.lang} />
-                </li>
-              ))}
-              {nAlerts > 0 && (
-                <li>
-                  <a href="/console/alerts">
-                    {_("Review alerts")} ({nAlerts})
-                  </a>
-                </li>
-              )}
-              {invites.length > 0 && (
-                <li>
-                  <Pill>{_("invited")}</Pill>{" "}
-                  <a href="/console/members">
-                    {_("Invitations not accepted yet")}
-                    {_(": ")}
-                    {invites.length}
-                  </a>
-                </li>
-              )}
-            </ul>
-            {isAdmin(p) && (
-              <>
-                <h3 id="agent-traffic">{_("Kill switch")}</h3>
-                {p.paused ? (
-                  <form hx-post="/console/kill-switch/resume" hx-swap="none">
-                    <label>
-                      {_("Type yes to resume agent traffic")} <input name="confirm" required />
-                    </label>
-                    <button type="submit">{_("Resume")}</button>
-                  </form>
-                ) : (
-                  <form
-                    hx-post="/console/kill-switch"
-                    hx-swap="none"
-                    data-confirm={_("Stop agent traffic?")}
-                    data-confirm-body={_("Agents can't send messages or claim files until an admin resumes agent traffic.")}
-                    data-confirm-action={_("Stop agent traffic")}
-                  >
-                    <label>
-                      {_("Reason")} <input id="kill-reason" hx-preserve="true" name="reason" required maxlength={500} />
-                    </label>
-                    <button type="submit" class="danger">
-                      {_("Stop agent traffic…")}
-                    </button>
-                  </form>
-                )}
-              </>
-            )}
-          </section>
+          {!p.paused && traffic}
         </div>
-      </div>,
+        {/* Shown by the stylesheet only after a live refresh failed (console.js writes why after the region): a full reload. */}
+        <p class="live-retry">
+          <a id="live-retry" class="button tertiary" href="/console">
+            <Icon name="refresh-cw" />
+            {_("Retry")}
+          </a>
+        </p>
+      </>,
     );
   });
 
@@ -486,13 +611,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // The activity line: who wrote to whom, never what. Same visibility as the thread page: a reply addressed to one person
   // stays between them, admins excepted.
-  async function recentLine(p: Principal) {
-    const mine = isAdmin(p) ? [] : (await participantThreads(p)).map((r) => r.id);
+  async function recentLine(p: Principal, mine: string[]) {
     const rows = await db
-      .select({ message, name: user.name })
+      .select({ message, name: user.name, handle: membership.handle, subject: thread.subject, kind: thread.kind })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
       .innerJoin(thread, eq(thread.id, message.threadId))
+      // Display only: the sender's handle names their lane, the subject tells threads apart.
+      .leftJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
       .where(and(eq(message.teamId, p.teamId), visibleThreads(p, mine), isAdmin(p) ? undefined : sentOrReceivedBy(db, p)))
       .orderBy(desc(message.createdAt))
       .limit(40);
@@ -515,7 +641,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
         .where(and(eq(agent.teamId, p.teamId), inArray(agent.id, agents))))
         handles.set(`agent:${r.id}`, `@${r.handle}`);
-    return rows.map((r) => ({ ...r, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
+    // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
+    return rows.map(({ kind, ...r }) => ({
+      ...r,
+      subject: kind === "direct" && !mine.includes(r.message.threadId) ? null : r.subject,
+      message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) },
+    }));
   }
 
   consoleApp.get("/threads", async (c) => {
@@ -1110,49 +1241,15 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.get("/me", (c) =>
-    page(
-      c,
-      "My data",
-      <>
-        <form hx-post="/console/me/profile" hx-swap="none">
-          <label>
-            {tr(c)("Display name")} <input name="name" value={c.get("principal").user.name} maxlength={60} required />
-          </label>
-          <button type="submit">{tr(c)("Save")}</button>
-        </form>
-        <p>
-          <a href="/console/me/export">Download everything CodeTgh stores about you (JSON)</a>
-        </p>
-        <h2>Slack</h2>
-        <form hx-post="/console/me/slack" hx-target="#slack-code">
-          <button type="submit">Link Slack</button>
-        </form>
-        <div id="slack-code" />
-        <h2>Erase my data</h2>
-        <p>
-          Your messages, subjects, claim reasons and task notes become [erased], your name becomes Former member, your claims are released,
-          your tasks go back to the team and your access ends. Tasks and team memory you wrote stay with the team; the audit log keeps ids
-          only.
-        </p>
-        <form hx-post="/console/me/erase" hx-swap="none">
-          <label>
-            Type erase to confirm <input name="confirm" required />
-          </label>
-          <button type="submit">Erase my data</button>
-        </form>
-      </>,
-    ),
+    page(c, "My data", <MyData _={tr(c)} p={c.get("principal")} />, undefined, {
+      head: <p class="lede">{tr(c)("What this hub keeps about you, and what you can do with it.")}</p>,
+    }),
   );
 
   consoleApp.post("/me/slack", async (c) => {
     const code = await createSlackCode(messaging, c.get("principal"));
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>In Slack, type this within 10 minutes. Then your replies in CodeTgh threads there reach the team as you.</p>
-        <pre>{`/codetgh-link ${code}`}</pre>
-      </Result>,
-    );
+    return c.html(<SlackCode _={tr(c)} code={code} />);
   });
 
   consoleApp.get("/me/export", async (c) => {
@@ -1165,7 +1262,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/me/erase", async (c) => {
     requireFresh(c);
     const p = c.get("principal");
-    await eraseMe(db, p, (await form(c)).confirm ?? "");
+    await eraseMe(db, p, (await form(c)).confirm ?? "").catch(reworded(tr(c)));
     bus.emit("revoked", { teamId: p.teamId, userId: p.user.id });
     bus.emit("presence", { teamId: p.teamId });
     return c.body(null, 204, { "HX-Redirect": "/login" });
@@ -1173,35 +1270,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/tokens", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const rows = await db
       .select()
       .from(personalToken)
       .where(and(eq(personalToken.userId, p.user.id), eq(personalToken.teamId, p.teamId), isNull(personalToken.revokedAt)))
       .orderBy(desc(personalToken.createdAt));
-    return page(
-      c,
-      "Personal tokens",
-      <>
-        <form hx-post="/console/tokens" hx-target="#new-token">
-          <label>
-            Label (machine or use) <input name="label" required maxlength={60} />
-          </label>
-          <button type="submit">Create a token</button>
-        </form>
-        <div id="new-token" />
-        <Table
-          lang={tr(c).lang}
-          head={["Label", "Created", "Expires", "Actions"]}
-          rows={rows.map((t) => [
-            t.label,
-            <When at={t.createdAt} />,
-            <When at={t.expiresAt} />,
-            <Action post={`/console/tokens/${t.id}/revoke`} label="Revoke" />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-      </>,
-    );
+    return page(c, "Personal tokens", <Tokens _={_} rows={rows} />, undefined, {
+      head: (
+        <p class="lede">
+          {_("A token lets a terminal or a script act as you on this hub, for 90\u00a0days. Revoke the ones you no longer use.")}
+        </p>
+      ),
+      actions: <TokenForm _={_} open={rows.length === 0} />,
+    });
   });
 
   consoleApp.post("/tokens", async (c) => {
@@ -1212,31 +1294,47 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const { id, token } = await createPersonalToken(db, { userId: p.user.id, teamId: p.teamId, label });
     await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "token.created", subjectId: id }));
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>Copy it now: it will not be shown again.</p>
-        <pre>{token}</pre>
-        <p>Then, on your machine:</p>
-        <pre>{`codetgh login --url ${config.publicUrl}\nclaude plugin install codetgh@<marketplace>   # hub URL: ${config.publicUrl}, token: the value above`}</pre>
-      </Result>,
-    );
+    return c.html(<TokenCreated _={tr(c)} token={token} url={config.publicUrl} />);
   });
 
-  // Browser sign-in: the person types the code their terminal shows, checks the machine, then approves or denies.
+  // Browser sign-in: the person types the code their terminal shows, checks the code and the machine, then approves or denies.
   consoleApp.get("/device", (c) => {
     const _ = tr(c);
     return page(
       c,
       "Sign in a terminal",
-      <>
-        <form hx-post="/console/device" hx-target="#device">
-          <label>
-            {_("Code shown in your terminal")} <input name="user_code" required maxlength={20} autocomplete="off" />
-          </label>
-          <button type="submit">{_("Continue")}</button>
-        </form>
-        <div id="device" />
-      </>,
+      <div class="device">
+        <section class="panel">
+          <form hx-post="/console/device" hx-target="#device">
+            <Field
+              id="user-code"
+              label={_("Code shown in your terminal")}
+              lang={_.lang}
+              help={_("8 letters, like BCDF-GHJK. Capitals and the dash are optional.")}
+            >
+              <input
+                id="user-code"
+                name="user_code"
+                required
+                maxlength={20}
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck={false}
+                {...fieldAria("user-code", { help: 1 })}
+              />
+            </Field>
+            <button type="submit" class="primary">
+              {_("Continue")}
+            </button>
+          </form>
+        </section>
+        {/* A polite live region from the first render: the check panel and the answers swapped in are announced. */}
+        <div id="device" aria-live="polite" />
+      </div>,
+      undefined,
+      {
+        head: <p class="lede">{_("When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.")}</p>,
+      },
     );
   });
   const deviceInput = async (c: Context<Env>) => {
@@ -1244,27 +1342,72 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Type the 8-letter code your terminal shows."));
     return { code: parsed.data.user_code, keys: { user: c.get("principal").user.id, ip: clientIp(c, config.trustedProxy) } };
   };
+  // The domain's refusals of a code, in the reader's words: the page shows them under the form or the button that sent it.
+  const deviceStep = <T,>(c: Context<Env>, step: () => T): T => {
+    try {
+      return step();
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      const _ = tr(c);
+      if (e.code === "E_NOT_FOUND")
+        throw new HubError(e.code, _("This code is unknown or has expired. Check the code in your terminal, or run codetgh login again."));
+      if (e.code === "E_RATE_LIMITED")
+        throw new HubError(e.code, _("Too many wrong codes. Wait a few minutes, then type the code again."), e.retryAfterS);
+      throw e;
+    }
+  };
   consoleApp.post("/device", async (c) => {
     const _ = tr(c);
     const { code, keys } = await deviceInput(c);
-    const entry = device.find(code, keys);
+    const entry = deviceStep(c, () => device.find(code, keys));
     const vals = JSON.stringify({ user_code: code });
+    // Within the code's ten minutes: seconds, then minutes.
+    const ago = Math.round((entry.startedAt - Date.now()) / 1000);
+    const relative = new Intl.RelativeTimeFormat(_.lang, { numeric: "auto" });
+    // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare. The
+    // token goes to the account signed in here, which the account menu hides on phones.
     return c.html(
-      <Result>
-        <p>
-          {_("Machine")}: <strong>{entry.label}</strong> ({_("typed by whoever started this request, so it proves nothing")})
+      <section class="panel device-check" aria-labelledby="device-check">
+        <h2 id="device-check">{_("Check this sign-in")}</h2>
+        <dl class="facts">
+          <div>
+            <dt>{_("Code")}</dt>
+            <dd>
+              <code class="user-code" translate="no">{`${code.slice(0, 4)}-${code.slice(4)}`}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Machine")}</dt>
+            <dd>
+              <Chip>{entry.label}</Chip>
+              <p class="help">{_("Sent by the terminal. Anyone can send any name, so compare the code, not the name.")}</p>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Started")}</dt>
+            <dd>
+              <Stamp at={new Date(entry.startedAt)} lang={_.lang} /> ·{" "}
+              {Math.abs(ago) < 60 ? relative.format(ago, "second") : relative.format(Math.round(ago / 60), "minute")}
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Signed in as")}</dt>
+            <dd>{c.get("principal").user.email}</dd>
+          </div>
+        </dl>
+        <p class="warn-line">
+          <Icon name="triangle-alert" />
+          {_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}
         </p>
-        <p>
-          {_("Started")} <When at={new Date(entry.startedAt)} lang={_.lang} />
+        <p class="actions">
+          <button type="button" class="primary" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
+            {_("Approve")}
+          </button>
+          <button type="button" class="secondary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+            {_("Deny")}
+          </button>
         </p>
-        <p>{_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}</p>
-        <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
-          {_("Approve")}
-        </button>{" "}
-        <button type="button" class="tertiary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
-          {_("Deny")}
-        </button>
-      </Result>,
+      </section>,
     );
   });
   consoleApp.post("/device/approve", async (c) => {
@@ -1272,20 +1415,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireFresh(c);
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
+    const entry = deviceStep(c, () => device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
+    const _ = tr(c);
+    return c.html(
+      <Banner tone="success" title={_("Terminal approved")}>
+        {_("Go back to your terminal: it finishes on its own.")}
+      </Banner>,
+    );
   });
   consoleApp.post("/device/deny", async (c) => {
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { deny: true });
+    const entry = deviceStep(c, () => device.decide(code, keys, { deny: true }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
+    const _ = tr(c);
+    return c.html(<Banner title={_("Sign-in denied")}>{_("No token was created.")}</Banner>);
   });
 
   consoleApp.post("/tokens/:id/revoke", async (c) => {
@@ -1310,94 +1459,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Members",
       <>
-        <form hx-post="/console/members/invite" hx-target="#invite-result">
-          <label>
-            {_("Email")} <input name="email" type="email" required autocomplete="off" />
-          </label>
-          <label>
-            {_("Role")}{" "}
-            <select name="role">
-              {ROLES.filter((r) => r !== "owner" || p.role === "owner").map((r) => (
-                <option value={r} selected={r === "member"}>
-                  {_(r)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {_("Valid for (days)")} <input name="days" type="number" min={1} max={30} value="7" required />
-          </label>
-          <button type="submit">{_("Invite")}</button>
-        </form>
-        <div id="invite-result" />
-        <h2>{_("Invitations")}</h2>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Email"), _("Role"), _("Sent"), _("Expires"), _("Actions")]}
-          rows={invites.map((i) => [
-            i.email,
-            <Pill>{_(i.role)}</Pill>,
-            <When at={i.createdAt} lang={_.lang} />,
-            <When at={i.expiresAt} lang={_.lang} />,
-            <Action post={`/console/invitations/${i.id}/revoke`} label={_("Revoke invitation")} />,
-          ])}
-          empty={_("No pending invitations. Invite someone with the form above, or run codetgh invite <email>.")}
-        />
-        <h2>{_("Members")}</h2>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Name"), _("Handle"), _("Email"), _("Role"), _("Actions")]}
-          rows={rows.map((r) => [
-            r.name,
-            // Only an owner renames an owner.
-            r.membership.role === "owner" && p.role !== "owner" ? (
-              `@${r.membership.handle}`
-            ) : (
-              <form hx-post={`/console/members/${r.membership.id}/handle`} hx-swap="none" class="inline">
-                <label>
-                  <span class="sr-only">{_("Handle")}</span>@
-                  <input name="handle" value={r.membership.handle} maxlength={40} pattern="[a-z0-9][a-z0-9\-]{0,39}" size={12} />
-                </label>
-                <button type="submit" class="tertiary">
-                  {_("Rename")}
-                </button>
-              </form>
-            ),
-            r.email,
-            <Pill>{_(r.membership.role)}</Pill>,
-            r.membership.userId !== p.user.id && (
-              <>
-                {ROLES.filter((role) => role !== r.membership.role && (role !== "owner" || p.role === "owner")).map((role) => (
-                  <Action post={`/console/members/${r.membership.id}/role`} vals={{ role }} label={_(`Make ${role}`)} />
-                ))}
-                <Action post={`/console/members/${r.membership.id}/revoke`} label={_("Revoke")} />
-              </>
-            ),
-          ])}
-          empty={_("Nothing yet.")}
-        />
+        <Members _={_} rows={rows} viewer={p} />
+        <Invitations _={_} rows={invites} />
       </>,
+      undefined,
+      {
+        head: <p class="lede">{_("Everyone on the team and what each person can do. Invite someone, change a role, or revoke access.")}</p>,
+        actions: <InviteForm _={_} owner={p.role === "owner"} />,
+      },
     );
   });
 
   consoleApp.post("/members/invite", async (c) => {
     const f = await form(c);
-    const _ = tr(c);
     const { link, emailed, days } = await inviteMember(
       { db, mailer, publicUrl: config.publicUrl },
       c.get("principal"),
       { email: f.email ?? "", role: f.role || "member", days: f.days ? Number(f.days) : undefined },
       "console",
-    );
-    return c.html(
-      <Result>
-        <p>
-          {emailed ? `${_("Invitation emailed to")} ${f.email}.` : `${_("Send this link to")} ${f.email}`} ({_("valid")} {days} {_("days")}
-          ):
-        </p>
-        <pre>{link}</pre>
-      </Result>,
-    );
+    ).catch(reworded(tr(c)));
+    return c.html(<Invited _={tr(c)} email={f.email ?? ""} link={link} days={days} emailed={emailed} />);
   });
 
   consoleApp.post("/invitations/:id/revoke", async (c) => {
@@ -1416,7 +1497,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   });
 
   consoleApp.post("/settings/team", async (c) => {
-    await renameTeam(db, c.get("principal"), (await form(c)).name ?? "");
+    await renameTeam(db, c.get("principal"), (await form(c)).name ?? "").catch(reworded(tr(c)));
     return refresh(c);
   });
 
@@ -1516,104 +1597,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const p = c.get("principal");
     requireAdmin(p);
     const _ = tr(c);
-    return page(
-      c,
-      "Settings",
-      <>
-        <form hx-post="/console/settings/team" hx-swap="none">
-          <label>
-            {_("Team name")} <input name="name" value={p.teamName} maxlength={80} required />
-          </label>
-          <button type="submit">{_("Rename the team")}</button>
-        </form>
-        <form hx-post="/console/settings" hx-swap="none" class="settings">
-          <section aria-labelledby="rules-h">
-            <h2 id="rules-h">{_("Agent rules")}</h2>
-            <label>
-              {_("When an agent edits a file someone else claimed")}{" "}
-              <select name="claims_enforcement">
-                {CLAIM_ENFORCEMENT.map((level) => (
-                  <option
-                    value={level}
-                    selected={(["warn", "off"].includes(p.settings.claims_enforcement ?? "") ? "warn" : "ask") === level}
-                  >
-                    {_({ warn: "warn the agent, never block", ask: "ask the human (default)" }[level])}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p class="meta">
-              {_(
-                "Autonomous sessions (bypassPermissions) cannot answer a question: CodeTgh warns them instead of asking. Choose warn for teams that run them.",
-              )}
-            </p>
-            <label>
-              {_("Who accepts team memory")}{" "}
-              <select name="memory_accept_by">
-                {(["member", "admin", "owner"] as const).map((r) => (
-                  <option value={r} selected={(p.settings.memory_accept_by ?? "member") === r}>
-                    {_(r)} {_("and above")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <input type="checkbox" name="memory_accept_via_mcp" value="on" checked={Boolean(p.settings.memory_accept_via_mcp)} />{" "}
-              {_("Allow accepting memory from Claude Code (asks the user every time; claude.ai and the Agent SDK cannot guarantee that)")}
-            </label>
-            <label>
-              <input type="checkbox" name="auto_link_projects" value="on" checked={p.settings.auto_link_projects !== false} />{" "}
-              {_("Link a new repository when a member starts a session in it (otherwise an admin runs codetgh project new)")}
-            </label>
-            <label>
-              <input type="checkbox" name="push_rewake" value="on" checked={(p.settings.push_allowed_modes ?? []).includes("rewake")} />{" "}
-              {_(
-                "Allow rewake push: an idle Claude Code session wakes up when a message arrives (each member also turns it on in the plugin)",
-              )}
-            </label>
-            <label>
-              {_("Message retention (days)")}{" "}
-              <input name="retention_days" type="number" min={1} max={3650} value={String(p.settings.retention_days ?? 90)} />
-            </label>
-            <label>
-              {_("Extra secret patterns (regular expressions, one per line)")}{" "}
-              <textarea name="secret_patterns" rows={4}>
-                {(p.settings.secret_patterns ?? []).join("\n")}
-              </textarea>
-            </label>
-          </section>
-          <section aria-labelledby="bridges-h">
-            <h2 id="bridges-h">{_("Bridges")}</h2>
-            <label>
-              {_("Slack channel id for alerts and blocking requests (e.g. C0123ABC)")}{" "}
-              <input name="slack_channel" maxlength={40} pattern="[A-Z0-9]+" value={p.settings.slack_channel ?? ""} />
-            </label>
-            <label>
-              {_("Loop orchestrator: handle of the member whose agent judges muted agent loops (empty: a human reopens)")}{" "}
-              <input name="loop_orchestrator" maxlength={40} pattern="[a-z0-9-]+" value={p.settings.loop_orchestrator ?? ""} />
-            </label>
-          </section>
-          <button type="submit">{_("Save")}</button>
-        </form>
-        <section aria-labelledby="github-h" class="settings">
-          <h2 id="github-h">{_("GitHub bridge")}</h2>
-          <p>
-            <Pill tone={p.settings.github_hook ? "ok" : "neutral"}>
-              {_(p.settings.github_hook ? "webhook configured" : "not configured")}
-            </Pill>{" "}
-            <button type="button" hx-post="/console/settings/github" hx-target="#github-hook">
-              {_(p.settings.github_hook ? "Replace the webhook secret" : "Create the webhook")}
-            </button>
-          </p>
-          <div id="github-hook" />
-          <h2>{_("Audit public key")}</h2>
-          <p class="meta">
-            {_("key id")} {auditKey.keyId}
-          </p>
-          <pre>{auditKey.publicKey}</pre>
-        </section>
-      </>,
-    );
+    return page(c, "Settings", <Settings _={_} p={p} s={p.settings} auditKey={auditKey} />, undefined, {
+      head: <p class="lede">{_("How agents work on this team, and the bridges to Slack and GitHub.")}</p>,
+    });
   });
 
   // The secret is shown once; creating a new webhook replaces the old secret.
@@ -1621,15 +1607,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireFresh(c);
     const hook = await createGithubHook(db, c.get("principal"), config.secret);
     c.header("Cache-Control", "no-store");
-    return c.html(
-      <Result>
-        <p>
-          In your GitHub App (Settings → Webhook), set these, then subscribe to Pull request, Check suite and Create events. The secret is
-          shown once.
-        </p>
-        <pre>{`Webhook URL: ${config.publicUrl}/bridges/github/${hook.id}\nSecret: ${hook.secret}`}</pre>
-      </Result>,
-    );
+    return c.html(<GithubHook _={tr(c)} url={`${config.publicUrl}/bridges/github/${hook.id}`} secret={hook.secret} />);
   });
 
   consoleApp.post("/settings", async (c) => {
