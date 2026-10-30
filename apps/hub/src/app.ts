@@ -72,7 +72,7 @@ import {
   touchSession,
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
-import { Bus } from "./domain/bus.js";
+import { Bus, nextEvent } from "./domain/bus.js";
 import { checkPaths, noClaims, preEdit } from "./domain/claims.js";
 import { clientIp, DEVICE_INTERVAL_S, DEVICE_TTL_S, DeviceAuth } from "./domain/device.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
@@ -479,26 +479,6 @@ export function createApp({
     };
   };
 
-  // Resolves on the next message for this user ("message"), on kill switch or revocation ("stop"), or at the deadline.
-  const nextEvent = (p: Principal, ms: number) =>
-    new Promise<"message" | "stop" | "timeout">((resolve) => {
-      const done = (r: "message" | "stop" | "timeout") => {
-        clearTimeout(timer);
-        bus.off("message", onMessage);
-        bus.off("kill", onKill);
-        bus.off("revoked", onRevoked);
-        resolve(r);
-      };
-      const onMessage = (e: { teamId: string; recipientUserIds: string[] }) =>
-        e.teamId === p.teamId && e.recipientUserIds.includes(p.user.id) && done("message");
-      const onKill = (e: { teamId: string }) => e.teamId === p.teamId && done("stop");
-      const onRevoked = (e: { userId: string }) => e.userId === p.user.id && done("stop");
-      const timer = setTimeout(() => done("timeout"), ms);
-      bus.on("message", onMessage);
-      bus.on("kill", onKill);
-      bus.on("revoked", onRevoked);
-    });
-
   // UserPromptSubmit: up to 5 unread envelopes, blocking first; 304 when nothing changed since the last call.
   // With wait_s (rewake push, opt-in per team) the request is held until something new arrives, up to 55 s.
   v1.get("/inbox/prompt", async (c) => {
@@ -523,7 +503,11 @@ export function createApp({
         c.header("ETag", etag);
         if (context && seen !== etag) return c.json({ context });
         const left = deadline - Date.now();
-        if (left <= 0 || (await nextEvent(p, left)) !== "message") return c.body(null, context ? 304 : 204);
+        if (
+          left <= 0 ||
+          (await nextEvent(bus, p, left, (e) => e.teamId === p.teamId && e.recipientUserIds.includes(p.user.id))) !== "message"
+        )
+          return c.body(null, context ? 304 : 204);
       }
     } finally {
       release();

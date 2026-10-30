@@ -25,6 +25,7 @@ import {
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { type Agent, delegateFor, resolveAgent, setStatus } from "./domain/agents.js";
+import { nextEvent } from "./domain/bus.js";
 import { checkPaths, createClaims, releaseClaims } from "./domain/claims.js";
 import { sendHandoff } from "./domain/handoff.js";
 import { takeWrite } from "./domain/limits.js";
@@ -225,22 +226,7 @@ export function createMcpServer(deps: MessagingDeps, p: Principal) {
           })}\n\n${envelope(item)}`;
         const first = await findAnswer(db, p, a, q.id);
         if (first) return answered(first);
-        await new Promise<void>((resolve) => {
-          const done = () => {
-            clearTimeout(timer);
-            bus.off("message", onMessage);
-            bus.off("kill", onKill);
-            bus.off("revoked", onRevoked);
-            resolve();
-          };
-          const onMessage = (e: { replyTo: string | null; kind: string }) => e.replyTo === q.id && e.kind === "answer" && done();
-          const onKill = (e: { teamId: string }) => e.teamId === p.teamId && done();
-          const onRevoked = (e: { userId: string }) => e.userId === p.user.id && done();
-          const timer = setTimeout(done, Math.min(waitS, ASK_MAX_WAIT_S) * 1000);
-          bus.on("message", onMessage);
-          bus.on("kill", onKill);
-          bus.on("revoked", onRevoked);
-        });
+        await nextEvent(bus, p, Math.min(waitS, ASK_MAX_WAIT_S) * 1000, (e) => e.replyTo === q.id && e.kind === "answer");
         const later = await findAnswer(db, p, a, q.id);
         if (later) return answered(later);
         return {
