@@ -116,7 +116,7 @@ test("alerts with the keyboard: Dismiss, then the row's menu, whose quarantine a
   await expect(dialog).toBeHidden();
   await expect(page.locator("details.row-menu[open]")).toHaveCount(0);
   // The keyboard comes back to the menu's button, not to the page.
-  expect(await focused(page)).toMatchObject({ text: menu.text, outline: "solid 2px" });
+  await expect.poll(() => focused(page)).toMatchObject({ text: menu.text, outline: "solid 2px" });
 });
 
 for (const lang of ["en", "fr"] as const)
