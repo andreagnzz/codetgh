@@ -194,8 +194,6 @@ export const repoPath = z
     message: "use a path relative to the repository root",
   });
 
-// A scope is a path, a glob, task:<id> or resource:<name>. Paths use path characters only, so a scope can never
-// carry a sentence into another session's context.
 // Paths and globs a peer writes for others to read (claims, task paths): path characters only, so they can never
 // carry a sentence or markup into another session.
 // No ( ) or |: picomatch runs extglobs in exponential time. Revisit globTooComplex (apps/hub/src/domain/claims.ts) before adding them.

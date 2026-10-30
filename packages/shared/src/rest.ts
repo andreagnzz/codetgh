@@ -358,9 +358,9 @@ export const DeviceTokenOutput = z.discriminatedUnion("status", [
   z.object({ status: z.literal("pending") }),
   z.object({ status: z.literal("approved"), token: z.string() }),
 ]);
-// Typed by a person: case, spaces and the dash do not matter.
 // Console: attach a session started outside a repository to one of the team's projects.
 export const AgentProjectForm = z.object({ project_id: z.string().min(1).max(64) });
+// Typed by a person: case, spaces and the dash do not matter.
 export const UserCodeForm = z.object({
   user_code: z
     .string()
