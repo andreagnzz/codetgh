@@ -28,9 +28,13 @@ describe("console empty states say what to do", () => {
   });
 
   it("threads, agents, alerts and invitations", async () => {
-    expect(await get("/console/threads", team.lea.cookie)).toContain("No threads yet. A thread starts with the first message");
+    const threads = await get("/console/threads", team.lea.cookie);
+    expect(threads).toContain('<p class="empty-title">No threads yet.</p>');
+    expect(threads).toContain("A thread starts with the first message");
     expect(await get("/console/agents", team.lea.cookie)).toContain("Sessions appear here once someone sets up CodeTgh");
-    expect(await get("/console/alerts", team.lea.cookie)).toContain("No alerts. Messages that look like instructions");
+    const alerts = await get("/console/alerts", team.lea.cookie);
+    expect(alerts).toContain('<p class="empty-title">No alerts.</p>');
+    expect(alerts).toContain("Messages that look like instructions");
     expect(await get("/console/members", team.lea.cookie)).toContain("No pending invitations.");
   });
 
