@@ -67,8 +67,8 @@ const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: fals
 const ALWAYS = { "anthropic/alwaysLoad": true };
 const ASK_MAX_WAIT_S = 55; // stays under the MCP client's default 60 s request timeout
 
-const pageToken = (seq: number) => Buffer.from(String(seq)).toString("base64url");
-const fromPageToken = (t?: string) => (t ? Number(Buffer.from(t, "base64url").toString()) || undefined : undefined);
+export const pageToken = (seq: number) => Buffer.from(String(seq)).toString("base64url");
+export const fromPageToken = (t?: string) => (t ? Number(Buffer.from(t, "base64url").toString()) || undefined : undefined);
 
 export function whoami(p: Principal, a: Agent | null): Whoami {
   return {

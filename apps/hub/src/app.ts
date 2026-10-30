@@ -113,7 +113,7 @@ import { inviteMember, revokeInvitations } from "./domain/teams.js";
 import { HTTP_STATUS, HubError } from "./errors.js";
 import { langOf } from "./i18n.js";
 import { createMailer, type Mailer } from "./mailer.js";
-import { createMcpServer, whoami } from "./mcp.js";
+import { createMcpServer, fromPageToken, pageToken, whoami } from "./mcp.js";
 import { openApiDocument } from "./openapi.js";
 import { ConsentPage, ErrorPage, LoginPage } from "./pages.js";
 import { type Principal, principalForToken, principalForUser } from "./principal.js";
@@ -529,7 +529,7 @@ export function createApp({
   v1.post("/inbox", async (c) => {
     const p = c.get("principal");
     const { agent: agentArg, thread, page_token, kinds, limit } = await parse(c, InboxReadInput);
-    const afterSeq = page_token ? Number(Buffer.from(page_token, "base64url").toString()) || undefined : undefined;
+    const afterSeq = fromPageToken(page_token);
     const { items, more } = await unread(db, p, await restAgent(p, agentArg), { thread, kinds, limit, afterSeq });
     const last = items.at(-1);
     const keys = await wrappedKeys(db, p, [...new Set(items.filter((i) => i.message.encrypted).map((i) => i.message.threadId))]);
@@ -549,7 +549,7 @@ export function createApp({
           : null,
       })),
       envelopes: items.map(envelope),
-      next_page_token: more && last ? Buffer.from(String(last.seq)).toString("base64url") : null,
+      next_page_token: more && last ? pageToken(last.seq) : null,
     });
   });
 
