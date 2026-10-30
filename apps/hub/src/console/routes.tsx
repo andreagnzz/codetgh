@@ -783,7 +783,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
               title={chosen ? _("No sessions in {project}.").replace("{project}", () => chosen) : _("No sessions outside a project.")}
               action={
                 <p>
-                  <a class="agents-all" href="/console/agents?project=">
+                  <a class="agents-link" href="/console/agents?project=">
                     {_("Show all projects")}
                   </a>
                 </p>
@@ -1049,7 +1049,9 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         </p>
         {/* A new load of the page lists the agent and closes the form. */}
         <p>
-          <a href="/console/agents#external-h">{_("See it in External agents")}</a>
+          <a class="agents-link" href="/console/agents#external-h">
+            {_("See it in External agents")}
+          </a>
         </p>
       </>,
     );

@@ -1,6 +1,6 @@
 /* Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this file; the tokens, base and
    components are in console.css. Every page links every batch's stylesheet, so each rule here is scoped to this batch's
-   screens: .agents-lede (their page header), .agents-all and .add-external (Agents), .agents-table (Agents, Delegations),
+   screens: .agents-lede (their page header), .agents-link and .add-external (Agents), .agents-table (Agents, Delegations),
    .project-head and .session-list (Projects). */
 
 /* The page's description sits in the header's meta line, which already spaces it. */
@@ -8,8 +8,8 @@
   margin: 0;
 }
 
-/* A filtered page with no session: the way back to every project, as tall as a target outside a sentence. */
-.agents-all {
+/* A link on a line of its own (the way back to every project, the way to the list after Add): as tall as a target. */
+.agents-link {
   display: inline-flex;
   align-items: center;
   min-height: 24px;

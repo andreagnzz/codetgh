@@ -177,14 +177,14 @@ describe("agents", () => {
       /It appears to the team as <span class="chip" translate="no" title="@a2a-[0-9a-f]{8}">@a2a-[0-9a-f]{8}<\/span>\./,
     );
     // Once the lines are copied, a way to the list that now holds it, which also closes the form.
-    expect(ids.a2aPage).toContain('<a href="/console/agents#external-h">See it in External agents</a>');
+    expect(ids.a2aPage).toContain('<a class="agents-link" href="/console/agents#external-h">See it in External agents</a>');
   });
 
   it("says what fills an empty page, and how to see every project again", async () => {
     const filtered = main(await page(`/console/agents?project=${projects["acme/latency"]}`, team.lea.cookie));
     expect(filtered).toContain("No sessions in acme/latency.");
     // The same action, and the same name, as on Threads.
-    expect(filtered).toContain('<a class="agents-all" href="/console/agents?project=">Show all projects</a>');
+    expect(filtered).toContain('<a class="agents-link" href="/console/agents?project=">Show all projects</a>');
     const fresh = await startHub();
     try {
       const other = await fresh.seed();
