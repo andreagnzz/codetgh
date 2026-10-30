@@ -49,7 +49,7 @@ import {
   updateSettings,
 } from "../domain/admin.js";
 import { listAgents, listDelegates, presence } from "../domain/agents.js";
-import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
+import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, type WitnessStore, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
 import { clientIp, type DeviceAuth } from "../domain/device.js";
@@ -109,6 +109,7 @@ type Deps = {
   messaging: MessagingDeps;
   mailer: Mailer;
   auditKey: AuditKey;
+  witness: WitnessStore;
   hold: (key: string, max: number) => () => void;
   device: DeviceAuth;
 };
@@ -122,7 +123,7 @@ const ASSETS: Record<string, [string, string]> = {
   "sse.js": [readFileSync(require.resolve("htmx-ext-sse/dist/sse.min.js"), "utf8"), "text/javascript"],
 };
 
-export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, hold, device }: Deps) {
+export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, witness, hold, device }: Deps) {
   const app = new Hono<Env>();
   const csrfFor = (sessionId: string) => createHmac("sha256", config.secret).update(`csrf:${sessionId}`).digest("base64url");
   const csp = secureHeaders({
@@ -1479,7 +1480,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
-    await writeCheckpoint(db, p.teamId, auditKey);
+    await writeCheckpoint(db, p.teamId, auditKey, witness);
     const r = await verifyTeamAudit(db, p.teamId, auditKey.publicKey);
     return c.html(
       <Result>
@@ -1492,7 +1493,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/audit/export", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
-    await writeCheckpoint(db, p.teamId, auditKey);
+    await writeCheckpoint(db, p.teamId, auditKey, witness);
     const { events, checkpoints } = await exportAudit(db, p.teamId);
     await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "audit.exported" }));
     c.header("Content-Disposition", `attachment; filename="codetgh-audit-${p.teamId}.json"`);

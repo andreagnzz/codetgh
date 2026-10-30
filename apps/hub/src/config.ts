@@ -6,6 +6,8 @@ export type Config = {
   smtpUrl?: string;
   mailFrom?: string;
   auditKey?: string;
+  // Holds the last signed audit checkpoint per team, out of the database's reach; unset, it lives in memory.
+  stateDir?: string;
   slackBotToken?: string;
   slackSigningSecret?: string;
   slackApiUrl?: string;
@@ -38,6 +40,7 @@ export function loadConfig(env = process.env): Config {
     smtpUrl: env.SMTP_URL,
     mailFrom: env.MAIL_FROM || undefined,
     auditKey: env.CODETGH_AUDIT_KEY,
+    stateDir: env.CODETGH_STATE_DIR,
     slackBotToken: env.SLACK_BOT_TOKEN,
     slackSigningSecret: env.SLACK_SIGNING_SECRET,
     slackApiUrl: env.SLACK_API_URL,
