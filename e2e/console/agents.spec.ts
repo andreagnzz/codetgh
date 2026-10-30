@@ -148,6 +148,14 @@ for (const [lang, width] of [
           .map((th) => th.textContent),
       );
       expect(spilled, path).toEqual([]);
+      // A button in a row keeps its room while the hub answers: its busy ring never makes the table scroll.
+      await page.evaluate(() => {
+        for (const b of document.querySelectorAll(".agents-table td button")) b.setAttribute("aria-busy", "true");
+      });
+      const scrolled = await page.evaluate(
+        () => [...document.querySelectorAll(".table-wrap")].filter((w) => w.scrollWidth > w.clientWidth + 1).length,
+      );
+      expect(scrolled, path).toBe(0);
     }
   });
 

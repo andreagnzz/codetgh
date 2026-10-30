@@ -133,18 +133,20 @@
   .agents-table.sessions th:nth-child(5) {
     width: 12%;
   }
-  /* External agents: their state spans the setup columns, which do not apply to them; their Remove has the room of a button. */
+  /* External agents: their state spans the setup columns, which do not apply to them; their Remove… has the room of a busy
+     button. */
   .agents-table.external th:nth-child(1) {
     width: 26%;
   }
   .agents-table.external th:nth-child(2) {
-    width: 56%;
+    width: 54%;
   }
+  /* Delegations: Turn off… keeps the room of its busy ring, so the table never scrolls while the hub answers. */
   .agents-table.delegations th:nth-child(1) {
-    width: 26%;
+    width: 24%;
   }
   .agents-table.delegations th:nth-child(2) {
-    width: 16%;
+    width: 14%;
   }
   .agents-table.delegations th:nth-child(3) {
     width: 24%;
