@@ -395,19 +395,16 @@ export async function taskView(db: Db, p: Principal, taskId: string, withNotes =
     .where(and(eq(task.id, taskId), eq(task.teamId, p.teamId)));
   if (!row) throw new HubError("E_NOT_FOUND", `no task ${taskId}`);
   const t = row.task;
-  const authors =
-    withNotes && t.notes.length
-      ? await handles(
-          db,
-          p,
-          t.notes.map((n) => n.user_id),
-        )
-      : new Map<string, string>();
   // One line per note, its author first: a note cannot pass for another one.
-  const notes =
-    withNotes && t.notes.length
-      ? `\n\nnotes:\n${t.notes.map((n) => `- ${n.at} ${authors.get(n.user_id) ?? "?"}: ${n.text.replace(/\s+/g, " ")}`).join("\n")}`
-      : "";
+  let notes = "";
+  if (withNotes && t.notes.length) {
+    const authors = await handles(
+      db,
+      p,
+      t.notes.map((n) => n.user_id),
+    );
+    notes = `\n\nnotes:\n${t.notes.map((n) => `- ${n.at} ${authors.get(n.user_id) ?? "?"}: ${n.text.replace(/\s+/g, " ")}`).join("\n")}`;
+  }
   const body = renderPeerMessage(
     {
       id: t.id,
