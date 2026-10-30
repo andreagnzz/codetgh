@@ -305,7 +305,7 @@ beforeAll(async () => {
   expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/runner`, { on: "1" })).status).toBe(204);
   const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
   hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-  hookSecret = page.match(/Secret: ([A-Za-z0-9_-]{20,})/)?.[1] ?? "";
+  hookSecret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-runner-cfg-"));
   fake = fakes();
 });

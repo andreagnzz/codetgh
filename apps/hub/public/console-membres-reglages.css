@@ -1,2 +1,289 @@
 /* Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this file; the tokens, base
-   and components are in console.css. */
+   and components are in console.css. Every page links every batch's stylesheet, so each rule here is scoped to this batch's
+   screens: .head-form, .team-records (.team-invitations, .team-members, .team-tokens), .team-me and .team-settings. */
+
+/* The page's create form (Invite a member, Create a token) is its main job: the button that opens it is filled. Open, the form
+   takes the width of the page header, under the title. */
+.head-form {
+  flex: 1;
+  min-width: 0;
+}
+/* Closed or open, the details keeps none of the panel's bottom margin. */
+.head-form > details {
+  margin: 0;
+}
+.head-form > details:not([open]) > summary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.head-form > details:not([open]) > summary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.page-actions:has(> .head-form > details[open]) {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: var(--sp-6);
+}
+/* Beside the title, the 40 px button overhangs the 32 px title line by 4 px on each side instead of growing the row: the title
+   and the lede stay where they are on the pages without a button, and the button's center is the title's. */
+@media (min-width: 640px) {
+  .page-actions:has(> .head-form > details:not([open])) {
+    margin-block: -4px;
+  }
+}
+/* In a panel, whose paragraphs are muted, a refusal that console.js places after a form keeps the error color. */
+:is(.head-form, .team-me, .team-settings) .field-error {
+  color: var(--error);
+}
+
+/* What a form answers, shown once: a banner that says it, then the blocks to copy. */
+:is(#invite-result, #new-token, #slack-code, #github-hook):not(:empty) {
+  margin-top: var(--sp-6);
+}
+:is(#invite-result, #new-token, #slack-code, #github-hook) .banner {
+  margin-bottom: var(--sp-4);
+}
+:where(#invite-result, #new-token, #slack-code, #github-hook) > :last-child {
+  margin-bottom: 0;
+}
+:where(#new-token) > p {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text);
+}
+#github-hook > .code-label {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* A person: the name, "You" for the reader, then the email (or what a system member is) under it. */
+.member p {
+  margin: 0;
+  max-width: none;
+}
+.member-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+}
+.member-name,
+.invitation-email,
+.token-label {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.member-you {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.member-email {
+  overflow-wrap: anywhere;
+}
+.token-expired {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+}
+
+/* A panel whose form comes right under its title (Profile, Team) keeps 16 px between them, so the field's label does not read
+   as a second title. */
+:is(.team-me, .team-settings) .panel > h2 + form {
+  margin-top: var(--sp-4);
+}
+/* My data: the link that downloads the copy is as tall as the panels' buttons (40 px, 44 on a touch screen). */
+:where(.team-me .panel) > .button {
+  min-height: 40px;
+  padding-inline: var(--sp-4);
+}
+
+/* A field that starts with "@": the sign is drawn in the field, never sent. Handles and ids are machine values, in mono. */
+:is(.team-members, .team-settings) .with-prefix {
+  position: relative;
+  display: block;
+  width: min(100%, 20rem);
+  margin-top: var(--sp-1);
+}
+:is(.team-members, .team-settings) .with-prefix > span {
+  position: absolute;
+  left: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  pointer-events: none;
+}
+:is(.team-members, .team-settings) .with-prefix input {
+  width: 100%;
+  padding-left: calc(var(--sp-3) + 1ch + var(--sp-1));
+  font-family: var(--mono);
+}
+
+/* A person's menu: their handle to change first, then the roles, then revoking access apart, under a rule. */
+.team-members .row-menu .pop {
+  width: 18rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+}
+.team-members .menu-items > li:has(> .handle-form) + li,
+.team-members .menu-items > li:has(> .danger) {
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+.team-members .handle-form {
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+}
+.team-members .handle-form label {
+  margin: 0;
+}
+.team-members .handle-form .help {
+  margin: 0 0 var(--sp-2);
+}
+.team-members .handle-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+.team-members .handle-row .with-prefix {
+  flex: 1;
+  margin: 0;
+}
+.team-members .menu-items .handle-form button {
+  flex: none;
+  width: auto;
+  justify-content: center;
+  border-color: var(--border-strong);
+}
+
+/* Settings: each choice with what it changes under its label, aligned with the label's text; ids and patterns in mono. */
+.team-settings :is(input[name="slack_channel"], textarea[name="secret_patterns"]) {
+  font-family: var(--mono);
+}
+.team-settings fieldset {
+  min-width: 0;
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+  border: 0;
+}
+.team-settings legend {
+  margin-bottom: var(--sp-1);
+  padding: 0;
+  font-weight: 500;
+}
+.team-settings .check {
+  margin: 0 0 var(--sp-2);
+}
+.team-settings .check > label {
+  padding-bottom: var(--sp-1);
+}
+.team-settings .check > .help {
+  margin: 0;
+  padding-left: calc(20px + var(--sp-3));
+}
+.team-settings :is(.check + .field, fieldset + .check) {
+  margin-top: var(--sp-4);
+}
+.team-settings :is(.panel, form > section) > :last-child {
+  margin-bottom: 0;
+}
+/* The settings form is one group: its sections apart by a rule, each title 16 px above its first field, and Save settings in
+   the group's footer with what it saves, so nothing outside the group reads as saved by it. A refusal shows right under the
+   group. */
+.team-settings > form.panel {
+  padding-bottom: 0;
+}
+.team-settings > form > section + section {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--border);
+}
+.team-settings > form > section > h2 {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sub);
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.team-settings .settings-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-6) calc(-1 * var(--sp-6)) 0;
+  padding: var(--sp-4) var(--sp-6);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
+  background: var(--surface-inset);
+}
+.team-settings .settings-save > .help {
+  margin: 0;
+}
+.team-settings > form.panel + p.field-error {
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-6);
+}
+.team-settings .bridge-state {
+  margin: 0 0 var(--sp-3);
+}
+.team-settings .panel .meta code {
+  overflow-wrap: anywhere;
+}
+
+/* Under 640 px a row is a short record: its name and, in its top corner, its action; under them the other values on one line
+   that wraps, a time with its word ("Joined", "Expires"). */
+@media (max-width: 639px) {
+  .team-records tr {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-3) 0;
+  }
+  .team-records td,
+  .team-records td:is(.primary-cell, .actions-cell) {
+    display: block;
+    padding: 0;
+  }
+  .team-records td::before {
+    content: none;
+  }
+  .team-records td > .cell {
+    display: inline;
+  }
+  .team-records td.primary-cell {
+    flex: 1 0 100%;
+    padding-right: calc(6.5rem + var(--sp-2));
+  }
+  .team-members td.primary-cell {
+    padding-right: calc(32px + var(--sp-2));
+  }
+  .team-records td.actions-cell {
+    position: absolute;
+    top: var(--sp-2);
+    right: 0;
+  }
+  .team-records td.actions-cell button {
+    margin: 0;
+  }
+  .team-records td:has(> .cell > time)::before {
+    content: attr(data-label);
+    margin-right: var(--sp-1);
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+  }
+  .team-records .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
+  .team-settings .settings-save {
+    margin-inline: calc(-1 * var(--sp-4));
+    padding-inline: var(--sp-4);
+  }
+}
+@media (max-width: 639px) and (pointer: coarse) {
+  .team-members td.primary-cell {
+    padding-right: calc(44px + var(--sp-2));
+  }
+}

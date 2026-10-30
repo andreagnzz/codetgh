@@ -191,10 +191,10 @@ const FR: Record<string, string> = {
   Expires: "Expire",
   Handle: "Identifiant",
   Revoke: "Révoquer",
-  "Make owner": "Rendre propriétaire",
-  "Make admin": "Rendre admin",
-  "Make member": "Rendre membre",
-  "Make guest": "Rendre invité",
+  "Make owner": "Passer en propriétaire",
+  "Make admin": "Passer en admin",
+  "Make member": "Passer en membre",
+  "Make guest": "Passer en invité",
   "No pending invitations. Invite someone with the form above, or run codetgh invite <email>.":
     "Aucune invitation en attente. Invite quelqu'un avec le formulaire ci-dessus, ou lance codetgh invite <email>.",
   "Invitation emailed to": "Invitation envoyée par e-mail à",
@@ -552,6 +552,166 @@ const FR: Record<string, string> = {
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----
+  // Members.
+  "Everyone on the team and what each person can do. Invite someone, change a role, or revoke access.":
+    "Tout le monde dans l'équipe et ce que chacun peut faire. Invite quelqu'un, change un rôle ou révoque un accès.",
+  "Invite a member": "Inviter un membre",
+  "name@example.com…": "nom@exemple.com…",
+  "Admins also manage members, alerts and settings. Guests see only their own threads.":
+    "Les admins gèrent aussi les membres, les alertes et les paramètres. Les invités ne voient que leurs propres fils.",
+  Owner: "Propriétaire",
+  Admin: "Admin",
+  Member: "Membre",
+  Guest: "Invité",
+  "Valid for": "Valable",
+  "From 1 to 30\u00a0days.": "De 1 à 30\u00a0jours.",
+  "Invitation emailed to {email}.": "Invitation envoyée par courriel à {email}.",
+  "Send this link to {email}.": "Envoie ce lien à {email}.",
+  "The link is valid for {days}\u00a0days. You can also send it yourself:":
+    "Le lien est valable {days}\u00a0jours. Tu peux aussi l'envoyer toi-même\u00a0:",
+  "It's valid for {days}\u00a0days.": "Il est valable {days}\u00a0jours.",
+  "Copy the invitation link": "Copier le lien d'invitation",
+  "This email address isn't valid. Enter the address to invite, like name@example.com.":
+    "Cette adresse de courriel n'est pas valable. Saisis l'adresse à inviter, comme nom@exemple.com.",
+  "An invitation lasts 1 to 30\u00a0days. Enter a number of days in that range.":
+    "Une invitation dure de 1 à 30\u00a0jours. Saisis un nombre de jours dans cet intervalle.",
+  "Pending invitations": "Invitations en attente",
+  "Revoke the invitation for {email}": "Révoquer l'invitation de {email}",
+  "Revoke the invitation for {email}?": "Révoquer l'invitation de {email}\u202f?",
+  "Its link stops working at once. You can invite them again later.":
+    "Son lien cesse de fonctionner tout de suite. Tu pourras inviter cette personne de nouveau plus tard.",
+  "Invitation for {email} revoked.": "Invitation de {email} révoquée.",
+  "No pending invitations.": "Aucune invitation en attente.",
+  "Use Invite a member, or run this in a terminal:": "Utilise Inviter un membre, ou lance ceci dans un terminal\u00a0:",
+  "Copy the invite command": "Copier la commande d'invitation",
+  "Team members": "Membres de l'équipe",
+  Joined: "Date d'arrivée",
+  You: "Toi",
+  "External agent": "Agent externe",
+  "Slack bridge": "Pont Slack",
+  "Actions for {name}": "Actions pour {name}",
+  "Lowercase letters, digits and dashes.": "Minuscules, chiffres et tirets.",
+  "Make {name} an owner?": "Passer {name} en propriétaire\u202f?",
+  "Owners can do everything admins do, and also manage the other owners.":
+    "Les propriétaires font tout ce que font les admins, et gèrent aussi les autres propriétaires.",
+  "Make {name} an admin?": "Passer {name} en admin\u202f?",
+  "Admins manage members, alerts, the audit log and the team's settings.":
+    "Les admins gèrent les membres, les alertes, le journal d'audit et les paramètres de l'équipe.",
+  "Make {name} a member?": "Passer {name} en membre\u202f?",
+  "Members work with agents, threads, tasks, claims and team memory, without managing the team. Their pending invitations are revoked.":
+    "Les membres travaillent avec les agents, les fils, les tâches, les réservations et la mémoire d'équipe, sans gérer l'équipe. Les invitations en attente de cette personne sont révoquées.",
+  "Make {name} a guest?": "Passer {name} en invité\u202f?",
+  "Guests see only the threads they take part in: no projects, tasks, claims or team memory. Their delegate sessions stop taking requests, and their pending invitations are revoked.":
+    "Les invités ne voient que les fils auxquels ils participent\u00a0: ni projets, ni tâches, ni réservations, ni mémoire d'équipe. Les sessions déléguées de cette personne cessent de prendre des demandes, et ses invitations en attente sont révoquées.",
+  "Revoke access": "Révoquer l'accès",
+  "Revoke access for {name}": "Révoquer l'accès de {name}",
+  "Revoke {name}'s access?": "Révoquer l'accès de {name}\u202f?",
+  "They're signed out at once: their tokens stop working, their sessions end and their claims are released. What they wrote stays with the team.":
+    "Sa connexion se ferme tout de suite\u00a0: ses jetons ne marchent plus, ses sessions s'arrêtent et ses réservations sont libérées. Ce que cette personne a écrit reste à l'équipe.",
+  "{name}'s access revoked.": "Accès de {name} révoqué.",
+  // Personal tokens.
+  "Personal tokens": "Jetons personnels",
+  "A token lets a terminal or a script act as you on this hub, for 90\u00a0days. Revoke the ones you no longer use.":
+    "Un jeton permet à un terminal ou à un script d'agir en ton nom sur ce hub, pendant 90\u00a0jours. Révoque ceux dont tu ne te sers plus.",
+  "Create a token": "Créer un jeton",
+  "Name the machine or the use, like laptop or ci.": "Nomme la machine ou l'usage, comme portable ou ci.",
+  "Token created. Copy it now: you won't see it again.": "Jeton créé. Copie-le maintenant\u00a0: tu ne le reverras plus.",
+  "Copy the token": "Copier le jeton",
+  "On your machine, sign in with it. Paste the token when the terminal asks for it:":
+    "Sur ta machine, connecte-toi avec. Colle le jeton quand le terminal le demande\u00a0:",
+  "Copy the sign-in command": "Copier la commande de connexion",
+  "Then install the Claude Code plugin. It asks for the hub's address and this token:":
+    "Puis installe le plugin Claude Code. Il demande l'adresse du hub et ce jeton\u00a0:",
+  "Copy the plugin command": "Copier la commande du plugin",
+  Created: "Créé",
+  Expired: "Expiré",
+  "Revoke the token {label}": "Révoquer le jeton {label}",
+  "Revoke the token {label}?": "Révoquer le jeton {label}\u202f?",
+  "Terminals and scripts that use it are refused from their next request. Invitations made with it are revoked too.":
+    "Les terminaux et les scripts qui l'utilisent sont refusés dès leur prochaine requête. Les invitations faites avec sont révoquées aussi.",
+  "Token {label} revoked.": "Jeton {label} révoqué.",
+  "No personal tokens yet.": "Aucun jeton personnel pour l'instant.",
+  "Create one to sign in a terminal.": "Crées-en un pour connecter un terminal.",
+  // My data.
+  "What this hub keeps about you, and what you can do with it.": "Ce que ce hub garde sur toi, et ce que tu peux en faire.",
+  Profile: "Profil",
+  "Your teammates see it next to your handle, {handle}.": "Tes coéquipiers le voient à côté de ton identifiant, {handle}.",
+  "A copy of your data": "Une copie de tes données",
+  "Your profile, sessions, messages, claims, tasks, team memory and audit events, in one JSON file.":
+    "Ton profil, tes sessions, messages, réservations, tâches, ta mémoire d'équipe et tes événements d'audit, dans un seul fichier JSON.",
+  "Download my data": "Télécharger mes données",
+  "Reply to the team's threads from Slack, as you. A one-time code links your Slack account.":
+    "Réponds aux fils de l'équipe depuis Slack, en ton nom. Un code à usage unique relie ton compte Slack.",
+  "Link Slack": "Relier Slack",
+  "Type this in Slack within 10\u00a0minutes.": "Tape ceci dans Slack d'ici 10\u00a0minutes.",
+  "Your replies in CodeTgh threads there then reach the team as you.":
+    "Tes réponses aux fils CodeTgh y arrivent alors à l'équipe en ton nom.",
+  "Copy the Slack command": "Copier la commande Slack",
+  "Erase my data": "Effacer mes données",
+  "Your messages, subjects, claim reasons and task notes become [erased], your name becomes Former member, your claims are released, your tasks go back to the team and your access ends. Tasks and team memory you wrote stay with the team; the audit log keeps ids only.":
+    "Tes messages, sujets, motifs de réservation et notes de tâche deviennent [erased], ton nom devient Former member, tes réservations sont libérées, tes tâches reviennent à l'équipe et ton accès prend fin. Les tâches et la mémoire d'équipe que tu as écrites restent à l'équipe\u202f; le journal d'audit ne garde que des identifiants.",
+  "Type {command} to confirm": "Tape {command} pour confirmer",
+  "This can't be undone.": "C'est définitif.",
+  "Nothing was erased. Type erase in the box to confirm.": "Rien n'a été effacé. Tape erase dans le champ pour confirmer.",
+  // Settings.
+  "How agents work on this team, and the bridges to Slack and GitHub.":
+    "Comment les agents travaillent dans l'équipe, et les ponts vers Slack et GitHub.",
+  Team: "Équipe",
+  "Shown in the top bar and in invitations.": "Affiché dans la barre du haut et dans les invitations.",
+  "A team name has 1 to 80 characters, not only spaces. Enter a name.":
+    "Un nom d'équipe compte de 1 à 80 caractères, pas seulement des espaces. Saisis un nom.",
+  "Settings saved.": "Paramètres enregistrés.",
+  Messages: "Messages",
+  "Ask the person": "Demander à la personne",
+  "Claude Code asks before the edit goes through. This is the default.":
+    "Claude Code demande avant que la modification ne passe. C'est le réglage par défaut.",
+  "Warn the agent, never block": "Prévenir l'agent, sans jamais bloquer",
+  "Autonomous sessions (bypassPermissions) can't answer a question: choose this for teams that run them.":
+    "Les sessions autonomes (bypassPermissions) ne peuvent pas répondre à une question\u00a0: choisis ceci pour les équipes qui en utilisent.",
+  "Members, admins and owners": "Membres, admins et propriétaires",
+  "Admins and owners": "Admins et propriétaires",
+  "Owners only": "Propriétaires seulement",
+  "Accept team memory from Claude Code too": "Accepter aussi la mémoire d'équipe depuis Claude Code",
+  "Claude Code then asks the person each time. claude.ai and the Agent SDK can't guarantee that.":
+    "Claude Code demande alors à la personne à chaque fois. claude.ai et l'Agent SDK ne peuvent pas le garantir.",
+  "Link a new repository when a member starts a session in it": "Lier un nouveau dépôt quand un membre y ouvre une session",
+  "Otherwise an admin runs {command}.": "Sinon, un admin lance {command}.",
+  "Allow rewake push": "Autoriser le réveil",
+  "An idle Claude Code session wakes up when a message arrives. Each member also turns it on in the plugin.":
+    "Une session Claude Code inactive se réveille à l'arrivée d'un message. Chaque membre l'active aussi dans le plugin.",
+  "Keep messages for": "Garder les messages",
+  "Older messages are deleted. Threads, team memory and the audit log stay.":
+    "Les messages plus anciens sont supprimés. Les fils, la mémoire d'équipe et le journal d'audit restent.",
+  "Extra secret patterns": "Motifs de secrets en plus",
+  "One regular expression per line. A message that matches one is blocked, as a known secret is.":
+    "Une expression régulière par ligne. Un message qui correspond à l'une d'elles est bloqué, comme un secret connu.",
+  "Slack channel": "Canal Slack",
+  "The channel that gets alerts and blocking requests. Its id looks like C0123ABC.":
+    "Le canal qui reçoit les alertes et les demandes bloquantes. Son identifiant ressemble à C0123ABC.",
+  "Loop orchestrator": "Orchestrateur de boucles",
+  "The member whose agent judges the agent loops the hub muted. Left empty, a person reopens them.":
+    "Le membre dont l'agent juge les boucles d'agents que le hub a mises en sourdine. Vide, une personne les rouvre.",
+  "Save settings": "Enregistrer les paramètres",
+  "Saves the agent rules, memory, messages and the Slack channel.":
+    "Enregistre les règles des agents, la mémoire, les messages et le canal Slack.",
+  "Webhook configured": "Webhook configuré",
+  "Not configured": "Non configuré",
+  "GitHub tells the team about pull requests, check suites and new tags: titles, links and branches, never code.":
+    "GitHub informe l'équipe des pull requests, des check suites et des nouveaux tags\u00a0: titres, liens et branches, jamais de code.",
+  "Replace the webhook secret?": "Remplacer le secret du webhook\u202f?",
+  "GitHub deliveries signed with the old secret are refused until you paste the new one in your GitHub App.":
+    "Les envois de GitHub signés avec l'ancien secret sont refusés tant que le nouveau n'est pas collé dans ton application GitHub.",
+  "Copy the secret now: you won't see it again.": "Copie le secret maintenant\u00a0: tu ne le reverras plus.",
+  "In your GitHub App, under Settings → Webhook, set these two values. Then subscribe to the Pull request, Check suite and Create events.":
+    "Dans ton application GitHub, sous Settings → Webhook, saisis ces deux valeurs. Puis abonne-la aux événements Pull request, Check suite et Create.",
+  "Webhook URL": "URL du webhook",
+  "Copy the webhook URL": "Copier l'URL du webhook",
+  "Webhook secret": "Secret du webhook",
+  "Copy the secret": "Copier le secret",
+  "To check an audit export offline, pass this key to {command}.":
+    "Pour vérifier un export d'audit hors ligne, donne cette clé à {command}.",
+  "Key id": "Identifiant de clé",
+  "Copy the public key": "Copier la clé publique",
   // ---- End of batch 5. ----
 
   // ---- Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this block. ----
