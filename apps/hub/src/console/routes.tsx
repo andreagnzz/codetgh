@@ -77,12 +77,22 @@ import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
 import { createPersonalToken } from "../tokens.js";
+import {
+  AgentsTable,
+  DelegationsTable,
+  ExternalTable,
+  inSentence,
+  NoSessions,
+  ProjectHead,
+  SessionList,
+  type SessionRow,
+  type ToolState,
+} from "./agents.js";
 import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
   Banner,
-  Bypass,
   Chip,
   CodeBlock,
   Collapsible,
@@ -103,7 +113,6 @@ import {
   RowMenu,
   Stamp,
   Table,
-  toneOf,
   When,
 } from "./pages.js";
 import {
@@ -1301,82 +1310,77 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       userId: isAdmin(p) ? undefined : p.user.id,
       where: onProject(agent.projectId, f),
     });
-    const table = (of: typeof rows) => (
-      <Table
-        lang={tr(c).lang}
-        head={[
-          _("Who"),
-          _("Label"),
-          _("Project"),
-          _("Kind"),
-          _("Branch"),
-          _("Push"),
-          _("Permissions"),
-          _("Claude Code"),
-          _("Last seen"),
-          _("Trust"),
-          _("Actions"),
-        ]}
-        empty={_("No agent yet. Agents appear here once someone runs codetgh setup, then codetgh start in a team repository.")}
-        rows={of.map((r) => [
-          r.name,
-          // The end of the agent id tells apart two sessions with the same label; it is what agent:<id> addresses.
-          <>
-            {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-          </>,
-          r.project ?? "",
-          r.agent.kind,
-          r.agent.branch ?? "",
-          r.agent.pushMode ?? "",
-          r.agent.permissionMode === "bypassPermissions" ? <Bypass lang={_.lang} /> : (r.agent.permissionMode ?? ""),
-          r.agent.clientVersion ?? "",
-          <>
-            <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-          </>,
-          <Pill tone={toneOf(r.agent.trustLevel)}>{_(r.agent.trustLevel)}</Pill>,
-          <>
-            {r.agent.trustLevel === "trusted" ? (
-              <Action post={`/console/agents/${r.agent.id}/quarantined`} label={_("Quarantine")} />
-            ) : r.agent.kind === "a2a" ? (
-              _("external: always quarantined")
-            ) : (
-              <Action post={`/console/agents/${r.agent.id}/trusted`} label={_("Confirm")} />
-            )}{" "}
-            <Action post={`/console/agents/${r.agent.id}/remove`} label={_("Remove")} level="tertiary" />
-          </>,
-        ])}
-      />
-    );
+    const sessions = rows.filter((r) => r.agent.kind !== "a2a");
+    const external = rows.filter((r) => r.agent.kind === "a2a");
+    const chosen = f.projects.find((pr) => pr.id === f.selected)?.name;
+    const table = (of: typeof rows, caption?: string) => <AgentsTable rows={of} _={_} admin={isAdmin(p)} caption={caption} />;
     return page(
       c,
       "Agents",
       <>
-        {f.selected || rows.length === 0
-          ? table(rows)
-          : byProject(f, rows, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {table(g.rows)}
-              </section>
-            ))}
-        {capped(c, rows.length, rows[0]?.total)}
-        {isAdmin(p) && (
-          <>
-            <h2>{_("External agent (A2A)")}</h2>
-            <p>
-              {_("An external agent can ask the team questions and read the answers. It stays in quarantine: no claims, memory or tasks.")}
-            </p>
-            <form hx-post="/console/agents/a2a" hx-target="#a2a-result">
-              <label>
-                {_("Name")} <input name="name" required maxlength={60} />
-              </label>
-              <button type="submit">{_("Create")}</button>
-            </form>
-            <div id="a2a-result" />
-          </>
+        {sessions.length === 0 ? (
+          f.selected ? (
+            <EmptyState
+              title={chosen ? _("No sessions in {project}.").replace("{project}", () => chosen) : _("No sessions outside a project.")}
+              action={
+                <p>
+                  <a class="agents-link" href="/console/agents?project=">
+                    {_("Show all projects")}
+                  </a>
+                </p>
+              }
+            />
+          ) : (
+            <NoSessions _={_} />
+          )
+        ) : f.selected ? (
+          table(sessions, chosen ?? _("Outside a project"))
+        ) : (
+          byProject(f, sessions, (r) => r.agent.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`p-${g.id}`}>
+              <h2 id={`p-${g.id}`}>{g.name}</h2>
+              {table(g.rows, g.name)}
+            </section>
+          ))
         )}
+        {external.length > 0 && (
+          <section aria-labelledby="external-h">
+            <h2 id="external-h">{_("External agents")}</h2>
+            <ExternalTable rows={external} _={_} />
+          </section>
+        )}
+        {capped(c, rows.length, rows[0]?.total)}
       </>,
       f,
+      {
+        head: (
+          <p class="lede agents-lede">
+            {_(
+              isAdmin(p)
+                ? "Every session connected to the team, by project. Quarantine a session that misbehaves, remove one nobody uses."
+                : "Your sessions on this hub, by project.",
+            )}
+          </p>
+        ),
+        actions: isAdmin(p) ? (
+          <div class="add-external">
+            <Collapsible summary={_("Add an external agent")}>
+              <p>
+                {_(
+                  "An external agent can ask the team questions and read the answers. It stays in quarantine: no claims, memory or tasks.",
+                )}
+              </p>
+              <form hx-post="/console/agents/a2a" hx-target="#a2a-result">
+                <Field id="a2a-name" label={_("Name")} lang={_.lang}>
+                  <input id="a2a-name" name="name" required maxlength={60} autocomplete="off" />
+                </Field>
+                <button type="submit">{_("Add")}</button>
+              </form>
+              <div id="a2a-result" />
+            </Collapsible>
+          </div>
+        ) : undefined,
+      },
     );
   });
 
@@ -1391,100 +1395,133 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     const launches = p.role === "owner" ? await launchStates(db, p.teamId) : [];
     const runs = p.role === "owner" ? await runStates(db, p.teamId) : [];
     // What the owner's launcher reports, read for people: a report older than a minute means the launcher is not running.
-    const launch = (projectId: string) => {
+    const launch = (projectId: string, name: string): ToolState => {
       const l = launches.find((x) => x.projectId === projectId);
       const fresh = l?.reportedAt && Date.now() - l.reportedAt.getTime() < 60_000;
-      const state = !l
-        ? null
-        : l.reportedError && fresh
-          ? { tone: "danger" as const, text: l.reportedError }
-          : l.desired && l.running && fresh
-            ? { tone: "ok" as const, text: _("Remote Control running") }
-            : l.desired
-              ? { tone: "warn" as const, text: _("Waiting for the launcher on your machine") }
-              : l.reportedAt
-                ? { tone: "neutral" as const, text: _("Remote Control stopped") }
-                : null;
-      return (
-        <p class="launcher">
-          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
-          {l?.desired ? (
-            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "0" }} label={_("Stop Remote Control")} />
-          ) : (
-            <Action post={`/console/projects/${projectId}/launch`} vals={{ on: "1" }} label={_("Start Remote Control")} />
-          )}{" "}
-          {state?.tone === "ok" && <a href="https://claude.ai/code">{_("Open claude.ai/code")}</a>}
-        </p>
-      );
+      const state: Omit<ToolState, "action"> =
+        l?.reportedError && fresh
+          ? { tone: "danger", text: _("Remote Control failed"), report: l.reportedError }
+          : l?.desired && l.running && fresh
+            ? { tone: "ok", text: _("Remote Control running") }
+            : l?.desired
+              ? { tone: "warn", text: _("Waiting for the launcher on your machine") }
+              : { tone: "neutral", text: _("Remote Control stopped") };
+      return {
+        ...state,
+        action: l?.desired ? (
+          <Action
+            post={`/console/projects/${projectId}/launch`}
+            vals={{ on: "0" }}
+            label={_("Stop Remote Control")}
+            name={`${_("Stop Remote Control")} ${name}`}
+          />
+        ) : (
+          <Action
+            post={`/console/projects/${projectId}/launch`}
+            vals={{ on: "1" }}
+            label={_("Start Remote Control")}
+            name={`${_("Start Remote Control")} ${name}`}
+          />
+        ),
+      };
     };
     // Same reading for the runner: its last report, with the count of agents it runs.
-    const runner = (projectId: string) => {
+    const runner = (projectId: string, name: string): ToolState => {
       const r = runs.find((x) => x.projectId === projectId);
       const fresh = r?.reportedAt && Date.now() - r.reportedAt.getTime() < 60_000;
-      const state = !r
-        ? null
-        : r.reportedError && fresh
-          ? { tone: "danger" as const, text: r.reportedError }
-          : r.desired && fresh
-            ? { tone: "ok" as const, text: `${_("Runner on")} · ${r.running} ${_("agents running")}` }
-            : r.desired
-              ? { tone: "warn" as const, text: _("Waiting for the runner on your machine") }
-              : r.reportedAt
-                ? { tone: "neutral" as const, text: _("Runner stopped") }
-                : null;
-      return (
-        <p class="launcher">
-          {state && <Pill tone={state.tone}>{state.text}</Pill>}{" "}
-          {r?.desired ? (
-            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "0" }} label={_("Stop the runner")} />
-          ) : (
-            <Action post={`/console/projects/${projectId}/runner`} vals={{ on: "1" }} label={_("Start the runner")} />
-          )}
-        </p>
-      );
+      const state: Omit<ToolState, "action"> =
+        r?.reportedError && fresh
+          ? { tone: "danger", text: _("Runner failed"), report: r.reportedError }
+          : r?.desired && fresh
+            ? {
+                tone: "ok",
+                text: _(r.running === 1 ? "Runner on · 1\u00a0agent running" : "Runner on · {n}\u00a0agents running").replace(
+                  "{n}",
+                  String(r.running),
+                ),
+              }
+            : r?.desired
+              ? { tone: "warn", text: _("Waiting for the runner on your machine") }
+              : { tone: "neutral", text: _("Runner stopped") };
+      return {
+        ...state,
+        action: r?.desired ? (
+          <Action
+            post={`/console/projects/${projectId}/runner`}
+            vals={{ on: "0" }}
+            label={_("Stop the runner")}
+            name={`${_("Stop the runner")} ${name}`}
+          />
+        ) : (
+          <Action
+            post={`/console/projects/${projectId}/runner`}
+            vals={{ on: "1" }}
+            label={_("Start the runner")}
+            name={`${_("Start the runner")} ${name}`}
+          />
+        ),
+      };
     };
     const groups = [
       ...projects.map((pr) => ({ id: pr.id, name: pr.name, rows: byProject(pr.id) })),
       { id: "none", name: _("Sessions outside a project"), rows: byProject(null) },
     ].filter((g) => (f.selected ? g.id === f.selected : g.rows.length > 0 || g.id !== "none"));
-    // A member attaches their own sessions, an admin anyone's; a guest none.
-    const attach = (r: (typeof sessions)[number]) =>
+    // A member attaches their own sessions, an admin anyone's; a guest none. The button moves the session at once. Both
+    // controls name the session, and no project is chosen for the person: sent as is, the form is refused in words.
+    const attach = (r: SessionRow) =>
       projects.length > 0 &&
       p.role !== "guest" &&
       (r.agent.userId === p.user.id || isAdmin(p)) && (
-        <form class="attach" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
-          <select name="project_id" aria-label={_("Project")}>
+        <form class="attach inline" hx-post={`/console/agents/${r.agent.id}/project`} hx-swap="none">
+          <select name="project_id" aria-label={_("Project for {session}").replace("{session}", () => r.agent.label)}>
+            <option value="" disabled selected>
+              {_("Choose a project…")}
+            </option>
             {projects.map((pr) => (
               <option value={pr.id}>{pr.name}</option>
             ))}
-          </select>{" "}
-          <button type="submit">{_("Attach to…")}</button>
+          </select>
+          <button type="submit" class="secondary" aria-label={`${_("Attach to project")} ${r.agent.label}`}>
+            {_("Attach to project")}
+          </button>
         </form>
       );
     return page(
       c,
       "Projects",
       projects.length === 0 && sessions.length === 0 ? (
-        <p class="empty">
-          {_("No project yet. A project appears when a member runs codetgh start in a repository, or runs codetgh project new there.")}
-        </p>
+        <EmptyState title={_("No projects yet.")} icon="terminal" action={<CodeBlock lang={_.lang} command code="codetgh project new" />}>
+          {inSentence(
+            _("A project appears when a member starts a session with {start} in a team repository, or runs this command there:"),
+            "{start}",
+            <code>codetgh start</code>,
+          )}
+        </EmptyState>
       ) : (
         groups.map((g) => (
-          <section aria-labelledby={`p-${g.id}`}>
-            <h2 id={`p-${g.id}`}>{g.name}</h2>
-            {p.role === "owner" && g.id !== "none" && (
-              <>
-                <p class="meta">
-                  {_("Project id")} <code>{g.id}</code>
-                </p>
-                {launch(g.id)}
-                {runner(g.id)}
-              </>
+          <section aria-labelledby={`p-${g.id}`} class="project">
+            <ProjectHead
+              id={g.id}
+              name={g.name}
+              tools={p.role === "owner" && g.id !== "none" ? { remote: launch(g.id, g.name), runner: runner(g.id, g.name) } : undefined}
+              _={_}
+            />
+            {g.id === "none" && (
+              <p class="help">
+                {inSentence(
+                  _(
+                    g.rows.some((r) => attach(r))
+                      ? "Start {claude} inside the project's repository folder to link a session, or attach one to a project here."
+                      : "Start {claude} inside the project's repository folder to link a session.",
+                  ),
+                  "{claude}",
+                  <code>claude</code>,
+                )}
+              </p>
             )}
-            {g.id === "none" && <p class="meta">{_("Start claude inside the project's repository folder to link the session.")}</p>}
-            <People
+            <SessionList
               rows={g.rows}
-              lang={_.lang}
+              _={_}
               empty={_("No session on this project right now.")}
               action={g.id === "none" ? attach : undefined}
             />
@@ -1492,41 +1529,84 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         ))
       ),
       f,
+      {
+        head: (
+          <p class="lede agents-lede">
+            {_("Each team repository and the sessions working in it.")}
+            {p.role === "owner" && ` ${_("Remote Control and the runner start on your machine, only in the folders you listed there.")}`}
+          </p>
+        ),
+      },
     );
   });
 
+  // A refusal of an action on Agents, Projects or Delegations, in the reader's words: what happened and what to do next,
+  // which onError gives in the page's language. The domain and the REST API keep their own words.
+  const READER: Record<string, string> = {
+    "agent not found": "This agent is no longer on the hub. Reload the page to see the current list.",
+    "no delegate session": "This session no longer takes requests. Reload the page to see the current list.",
+    "project not found": "This project is no longer on the hub. Reload the page to see the current list.",
+    "name the external agent": "Give the external agent a name.",
+    "Sign in again (less than 10 minutes ago) to do this.":
+      "Adding an external agent needs a sign-in from the last 10\u00a0minutes. Sign in again at /login, then add it.",
+  };
+  const inWords = (e: unknown): never => {
+    throw e instanceof HubError && Object.hasOwn(READER, e.message) ? new HubError(e.code, READER[e.message] ?? e.message) : e;
+  };
+
   consoleApp.post("/projects/:id/launch", async (c) => {
-    await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    await setLaunchDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1").catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/projects/:id/runner", async (c) => {
-    await setRunDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1");
+    await setRunDesired(db, c.get("principal"), c.req.param("id"), (await form(c)).on === "1").catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/a2a", async (c) => {
-    requireFresh(c);
-    const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "");
+    try {
+      requireFresh(c);
+    } catch (e) {
+      inWords(e);
+    }
+    const _ = tr(c);
+    const created = await createExternalAgent(db, c.get("principal"), (await form(c)).name ?? "").catch(inWords);
     c.header("Cache-Control", "no-store");
     return c.html(
-      <Result>
-        <p>Give these to the external agent's operator. The token is shown once.</p>
-        <pre>{`Agent Card: ${config.publicUrl}/.well-known/agent-card.json\nAuthorization: Bearer ${created.token}`}</pre>
-        <p>It appears to the team as {created.handle}.</p>
-      </Result>,
+      <>
+        <Banner tone="warn" title={_("Copy the token now.")}>
+          {_("It is shown once. Give these two lines to the external agent's operator.")}
+        </Banner>
+        <CodeBlock
+          lang={_.lang}
+          code={`Agent Card: ${config.publicUrl}/.well-known/agent-card.json\nAuthorization: Bearer ${created.token}`}
+          copyLabel={_("Copy the two lines")}
+        />
+        <p>
+          {_("It appears to the team as {handle}.")
+            .split("{handle}")
+            .map((part, i) => (i ? [<Chip>{created.handle}</Chip>, part] : part))}
+        </p>
+        {/* A new load of the page lists the agent and closes the form. */}
+        <p>
+          <a class="agents-link" href="/console/agents#external-h">
+            {_("See it in External agents")}
+          </a>
+        </p>
+      </>,
     );
   });
 
   consoleApp.post("/agents/:id/project", async (c) => {
     const parsed = AgentProjectForm.safeParse(await form(c));
-    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project."));
-    await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id);
+    if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Choose a project for this session."));
+    await setAgentProject(db, c.get("principal"), c.req.param("id"), parsed.data.project_id).catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/:id/remove", async (c) => {
-    await removeAgent(db, c.get("principal"), c.req.param("id"));
+    await removeAgent(db, c.get("principal"), c.req.param("id")).catch(inWords);
     return refresh(c);
   });
 
@@ -1538,36 +1618,35 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return page(
       c,
       "Delegations",
-      <>
-        <p>{_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}</p>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Who"), _("Label"), _("Project"), _("Accepts requests from"), _("Last seen"), _("Actions")]}
-          empty={_("No delegate session. A member starts one with codetgh start --accept-requests-from @handle.")}
-          rows={rows.map((r) => [
-            r.name,
-            <>
-              {r.agent.label} <code class="meta">·{r.agent.id.slice(-6)}</code>
-            </>,
-            r.project ?? "",
-            r.senders.join(", "),
-            <>
-              <Pill tone={toneOf(presence(r.agent))}>{_(presence(r.agent))}</Pill> <When at={r.agent.lastSeenAt} lang={_.lang} />
-            </>,
-            <Action post={`/console/delegations/${r.agent.id}/stop`} label={_("Turn off")} />,
-          ])}
-        />
-      </>,
+      rows.length === 0 ? (
+        <EmptyState
+          title={_("No delegate sessions.")}
+          icon="terminal"
+          action={<CodeBlock lang={_.lang} command code="codetgh start --accept-requests-from @<handle>" />}
+        >
+          {_("Start one in the project's repository, with the handles of the teammates who may send it tasks:")}
+        </EmptyState>
+      ) : (
+        <DelegationsTable rows={rows} _={_} />
+      ),
+      undefined,
+      {
+        head: (
+          <p class="lede agents-lede">
+            {_("These sessions do tasks that the listed teammates send them, without a human, in Claude Code's auto mode.")}
+          </p>
+        ),
+      },
     );
   });
 
   consoleApp.post("/delegations/:id/stop", async (c) => {
-    await stopDelegate(db, c.get("principal"), c.req.param("id"));
+    await stopDelegate(db, c.get("principal"), c.req.param("id")).catch(inWords);
     return refresh(c);
   });
 
   consoleApp.post("/agents/:id/:trust{trusted|quarantined}", async (c) => {
-    await setAgentTrust(db, c.get("principal"), c.req.param("id"), c.req.param("trust") as "trusted");
+    await setAgentTrust(db, c.get("principal"), c.req.param("id"), c.req.param("trust") as "trusted").catch(inWords);
     return refresh(c);
   });
 
@@ -1909,7 +1988,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   // The refusals of the audit, memory, claims and tasks forms in the reader's words (records.tsx); the code and the status
   // stay the hub's.
-  const inWords = async <T,>(c: Context<Env>, step: () => T | Promise<T>): Promise<T> => {
+  const wordRefusals = async <T,>(c: Context<Env>, step: () => T | Promise<T>): Promise<T> => {
     try {
       return await step();
     } catch (e) {
@@ -1969,7 +2048,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
-    await inWords(c, () => requireAdmin(p));
+    await wordRefusals(c, () => requireAdmin(p));
     await writeCheckpoint(db, p.teamId, auditKey);
     return c.html(<VerifyResult r={await verifyTeamAudit(db, p.teamId, auditKey.publicKey)} _={tr(c)} />);
   });
@@ -2151,14 +2230,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.post("/memory/:id/decide", async (c) => {
     const { decision, note } = await form(c);
     if (decision !== "accept" && decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
-    await inWords(c, () => decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision, note }, "console"));
+    await wordRefusals(c, () => decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision, note }, "console"));
     bus.emit("attention", { teamId: c.get("principal").teamId });
     return refresh(c);
   });
 
   consoleApp.post("/memory/:id/pin", async (c) => {
     const pinned = (await form(c)).pinned === "true";
-    await inWords(c, () => setPinned(db, c.get("principal"), c.req.param("id"), pinned));
+    await wordRefusals(c, () => setPinned(db, c.get("principal"), c.req.param("id"), pinned));
     return refresh(c);
   });
 
@@ -2197,7 +2276,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/claims/:id/release", async (c) => {
     const p = c.get("principal");
-    await inWords(c, () => {
+    await wordRefusals(c, () => {
       requireAdmin(p);
       return adminReleaseClaim(db, p, c.req.param("id"));
     });
@@ -2279,7 +2358,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/tasks", async (c) => {
     const f = filled(await form(c));
-    await inWords(c, () => createTask(messaging, c.get("principal"), null, parsed(TaskCreateInput.safeParse(f))));
+    await wordRefusals(c, () => createTask(messaging, c.get("principal"), null, parsed(TaskCreateInput.safeParse(f))));
     return refresh(c);
   });
 
@@ -2373,7 +2452,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.post("/tasks/:id", async (c) => {
     const { expected_version, ...patch } = filled(await form(c));
-    await inWords(c, () =>
+    await wordRefusals(c, () =>
       updateTask(
         messaging,
         c.get("principal"),
