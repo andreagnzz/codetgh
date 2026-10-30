@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { auditEvent, memoryItem, task } from "../apps/hub/src/db/schema.js";
 import { call, code, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { additionalContext, gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -11,8 +11,6 @@ beforeAll(async () => {
   team = await hub.seed();
 });
 afterAll(() => hub.stop());
-
-type Out = { hookSpecificOutput?: { additionalContext?: string } } | null;
 
 it("hands a task over with its whole context, ahead of everything else (scenario 3)", async () => {
   const repo = gitRepo();
@@ -57,8 +55,7 @@ it("hands a task over with its whole context, ahead of everything else (scenario
 
   // Sam's session starts: the packet leads with the handoff, without any of its text.
   const sam = hookEnv(hub.url, team.sam.token);
-  const start = (await runHook("session-start", { session_id: "sam-s3", source: "startup", cwd: repo }, sam)).out as Out;
-  const packet = start?.hookSpecificOutput?.additionalContext ?? "";
+  const packet = additionalContext(await runHook("session-start", { session_id: "sam-s3", source: "startup", cwd: repo }, sam));
   const firstLine = packet.split("\n")[1] ?? "";
   expect(firstLine).toMatch(/^Pending handoffs:/);
   for (const part of [handoffId, t.id]) expect(firstLine).toContain(part);
@@ -70,8 +67,7 @@ it("hands a task over with its whole context, ahead of everything else (scenario
   expect(Math.ceil(packet.length / 4)).toBeLessThanOrEqual(1200);
 
   // First prompt: the whole capsule, in one envelope, first.
-  const prompt = (await runHook("user-prompt-submit", { session_id: "sam-s3", prompt: "on reprend" }, sam)).out as Out;
-  const injected = prompt?.hookSpecificOutput?.additionalContext ?? "";
+  const injected = additionalContext(await runHook("user-prompt-submit", { session_id: "sam-s3", prompt: "on reprend" }, sam));
   const first = injected.slice(injected.indexOf("<peer_message"));
   expect(first).toMatch(
     /^<peer_message [^>]*from="Léa"[^>]*kind="handoff"[^>]*flags="[^"]*instruction-like[^"]*"[^>]*trust="untrusted-peer">/,

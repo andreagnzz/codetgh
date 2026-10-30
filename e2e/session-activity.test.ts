@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -17,9 +17,8 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-type Out = { systemMessage?: string } | null;
 const start = async (env: Record<string, string>, session: string, source = "startup") =>
-  String(((await runHook("session-start", { session_id: session, source, cwd: repo }, env)).out as Out)?.systemMessage ?? "");
+  systemMessage(await runHook("session-start", { session_id: session, source, cwd: repo }, env));
 const row = async (session: string) => (await hub.db.select().from(agent).where(eq(agent.sessionId, session)))[0];
 // What a teammate (Léa) reads of Sam's session in team_overview.
 const sessionsOfSam = async () => {

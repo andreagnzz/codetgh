@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
 import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { gitRepo, hookEnv, runHook } from "./helpers.js";
+import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -16,10 +16,8 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const start = async (session: string, source: string) => {
-  const r = await runHook("session-start", { session_id: session, source, cwd: repo }, sam);
-  return String((r.out as { systemMessage?: string } | null)?.systemMessage ?? "");
-};
+const start = async (session: string, source: string) =>
+  systemMessage(await runHook("session-start", { session_id: session, source, cwd: repo }, sam));
 
 it("puts the agent's short id in the startup line, and a one-line form after /clear and compaction", async () => {
   const startup = await start("sam-line", "startup");
