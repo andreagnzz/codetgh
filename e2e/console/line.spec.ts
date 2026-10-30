@@ -27,7 +27,7 @@ test("only a message that arrives live traces its wire, and it is announced poli
   await send("second");
   await expect(page.locator(".wire-row")).toHaveCount(2);
   await expect(page.locator(".wire-row.fresh")).toHaveCount(1);
-  await expect(page.locator("#line-announce")).toHaveText(/New message: Sam \(agent\) → @lea/);
+  await expect(page.locator("#line-announce")).toHaveText(/New message: Sam's agent → @lea/);
   await expect(page.locator("#line-announce")).toHaveAttribute("aria-live", "polite");
   expect(await page.locator(".wire-row.fresh .link").evaluate((el) => getComputedStyle(el).animationName)).toBe("trace");
 });

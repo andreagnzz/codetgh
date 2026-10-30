@@ -638,122 +638,297 @@ export const Timeline: FC<{ events: TimelineEvent[]; lang: Lang; empty: Child; f
   );
 };
 
-// Presence: who is live first, then a rule, then who is offline (archived, quieter).
+// A count inside a sentence, kept with its noun: "1 open alert.", "3 open alerts.".
+export const counted = (lang: Lang, n: number, one: string, many: string) => t(lang, n === 1 ? one : many).replace("{n}", String(n));
+
+// Presence: who is connected, then the offline sessions under their count. Only exceptions get a pill (idle, prompts off,
+// quarantined, external); online is plain text, and the offline group says so once, in its heading.
 type AgentRow = Awaited<ReturnType<typeof listAgents>>[number];
 type RowAction = (r: AgentRow) => Child;
 const Person: FC<{ r: AgentRow; lang: Lang; action?: RowAction }> = ({ r, lang, action }) => {
+  const _ = (s: string) => t(lang, s);
   const state = presence(r.agent);
   const status = statusOf(r.agent);
+  // An external agent is quarantined by design: it says external, not quarantined.
+  const external = r.agent.kind === "a2a";
+  const bypass = r.agent.permissionMode === "bypassPermissions";
+  const quarantined = r.agent.trustLevel === "quarantined" && !external;
+  const meta: Child[] = [
+    r.project,
+    status &&
+      (status.at ? (
+        <>
+          {status.text} · <When at={status.at} lang={lang} />
+        </>
+      ) : (
+        status.text
+      )),
+    state === "offline" && (
+      <>
+        {_("Last seen")} <When at={r.agent.lastSeenAt} lang={lang} />
+      </>
+    ),
+  ].filter(Boolean);
   return (
-    <li>
-      <span class="who-name">{r.name}</span>{" "}
-      <span class="meta">
-        {r.agent.label}
-        {r.project && ` · ${r.project}`}
-      </span>{" "}
-      <Pill tone={toneOf(state)}>{t(lang, state)}</Pill>
-      {(r.agent.pushMode || r.agent.clientVersion) && (
-        <span class="meta">
-          {" "}
-          {[r.agent.pushMode && `push ${r.agent.pushMode}`, r.agent.clientVersion && `Claude Code ${r.agent.clientVersion}`]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      )}
-      {r.agent.permissionMode === "bypassPermissions" && (
-        <>
-          {" "}
-          <Bypass lang={lang} />
-        </>
-      )}
-      {r.agent.trustLevel === "quarantined" && (
-        <>
-          {" "}
-          <Pill tone="danger">{t(lang, "quarantined")}</Pill>
-        </>
-      )}
-      {status && (
-        <span class="status meta">
-          {status.text}
-          {status.at && (
+    <li class="person">
+      <p class="person-head">
+        <span class="person-name">{r.name}</span>
+        {!external && <Chip>{r.agent.label}</Chip>}
+        {state === "online" && <span class="person-state">{_("Online")}</span>}
+        {state === "idle" && <Pill>{_("Idle")}</Pill>}
+      </p>
+      {meta.length > 0 && (
+        <p class="person-meta">
+          {meta.map((m, i) => (
             <>
-              {" · "}
-              <When at={status.at} lang={lang} />
+              {i > 0 && " · "}
+              {m}
             </>
-          )}
-        </span>
+          ))}
+        </p>
+      )}
+      {(external || bypass || quarantined) && (
+        <p class="person-flags">
+          {external && <Pill>{_("External")}</Pill>}
+          {bypass && <Pill tone="warn">{_("Prompts off")}</Pill>}
+          {quarantined && <Pill tone="danger">{_("Quarantined")}</Pill>}
+        </p>
       )}
       {action?.(r)}
     </li>
   );
 };
-export const People: FC<{ rows: AgentRow[]; lang: Lang; empty: Child; action?: RowAction }> = ({ rows, lang, empty, action }) => {
+// With cap, at most that many sessions, the live ones first, then more: the way to the whole list. With fold, the offline
+// sessions wait in a disclosure of that id (its summary takes the id plus "-toggle"), so a live refresh keeps it open and
+// keeps the keyboard on it.
+export const People: FC<{
+  rows: AgentRow[];
+  lang: Lang;
+  empty: Child;
+  action?: RowAction;
+  cap?: number;
+  more?: Child;
+  fold?: string;
+}> = ({ rows, lang, empty, action, cap = rows.length, more, fold }) => {
   const live = rows.filter((r) => presence(r.agent) !== "offline");
   const offline = rows.filter((r) => presence(r.agent) === "offline");
+  const shownOffline = offline.slice(0, Math.max(0, cap - live.length));
+  const heading = counted(lang, offline.length, "1\u00a0offline", "{n}\u00a0offline");
+  const archived = (
+    <ul class="people archived">
+      {shownOffline.map((r) => (
+        <Person r={r} lang={lang} action={action} />
+      ))}
+    </ul>
+  );
   return (
     <>
       {live.length ? (
         <ul class="people">
-          {live.map((r) => (
+          {live.slice(0, cap).map((r) => (
             <Person r={r} lang={lang} action={action} />
           ))}
         </ul>
-      ) : (
+      ) : typeof empty === "string" ? (
         <p class="empty">{empty}</p>
+      ) : (
+        empty
       )}
-      {offline.length > 0 && (
-        <>
-          <h3 class="rule">{t(lang, "Offline")}</h3>
-          <ul class="people archived">
-            {offline.map((r) => (
-              <Person r={r} lang={lang} action={action} />
-            ))}
-          </ul>
-        </>
-      )}
+      {offline.length > 0 &&
+        (fold && shownOffline.length > 0 ? (
+          <details id={fold} class="disclosure">
+            <summary id={`${fold}-toggle`}>
+              {heading}
+              <Icon name="chevron-down" />
+            </summary>
+            {archived}
+          </details>
+        ) : (
+          <>
+            <h3 class="rule">{heading}</h3>
+            {shownOffline.length > 0 && archived}
+          </>
+        ))}
+      {rows.length > cap && <p class="people-more">{more}</p>}
     </>
   );
 };
 
-// The activity line, the console's one memorable element: each message is a short vertical wire between the
-// sender's caret and the recipient's caret, in the accent color. A message new on screen traces its wire once (console.js).
-type LineRow = {
-  message: { id: string; createdAt: Date; kind: string; priority: string; authoredBy: string; to: string[]; threadId: string };
-  name: string;
+// The activity line, the console's one memorable element. Each person on the line gets a lane headed by the brand's caret;
+// a message is an accent wire from the sender's lane (a dot for an agent, a diamond for a person) to the recipient's caret.
+// The accent is kept for those wires: a message to the whole thread or team is the sender's mark on a gray bus, with a tick
+// on every other lane. The text of each row says all the drawing says, so the drawing is hidden from assistive technology. A
+// message new on screen traces its wire once (console.js marks it, the stylesheet draws it).
+type Tr = ((s: string) => string) & { lang: Lang };
+type Wire = { from: string; human: boolean; to: string[] | "all" };
+type Msg = { id: string; createdAt: Date; kind: string; priority: string; authoredBy: string; to: string[]; threadId: string };
+// At most ten lanes from 640 px and six under it; past that the people seen least recently share the last lane, "+n".
+const MAX_LANES = 10;
+const MAX_NARROW = 6;
+export const LINE_CAP = 15;
+export const LINE_PHONE = 10;
+const WIRE_Y = 18; // the middle of the row's first line of text
+
+const wireOf = (m: Pick<Msg, "authoredBy" | "to">, from: string): Wire => ({
+  from,
+  human: m.authoredBy !== "agent",
+  to: m.to.some((a) => a.startsWith("thread:") || a === "@team") ? "all" : m.to.filter((a) => a.startsWith("@")).map((a) => a.slice(1)),
+});
+// One lane per person, in order of first appearance. Phones show the first rows only: when the people of those rows are not
+// the wide set (past six, or someone only in the older rows), a second set is drawn for phones from those rows.
+type LaneSet = { keys: string[]; wide: string[]; phoneKeys: string[]; narrow?: string[] };
+const cap = (keys: string[], max: number) => (keys.length <= max ? keys : [...keys.slice(0, max - 1), `+${keys.length - max + 1}`]);
+const keysOf = (wires: Wire[]) => [...new Set(wires.flatMap((w) => [w.from, ...(w.to === "all" ? [] : w.to)]))];
+const lanesOf = (wires: Wire[]): LaneSet => {
+  const keys = keysOf(wires);
+  const phoneKeys = keysOf(wires.slice(0, LINE_PHONE));
+  const wide = cap(keys, MAX_LANES);
+  const narrow = cap(phoneKeys, MAX_NARROW);
+  return { keys, wide, phoneKeys, narrow: narrow.join() === wide.join() ? undefined : narrow };
 };
-export const Line: FC<{ rows: LineRow[]; _: ((s: string) => string) & { lang: Lang }; archived?: boolean }> = ({ rows, _, archived }) => (
-  <ol class={archived ? "line archived" : "line"}>
-    {rows.map(({ message: m, name }) => {
-      const to = m.to.map((a) => (a.startsWith("thread:") ? _("the thread") : /^(user|agent):/.test(a) ? _("a teammate") : a)).join(", ");
-      const from = `${name}${m.authoredBy === "agent" ? ` ${_("(agent)")}` : ""}`;
-      return (
-        <li class="wire-row" data-mid={m.id} data-summary={`${_("New message")}: ${from} → ${to}`}>
-          <svg class="wire" viewBox="0 0 20 44" width="20" height="44" aria-hidden="true" focusable="false">
-            <path class="caret" d="M5 3 L11 8 L5 13" />
-            <path class="link" d="M8 15 V29" pathLength="1" />
-            <path class="caret" d="M5 31 L11 36 L5 41" />
+const laneOf = (lanes: string[], key: string) => {
+  const i = lanes.indexOf(key);
+  return i >= 0 || !lanes.at(-1)?.startsWith("+") ? i : lanes.length - 1;
+};
+// Geometry in SVG attributes (the CSP allows them), in percent of the lanes' width, which the stylesheet sets per screen.
+const x = (i: number, n: number) => `${Math.round(((i + 0.5) / n) * 10000) / 100}%`;
+
+const WireSvg: FC<{ lanes: string[]; wire: Wire; set?: "wide" | "narrow" }> = ({ lanes, wire, set }) => {
+  const n = lanes.length;
+  const s = laneOf(lanes, wire.from);
+  const all = wire.to === "all";
+  const to =
+    wire.to === "all"
+      ? lanes.map((_, i) => i).filter((i) => i !== s)
+      : [...new Set(wire.to.map((k) => laneOf(lanes, k)))].filter((i) => i >= 0 && i !== s);
+  const lo = Math.min(s, ...to);
+  const hi = Math.max(s, ...to);
+  return (
+    <svg class={set ? `wire ${set}` : "wire"} aria-hidden="true" focusable="false">
+      {lanes.map((_, i) => (
+        <line class="lane" x1={x(i, n)} x2={x(i, n)} y1="0" y2="100%" />
+      ))}
+      {to.length > 0 && (
+        <line
+          class={all ? "bus" : "link"}
+          x1={x(lo, n)}
+          x2={x(hi, n)}
+          y1={WIRE_Y}
+          y2={WIRE_Y}
+          transform-origin={`${Math.round(((s - lo) / (hi - lo)) * 100)}% 0`}
+        />
+      )}
+      {to.map((i) =>
+        all ? (
+          <line class="tick" x1={x(i, n)} x2={x(i, n)} y1={WIRE_Y - 4} y2={WIRE_Y + 4} />
+        ) : (
+          <svg x={x(i, n)} y={WIRE_Y} overflow="visible" aria-hidden="true">
+            <path class="caret" d={i > s ? "M-5 -5 0 0-5 5" : "M5 -5 0 0 5 5"} />
           </svg>
-          <div>
-            <p class="wire-who">
-              <strong>{from}</strong> <span aria-hidden="true">→</span>
-              <span class="sr-only">{_("to")}</span> {to}
-            </p>
-            <p class="meta">
-              <Pill>{_(m.kind)}</Pill>
-              {m.priority !== "normal" && (
-                <>
-                  {" "}
-                  <Pill tone="warn">{m.priority}</Pill>
-                </>
-              )}{" "}
-              <When at={m.createdAt} lang={_.lang} /> · <a href={`/console/threads/${m.threadId}`}>{_("Open thread")}</a>
-            </p>
-          </div>
-        </li>
-      );
-    })}
-  </ol>
+        ),
+      )}
+      {wire.human ? (
+        <svg x={x(s, n)} y={WIRE_Y} overflow="visible" aria-hidden="true">
+          <path class="end" d="M0 -5 5 0 0 5-5 0z" />
+        </svg>
+      ) : (
+        <circle class="end" cx={x(s, n)} cy={WIRE_Y} r="4" />
+      )}
+    </svg>
+  );
+};
+
+const Carets: FC<{ lanes: string[]; set?: "wide" | "narrow" }> = ({ lanes, set }) => (
+  <svg class={set ? `wire heads ${set}` : "wire heads"} aria-hidden="true" focusable="false">
+    {lanes.map((__, i) => (
+      <>
+        <svg x={x(i, lanes.length)} y="8" overflow="visible" aria-hidden="true">
+          <path class="caret" d="M-3 -5 2 0-3 5" />
+        </svg>
+        <line class="lane" x1={x(i, lanes.length)} x2={x(i, lanes.length)} y1="18" y2="100%" />
+      </>
+    ))}
+  </svg>
 );
+
+// Who a message went to, in words: a handle, the thread, the team, or a teammate the line cannot name.
+const recipients = (to: string[], _: Tr) =>
+  to
+    .map((a) =>
+      a.startsWith("thread:") ? _("the thread") : a === "@team" ? _("the team") : /^(user|agent):/.test(a) ? _("a teammate") : a,
+    )
+    .join(", ");
+const PRIORITY: Record<string, string> = { low: "low priority", high: "high priority", blocking: "blocking" };
+
+// The overview's line: the newest messages, each row one link to its thread. Wide screens show LINE_CAP rows, phones the
+// first LINE_PHONE; the rest wait on the threads page. The head of the lanes stays in view while the line scrolls: a caret
+// per person, the handles printed above them from 640 px (on two staggered rows, three past six people, so each name has
+// the width of as many lanes), a caption naming them on phones.
+type LineRow = { message: Msg; name: string; handle: string | null; subject: string | null };
+export const Line: FC<{ rows: LineRow[]; _: Tr }> = ({ rows, _ }) => {
+  const lanes = lanesOf(rows.map((r) => wireOf(r.message, r.handle ?? r.name)));
+  const phone = lanes.narrow ?? lanes.wide;
+  const named = phone.map((l, i) => (l.startsWith("+") ? `${l} (${lanes.phoneKeys.slice(i).join(", ")})` : l));
+  // Names that fit one lane at its narrowest (28.8 px for ten lanes, 32 px under ten: four mono letters) stand on one row;
+  // longer ones take turns on two, three past six people.
+  const longest = Math.max(...lanes.wide.map((l) => l.length));
+  const nameRows = longest <= (lanes.wide.length < MAX_LANES ? 4 : 3) ? 1 : lanes.wide.length > MAX_NARROW ? 3 : 2;
+  // Each lane set its drawing: the wide one, and the phone's when it differs.
+  const perSet = (draw: (lanes: string[], set?: "wide" | "narrow") => Child, onPhones = true) =>
+    lanes.narrow ? [draw(lanes.wide, "wide"), onPhones && draw(lanes.narrow, "narrow")] : draw(lanes.wide);
+  return (
+    <div class="lanes" data-lanes={lanes.wide.length} data-narrow={lanes.narrow?.length}>
+      <div class="lane-heads" aria-hidden="true">
+        <p class="lane-caption">{_("Lanes: {names}").replace("{names}", () => named.join(", "))}</p>
+        <p class="lane-names" data-rows={nameRows}>
+          {Array.from({ length: nameRows }, (__, k) => (
+            <span class="lane-row">
+              {lanes.wide
+                .filter((___, i) => i % nameRows === k)
+                .map((l) => (
+                  <span class="lane-name" translate="no">
+                    {l}
+                  </span>
+                ))}
+            </span>
+          ))}
+        </p>
+        {perSet((l, s) => (
+          <Carets lanes={l} set={s} />
+        ))}
+      </div>
+      <ol class="line">
+        {rows.map(({ message: m, name, handle, subject }, i) => {
+          const wire = wireOf(m, handle ?? name);
+          const to = recipients(m.to, _);
+          const what = [m.kind !== "note" && _(m.kind), PRIORITY[m.priority] && _(PRIORITY[m.priority] ?? ""), subject].filter(Boolean);
+          const who = m.authoredBy === "agent" ? _("{name}'s agent").replace("{name}", () => name) : name;
+          return (
+            <li class={i < LINE_PHONE ? "wire-row" : "wire-row later"} data-mid={m.id} data-summary={`${_("New message")}: ${who} → ${to}`}>
+              {/* A row past the phone's first ones is hidden there: it needs no phone wire. */}
+              {perSet(
+                (l, s) => (
+                  <WireSvg lanes={l} wire={wire} set={s} />
+                ),
+                i < LINE_PHONE,
+              )}
+              <a id={`line-${m.id}`} class="wire-text" href={`/console/threads/${m.threadId}`}>
+                {/* The arrow keeps to the recipient: a narrow column breaks the line before it. */}
+                <span class="wire-who">
+                  <strong>{who}</strong> <span aria-hidden="true">→</span>
+                  <span class="sr-only">{_("to")}</span>
+                  {`\u00a0${to}`}
+                </span>
+                <Stamp at={m.createdAt} lang={_.lang} />
+                {what.length > 0 && <span class="wire-what">{what.join(" · ")}</span>}
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+};
 
 export const Result: FC<{ children?: Child }> = ({ children }) => (
   <div class="result" role="status">
