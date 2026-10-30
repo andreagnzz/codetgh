@@ -216,11 +216,6 @@ export function createApp({
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
 
-  const forbidden = (e: unknown) => {
-    if (e instanceof HubError) return Response.json({ code: e.code, message: e.message }, { status: HTTP_STATUS[e.code] });
-    throw e;
-  };
-
   const localHost = !config.host || config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
   const serveOAuth = requireMcpAuth(
     auth,
@@ -242,7 +237,8 @@ export function createApp({
           },
         });
       } catch (e) {
-        return forbidden(e);
+        if (e instanceof HubError) return Response.json({ code: e.code, message: e.message }, { status: HTTP_STATUS[e.code] });
+        throw e;
       }
     },
     // Its own keys from its own socket: behind Tailscale Funnel the hub cannot reach its public URL.
