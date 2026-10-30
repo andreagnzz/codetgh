@@ -53,8 +53,10 @@
     if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
   // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger, or to the button of the row menu that
-  // held it, which closed when the dialog took the focus.
+  // held it, which closed when the dialog took the focus. The event comes a frame late: a confirmation asked meanwhile (Escape
+  // then Enter) has opened the dialog again, and keeps its request.
   dialog?.addEventListener("close", () => {
+    if (dialog.open) return;
     const back = pending && triggerOf(pending.elt, pending.by);
     pending = null;
     if (!back?.isConnected) return;
