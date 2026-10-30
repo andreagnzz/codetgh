@@ -193,7 +193,11 @@ export function createApp({
     logger.warn("CODETGH_STATE_DIR is unset or not writable: the last signed audit checkpoint is kept in memory, a restart forgets it");
   const signHeads = async () => {
     try {
-      for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey, witness).catch(() => {});
+      for (const t of await db.select({ id: team.id }).from(team)) {
+        const r = await writeCheckpoint(db, t.id, auditKey, witness).catch(() => undefined);
+        // Ids and seqs only; the alert in the console says the same.
+        if (r?.status === "refused") logger.error({ team_id: t.id, problem: r.problem }, "audit log not signed");
+      }
     } catch (e) {
       logger.error({ err: (e as Error).name }, "checkpoint failed");
     }

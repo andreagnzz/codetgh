@@ -1477,10 +1477,20 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
 
+  // A refused checkpoint is never shown as a success: over a chain rewritten above the last kept checkpoint, the chain
+  // and the checkpoints left in the database still verify.
+  const refused = (c: Context<Env>, problem: string) => (
+    <Result>
+      {tr(c)("No checkpoint was signed: the audit log in the database no longer matches what this hub signed.")} <code>{problem}</code>.{" "}
+      {tr(c)("Whoever runs the server follows Audit witness in docs/DEPLOY.md to find the cause and recover, then dismisses the alert.")}
+    </Result>
+  );
+
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
-    await writeCheckpoint(db, p.teamId, auditKey, witness);
+    const signed = await writeCheckpoint(db, p.teamId, auditKey, witness);
+    if (signed.status === "refused") return c.html(refused(c, signed.problem));
     const r = await verifyTeamAudit(db, p.teamId, auditKey.publicKey);
     return c.html(
       <Result>
@@ -1493,7 +1503,12 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   consoleApp.get("/audit/export", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
-    await writeCheckpoint(db, p.teamId, auditKey, witness);
+    // No file the offline check would pass while the hub refuses to sign this chain.
+    const signed = await writeCheckpoint(db, p.teamId, auditKey, witness);
+    if (signed.status === "refused") {
+      c.status(409);
+      return page(c, "Audit log", refused(c, signed.problem));
+    }
     const { events, checkpoints } = await exportAudit(db, p.teamId);
     await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "audit.exported" }));
     c.header("Content-Disposition", `attachment; filename="codetgh-audit-${p.teamId}.json"`);

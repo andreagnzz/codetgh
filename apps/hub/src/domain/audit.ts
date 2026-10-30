@@ -116,13 +116,15 @@ async function saveWitness(dir: string, w: Witness) {
   await rename(tmp, file);
 }
 
+export type CheckpointResult = { status: "signed"; seq: number } | { status: "unchanged" } | { status: "refused"; problem: string };
+
 // Signs the current head when it moved since the last checkpoint, and only on top of a chain that still extends the
 // witnessed checkpoint and matches the last one in the database: a hub that signed whatever head it finds would vouch for
 // a log rewritten in the database. Runs on an interval and before each export.
-export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, store: WitnessStore = {}) {
+export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, store: WitnessStore = {}): Promise<CheckpointResult> {
   // undefined: the witness file exists but cannot be read, and nothing is signed until someone looks.
   const witness = store.dir ? await readWitness(store.dir, teamId).catch(() => undefined) : (inMemory.get(teamId) ?? null);
-  const latest = await db.transaction(async (tx): Promise<Witness | undefined> => {
+  const [result, latest] = await db.transaction(async (tx): Promise<[CheckpointResult, Witness?]> => {
     await lockTeam(tx, teamId);
     const [prev] = await tx
       .select()
@@ -156,7 +158,6 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, sto
                   ? `first break at seq ${broken}`
                   : null;
     if (problem) {
-      store.log?.error({ team_id: teamId, problem }, "audit log not signed");
       const [open] = await tx
         .select({ id: alert.id })
         .from(alert)
@@ -164,10 +165,10 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, sto
         .limit(1);
       if (!open)
         await tx.insert(alert).values({ id: newId("alr"), teamId, kind: "audit_tamper", excerpt: `audit log not signed: ${problem}` });
-      return;
+      return [{ status: "refused", problem }];
     }
     if (!head || (prev && prev.seq >= head.seq))
-      return prev && { team_id: teamId, seq: prev.seq, hash: prev.hash, at: prev.at.toISOString() };
+      return [{ status: "unchanged" }, prev && { team_id: teamId, seq: prev.seq, hash: prev.hash, at: prev.at.toISOString() }];
     const c = signCheckpoint(key, {
       team_id: teamId,
       seq: head.seq,
@@ -184,17 +185,24 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, sto
       keyId: c.key_id,
       sig: c.sig,
     });
-    return { team_id: teamId, seq: c.seq, hash: c.hash, at: c.at };
+    return [
+      { status: "signed", seq: c.seq },
+      { team_id: teamId, seq: c.seq, hash: c.hash, at: c.at },
+    ];
   });
   // After the commit: a witness never names a checkpoint the database does not hold.
-  if (!latest || (witness?.seq === latest.seq && witness.hash === latest.hash)) return;
-  if (!store.dir) return void inMemory.set(teamId, latest);
+  if (!latest || (witness?.seq === latest.seq && witness.hash === latest.hash)) return result;
+  if (!store.dir) {
+    inMemory.set(teamId, latest);
+    return result;
+  }
   await saveWitness(store.dir, latest).catch((e: NodeJS.ErrnoException) => {
     store.log?.error({ team_id: teamId, err: e.code ?? e.name }, "audit witness not written");
     throw e;
   });
   if (witness === null)
     store.log?.warn({ team_id: teamId, seq: latest.seq }, "audit witness started now: trust on first use of the chain in the database");
+  return result;
 }
 
 export async function exportAudit(db: Db, teamId: string) {
