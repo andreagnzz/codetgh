@@ -380,7 +380,7 @@ export async function sendMessage(deps: MessagingDeps, author: Author, input: Ou
       if (pt) await assertCanJoin(tx, p, pt, `message ${input.reply_to}`);
     }
     const to = input.to ? (Array.isArray(input.to) ? input.to : [input.to]) : [];
-    const addressed = to.length ? await resolveAddresses(tx, p, to) : { recipients: [] as Recipient[], threadId: null, teamWide: false };
+    const addressed = await resolveAddresses(tx, p, to);
     if (!to.length && parent) addressed.recipients.push({ userId: parent.fromUserId, agentId: parent.fromAgentId });
     // A verdict goes to everyone who wrote in the looping thread.
     if (input.loop_verdict && parent)
