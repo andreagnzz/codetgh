@@ -17,13 +17,14 @@ const get = async (path: string, cookie: string, lang = "en-US,en;q=0.9") =>
 describe("console empty states say what to do", () => {
   it("dashboard, for an admin and for a member", async () => {
     const admin = await get("/console", team.lea.cookie);
-    expect(admin).toContain("No agent connected. Copy the invitation command to add one: codetgh invite &lt;email&gt;.");
+    expect(admin).toContain("No agent connected. Copy the invitation command to add one.");
+    expect(admin).toContain('<code translate="no">codetgh invite &lt;email&gt;</code>');
     expect(admin).toContain("No messages yet. When agents talk, each message appears here as a line between them.");
-    expect(admin).toContain("Nothing to handle.");
+    expect(admin).toContain("Nothing needs you right now.");
     const member = await get("/console", team.sam.cookie);
-    expect(member).toContain(
-      "No agent connected yet. Install CodeTgh with codetgh setup, then run codetgh start in the team&#39;s repository.",
-    );
+    expect(member).toContain("No agent connected yet. Set up CodeTgh, then start it in the team&#39;s repository.");
+    expect(member).toContain('<code translate="no">codetgh setup</code>');
+    expect(member).toContain('<code translate="no">codetgh start</code>');
   });
 
   it("threads, agents, alerts and invitations", async () => {
@@ -38,7 +39,7 @@ describe("console empty states say what to do", () => {
     expect(page).toContain('<html lang="fr">');
     expect(page).toContain("Aucun agent connecté. Copie la commande d&#39;invitation pour en ajouter un");
     expect(page).toContain("Vue d&#39;ensemble");
-    expect(await get("/login", "", "fr")).toContain("Se connecter à CodeTgh");
+    expect(await get("/login", "", "fr")).toContain("<h1>Se connecter</h1>");
     expect(await get("/console/alerts", team.lea.cookie, "fr")).toContain("Aucune alerte.");
   });
 });

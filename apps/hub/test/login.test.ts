@@ -17,7 +17,7 @@ afterAll(async () => {
 it("offers GitHub sign-in when GitHub is configured, and not Google", async () => {
   const html = await (await fetch(`${hub.url}/login`)).text();
   expect(html).toContain('data-provider="github"');
-  expect(html).toContain("Sign in with GitHub");
+  expect(html).toContain('<button type="button" class="secondary" data-provider="github">Continue with GitHub</button>');
   expect(html).not.toContain('data-provider="google"');
 });
 
@@ -33,5 +33,5 @@ it("the GitHub button leads to github.com with the hub's callback", async () => 
 });
 
 it("says it in French too", async () => {
-  expect(await (await fetch(`${hub.url}/login`, { headers: { "accept-language": "fr" } })).text()).toContain("Se connecter avec GitHub");
+  expect(await (await fetch(`${hub.url}/login`, { headers: { "accept-language": "fr" } })).text()).toContain("Continuer avec GitHub");
 });

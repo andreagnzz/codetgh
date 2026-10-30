@@ -48,9 +48,16 @@ describe("browser sign-in (device authorization)", () => {
     const html = await shown.text();
     expect(html).toContain("sam-laptop &lt;b&gt;");
     expect(html).not.toContain("<b>");
-    // When the request started, and that the label is the requester's word, not a checked machine name.
-    expect(html).toMatch(/Started <time datetime="[^"]+"/);
-    expect(html).toContain("typed by whoever started this request");
+    // When the request started, the clock time in the reader's zone then how long ago, with no tooltip to read; and that the
+    // label is the requester's word, not a checked machine name.
+    expect(html).toMatch(/Started<\/dt><dd><time datetime="[^"]+" data-local="true">[^<]+<\/time> · (now|\d+ seconds? ago)<\/dd>/);
+    // Which account the personal token is for, said on every width (the account menu is folded on phones).
+    expect(html).toContain("<dt>Signed in as</dt><dd>sam@acme.test</dd>");
+    // The page's polite live region announces the panel: the panel itself is no status.
+    expect(html).not.toContain('role="status"');
+    expect(html).toContain("Anyone can send any name, so compare the code, not the name.");
+    // The code as the terminal prints it, whatever the person typed.
+    expect(html).toContain(`<code class="user-code" translate="no">${s.user_code}</code>`);
 
     const approved = await consolePost(hub.url, team.sam.cookie, "/console/device/approve", { user_code: s.user_code });
     expect(approved.status).toBe(200);
@@ -112,10 +119,15 @@ describe("browser sign-in (device authorization)", () => {
 
   it("wrong user codes: a few tries, then refused even with the right one", async () => {
     const s = await start();
-    for (let i = 0; i < 5; i++)
+    // Each refusal in the reader's words, which the device page shows under the form.
+    const first = await consolePost(hub.url, `${team.lea.cookie}; lang=fr`, "/console/device", { user_code: "BBBB-BBBB" });
+    expect(first.status).toBe(404);
+    expect(await first.text()).toContain("Ce code est inconnu ou a expiré. Vérifie le code dans ton terminal, ou relance codetgh login.");
+    for (let i = 1; i < 5; i++)
       expect((await consolePost(hub.url, team.lea.cookie, "/console/device", { user_code: "BBBB-BBBB" })).status).toBe(404);
     const blocked = await consolePost(hub.url, team.lea.cookie, "/console/device", { user_code: s.user_code });
     expect(blocked.status).toBe(429);
+    expect(await blocked.text()).toContain("Too many wrong codes. Wait a few minutes, then type the code again.");
     expect((await consolePost(hub.url, team.lea.cookie, "/console/device/approve", { user_code: s.user_code })).status).toBe(429);
     expect(((await (await poll(s.device_code)).json()) as { status: string }).status).toBe("pending");
   });

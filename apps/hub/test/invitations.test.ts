@@ -67,7 +67,7 @@ async function join(token: string, cookie: string, pageOf = token) {
 it("shows a team name with $ in it as typed, never read as a replacement pattern", async () => {
   const { token } = await invite(await createTeam(hub.db, "R$'D"), "rd@acme.test", "member");
   const html = await (await fetch(`${hub.url}/invite/${token}`, { headers: { cookie: nora.cookie } })).text();
-  expect(html).toContain("Join R$&#39;D on CodeTgh");
+  expect(html).toContain("<title>Join R$&#39;D · CodeTgh</title>");
   expect(html).toContain(">Join R$&#39;D<");
   expect(html).not.toContain("on CodeTghD");
 });
@@ -88,7 +88,10 @@ it("refuses a join without the CSRF token, for another email, or with an unverif
   });
   expect(forged.status).toBe(403);
   const other = await invite(team.teamId, "someone@else.test", "member");
-  expect((await join(other.token, nora.cookie)).status).toBe(403);
+  // Its page offers no Join to another address, so the CSRF token comes from her own invitation's page: the hub's rule refuses.
+  const another = await join(other.token, nora.cookie, token);
+  expect(another.status).toBe(403);
+  expect(await another.text()).toContain("This invitation is for another email address.");
   await verified(nora.id, false);
   const unverified = await join(token, nora.cookie);
   expect(unverified.status).toBe(403);
