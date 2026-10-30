@@ -1,2 +1,331 @@
 /* Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this file; the tokens, base and
-   components are in console.css. */
+   components are in console.css. Every page links every batch's stylesheet, so each rule here is scoped to this batch's
+   screens: .agents-lede (their page header), .agents-link and .add-external (Agents), .agents-table (Agents, Delegations),
+   .project-head and .session-list (Projects). */
+
+/* The page's description sits in the header's meta line, which already spaces it. */
+.agents-lede {
+  margin: 0;
+}
+
+/* A link on a line of its own (the way back to every project, the way to the list after Add): as tall as a target. */
+.agents-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+/* Agents: the external agent's form opens under the page header and across it, after the header's last row, instead of
+   squeezing beside the title. */
+.page-actions:has(> .add-external > details[open]) {
+  grid-column: 1 / -1;
+  grid-row: -1;
+  margin-top: var(--sp-4);
+}
+.add-external {
+  flex: 1;
+  min-width: 0;
+}
+.add-external > details {
+  margin: 0;
+}
+/* Beside the title, the 40 px button overhangs the 32 px title line by 4 px on each side instead of growing the row: the
+   title sits where it does on Projects and Delegations. */
+@media (min-width: 640px) {
+  .page-actions:has(> .add-external > details:not([open])) {
+    margin-block: -4px;
+  }
+}
+/* In the panel, whose paragraphs are muted, a refusal keeps the error color. */
+.add-external .field-error {
+  color: var(--error);
+}
+.add-external #a2a-result:not(:empty) {
+  margin-top: var(--sp-6);
+}
+.add-external #a2a-result > :last-child {
+  margin-bottom: 0;
+}
+
+/* A session, on the three pages: the person and the label they would type, then its short id; machine values in mono. */
+:is(.agents-table, .session-list) :is(.session-cell, .session-state) p,
+.agents-table :is(.setting, .senders) {
+  margin: 0;
+  max-width: none;
+}
+:is(.agents-table, .session-list) .session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  min-width: 0;
+}
+:is(.agents-table, .session-list) .session-name {
+  font-weight: 500;
+}
+/* The label is what tells sessions apart: it wraps in full rather than being cut, since a phone shows no tooltip. */
+:is(.agents-table, .session-list) .session-head .chip {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(.agents-table, .session-list) .machine {
+  font-family: var(--mono);
+  font-size: 0.9286em; /* 13 px in 14 px text */
+  overflow-wrap: anywhere;
+}
+:is(.agents-table, .session-list) .meta .machine {
+  font-size: 1em;
+}
+:is(.agents-table, .session-list) :is(.not-reported, .state-off) {
+  color: var(--text-muted);
+}
+/* What a session did not report is a caption, not a value. */
+:is(.agents-table, .session-list) .not-reported {
+  font-size: var(--fs-caption);
+}
+:is(.agents-table, .session-list) .state-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 20px;
+}
+/* Paused (codetgh pause): the pause sign takes the place of the pill's dot. */
+:is(.agents-table, .session-list) .pill > .icon {
+  width: 12px;
+  height: 12px;
+}
+:is(.agents-table, .session-list) .pill:has(> .icon)::before {
+  content: none;
+}
+.agents-table .setting {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.agents-table .senders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+/* Every project's table has the same columns at the same widths, so the groups line up as one table. A header wraps inside
+   its column rather than running into the next one. */
+.agents-table table {
+  table-layout: fixed;
+}
+.agents-table th {
+  white-space: normal;
+}
+@media (min-width: 640px) {
+  .agents-table.sessions th:nth-child(1) {
+    width: 26%;
+  }
+  .agents-table.sessions th:nth-child(2) {
+    width: 18%;
+  }
+  .agents-table.sessions th:nth-child(3) {
+    width: 22%;
+  }
+  .agents-table.sessions th:nth-child(4),
+  .agents-table.sessions th:nth-child(5) {
+    width: 12%;
+  }
+  /* External agents: their state spans the setup columns, which do not apply to them; their Remove… has the room of a busy
+     button. */
+  .agents-table.external th:nth-child(1) {
+    width: 26%;
+  }
+  .agents-table.external th:nth-child(2) {
+    width: 54%;
+  }
+  /* Delegations: Turn off… keeps the room of its busy ring, so the table never scrolls while the hub answers. */
+  .agents-table.delegations th:nth-child(1) {
+    width: 24%;
+  }
+  .agents-table.delegations th:nth-child(2) {
+    width: 14%;
+  }
+  .agents-table.delegations th:nth-child(3) {
+    width: 24%;
+  }
+  .agents-table.delegations th:nth-child(4) {
+    width: 18%;
+  }
+}
+/* A phone drops what a session did not report, as it drops an empty cell, and puts the session's "…" in the corner of its
+   record instead of on a line of its own. */
+@media (max-width: 639px) {
+  .agents-table td:has(> .cell > .not-reported:only-child) {
+    display: none;
+  }
+  .agents-table.sessions tr {
+    position: relative;
+  }
+  .agents-table.sessions td.primary-cell {
+    padding-right: calc(32px + var(--sp-2));
+  }
+  .agents-table.sessions td.actions-cell {
+    position: absolute;
+    top: var(--sp-2);
+    right: 0;
+    padding: 0;
+  }
+  .agents-table.sessions .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
+}
+
+/* Projects: a project's head is its name across the row, with its "…" at the end; under it, for the owner, its Remote Control
+   and its runner in two columns that line up from one project to the next, each a state then its action, then the line
+   that goes with the state (the machine's report, the link to claude.ai/code). */
+.project-head {
+  margin: var(--sp-8) 0 var(--sp-3);
+}
+.project-head .project-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.project-head .project-title h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.project-head .tool-id {
+  margin: 0;
+  max-width: none;
+  padding: var(--sp-2) var(--sp-3);
+  overflow-wrap: anywhere;
+}
+.project-head li + li > .tool-id {
+  margin-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+.project-head .project-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-6);
+  margin-top: var(--sp-2);
+}
+.project-head .tool {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.project-head .tool-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+.project-head .tool-state {
+  color: var(--text-muted);
+}
+.project-head .tool-report {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* From a wide screen, a state and its action share a line, as tall as a button, so both columns read on one line. */
+@media (min-width: 1024px) {
+  .project-head .tool-line {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2) var(--sp-3);
+    min-height: 32px;
+  }
+}
+@media (max-width: 639px) {
+  .project-head .project-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The "…" ends the title line: its menu opens towards the page, where a phone's table records open theirs to the right. */
+  .project-head .row-menu .pop {
+    left: auto;
+    right: 0;
+  }
+}
+.project-head .claude-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 24px;
+  font-weight: 500;
+}
+/* A refused action says why under the line it was on. */
+.project-head .tool-line > .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* A project's sessions: a list on the Agents columns, without their headers. The attach form takes the third column, under
+   what the session said it is doing, or in its place. */
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.session-list .session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 26fr) minmax(0, 18fr) minmax(0, 56fr);
+  grid-template-areas: "session state doing" "session state action";
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+  align-items: baseline;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.session-list .session-row:not(:has(> .session-doing)) {
+  grid-template-areas: "session state action";
+}
+.session-list .session-row > .session-cell {
+  grid-area: session;
+}
+.session-list .session-row > .session-state {
+  grid-area: state;
+}
+.session-list .session-doing {
+  grid-area: doing;
+  margin: 0;
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.session-list .session-action {
+  grid-area: action;
+  min-width: 0;
+}
+/* The menu keeps its width whatever the longest project name: the button stays beside it. Its compact padding leaves
+   "Choose a project…" whole beside the browser's arrow, in French too. */
+.session-list .attach select {
+  width: 10rem;
+  max-width: 100%;
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-2);
+}
+@media (max-width: 1023px) {
+  .session-list .session-row,
+  .session-list .session-row:not(:has(> .session-doing)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "session state" "doing doing" "action action";
+  }
+}
+@media (max-width: 639px) {
+  .session-list .session-row,
+  .session-list .session-row:not(:has(> .session-doing)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "session" "state" "doing" "action";
+  }
+  .session-list .session-action {
+    margin-top: var(--sp-1);
+  }
+}

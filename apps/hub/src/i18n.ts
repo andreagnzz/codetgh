@@ -549,6 +549,90 @@ const FR: Record<string, string> = {
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
+  // A session, on Agents, Projects and Delegations. Online, Idle, External, Prompts off and Quarantined are batch 2's keys.
+  Paused: "En pause",
+  // A session, feminine in French: « vue », as « retirée ».
+  "Last seen {time}": "Vue {time}",
+  Push: "Réception",
+  "While working": "Pendant le travail",
+  "Wakes up": "Se réveille",
+  "Live channel": "Canal en direct",
+  "Not reported": "Non transmis",
+  Bridge: "Pont",
+  "Other client": "Autre client",
+  // Agents.
+  "Every session connected to the team, by project. Quarantine a session that misbehaves, remove one nobody uses.":
+    "Toutes les sessions connectées à l'équipe, par projet. Mets en quarantaine une session qui se comporte mal, retire celle que personne n'utilise.",
+  "Your sessions on this hub, by project.": "Tes sessions sur ce hub, par projet.",
+  "Lift quarantine": "Lever la quarantaine",
+  "Actions for {session}": "Actions pour {session}",
+  "Quarantine {name}?": "Mettre {name} en quarantaine\u202f?",
+  "All of their sessions can then send only notes, questions and answers: no claims, tasks, requests, handoffs or team memory, and no delegation. Only an admin lifts it.":
+    "Toutes ses sessions ne pourront plus envoyer que des notes, des questions et des réponses\u00a0: ni réservation, ni tâche, ni demande, ni relais, ni mémoire d'équipe, ni délégation. Seul un admin la lève.",
+  "Remove {session}?": "Retirer {session}\u202f?",
+  "The session leaves every list and its claims are released. Its messages stay in their threads. If it resumes, it comes back.":
+    "La session quitte toutes les listes et ses réservations sont libérées. Ses messages restent dans leurs fils. Si elle reprend, elle revient.",
+  "{session} removed.": "{session} retirée.",
+  "External agents": "Agents externes",
+  "Remove the external agent {name}?": "Retirer l'agent externe {name}\u202f?",
+  "Its token stops working at once. Its messages stay in their threads.":
+    "Son jeton cesse aussitôt de fonctionner. Ses messages restent dans leurs fils.",
+  "External agent {name} removed.": "Agent externe {name} retiré.",
+  "No sessions yet.": "Aucune session pour l'instant.",
+  "Sessions appear here once someone sets up CodeTgh, then starts Claude Code with it in a team repository.":
+    "Les sessions apparaissent ici dès que quelqu'un installe CodeTgh, puis lance Claude Code avec lui dans un dépôt de l'équipe.",
+  "Copy codetgh setup": "Copier codetgh setup",
+  "Copy codetgh start": "Copier codetgh start",
+  "No sessions in {project}.": "Aucune session dans {project}.",
+  "No sessions outside a project.": "Aucune session hors projet.",
+  "Add an external agent": "Ajouter un agent externe",
+  Add: "Ajouter",
+  "Copy the token now.": "Copie le jeton maintenant.",
+  "It is shown once. Give these two lines to the external agent's operator.":
+    "Il n'est affiché qu'une fois. Donne ces deux lignes à la personne qui fait tourner l'agent externe.",
+  "Copy the two lines": "Copier les deux lignes",
+  "It appears to the team as {handle}.": "L'équipe le voit sous le pseudo {handle}.",
+  "See it in External agents": "Le voir parmi les agents externes",
+  // Projects.
+  "Each team repository and the sessions working in it.": "Chaque dépôt de l'équipe et les sessions qui y travaillent.",
+  "Actions for {project}": "Actions pour {project}",
+  "Remote Control and the runner start on your machine, only in the folders you listed there.":
+    "Remote Control et le runner démarrent sur ta machine, seulement dans les dossiers que tu y as listés.",
+  "Remote Control failed": "Remote Control en échec",
+  "Runner failed": "Runner en échec",
+  "Runner on · 1\u00a0agent running": "Runner en marche · 1\u00a0agent en cours",
+  "Runner on · {n}\u00a0agents running": "Runner en marche · {n}\u00a0agents en cours",
+  "Start {claude} inside the project's repository folder to link a session, or attach one to a project here.":
+    "Lance {claude} dans le dossier du dépôt du projet pour y rattacher la session, ou rattache-la à un projet ici.",
+  "Start {claude} inside the project's repository folder to link a session.":
+    "Lance {claude} dans le dossier du dépôt du projet pour y rattacher la session.",
+  "Attach to project": "Rattacher au projet",
+  "Project for {session}": "Projet pour {session}",
+  "Choose a project…": "Choisis un projet…",
+  "Choose a project for this session.": "Choisis un projet pour cette session.",
+  "No projects yet.": "Aucun projet pour l'instant.",
+  "A project appears when a member starts a session with {start} in a team repository, or runs this command there:":
+    "Un projet apparaît quand un membre lance une session avec {start} dans un dépôt de l'équipe, ou y lance cette commande\u00a0:",
+  // Delegations.
+  "a former member": "un ancien membre",
+  "Turn off delegation for {session}?": "Couper la délégation de {session}\u202f?",
+  "Turn off delegation for {session}…": "Couper la délégation de {session}…",
+  "It stops taking requests at once, and the requests it hasn't finished expire. The session keeps running; only a new codetgh start that names who may send it requests delegates it again.":
+    "Elle cesse aussitôt de prendre des demandes, et celles qu'elle n'a pas finies expirent. La session continue\u202f; seul un nouveau codetgh start qui nomme qui peut lui envoyer des demandes la rend de nouveau déléguée.",
+  "Delegation of {session} turned off.": "Délégation de {session} coupée.",
+  "No delegate sessions.": "Aucune session déléguée.",
+  "Start one in the project's repository, with the handles of the teammates who may send it tasks:":
+    "Lance-en une dans le dépôt du projet, avec les pseudos des coéquipiers qui peuvent lui envoyer des tâches\u00a0:",
+  // A refused action, in the reader's words (routes.tsx READER).
+  "This agent is no longer on the hub. Reload the page to see the current list.":
+    "Cet agent n'est plus sur le hub. Recharge la page pour voir la liste à jour.",
+  "This session no longer takes requests. Reload the page to see the current list.":
+    "Cette session ne prend plus de demandes. Recharge la page pour voir la liste à jour.",
+  "This project is no longer on the hub. Reload the page to see the current list.":
+    "Ce projet n'est plus sur le hub. Recharge la page pour voir la liste à jour.",
+  "Give the external agent a name.": "Donne un nom à l'agent externe.",
+  "Adding an external agent needs a sign-in from the last 10\u00a0minutes. Sign in again at /login, then add it.":
+    "Ajouter un agent externe demande une connexion de moins de 10\u00a0minutes. Reconnecte-toi sur /login, puis ajoute-le.",
   // ---- End of batch 4. ----
 
   // ---- Batch 5, members, tokens, My data and settings (refonte/membres-reglages). Only that batch edits this block. ----

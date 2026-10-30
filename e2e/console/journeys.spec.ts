@@ -65,7 +65,7 @@ test("handle a suspicious message: escaped text, quarantine the sender", async (
   // The action answers HX-Refresh: wait for that reload, or the next goto races it (ERR_ABORTED).
   await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Quarantine sender", exact: true }).click()]);
   await page.goto(`${hub.url}/console/agents`);
-  await expect(page.locator("table")).toContainText("quarantined");
+  await expect(page.locator("table")).toContainText("Quarantined");
 });
 
 test("remove a member: their console session ends at once", async ({ page, browser }) => {

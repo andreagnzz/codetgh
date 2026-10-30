@@ -493,6 +493,8 @@ export async function listAgents(
       agent,
       name: user.name,
       handle: membership.handle,
+      // codetgh pause: the person's agents stop sending, shown on every session of theirs (display only).
+      paused: membership.agentsPausedAt,
       project: project.name,
       total: sql<number>`count(*) over ()`.mapWith(Number),
     })
@@ -603,10 +605,11 @@ export async function delegateFor(db: Db, p: Principal, from: Agent, handle: str
 // Console « Délégations »: the delegate sessions a person may turn off (their own; an admin, the team's).
 export async function listDelegates(db: Db, p: Principal, admin: boolean) {
   const rows = await db
-    .select({ agent, name: user.name, project: project.name })
+    .select({ agent, name: user.name, project: project.name, paused: membership.agentsPausedAt })
     .from(agent)
     .innerJoin(user, eq(user.id, agent.userId))
     .leftJoin(project, eq(project.id, agent.projectId))
+    .leftJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
     .where(
       and(
         eq(agent.teamId, p.teamId),

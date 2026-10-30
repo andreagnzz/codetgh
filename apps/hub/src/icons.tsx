@@ -2,7 +2,7 @@
 
 // Lucide icons (lucide-static 1.56.0, https://lucide.dev), only those the pages use, drawn inline: the CSP loads no icon file.
 // ISC License, Copyright (c) 2026 Lucide Icons and Contributors. The icons derived from Feather (all below but circle-check,
-// copy, menu and refresh-cw) are also under the MIT License, Copyright (c) 2013-present Cole Bemis. Full texts in NOTICE.
+// copy, menu, pause and refresh-cw) are also under the MIT License, Copyright (c) 2013-present Cole Bemis. Full texts in NOTICE.
 const PATHS = {
   "arrow-down": (
     <>
@@ -46,6 +46,13 @@ const PATHS = {
       <circle cx="5" cy="12" r="1" />
     </>
   ),
+  "external-link": (
+    <>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -58,6 +65,12 @@ const PATHS = {
       <path d="M4 5h16" />
       <path d="M4 12h16" />
       <path d="M4 19h16" />
+    </>
+  ),
+  pause: (
+    <>
+      <rect x="14" y="3" width="5" height="18" rx="1" />
+      <rect x="5" y="3" width="5" height="18" rx="1" />
     </>
   ),
   "octagon-alert": (
