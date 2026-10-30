@@ -1,11 +1,10 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, membership } from "../apps/hub/src/db/schema.js";
+import { agent } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { createTeam } from "../apps/hub/src/domain/teams.js";
 import { newId } from "../apps/hub/src/ids.js";
-import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
 
 // What E_UNREACHABLE and reach may tell: what team_overview shows the same member, nothing from another team, nothing to a guest.
 let hub: Hub;
@@ -96,7 +95,7 @@ describe("what a successful send shows", () => {
 
 describe("a guest", () => {
   it("learns nothing about who is online: no error, no reach", async () => {
-    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "guest");
     const online = await send({ to: "@lea" }, team.malik.token);
     const offline = await send({ to: "@sam", kind: "question" }, team.malik.token);
     expect(online.isError).toBe(false);

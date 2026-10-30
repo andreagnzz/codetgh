@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { membership } from "../apps/hub/src/db/schema.js";
 import { createInvitation } from "../apps/hub/src/domain/teams.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
@@ -21,7 +19,7 @@ beforeAll(async () => {
   expect((await call(lea, "claim", { scope: ["src/billing/**"], mode: "exclusive", reason: "refactor" })).isError).toBe(false);
   await call(lea, "send_message", { to: "@malik", kind: "note", body: "hello guest" });
   // Made a guest before the team message, which then does not reach them.
-  await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+  await setRole(hub, team.malik.userId, "guest");
   teamThread = JSON.parse((await call(lea, "send_message", { to: "@team", kind: "note", body: "team only plan" })).text).thread;
 });
 afterAll(() => hub.stop());

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { membership } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, type Hub, mcpClient, setRole, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -59,7 +59,7 @@ it("names the teammates a delegate session works for", async () => {
 });
 
 it("keeps usage from guests", async () => {
-  await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+  await setRole(hub, team.malik.userId, "guest");
   const malik = await mcpClient(hub.url, team.malik.token);
   expect((await call(malik, "team_overview", { scope: "team" })).isError).toBe(true);
   await malik.close();

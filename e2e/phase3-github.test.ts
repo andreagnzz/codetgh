@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, message, project, task, thread } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -233,7 +233,7 @@ describe("verify tags (a tag created on GitHub finishes the tasks that wait for 
       const stale = "tag reached, not applied: the tag was set by someone who can no longer update this task";
 
       // A guest, a member who left, and a member who no longer assigns or created the task.
-      await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+      await setRole(hub, team.sam.userId, "guest");
       expect((await arrives("gate-a")).status).toBe(202);
       expect(await row(mine)).toMatchObject({ status: "todo" });
       expect(await notes(mine)).toEqual([stale]);

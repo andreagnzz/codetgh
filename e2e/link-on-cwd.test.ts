@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { agent, membership, project } from "../apps/hub/src/db/schema.js";
-import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { agent, project } from "../apps/hub/src/db/schema.js";
+import { type Hub, setRole, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
@@ -83,14 +83,14 @@ it("asks again in the same repository when the hub could not answer", async () =
 
 it("links a guest's session to no repository, linked or not, and says the same line for both", async () => {
   const env = hookEnv(hub.url, team.malik.token);
-  await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+  await setRole(hub, team.malik.userId, "guest");
   const start = home();
   await runHook("session-start", { session_id: "malik-home", source: "startup", cwd: start }, env);
   const repo = gitRepo("git@github.com:client-under-nda/cwd-app.git");
   const r = await runHook("cwd-changed", { session_id: "malik-home", cwd: repo, old_cwd: start, new_cwd: repo }, env);
   const teamRepo = gitRepo("git@github.com:acme/webapp.git");
   const linked = await runHook("cwd-changed", { session_id: "malik-home", cwd: teamRepo, old_cwd: repo, new_cwd: teamRepo }, env);
-  await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
+  await setRole(hub, team.malik.userId, "member");
   expect(systemMessage(r)).toBe(
     "CodeTgh: a guest has no CodeTgh session inside a repository; read your messages with codetgh inbox or in the console.",
   );
