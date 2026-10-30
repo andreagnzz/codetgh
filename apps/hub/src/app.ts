@@ -287,10 +287,9 @@ export function createApp({
 
   v1.post("/agents/session", async (c) => {
     const p = c.get("principal");
-    const parsed = AgentSessionInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
+    const input = await parse(c, AgentSessionInput);
     takeWrite(limiter, p.user.id);
-    const agent = p.paused ? null : await registerSession(db, p, parsed.data);
+    const agent = p.paused ? null : await registerSession(db, p, input);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session. A guest is told why in a
     // word about them, the same whether or not the repository is linked.
     if (!p.paused && !agent)
@@ -310,7 +309,7 @@ export function createApp({
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
-      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(parsed.data.source)) }),
+      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(input.source)) }),
     });
   });
 
