@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eventHash } from "@codetgh/shared/audit";
@@ -10,6 +11,12 @@ import { alert, auditCheckpoint, auditEvent } from "../src/db/schema.js";
 import { appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../src/domain/audit.js";
 import { createTeam } from "../src/domain/teams.js";
 import { type Hub, startHub } from "./harness.js";
+
+// The witness's rename, to hold one write while another run goes.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...fs, rename: vi.fn(fs.rename) };
+});
 
 let hub: Hub;
 beforeAll(async () => {
@@ -108,6 +115,29 @@ describe("audit witness", () => {
     expect(await checkpoints(hub.db, teamId)).toEqual([]);
     expect(await tamperExcerpts(teamId)).toEqual([expect.stringContaining("witness")]);
     expect(readFileSync(witnessFile(dir, teamId), "utf8")).toBe("{not json");
+  });
+
+  it("runs one checkpoint of a team at a time and never moves the witness back", async () => {
+    const dir = stateDir();
+    const teamId = await createTeam(hub.db, "Witness race");
+    await append(hub.db, teamId, 5);
+    const real = (await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")).rename;
+    let second: Promise<unknown> | undefined;
+    // The first witness write waits for a second run over a newer head, or 2 s when that run cannot start before it ends.
+    vi.mocked(rename).mockImplementationOnce(async (from, to) => {
+      second = append(hub.db, teamId, 3).then(() => writeCheckpoint(hub.db, teamId, hub.app.auditKey, { dir }));
+      await Promise.race([second, new Promise((r) => setTimeout(r, 2000))]);
+      return real(from, to);
+    });
+    const first = await writeCheckpoint(hub.db, teamId, hub.app.auditKey, { dir });
+    const next = await second;
+    const all = await checkpoints(hub.db, teamId);
+    expect([first, next]).toEqual([
+      { status: "signed", seq: all[0]?.seq },
+      { status: "signed", seq: all[1]?.seq },
+    ]);
+    expect(witnessOf(dir, teamId).seq).toBe(all[1]?.seq);
+    expect(await tamperExcerpts(teamId)).toEqual([]);
   });
 
   it("keeps signing through the hub across a restart when CODETGH_STATE_DIR is set", async () => {

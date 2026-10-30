@@ -118,10 +118,25 @@ async function saveWitness(dir: string, w: Witness) {
 
 export type CheckpointResult = { status: "signed"; seq: number } | { status: "unchanged" } | { status: "refused"; problem: string };
 
+// One check, signature and witness write at a time per team. The witness is written after the commit, so the team's
+// advisory lock, released by the commit, cannot cover it; one hub process owns the state directory.
+const running = new Map<string, Promise<unknown>>();
+
 // Signs the current head when it moved since the last checkpoint, and only on top of a chain that still extends the
 // witnessed checkpoint and matches the last one in the database: a hub that signed whatever head it finds would vouch for
 // a log rewritten in the database. Runs on an interval and before each export.
 export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, store: WitnessStore = {}): Promise<CheckpointResult> {
+  // An earlier run's failure is its own caller's.
+  const run = (running.get(teamId) ?? Promise.resolve()).catch(() => {}).then(() => signHead(db, teamId, key, store));
+  running.set(teamId, run);
+  try {
+    return await run;
+  } finally {
+    if (running.get(teamId) === run) running.delete(teamId);
+  }
+}
+
+async function signHead(db: Db, teamId: string, key: AuditKey, store: WitnessStore): Promise<CheckpointResult> {
   // undefined: the witness file exists but cannot be read, and nothing is signed until someone looks.
   const witness = store.dir ? await readWitness(store.dir, teamId).catch(() => undefined) : (inMemory.get(teamId) ?? null);
   const [result, latest] = await db.transaction(async (tx): Promise<[CheckpointResult, Witness?]> => {
@@ -190,8 +205,8 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, sto
       { team_id: teamId, seq: c.seq, hash: c.hash, at: c.at },
     ];
   });
-  // After the commit: a witness never names a checkpoint the database does not hold.
-  if (!latest || (witness?.seq === latest.seq && witness.hash === latest.hash)) return result;
+  // Forward only, after the commit: a witness never names a checkpoint the database does not hold, nor an older one.
+  if (!latest || (witness && latest.seq <= witness.seq)) return result;
   if (!store.dir) {
     inMemory.set(teamId, latest);
     return result;
