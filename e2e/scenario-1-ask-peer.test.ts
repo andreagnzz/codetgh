@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, callOnce, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 import { additionalContext, hookEnv, runHook } from "./helpers.js";
 
 let hub: Hub;
@@ -58,10 +58,8 @@ it("Sam asks Léa through ask_peer and gets her answer in an envelope (scenario 
 });
 
 it("returns pending when nobody answers in time", async () => {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  const r = await call(sam, "ask_peer", { to: "@malik", question: "Tu es là ?", wait_s: 1, allow_offline: true });
+  const r = await callOnce(hub.url, team.sam.token, "ask_peer", { to: "@malik", question: "Tu es là ?", wait_s: 1, allow_offline: true });
   expect(r.json()).toMatchObject({ status: "pending" });
-  await sam.close();
 });
 
 it("inbox_read does not advance the cursor, ack does", async () => {

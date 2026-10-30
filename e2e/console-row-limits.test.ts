@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { agent, alert, claim, membership, memoryItem, project, task } from "../apps/hub/src/db/schema.js";
-import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { agent, alert, claim, memoryItem, project, task } from "../apps/hub/src/db/schema.js";
+import { type Hub, setRole, startHub } from "../apps/hub/test/harness.js";
 
 // Many rows from one person push the others past a page's row limit: filters must run before it, and a cut list says so.
 let hub: Hub;
@@ -106,7 +106,7 @@ it("counts every open alert on the overview and names the newest", async () => {
 });
 
 it("shows a guest their own agents on the dashboard however many the team runs", async () => {
-  await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+  await setRole(hub, team.sam.userId, "guest");
   const html = await get("/console", team.sam.cookie);
   const start = html.indexOf('id="presence-h"');
   expect(html.slice(start, html.indexOf("</section>", start))).toContain("Sam");

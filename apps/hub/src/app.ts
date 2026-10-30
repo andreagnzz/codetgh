@@ -72,7 +72,7 @@ import {
   touchSession,
 } from "./domain/agents.js";
 import { appendAudit, writeCheckpoint } from "./domain/audit.js";
-import { Bus } from "./domain/bus.js";
+import { Bus, nextEvent } from "./domain/bus.js";
 import { checkPaths, noClaims, preEdit } from "./domain/claims.js";
 import { clientIp, DEVICE_INTERVAL_S, DEVICE_TTL_S, DeviceAuth } from "./domain/device.js";
 import { publicKeys, publishKey, threadKeyForMessage, wrappedKeys } from "./domain/e2e.js";
@@ -113,7 +113,7 @@ import { inviteMember, revokeInvitations } from "./domain/teams.js";
 import { HTTP_STATUS, HubError } from "./errors.js";
 import { langOf } from "./i18n.js";
 import { createMailer, type Mailer } from "./mailer.js";
-import { createMcpServer, whoami } from "./mcp.js";
+import { createMcpServer, fromPageToken, pageToken, whoami } from "./mcp.js";
 import { openApiDocument } from "./openapi.js";
 import { ConsentPage, ErrorPage, LoginPage } from "./pages.js";
 import { type Principal, principalForToken, principalForUser } from "./principal.js";
@@ -202,34 +202,19 @@ export function createApp({
       logger.error({ err: (e as Error).name }, "checkpoint failed");
     }
   };
-  const checkpointTimer = setInterval(
-    () => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")),
-    CHECKPOINT_EVERY_MS,
-  );
-  checkpointTimer.unref();
-  const purgeTimer = setInterval(
-    () => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")),
-    PURGE_EVERY_MS,
-  );
-  purgeTimer.unref();
-  const leaseTimer = setInterval(
-    () => expireLeases(db).catch((e: Error) => logger.error({ err: e.name }, "lease expiry failed")),
-    LEASE_SWEEP_MS,
-  );
-  leaseTimer.unref();
-  const sessionTimer = setInterval(
-    () => expireStaleSessions(db).catch((e: Error) => logger.error({ err: e.name }, "session expiry failed")),
-    SESSION_SWEEP_MS,
-  );
-  sessionTimer.unref();
+  const timers = [
+    setInterval(() => signHeads().catch((e: Error) => logger.error({ err: e.name }, "checkpoint failed")), CHECKPOINT_EVERY_MS),
+    setInterval(() => purgeMessages(db).catch((e: Error) => logger.error({ err: e.message }, "message purge failed")), PURGE_EVERY_MS),
+    setInterval(() => expireLeases(db).catch((e: Error) => logger.error({ err: e.name }, "lease expiry failed")), LEASE_SWEEP_MS),
+    setInterval(
+      () => expireStaleSessions(db).catch((e: Error) => logger.error({ err: e.name }, "session expiry failed")),
+      SESSION_SWEEP_MS,
+    ),
+  ];
+  for (const t of timers) t.unref();
   const resource = `${config.publicUrl}/mcp`;
   const authServerMetadata = oauthProviderAuthServerMetadata(auth);
   const mcp = createMcpHandler((ctx) => createMcpServer(deps, ctx.authInfo?.extra?.principal as Principal));
-
-  const forbidden = (e: unknown) => {
-    if (e instanceof HubError) return Response.json({ code: e.code, message: e.message }, { status: HTTP_STATUS[e.code] });
-    throw e;
-  };
 
   const localHost = !config.host || config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
   const serveOAuth = requireMcpAuth(
@@ -252,7 +237,8 @@ export function createApp({
           },
         });
       } catch (e) {
-        return forbidden(e);
+        if (e instanceof HubError) return Response.json({ code: e.code, message: e.message }, { status: HTTP_STATUS[e.code] });
+        throw e;
       }
     },
     // Its own keys from its own socket: behind Tailscale Funnel the hub cannot reach its public URL.
@@ -301,10 +287,9 @@ export function createApp({
 
   v1.post("/agents/session", async (c) => {
     const p = c.get("principal");
-    const parsed = AgentSessionInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw new HubError("E_INVALID", parsed.error.issues[0]?.message ?? "invalid body");
+    const input = await parse(c, AgentSessionInput);
     takeWrite(limiter, p.user.id);
-    const agent = p.paused ? null : await registerSession(db, p, parsed.data);
+    const agent = p.paused ? null : await registerSession(db, p, input);
     // An unknown repository: say so and store nothing, so the hooks stay quiet in that session. A guest is told why in a
     // word about them, the same whether or not the repository is linked.
     if (!p.paused && !agent)
@@ -324,7 +309,7 @@ export function createApp({
       paused: p.paused,
       context: await contextPacket(db, p, agent),
       linked: true,
-      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(parsed.data.source)) }),
+      ...(agent && { status_line: await statusLine(db, p, agent, !isLaunch(input.source)) }),
     });
   });
 
@@ -479,26 +464,6 @@ export function createApp({
     };
   };
 
-  // Resolves on the next message for this user ("message"), on kill switch or revocation ("stop"), or at the deadline.
-  const nextEvent = (p: Principal, ms: number) =>
-    new Promise<"message" | "stop" | "timeout">((resolve) => {
-      const done = (r: "message" | "stop" | "timeout") => {
-        clearTimeout(timer);
-        bus.off("message", onMessage);
-        bus.off("kill", onKill);
-        bus.off("revoked", onRevoked);
-        resolve(r);
-      };
-      const onMessage = (e: { teamId: string; recipientUserIds: string[] }) =>
-        e.teamId === p.teamId && e.recipientUserIds.includes(p.user.id) && done("message");
-      const onKill = (e: { teamId: string }) => e.teamId === p.teamId && done("stop");
-      const onRevoked = (e: { userId: string }) => e.userId === p.user.id && done("stop");
-      const timer = setTimeout(() => done("timeout"), ms);
-      bus.on("message", onMessage);
-      bus.on("kill", onKill);
-      bus.on("revoked", onRevoked);
-    });
-
   // UserPromptSubmit: up to 5 unread envelopes, blocking first; 304 when nothing changed since the last call.
   // With wait_s (rewake push, opt-in per team) the request is held until something new arrives, up to 55 s.
   v1.get("/inbox/prompt", async (c) => {
@@ -523,7 +488,11 @@ export function createApp({
         c.header("ETag", etag);
         if (context && seen !== etag) return c.json({ context });
         const left = deadline - Date.now();
-        if (left <= 0 || (await nextEvent(p, left)) !== "message") return c.body(null, context ? 304 : 204);
+        if (
+          left <= 0 ||
+          (await nextEvent(bus, p, left, (e) => e.teamId === p.teamId && e.recipientUserIds.includes(p.user.id))) !== "message"
+        )
+          return c.body(null, context ? 304 : 204);
       }
     } finally {
       release();
@@ -552,14 +521,14 @@ export function createApp({
   v1.post("/messages", async (c) => {
     const p = c.get("principal");
     const { agent: agentArg, ...input } = await parse(c, SendMessageInput);
-    const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, { ...input, agent: agentArg });
+    const m = await sendMessage(deps, { p, agent: await restAgent(p, agentArg), via: "rest" }, input);
     return c.json(sentView(m));
   });
 
   v1.post("/inbox", async (c) => {
     const p = c.get("principal");
     const { agent: agentArg, thread, page_token, kinds, limit } = await parse(c, InboxReadInput);
-    const afterSeq = page_token ? Number(Buffer.from(page_token, "base64url").toString()) || undefined : undefined;
+    const afterSeq = fromPageToken(page_token);
     const { items, more } = await unread(db, p, await restAgent(p, agentArg), { thread, kinds, limit, afterSeq });
     const last = items.at(-1);
     const keys = await wrappedKeys(db, p, [...new Set(items.filter((i) => i.message.encrypted).map((i) => i.message.threadId))]);
@@ -579,7 +548,7 @@ export function createApp({
           : null,
       })),
       envelopes: items.map(envelope),
-      next_page_token: more && last ? Buffer.from(String(last.seq)).toString("base64url") : null,
+      next_page_token: more && last ? pageToken(last.seq) : null,
     });
   });
 
@@ -983,10 +952,7 @@ export function createApp({
     deps,
     auditKey,
     close: () => {
-      clearInterval(checkpointTimer);
-      clearInterval(purgeTimer);
-      clearInterval(leaseTimer);
-      clearInterval(sessionTimer);
+      for (const t of timers) clearInterval(t);
       stopSlack();
       return mcp.close();
     },

@@ -2,13 +2,10 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import { repoFingerprint } from "@codetgh/shared/repo";
-import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { membership } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { type Keyring, program } from "../packages/cli/src/main.js";
+import { call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { runCli } from "./helpers.js";
 
 const ORIGIN = "git@github.com:acme/webapp.git";
 let hub: Hub;
@@ -51,18 +48,7 @@ function branch(files: string[]) {
   return `refs/heads/feature ${git(dir, "rev-parse", "HEAD")} refs/heads/feature ${"0".repeat(40)}\n`;
 }
 
-async function checkPush(token: string, refs: string, url = hub.url) {
-  const keyring: Keyring = { get: () => null, set: () => {}, delete: () => {} };
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([refs]) };
-  process.env.CODETGH_URL = url;
-  process.env.CODETGH_TOKEN = token;
-  process.exitCode = 0;
-  await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "claims", "check-push"]);
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const checkPush = (token: string, refs: string, url = hub.url) => runCli(["claims", "check-push"], { url, token }, { stdin: refs });
 
 describe("codetgh claims check-push against a hub", () => {
   it("refuses a push that carries a file another person claims, not one that session or person claims", async () => {
@@ -141,9 +127,9 @@ describe("codetgh claims check-push against a hub", () => {
     await call(lea, "claim", { agent, scope: ["src/guest.ts"] });
     const refs = branch(["src/guest.ts"]);
     expect((await checkPush(team.sam.token, refs)).code).toBe(1);
-    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+    await setRole(hub, team.sam.userId, "guest");
     const r = await checkPush(team.sam.token, refs);
-    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.sam.userId));
+    await setRole(hub, team.sam.userId, "member");
     expect(r.code).toBe(0);
     expect(r.out).toBe("codetgh: claims not checked (guests see only their own threads)");
     await lea.close();

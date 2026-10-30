@@ -273,7 +273,8 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       await next();
     });
 
-  // The page language follows the browser; titles and labels go through i18n's t().
+  // The page language comes from the lang cookie (the console's language switch), else from the browser; titles and labels
+  // go through i18n's t().
   const tr = (c: Context<Env>) => {
     const lang = langOf(c.req.header("accept-language"), c.req.header("cookie"));
     return Object.assign((s: string) => t(lang, s), { lang });

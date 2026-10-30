@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { message } from "../../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub, startSession } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
 
 let hub: Hub;
@@ -14,9 +14,7 @@ test.beforeEach(async () => {
 test.afterEach(() => hub.stop());
 
 const send = async (body: string, replyTo?: string) => {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  await call(sam, "send_message", { to: "@lea", kind: "question", body, allow_offline: true, reply_to: replyTo });
-  await sam.close();
+  await callOnce(hub.url, team.sam.token, "send_message", { to: "@lea", kind: "question", body, allow_offline: true, reply_to: replyTo });
 };
 
 test("a live refresh keeps the reply being typed", async ({ page }) => {

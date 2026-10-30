@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { ACME_REPO, call, callOnce, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -55,9 +55,12 @@ it("counts the unread messages the polling session can read, not those addressed
 it("counts no unread for a session id that is not live, keeps the rest of the overview, and creates no agent", async () => {
   const sess = (await startSession(hub.url, team.lea.token, "lea-gone", { repo: ACME_REPO })).agent_id ?? "";
   await hub.db.update(agent).set({ endedAt: new Date() }).where(eq(agent.id, sess));
-  const malik = await mcpClient(hub.url, team.malik.token);
-  await call(malik, "send_message", { to: "@lea", kind: "note", body: "for any of Léa's sessions", allow_offline: true });
-  await malik.close();
+  await callOnce(hub.url, team.malik.token, "send_message", {
+    to: "@lea",
+    kind: "note",
+    body: "for any of Léa's sessions",
+    allow_offline: true,
+  });
   const before = (await hub.db.select().from(agent).where(eq(agent.userId, team.lea.userId))).length;
   for (const id of ["lea-gone", "lea-never"]) {
     const res = await status(team.lea.token, id);

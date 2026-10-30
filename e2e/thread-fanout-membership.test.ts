@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent, membership, receipt } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -13,11 +13,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const send = (token: string, body: Record<string, unknown>) =>
-  fetch(`${hub.url}/v1/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ kind: "note", body: "ping", allow_offline: true, ...body }),
-  });
+  hubRest(hub.url, token, "POST", "/v1/messages", { kind: "note", body: "ping", allow_offline: true, ...body });
 const received = async (userId: string) => (await hub.db.select().from(receipt).where(eq(receipt.recipientUserId, userId))).length;
 
 it("fans a thread: address out to the active people of the thread only", async () => {

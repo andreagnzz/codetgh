@@ -2,7 +2,7 @@ import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { agent } from "../apps/hub/src/db/schema.js";
 import { expireStaleSessions } from "../apps/hub/src/domain/agents.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
 import { gitRepo, hookEnv, runHook, systemMessage } from "./helpers.js";
 
 let hub: Hub;
@@ -37,9 +37,7 @@ it("shows a teammate once, with only the sessions still open after the 12 h expi
   const now = rows.find((r) => r.sessionId === "lea-now");
   expect(now?.endedAt).toBeNull();
 
-  const sam = await mcpClient(hub.url, team.sam.token);
-  const ov = JSON.parse((await call(sam, "team_overview")).text);
-  await sam.close();
+  const ov = JSON.parse((await callOnce(hub.url, team.sam.token, "team_overview")).text);
   expect(ov.people).toEqual([
     expect.objectContaining({ handle: "lea", sessions: [expect.objectContaining({ agent: now?.id, presence: "online" })] }),
   ]);

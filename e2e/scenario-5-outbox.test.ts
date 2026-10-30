@@ -3,13 +3,12 @@ import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { message } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { daemon, program } from "../packages/cli/src/main.js";
-import { hubRest } from "./helpers.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
+import { daemon } from "../packages/cli/src/main.js";
+import { hubRest, runCli } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -23,22 +22,7 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-async function cli(args: string[], env: { url: string; token: string }) {
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
-  process.env.CODETGH_URL = env.url;
-  process.env.CODETGH_TOKEN = env.token;
-  process.exitCode = 0;
-  try {
-    await program({ keyring: async () => ({ get: () => null, set() {}, delete() {} }), io }).parseAsync(["node", "codetgh", ...args]);
-  } finally {
-    delete process.env.CODETGH_URL;
-    delete process.env.CODETGH_TOKEN;
-  }
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const cli = (args: string[], env: { url: string; token: string }) => runCli(args, env);
 
 // One hub address, unreachable until up(): then a relay to the test hub listens on it, as when the hub comes back.
 async function hubDownThenUp() {
@@ -114,11 +98,16 @@ describe("stream", () => {
   it("pushes ids of new messages and resumes from Last-Event-ID without text", async () => {
     const live = sse(team.lea.token, null, (e) => e.length >= 1);
     await new Promise((r) => setTimeout(r, 200));
-    const sam = await mcpClient(hub.url, team.sam.token);
     const sent = JSON.parse(
-      (await call(sam, "send_message", { to: "@lea", kind: "note", body: "streamed secret-free text", allow_offline: true })).text,
+      (
+        await callOnce(hub.url, team.sam.token, "send_message", {
+          to: "@lea",
+          kind: "note",
+          body: "streamed secret-free text",
+          allow_offline: true,
+        })
+      ).text,
     );
-    await sam.close();
     const [first] = await live;
     expect(JSON.parse(first?.data ?? "{}")).toMatchObject({ message_id: sent.id, kind: "note" });
     expect(first?.data).not.toContain("streamed");
@@ -221,9 +210,9 @@ describe("outbox (scenario 5, phase 2)", () => {
     for (let i = 0; i < 50 && !(await bodies("flushed by the daemon")); i++) await new Promise((r) => setTimeout(r, 100));
     expect(await bodies("flushed by the daemon")).toBe(1);
 
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const sent = JSON.parse((await call(lea, "send_message", { to: "@sam", kind: "question", body: "ping", allow_offline: true })).text);
-    await lea.close();
+    const sent = JSON.parse(
+      (await callOnce(hub.url, team.lea.token, "send_message", { to: "@sam", kind: "question", body: "ping", allow_offline: true })).text,
+    );
     for (let i = 0; i < 50 && !lines.some((l) => l.includes(sent.id)); i++) await new Promise((r) => setTimeout(r, 100));
     ctl.abort();
     await running;

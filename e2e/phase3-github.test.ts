@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, message, project, task, thread } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { call, callOnce, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { consolePost, githubBridge } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -17,9 +17,7 @@ beforeAll(async () => {
   hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   // The admin creates the team's webhook in the console and pastes the URL and secret into their GitHub App.
-  const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
-  hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-  SECRET = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+  ({ hookUrl, secret: SECRET } = await githubBridge(hub.url, team.lea.cookie));
   // Léa works in the repository: the hook registered its project under the origin's fingerprint.
   await startSession(hub.url, team.lea.token, "lea-gh", { repo: repoFingerprint("git@github.com:Acme/WebApp.git") });
 });
@@ -80,9 +78,7 @@ describe("GitHub bridge (phase 3)", () => {
     expect(rows[0]).toMatchObject({ kind: "status", refs: [{ type: "url", path: "https://github.com/acme/webapp/pull/7" }] });
     expect(JSON.stringify(rows)).not.toContain("CODE_SNIPPET");
 
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const inbox = (await call(lea, "inbox_read", {})).text;
-    await lea.close();
+    const inbox = (await callOnce(hub.url, team.lea.token, "inbox_read", {})).text;
     expect(inbox).toContain("PR #7 opened by octocat: Add &lt;b&gt;pagination&lt;/b&gt;");
     expect(inbox).toContain('from="GitHub"');
   });
@@ -233,7 +229,7 @@ describe("verify tags (a tag created on GitHub finishes the tasks that wait for 
       const stale = "tag reached, not applied: the tag was set by someone who can no longer update this task";
 
       // A guest, a member who left, and a member who no longer assigns or created the task.
-      await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
+      await setRole(hub, team.sam.userId, "guest");
       expect((await arrives("gate-a")).status).toBe(202);
       expect(await row(mine)).toMatchObject({ status: "todo" });
       expect(await notes(mine)).toEqual([stale]);

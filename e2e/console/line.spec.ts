@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { call, type Hub, mcpClient, startHub, startSession } from "../../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub, startSession } from "../../apps/hub/test/harness.js";
 import { signIn } from "./fixtures.js";
 
 let hub: Hub;
@@ -8,16 +8,12 @@ test.beforeEach(async () => {
   hub = await startHub();
   team = await hub.seed();
   await startSession(hub.url, team.sam.token, "sam-line");
-  const sam = await mcpClient(hub.url, team.sam.token);
-  await call(sam, "send_message", { to: "@lea", kind: "note", body: "first", allow_offline: true });
-  await sam.close();
+  await callOnce(hub.url, team.sam.token, "send_message", { to: "@lea", kind: "note", body: "first", allow_offline: true });
 });
 test.afterEach(() => hub.stop());
 
 const send = async (body: string) => {
-  const sam = await mcpClient(hub.url, team.sam.token);
-  await call(sam, "send_message", { to: "@lea", kind: "question", body, allow_offline: true });
-  await sam.close();
+  await callOnce(hub.url, team.sam.token, "send_message", { to: "@lea", kind: "question", body, allow_offline: true });
 };
 
 test("only a message that arrives live traces its wire, and it is announced politely", async ({ page }) => {

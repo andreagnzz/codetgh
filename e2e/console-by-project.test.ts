@@ -1,8 +1,9 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { membership, message, project, receipt, task, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { message, project, receipt, task, team as teamTable, thread } from "../apps/hub/src/db/schema.js";
+import { ACME_REPO, call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { section } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -40,10 +41,6 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const get = async (path: string, cookie = team.lea.cookie) => (await fetch(`${hub.url}${path}`, { headers: { cookie } })).text();
-const section = (html: string, id: string) => {
-  const start = html.indexOf(`id="p-${id}"`);
-  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
-};
 
 describe("console: one project at a time", () => {
   it("filters threads, tasks and sessions with ?project=", async () => {
@@ -146,10 +143,10 @@ describe("console: one project at a time", () => {
   });
 
   it("gives a guest nothing more with the filter", async () => {
-    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "guest");
     const res = await fetch(`${hub.url}/console/tasks?project=${acme}`, { headers: { cookie: team.malik.cookie } });
     expect(res.status).toBe(403);
-    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "member");
   });
 });
 
@@ -221,12 +218,12 @@ describe("console: the filter is remembered and follows the pages", () => {
   });
 
   it("keeps the Projects page from a guest, and the project list from the filter a guest sees", async () => {
-    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "guest");
     for (const path of ["/console/projects", `/console/projects?project=${acme}`, "/console/projects?project=none"])
       expect((await res(path, team.malik.cookie)).status, path).toBe(403);
     for (const path of ["/console/threads", "/console/agents", `/console/agents?project=${acme}`])
       expect(await (await res(path, team.malik.cookie)).text(), path).not.toContain("projects-filter");
-    await hub.db.update(membership).set({ role: "member" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "member");
   });
 });
 

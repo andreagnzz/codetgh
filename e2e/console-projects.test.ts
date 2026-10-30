@@ -1,9 +1,9 @@
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { and, eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agent, auditEvent, membership, project } from "../apps/hub/src/db/schema.js";
-import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { agent, auditEvent, project } from "../apps/hub/src/db/schema.js";
+import { type Hub, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
+import { consolePost, section } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -58,12 +58,6 @@ describe("console: sessions by project", () => {
   });
 });
 
-// The section of the page under a heading: from its <h2> to the end of its <section>.
-const section = (html: string, id: string) => {
-  const start = html.indexOf(`id="p-${id}"`);
-  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
-};
-
 describe("console: sessions outside a project", () => {
   it("lists sessions started outside a linked repository, without the CLI's REST agent", async () => {
     await startSession(hub.url, team.sam.token, "sam-loose", { branch: "scratch" });
@@ -112,7 +106,7 @@ describe("console: sessions outside a project", () => {
     expect(section(html, "prj_webapp")).toContain("malik@spike");
 
     const guest = (await startSession(hub.url, team.malik.token, "malik-guest", { branch: "peek" })).agent_id ?? "";
-    await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.malik.userId));
+    await setRole(hub, team.malik.userId, "guest");
     expect((await attach(team.malik.cookie, guest)).status).toBe(403);
   });
 });

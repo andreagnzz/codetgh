@@ -23,7 +23,15 @@ export const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   done: [],
   cancelled: [],
 };
-export const MAX_NOTES = 20;
+const MAX_NOTES = 20;
+
+export async function trimNotes(tx: Db, row: Task) {
+  if (row.notes.length > MAX_NOTES)
+    await tx
+      .update(task)
+      .set({ notes: row.notes.slice(-MAX_NOTES) })
+      .where(eq(task.id, row.id));
+}
 
 export const archivedTask = () =>
   sql`(${inArray(task.status, ["done", "cancelled"])} and ${lt(task.updatedAt, new Date(Date.now() - ARCHIVE_AFTER_MS))})`;
@@ -326,11 +334,7 @@ export async function updateTask(
         "E_VERSION_CONFLICT",
         `task ${input.task_id} changed (version is now ${current.version}): read it again with task_list`,
       );
-    if (row.notes.length > MAX_NOTES)
-      await tx
-        .update(task)
-        .set({ notes: row.notes.slice(-MAX_NOTES) })
-        .where(eq(task.id, row.id));
+    await trimNotes(tx, row);
     await audit(tx, p, a, takeover ? "task.taken_over" : "task.updated", row, {
       fields: Object.keys(patch),
       ...(takeover && { taken_from: former }),
@@ -391,19 +395,16 @@ export async function taskView(db: Db, p: Principal, taskId: string, withNotes =
     .where(and(eq(task.id, taskId), eq(task.teamId, p.teamId)));
   if (!row) throw new HubError("E_NOT_FOUND", `no task ${taskId}`);
   const t = row.task;
-  const authors =
-    withNotes && t.notes.length
-      ? await handles(
-          db,
-          p,
-          t.notes.map((n) => n.user_id),
-        )
-      : new Map<string, string>();
   // One line per note, its author first: a note cannot pass for another one.
-  const notes =
-    withNotes && t.notes.length
-      ? `\n\nnotes:\n${t.notes.map((n) => `- ${n.at} ${authors.get(n.user_id) ?? "?"}: ${n.text.replace(/\s+/g, " ")}`).join("\n")}`
-      : "";
+  let notes = "";
+  if (withNotes && t.notes.length) {
+    const authors = await handles(
+      db,
+      p,
+      t.notes.map((n) => n.user_id),
+    );
+    notes = `\n\nnotes:\n${t.notes.map((n) => `- ${n.at} ${authors.get(n.user_id) ?? "?"}: ${n.text.replace(/\s+/g, " ")}`).join("\n")}`;
+  }
   const body = renderPeerMessage(
     {
       id: t.id,

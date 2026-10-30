@@ -6,11 +6,11 @@ import type { Db } from "../db/index.js";
 import { membership, project, task, team, thread } from "../db/schema.js";
 import { HubError } from "../errors.js";
 import type { Principal } from "../principal.js";
-import { requireAdmin } from "./admin.js";
+import { byUser, requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { bridgeAuthor, projectThread } from "./bridges.js";
 import { type MessagingDeps, sendMessage } from "./messages.js";
-import { MAX_NOTES } from "./tasks.js";
+import { trimNotes } from "./tasks.js";
 
 // Each team has its own webhook URL and secret, so only the GitHub App its admin configured can post to it.
 // The secret is derived from the hub secret and a nonce: rotating the nonce replaces it, and the database never holds it.
@@ -25,14 +25,7 @@ export async function createGithubHook(db: Db, p: Principal, hubSecret: string) 
       .update(team)
       .set({ settings: sql`${team.settings} || ${JSON.stringify({ github_hook: hook })}::jsonb` })
       .where(eq(team.id, p.teamId));
-    await appendAudit(tx, {
-      teamId: p.teamId,
-      actorType: "user",
-      actorUserId: p.user.id,
-      via: "console",
-      action: "github.webhook_created",
-      subjectId: p.teamId,
-    });
+    await appendAudit(tx, { ...byUser(p), action: "github.webhook_created", subjectId: p.teamId });
   });
   return { id: hook.id, secret: githubSecret(hubSecret, p.teamId, hook.nonce) };
 }
@@ -159,11 +152,7 @@ async function linkRunnerTask(
       .where(eq(task.id, t.id))
       .returning();
     if (!moves || !row) return;
-    if (row.notes.length > MAX_NOTES)
-      await tx
-        .update(task)
-        .set({ notes: row.notes.slice(-MAX_NOTES) })
-        .where(eq(task.id, row.id));
+    await trimNotes(tx, row);
     await appendAudit(tx, {
       teamId,
       actorType: "hub",
@@ -262,11 +251,7 @@ async function verifyByTag(db: Db, teamId: string, e: Payload, meta: { delivery:
         .where(eq(task.id, t.id))
         .returning();
       if (!row) continue;
-      if (row.notes.length > MAX_NOTES)
-        await tx
-          .update(task)
-          .set({ notes: row.notes.slice(-MAX_NOTES) })
-          .where(eq(task.id, row.id));
+      await trimNotes(tx, row);
       await appendAudit(tx, {
         teamId,
         actorType: "hub",

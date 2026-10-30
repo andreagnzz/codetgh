@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { claim, membership } from "../src/db/schema.js";
-import { ACME_REPO, call, type Hub, mcpClient, startHub, startSession } from "./harness.js";
+import { ACME_REPO, call, code, type Hub, mcpClient, startHub, startSession } from "./harness.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -18,7 +18,6 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const code = (r: { text: string; isError: boolean }) => (r.isError ? JSON.parse(r.text).code : null);
 const post = async (path: string, token: string, body: unknown) => {
   const res = await fetch(`${hub.url}/v1/claims/${path}`, {
     method: "POST",

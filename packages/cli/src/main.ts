@@ -1453,6 +1453,12 @@ async function pluginOffAtUserScope() {
     inGoalState,
   );
 }
+// The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
+const configurePlugin = (values: Record<string, string>) =>
+  exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], { timeout: 30_000, input: JSON.stringify(values) }).then(
+    () => true,
+    () => false,
+  );
 const PLUGIN_OFF_FIX = "turn the plugin off outside codetgh start: claude plugin disable codetgh@codetgh --scope user";
 const REWAKE_OFF = "push mode hooks: an admin can allow rewake in the console Settings, so an idle session wakes up for a message";
 
@@ -1643,16 +1649,7 @@ async function setup(deps: { keyring: () => Promise<Keyring>; io: Io }, opts: { 
         }
       })();
     if (ok && !autoUpdate) io.out("turn on plugin updates in Claude Code: /plugin → Marketplaces → codetgh → Enable auto-update");
-    // The token through stdin, never --config: arguments show in every user's process list. Left-out options keep their values.
-    const configured =
-      ok &&
-      (await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
-        timeout: 30_000,
-        input: JSON.stringify(oneCommand ? { codetgh_token: token } : options),
-      }).then(
-        () => true,
-        () => false,
-      ));
+    const configured = ok && (await configurePlugin(oneCommand ? { codetgh_token: token } : options));
     if (configured)
       io.out(
         `the plugin has the hub address, your token and push mode ${pushMode} (${pushMode === "rewake" ? "an idle session wakes up for a message" : "your team has not allowed rewake: messages arrive between tool calls and at your prompts"}): launch Claude with codetgh start to use it`,
@@ -1727,25 +1724,13 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   }
   // archive plugin sources (the hub's marketplace) need Claude Code 2.1.224.
   const version = (await run("claude", ["--version"], 5000))?.match(/\d+\.\d+\.\d+/)?.[0];
-  const recent = version
-    ? version
-        .split(".")
-        .map(Number)
-        .reduce((a, n) => a * 1000 + n, 0) >= 2_001_224
-    : false;
+  const recent = atLeast(version ?? "", "2.1.224");
   check(
     recent,
     version ? `Claude Code ${version}` : "Claude Code not found",
     version ? "update Claude Code to 2.1.224 or newer: claude update" : "install Claude Code: https://code.claude.com/docs/en/setup",
   );
-  if (
-    recent &&
-    version &&
-    version
-      .split(".")
-      .map(Number)
-      .reduce((a, n) => a * 1000 + n, 0) < 2_001_296
-  )
+  if (recent && version && !atLeast(version, "2.1.296"))
     io.out(`warn Claude Code ${version} is older than 2.1.296, the version CodeTgh is tested with: claude update`);
   if (recent && version && !atLeast(version, ONE_COMMAND_INSTALL))
     io.out(
@@ -2700,13 +2685,7 @@ export function program(deps: { keyring: () => Promise<Keyring>; io: Io }) {
       // Rewake as soon as the team allows it; an unreachable hub leaves the push mode as it is.
       const who = token ? await whoami(url, token).catch(() => null) : null;
       if (who?.push_allowed_modes?.includes("rewake")) {
-        const set = await exec("claude", ["plugin", "configure", "codetgh@codetgh", "--values-stdin"], {
-          timeout: 30_000,
-          input: JSON.stringify({ push_mode: "rewake" }),
-        }).then(
-          () => true,
-          () => false,
-        );
+        const set = await configurePlugin({ push_mode: "rewake" });
         io.out(set ? "push mode rewake: an idle session wakes up for a message" : "set push mode rewake in Claude Code: /config");
       } else if (who) io.out(REWAKE_OFF);
       io.out("launch Claude with codetgh start to load the new plugin");

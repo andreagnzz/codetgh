@@ -203,7 +203,6 @@ const FR: Record<string, string> = {
     "Aucune invitation en attente. Invite quelqu'un avec le formulaire ci-dessus, ou lance codetgh invite <email>.",
   "Invitation emailed to": "Invitation envoyée par e-mail à",
   "Send this link to": "Envoie ce lien à",
-  "valid 7 days": "valable 7 jours",
   // Settings
   "Message retention (days)": "Conservation des messages (jours)",
   "Extra secret patterns (regular expressions, one per line)": "Motifs de secrets en plus (expressions régulières, une par ligne)",

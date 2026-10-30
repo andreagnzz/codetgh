@@ -1,14 +1,13 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import { newKeyPair, newThreadKey, publicKeyOf, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { and, eq, like, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agent, message, thread, threadKey } from "../apps/hub/src/db/schema.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
-import { type Keyring, program } from "../packages/cli/src/main.js";
-import { hubRest } from "./helpers.js";
+import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
+import type { Keyring } from "../packages/cli/src/main.js";
+import { hubRest, runCli } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -29,22 +28,8 @@ function keyring(who: string) {
   return keyrings[who];
 }
 
-async function cli(who: "lea" | "sam" | "malik", args: string[]) {
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
-  process.env.CODETGH_URL = hub.url;
-  process.env.CODETGH_TOKEN = team[who].token;
-  process.exitCode = 0;
-  try {
-    await program({ keyring: async () => keyring(who), io }).parseAsync(["node", "codetgh", ...args]);
-  } finally {
-    delete process.env.CODETGH_URL;
-    delete process.env.CODETGH_TOKEN;
-  }
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const cli = (who: "lea" | "sam" | "malik", args: string[]) =>
+  runCli(args, { url: hub.url, token: team[who].token }, { keyring: keyring(who) });
 
 describe("end-to-end encrypted threads (phase 3)", () => {
   let sentId = "";
@@ -219,9 +204,7 @@ describe("end-to-end encrypted threads (phase 3)", () => {
       .select({ id: agent.id })
       .from(agent)
       .where(and(eq(agent.userId, team.lea.userId), like(agent.sessionId, "cli-%")));
-    const lea = await mcpClient(hub.url, team.lea.token);
-    const r = await call(lea, "inbox_read", { agent: rest?.id });
-    await lea.close();
+    const r = await callOnce(hub.url, team.lea.token, "inbox_read", { agent: rest?.id });
     expect(r.text).not.toContain("v1.");
     expect(r.text).toContain("encrypted");
   });

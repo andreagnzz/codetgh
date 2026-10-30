@@ -1,9 +1,12 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import type { Keyring } from "../packages/cli/src/main.js";
 
 // Tests run the same single-file bundle the plugin ships, built once per test process.
 let bundle: string | undefined;
@@ -85,6 +88,12 @@ export const hubRest = (url: string, token: string, method: string, path: string
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+// The section of the page under a heading: from its <h2> to the end of its <section>.
+export const section = (html: string, id: string) => {
+  const start = html.indexOf(`id="p-${id}"`);
+  return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
+};
+
 export async function csrfToken(url: string, cookie: string) {
   const html = await (await fetch(`${url}/console`, { headers: { cookie } })).text();
   const m = html.match(/X-CSRF-Token&quot;:&quot;([^&]+)&quot;|"X-CSRF-Token":"([^"]+)"/);
@@ -100,6 +109,46 @@ export async function consolePost(url: string, cookie: string, path: string, for
     headers: { cookie, "X-CSRF-Token": await csrfToken(url, cookie), "content-type": "application/x-www-form-urlencoded", origin: url },
     body: new URLSearchParams(form).toString(),
   });
+}
+
+// Turns on the team's GitHub webhook as its admin does in the console; deliver() posts a pull_request event signed with its secret.
+export async function githubBridge(url: string, cookie: string) {
+  const page = await (await consolePost(url, cookie, "/console/settings/github")).text();
+  const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
+  const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+  const deliver = (body: string, headers: Record<string, string> = {}) =>
+    fetch(hookUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "pull_request",
+        ...headers,
+        "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      },
+      body,
+    });
+  return { hookUrl, secret, deliver };
+}
+
+// Runs codetgh <args> in this process against a hub, with an empty keyring unless one is given: what it printed and its exit code.
+export async function runCli(args: string[], env: { url: string; token: string }, o: { stdin?: string; keyring?: Keyring } = {}) {
+  // Imported here, so the tests that never run the CLI do not load it.
+  const { program } = await import("../packages/cli/src/main.js");
+  const keyring = o.keyring ?? { get: () => null, set() {}, delete() {} };
+  const out: string[] = [];
+  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([o.stdin ?? ""]) };
+  process.env.CODETGH_URL = env.url;
+  process.env.CODETGH_TOKEN = env.token;
+  process.exitCode = 0;
+  try {
+    await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", ...args]);
+  } finally {
+    delete process.env.CODETGH_URL;
+    delete process.env.CODETGH_TOKEN;
+  }
+  const code = process.exitCode;
+  process.exitCode = 0;
+  return { out: out.join("\n"), code };
 }
 
 // Plays the person in the browser: waits for the code the CLI prints, then approves it in the console.

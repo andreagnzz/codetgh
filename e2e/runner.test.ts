@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -24,9 +24,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { auditEvent, message, project, task } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { newId } from "../apps/hub/src/ids.js";
-import { call, type Hub, mcpClient, startHub, startSession } from "../apps/hub/test/harness.js";
+import { callOnce, type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
 import { type Keyring, program, runnerOwner, runnerTiming, stopRunner } from "../packages/cli/src/main.js";
-import { alive, consolePost, fakeCommand, hookEnv, hubRest, runHook } from "./helpers.js";
+import { alive, consolePost, fakeCommand, githubBridge, hookEnv, hubRest, runHook } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -36,8 +36,7 @@ let root = "";
 let origin = "";
 let clone = "";
 let fake = "";
-let hookUrl = "";
-let hookSecret = "";
+let bridge: Awaited<ReturnType<typeof githubBridge>>;
 const PATH = process.env.PATH;
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
@@ -303,9 +302,7 @@ beforeAll(async () => {
   await hub.db.insert(project).values({ id: projectId, teamId: team.teamId, name: "acme/runner", repoFingerprint: fingerprint });
   agentId = (await startSession(hub.url, team.lea.token, "lea-runner", { repo: fingerprint })).agent_id ?? "";
   expect((await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/runner`, { on: "1" })).status).toBe(204);
-  const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
-  hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-  hookSecret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+  bridge = await githubBridge(hub.url, team.lea.cookie);
   process.env.CODETGH_CONFIG_DIR = mkdtempSync(join(tmpdir(), "codetgh-runner-cfg-"));
   fake = fakes();
 });
@@ -329,9 +326,13 @@ afterAll(async () => {
 
 // Created by Léa's agent (the owner), as /codetgh:split --run would.
 async function create(title: string, args: Record<string, unknown> = {}) {
-  const lea = await mcpClient(hub.url, team.lea.token);
-  const r = await call(lea, "task_create", { agent: agentId, title, body: `Done when ${title} works.`, runner: true, ...args });
-  await lea.close();
+  const r = await callOnce(hub.url, team.lea.token, "task_create", {
+    agent: agentId,
+    title,
+    body: `Done when ${title} works.`,
+    runner: true,
+    ...args,
+  });
   if (r.isError) throw new Error(r.text);
   return (JSON.parse(r.text) as { id: string }).id;
 }
@@ -385,17 +386,7 @@ const prBody = (o: { action: string; number: number; branch: string; merged?: bo
     },
   });
 };
-const deliverPr = (body: string, delivery: string = randomUUID()) =>
-  fetch(hookUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-github-event": "pull_request",
-      "x-github-delivery": delivery,
-      "x-hub-signature-256": `sha256=${createHmac("sha256", hookSecret).update(body).digest("hex")}`,
-    },
-    body,
-  });
+const deliverPr = (body: string, delivery: string = randomUUID()) => bridge.deliver(body, { "x-github-delivery": delivery });
 const closePr = (number: number, branch: string, merged: boolean) => deliverPr(prBody({ action: "closed", number, branch, merged }));
 // A commit someone else pushes to a branch of origin, or a merge of a branch into main.
 function pushToOrigin(branch: string, file: string, text: string) {

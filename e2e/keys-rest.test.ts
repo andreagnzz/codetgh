@@ -1,6 +1,7 @@
 import { newKeyPair, newThreadKey, sealBody, wrapKey } from "@codetgh/shared/e2e";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type Hub, setRole, startHub } from "../apps/hub/test/harness.js";
+import { hubRest } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -11,11 +12,7 @@ beforeAll(async () => {
 afterAll(() => hub.stop());
 
 const api = (token: string, path: string, body?: Record<string, unknown>) =>
-  fetch(`${hub.url}/v1${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: body && JSON.stringify(body),
-  });
+  hubRest(hub.url, token, body ? "POST" : "GET", `/v1${path}`, body);
 
 it("hands a thread's key and ciphertext only for messages the caller sent or received", async () => {
   const key = newThreadKey();

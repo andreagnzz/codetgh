@@ -37,12 +37,12 @@ for (const file of METAFILES) {
 }
 
 let failed = false;
-const seen = new Map();
+const seen = new Set();
 for (const dir of dirs) {
   const path = existsSync(join(dir, "package.json")) ? dir : join("apps/hub", dir);
-  const pkg = JSON.parse(readFileSync(join(existsSync(join(dir, "package.json")) ? dir : path, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
   const license = VERIFIED[pkg.name] ?? (typeof pkg.license === "string" ? pkg.license : pkg.license?.type);
-  seen.set(`${pkg.name}@${pkg.version}`, license);
+  seen.add(`${pkg.name}@${pkg.version}`);
   if (!ALLOWED.has(license)) {
     console.error(`NOT ALLOWED ${pkg.name}@${pkg.version}: ${license ?? "no license"}`);
     failed = true;
