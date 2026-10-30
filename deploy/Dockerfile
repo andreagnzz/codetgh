@@ -29,7 +29,7 @@ CMD ["node", "main.js"]
 
 # The hub, the default target. The bundle carries the code; node_modules only holds PGlite (wasm) and the htmx assets; dist/ also holds the plugin and CLI members install.
 FROM node:24.21.0-bookworm-slim
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 CODETGH_DATA_DIR=/data
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 CODETGH_DATA_DIR=/data CODETGH_STATE_DIR=/var/lib/codetgh
 WORKDIR /app
 COPY --from=build /runtime/node_modules ./node_modules
 COPY --from=build /repo/apps/hub/dist/server ./dist/server
@@ -38,7 +38,8 @@ COPY --from=build /repo/apps/hub/drizzle ./drizzle
 COPY --from=build /repo/apps/hub/public ./public
 COPY --from=build /repo/assets/brand ./brand
 ENV CODETGH_BRAND_DIR=/app/brand
-RUN mkdir -p /data && chown node:node /data
+# A new named volume takes the owner of the directory it is mounted on: the audit witness volume is node's (docs/FACTS.md).
+RUN mkdir -p /data /var/lib/codetgh && chown node:node /data /var/lib/codetgh
 USER node
 EXPOSE 8787
 HEALTHCHECK --interval=10s --timeout=3s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"

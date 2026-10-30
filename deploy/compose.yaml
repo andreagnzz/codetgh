@@ -32,6 +32,9 @@ services:
     init: true
     read_only: true
     tmpfs: [/tmp]
+    # Writable besides /tmp: the last signed audit checkpoint per team, out of the database's reach (docs/DEPLOY.md).
+    volumes:
+      - hubstate:/var/lib/codetgh
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 768m
@@ -89,3 +92,4 @@ services:
     restart: unless-stopped
 volumes:
   pgdata:
+  hubstate:
