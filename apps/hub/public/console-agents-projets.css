@@ -304,12 +304,13 @@
   grid-area: action;
   min-width: 0;
 }
-/* The menu keeps its width whatever the longest project name: the button stays beside it. */
+/* The menu keeps its width whatever the longest project name: the button stays beside it. Its compact padding leaves
+   "Choose a project…" whole beside the browser's arrow, in French too. */
 .session-list .attach select {
   width: 10rem;
   max-width: 100%;
   min-height: 32px;
-  padding-block: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
 }
 @media (max-width: 1023px) {
   .session-list .session-row,
