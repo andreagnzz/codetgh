@@ -276,7 +276,6 @@ export async function invitationMatches(db: Db, token: string, email: string) {
 export async function findInvitation(db: Db, token: string) {
   const [row] = await db
     .select({
-      id: invitation.id,
       email: invitation.email,
       role: invitation.role,
       teamName: team.name,
