@@ -73,6 +73,7 @@ import {
 } from "../domain/teams.js";
 import { HTTP_STATUS, HubError } from "../errors.js";
 import { langOf, t } from "../i18n.js";
+import { Icon } from "../icons.js";
 import type { Mailer } from "../mailer.js";
 import { ErrorPage } from "../pages.js";
 import { type Principal, principalForUser } from "../principal.js";
@@ -81,7 +82,11 @@ import { Catalogue } from "./catalogue.js";
 import {
   Action,
   ArchiveTabs,
+  Banner,
   Bypass,
+  Chip,
+  Field,
+  fieldAria,
   InvitePage,
   Layout,
   Line,
@@ -89,6 +94,7 @@ import {
   Pill,
   type ProjectFilter,
   Result,
+  Stamp,
   Table,
   toneOf,
   When,
@@ -137,11 +143,11 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return c.html(
       <InvitePage
         team={inv?.teamName ?? ""}
-        role={inv?.role ?? ""}
+        role={inv?.role}
         email={inv?.email ?? ""}
         name={c.req.query("name") ?? ""}
         valid={valid}
-        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id) } : undefined}
+        join={session ? { token: c.req.param("token"), csrf: csrfFor(session.session.id), user: session.user.email } : undefined}
         lang={langOf(c.req.header("accept-language"), c.req.header("cookie"))}
       />,
     );
@@ -1136,21 +1142,44 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
 
-  // Browser sign-in: the person types the code their terminal shows, checks the machine, then approves or denies.
+  // Browser sign-in: the person types the code their terminal shows, checks the code and the machine, then approves or denies.
   consoleApp.get("/device", (c) => {
     const _ = tr(c);
     return page(
       c,
       "Sign in a terminal",
-      <>
-        <form hx-post="/console/device" hx-target="#device">
-          <label>
-            {_("Code shown in your terminal")} <input name="user_code" required maxlength={20} autocomplete="off" />
-          </label>
-          <button type="submit">{_("Continue")}</button>
-        </form>
-        <div id="device" />
-      </>,
+      <div class="device">
+        <section class="panel">
+          <form hx-post="/console/device" hx-target="#device">
+            <Field
+              id="user-code"
+              label={_("Code shown in your terminal")}
+              lang={_.lang}
+              help={_("8 letters, like BCDF-GHJK. Capitals and the dash are optional.")}
+            >
+              <input
+                id="user-code"
+                name="user_code"
+                required
+                maxlength={20}
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck={false}
+                {...fieldAria("user-code", { help: 1 })}
+              />
+            </Field>
+            <button type="submit" class="primary">
+              {_("Continue")}
+            </button>
+          </form>
+        </section>
+        {/* A polite live region from the first render: the check panel and the answers swapped in are announced. */}
+        <div id="device" aria-live="polite" />
+      </div>,
+      undefined,
+      {
+        head: <p class="lede">{_("When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.")}</p>,
+      },
     );
   });
   const deviceInput = async (c: Context<Env>) => {
@@ -1158,27 +1187,72 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     if (!parsed.success) throw new HubError("E_INVALID", tr(c)("Type the 8-letter code your terminal shows."));
     return { code: parsed.data.user_code, keys: { user: c.get("principal").user.id, ip: clientIp(c, config.trustedProxy) } };
   };
+  // The domain's refusals of a code, in the reader's words: the page shows them under the form or the button that sent it.
+  const deviceStep = <T,>(c: Context<Env>, step: () => T): T => {
+    try {
+      return step();
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      const _ = tr(c);
+      if (e.code === "E_NOT_FOUND")
+        throw new HubError(e.code, _("This code is unknown or has expired. Check the code in your terminal, or run codetgh login again."));
+      if (e.code === "E_RATE_LIMITED")
+        throw new HubError(e.code, _("Too many wrong codes. Wait a few minutes, then type the code again."), e.retryAfterS);
+      throw e;
+    }
+  };
   consoleApp.post("/device", async (c) => {
     const _ = tr(c);
     const { code, keys } = await deviceInput(c);
-    const entry = device.find(code, keys);
+    const entry = deviceStep(c, () => device.find(code, keys));
     const vals = JSON.stringify({ user_code: code });
+    // Within the code's ten minutes: seconds, then minutes.
+    const ago = Math.round((entry.startedAt - Date.now()) / 1000);
+    const relative = new Intl.RelativeTimeFormat(_.lang, { numeric: "auto" });
+    // The code as the terminal prints it; the machine name is the requester's word, so the code is what to compare. The
+    // token goes to the account signed in here, which the account menu hides on phones.
     return c.html(
-      <Result>
-        <p>
-          {_("Machine")}: <strong>{entry.label}</strong> ({_("typed by whoever started this request, so it proves nothing")})
+      <section class="panel device-check" aria-labelledby="device-check">
+        <h2 id="device-check">{_("Check this sign-in")}</h2>
+        <dl class="facts">
+          <div>
+            <dt>{_("Code")}</dt>
+            <dd>
+              <code class="user-code" translate="no">{`${code.slice(0, 4)}-${code.slice(4)}`}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Machine")}</dt>
+            <dd>
+              <Chip>{entry.label}</Chip>
+              <p class="help">{_("Sent by the terminal. Anyone can send any name, so compare the code, not the name.")}</p>
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Started")}</dt>
+            <dd>
+              <Stamp at={new Date(entry.startedAt)} lang={_.lang} /> ·{" "}
+              {Math.abs(ago) < 60 ? relative.format(ago, "second") : relative.format(Math.round(ago / 60), "minute")}
+            </dd>
+          </div>
+          <div>
+            <dt>{_("Signed in as")}</dt>
+            <dd>{c.get("principal").user.email}</dd>
+          </div>
+        </dl>
+        <p class="warn-line">
+          <Icon name="triangle-alert" />
+          {_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}
         </p>
-        <p>
-          {_("Started")} <When at={new Date(entry.startedAt)} lang={_.lang} />
+        <p class="actions">
+          <button type="button" class="primary" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
+            {_("Approve")}
+          </button>
+          <button type="button" class="secondary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
+            {_("Deny")}
+          </button>
         </p>
-        <p>{_("Approve only if you just ran codetgh in your own terminal and it shows this code. It gets a personal token for you.")}</p>
-        <button type="button" hx-post="/console/device/approve" hx-vals={vals} hx-target="#device">
-          {_("Approve")}
-        </button>{" "}
-        <button type="button" class="tertiary" hx-post="/console/device/deny" hx-vals={vals} hx-target="#device">
-          {_("Deny")}
-        </button>
-      </Result>,
+      </section>,
     );
   });
   consoleApp.post("/device/approve", async (c) => {
@@ -1186,20 +1260,26 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     requireFresh(c);
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } });
+    const entry = deviceStep(c, () => device.decide(code, keys, { approve: { userId: p.user.id, teamId: p.teamId } }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.approved", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Approved. Go back to your terminal: it finishes on its own.")}</Result>);
+    const _ = tr(c);
+    return c.html(
+      <Banner tone="success" title={_("Terminal approved")}>
+        {_("Go back to your terminal: it finishes on its own.")}
+      </Banner>,
+    );
   });
   consoleApp.post("/device/deny", async (c) => {
     const p = c.get("principal");
     const { code, keys } = await deviceInput(c);
-    const entry = device.decide(code, keys, { deny: true });
+    const entry = deviceStep(c, () => device.decide(code, keys, { deny: true }));
     await db.transaction((tx) =>
       appendAudit(tx, { ...byUser(p), action: "device.denied", subjectId: entry.id, data: { label: entry.label } }),
     );
-    return c.html(<Result>{tr(c)("Denied. No token was created.")}</Result>);
+    const _ = tr(c);
+    return c.html(<Banner title={_("Sign-in denied")}>{_("No token was created.")}</Banner>);
   });
 
   consoleApp.post("/tokens/:id/revoke", async (c) => {

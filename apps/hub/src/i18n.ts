@@ -307,6 +307,74 @@ const FR: Record<string, string> = {
   // ---- End of the foundations block. ----
 
   // ---- Batch 1, public pages (refonte/pages-publiques). Only that batch edits this block. ----
+  // Sign-in
+  "Use the account your team set up on this hub.": "Utilise le compte que ton équipe a créé sur ce hub.",
+  "Continue with GitHub": "Continuer avec GitHub",
+  "Continue with Google": "Continuer avec Google",
+  "Continue with your organization": "Continuer avec ton organisation",
+  or: "ou",
+  "Get a sign-in link by email instead": "Recevoir plutôt un lien par courriel",
+  "Email for the link": "Courriel pour le lien",
+  "The email or password is wrong. Check both, then try again.":
+    "Le courriel ou le mot de passe est incorrect. Vérifie les deux, puis réessaie.",
+  "This email address isn't valid. Enter an address like name@example.com.":
+    "Cette adresse de courriel n'est pas valable. Saisis une adresse comme nom@exemple.com.",
+  "This sign-in method isn't available on this hub. Use another one.":
+    "Ce moyen de connexion n'est pas disponible sur ce hub. Utilises-en un autre.",
+  "If this address has an account or an invitation, a sign-in link is on its way. It works for 10\u00a0minutes.":
+    "Si cette adresse a un compte ou une invitation, un lien de connexion est en route. Il reste valable 10\u00a0minutes.",
+  "The link wasn't sent. Check the address, then try again.": "Le lien n'est pas parti. Vérifie l'adresse, puis réessaie.",
+  "The hub could not handle the request. Try again; if it keeps failing, check the hub logs.":
+    "Le hub n'a pas pu traiter la demande. Réessaie\u202f; si ça continue, regarde les journaux du hub.",
+  "The hub does not answer. Check your connection, then try again.": "Le hub ne répond pas. Vérifie ta connexion, puis réessaie.",
+  "Too many tries. Wait a few seconds, then try again.": "Trop d'essais. Attends quelques secondes, puis réessaie.",
+  // OAuth consent
+  "Allow access to your account?": "Autoriser l'accès à ton compte\u202f?",
+  "An app asks to use this hub as you. Allow it only if you just connected it yourself.":
+    "Une application demande à utiliser ce hub en ton nom. Autorise-la seulement si tu viens de la connecter toi-même.",
+  "Asked by": "Demandé par",
+  "Access asked for": "Accès demandé",
+  "Then you go back to": "Ensuite, retour vers",
+  "Use this hub as you, with your role: messages, claims, tasks and team memory":
+    "Utiliser ce hub en ton nom, avec ton rôle\u00a0: messages, réservations, tâches et mémoire d'équipe",
+  "Know who you are": "Savoir qui tu es",
+  "See your name": "Voir ton nom",
+  "See your email address": "Voir ton adresse de courriel",
+  "Keep its access without asking you again": "Garder son accès sans te redemander",
+  "Not described by this hub": "Non décrit par ce hub",
+  "Nothing beyond your sign-in": "Rien de plus que ta connexion",
+  "This request has expired or was changed. Start again from your app.":
+    "Cette demande a expiré ou a été modifiée. Recommence depuis ton application.",
+  // Invitation
+  "You're invited as an owner.": "Tu rejoindras l'équipe comme propriétaire.",
+  "You're invited as an admin.": "Tu rejoindras l'équipe comme admin.",
+  "You're invited as a member.": "Tu rejoindras l'équipe comme membre.",
+  "You're invited as a guest. A guest sees only the threads they take part in.":
+    "Tu rejoindras l'équipe comme invité. Un invité ne voit que les fils auxquels il participe.",
+  "Your account uses the address the invitation was sent to.": "Ton compte utilise l'adresse à laquelle l'invitation a été envoyée.",
+  "At least 12 characters.": "Au moins 12\u00a0caractères.",
+  "An account already uses this address. Sign in, then open this invitation again.":
+    "Un compte utilise déjà cette adresse. Connecte-toi, puis rouvre cette invitation.",
+  "This invitation can't create an account any more. Ask the person who invited you for a new link.":
+    "Cette invitation ne peut plus créer de compte. Demande un nouveau lien à la personne qui t'a invité.",
+  "Signed in as": "Compte connecté",
+  "It was sent to {email}. You're signed in as {user}.": "Elle a été envoyée à {email}. Compte connecté\u00a0: {user}.",
+  // Device
+  "When codetgh signs in a terminal, it shows a code. Type that code here, then approve the terminal.":
+    "Quand codetgh connecte un terminal, il affiche un code. Tape ce code ici, puis approuve le terminal.",
+  "8 letters, like BCDF-GHJK. Capitals and the dash are optional.": "8\u00a0lettres, comme BCDF-GHJK. Majuscules et tiret facultatifs.",
+  "Check this sign-in": "Vérifie cette connexion",
+  Code: "Code",
+  "Sent by the terminal. Anyone can send any name, so compare the code, not the name.":
+    "Envoyé par le terminal. N'importe qui peut envoyer n'importe quel nom\u00a0: compare le code, pas le nom.",
+  "Terminal approved": "Terminal approuvé",
+  "Go back to your terminal: it finishes on its own.": "Retourne dans ton terminal\u00a0: il termine tout seul.",
+  "Sign-in denied": "Connexion refusée",
+  "No token was created.": "Aucun jeton n'a été créé.",
+  "This code is unknown or has expired. Check the code in your terminal, or run codetgh login again.":
+    "Ce code est inconnu ou a expiré. Vérifie le code dans ton terminal, ou relance codetgh login.",
+  "Too many wrong codes. Wait a few minutes, then type the code again.":
+    "Trop de codes erronés. Attends quelques minutes, puis tape le code à nouveau.",
   // ---- End of batch 1. ----
 
   // ---- Batch 2, overview and live feed (refonte/vue-ensemble). Only that batch edits this block. ----

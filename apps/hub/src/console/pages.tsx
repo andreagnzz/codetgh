@@ -1,4 +1,5 @@
 /** @jsxRuntime automatic @jsxImportSource hono/jsx */
+import type { Role } from "@codetgh/shared";
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import type { JSX } from "hono/jsx/jsx-runtime";
@@ -6,7 +7,7 @@ import { BrandHead, Logo } from "../brand.js";
 import { type listAgents, presence, statusOf } from "../domain/agents.js";
 import { type Lang, t } from "../i18n.js";
 import { Icon, type IconName } from "../icons.js";
-import { Layout as PublicLayout } from "../pages.js";
+import { HubAnswer, Layout as PublicLayout } from "../pages.js";
 import type { Principal } from "../principal.js";
 
 // Three groups, by how often they are used. The third field is the least role that may open the page: no link to a page
@@ -760,46 +761,107 @@ export const Result: FC<{ children?: Child }> = ({ children }) => (
   </div>
 );
 
+// The invited role, said in a sentence under the title that names the team; a guest also learns what a guest sees.
+const INVITED_AS: Record<Role, string> = {
+  owner: "You're invited as an owner.",
+  admin: "You're invited as an admin.",
+  member: "You're invited as a member.",
+  guest: "You're invited as a guest. A guest sees only the threads they take part in.",
+};
+// The hub's refusals of a sign-up, in words.
+const SIGN_UP_WORDS = {
+  USER_ALREADY_EXISTS: "An account already uses this address. Sign in, then open this invitation again.",
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "An account already uses this address. Sign in, then open this invitation again.",
+  FAILED_TO_CREATE_USER: "This invitation can't create an account any more. Ask the person who invited you for a new link.",
+};
+
+// Signed out, an account for the invited address, which shows as the account's sign-in; signed in with that address, Join
+// and the account it uses; signed in with another, why not and the way to another account.
 export const InvitePage: FC<{
   team: string;
-  role: string;
+  // Known whenever the invitation is valid.
+  role?: Role;
   email: string;
   name: string;
   valid: boolean;
-  join?: { token: string; csrf: string };
+  join?: { token: string; csrf: string; user: string };
   lang: Lang;
 }> = ({ team, role, email, name, valid, join, lang }) => {
   const _ = (s: string) => t(lang, s);
   // A replacer function: a $ in the team name is not a replacement pattern.
-  const heading = _("Join {team} on CodeTgh").replace("{team}", () => team);
+  const named = (s: string) => _(s).replace("{team}", () => team);
+  const heading = named("Join {team}");
   return (
-    <PublicLayout lang={lang} title={heading}>
+    <PublicLayout lang={lang} title={`${valid ? heading : _("This invitation is no longer valid.")} · CodeTgh`} ownError={valid && !join}>
       {valid ? (
         <>
           <h1>{heading}</h1>
-          <p>
-            {_("Invited as")} <strong>{_(role)}</strong> {_("with")} {email}.
-          </p>
-          {join ? (
-            <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
-              <input type="hidden" name="csrf" value={join.csrf} />
-              <button type="submit">{_("Join {team}").replace("{team}", () => team)}</button>
-            </form>
+          {role && <p class="lede">{_(INVITED_AS[role])}</p>}
+          {join && email.toLowerCase() === join.user.toLowerCase() ? (
+            <>
+              <dl class="facts">
+                <div>
+                  <dt>{_("Signed in as")}</dt>
+                  <dd>{join.user}</dd>
+                </div>
+              </dl>
+              <form id="invite-join" method="post" action={`/invite/${join.token}/join`}>
+                <input type="hidden" name="csrf" value={join.csrf} />
+                <button type="submit" class="primary">
+                  {heading}
+                </button>
+              </form>
+            </>
+          ) : join ? (
+            // Another address: the hub refuses a Join (it compares the two, ignoring case), so the page offers none and says
+            // why first. Display only; the hub keeps the rule.
+            <>
+              <Banner tone="warn" title={_("This invitation is for another email address.")}>
+                {_("It was sent to {email}. You're signed in as {user}.").replace(/\{(email|user)\}/g, (_m, k) =>
+                  k === "email" ? email : join.user,
+                )}
+              </Banner>
+              <p>
+                <a class="button primary" href="/login">
+                  {_("Sign in with another account")}
+                </a>
+              </p>
+            </>
           ) : (
             <>
               {/* A guest has no Tokens page: their terminal signs in through the browser (codetgh login). */}
               <form id="invite-signup" data-next={role === "guest" ? "/console" : "/console/tokens"}>
-                <input type="hidden" name="email" value={email} />
-                <label>
-                  {_("Your name")} <input name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
-                </label>
-                <label>
-                  {_("Password")} <input name="password" type="password" required minlength={12} autocomplete="new-password" />
-                </label>
-                <button type="submit">{_("Create my account")}</button>
+                {/* The address is not typed: it shows whole, as text that wraps. The sign-up script and password managers
+                    read it from a field out of sight and out of the tab order, as Chromium documents for a known username. */}
+                <div class="field">
+                  <p class="label">{_("Email")}</p>
+                  <p class="help">{_("Your account uses the address the invitation was sent to.")}</p>
+                  <p class="value" translate="no">
+                    {email}
+                  </p>
+                </div>
+                <input name="email" type="email" value={email} autocomplete="username" hidden />
+                <Field id="invite-name" label={_("Your name")} lang={lang}>
+                  <input id="invite-name" name="name" required maxlength={60} value={name.slice(0, 60)} autocomplete="name" />
+                </Field>
+                <Field id="invite-password" label={_("Password")} lang={lang} help={_("At least 12 characters.")}>
+                  <input
+                    id="invite-password"
+                    name="password"
+                    type="password"
+                    required
+                    minlength={12}
+                    autocomplete="new-password"
+                    {...fieldAria("invite-password", { help: 1 })}
+                  />
+                </Field>
+                <HubAnswer lang={lang} words={SIGN_UP_WORDS} />
+                <button type="submit" class="primary">
+                  {_("Create my account")}
+                </button>
               </form>
-              <p>
-                {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>.
+              <p class="aside">
+                {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>
               </p>
             </>
           )}
@@ -807,7 +869,10 @@ export const InvitePage: FC<{
       ) : (
         <>
           <h1>{_("This invitation is no longer valid.")}</h1>
-          <p>{_("Ask the person who invited you for a new link.")}</p>
+          <p class="lede">{_("Ask the person who invited you for a new link.")}</p>
+          <p class="aside">
+            {_("Already have an account?")} <a href="/login">{_("Sign in")}</a>
+          </p>
         </>
       )}
     </PublicLayout>
