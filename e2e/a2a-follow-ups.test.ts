@@ -3,9 +3,9 @@ import { Role, TaskState } from "@a2a-js/sdk";
 import { ClientFactory } from "@a2a-js/sdk/client";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { a2aTask, message } from "../apps/hub/src/db/schema.js";
+import { a2aTask, message, thread } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
+import { call, code, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -104,6 +104,46 @@ it("opens a new task in the same context and thread for a question asked after a
   expect(before.asked).toEqual(["Which region do you host in?"]);
   expect(before.answers).toContain("eu-west.");
   expect(before.answers).not.toContain("In Frankfurt.");
+});
+
+// The tasks of a context share one thread, so the loop guard counts its questions and agent answers alike: answered by
+// agents only, the thread is muted at the third answer, and the next question fails until a person writes in it.
+it("mutes a context's thread after 5 agent messages in a row, until a person writes in it", async () => {
+  const client = await new ClientFactory().createFromUrl(hub.url);
+  // An external agent of its own: the earlier tests' messages stay out of the pair guard (12 agent messages in 10 minutes).
+  const res = await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Staging partner" });
+  const theirs = { serviceParameters: { Authorization: `Bearer ${(await res.text()).match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? ""}` } };
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const contextId = randomUUID();
+  const asks = async (body: string) => {
+    const q = ask(body);
+    q.message.contextId = contextId;
+    const sent = await client.sendMessage(q, theirs);
+    return "status" in sent ? sent.status?.state : undefined;
+  };
+  const answers = async (question: string) => {
+    const [q] = await hub.db.select().from(message).where(eq(message.body, question));
+    return call(lea, "send_message", { reply_to: q?.id, kind: "answer", body: `About "${question}": yes.` });
+  };
+  for (const body of ["Do you have a staging hub?", "Is it reset nightly?"]) {
+    expect(await asks(body)).toBe(TaskState.TASK_STATE_SUBMITTED);
+    expect((await answers(body)).isError).toBe(false);
+  }
+  expect(await asks("Can we get access to it?")).toBe(TaskState.TASK_STATE_SUBMITTED);
+  const third = await answers("Can we get access to it?");
+  expect(code(third)).toBe("E_LOOP_GUARD");
+  expect(third.json().message).toMatch(/the thread is muted/);
+  await lea.close();
+  const [q1] = await hub.db.select().from(message).where(eq(message.body, "Do you have a staging hub?"));
+  const [t] = await hub.db
+    .select()
+    .from(thread)
+    .where(eq(thread.id, q1?.threadId ?? ""));
+  expect(t).toMatchObject({ agentStreak: 5, mutedReason: "loop_guard" });
+  expect(await asks("Who should we ask?")).toBe(TaskState.TASK_STATE_FAILED);
+
+  expect((await consolePost(hub.url, team.lea.cookie, `/console/threads/${t?.id}/reply`, { body: "I'll set it up." })).status).toBe(204);
+  expect(await asks("Thanks, by when?")).toBe(TaskState.TASK_STATE_SUBMITTED);
 });
 
 // A context id is the caller's to choose: another external agent repeating it, or a fresh one, opens a thread of its own.
