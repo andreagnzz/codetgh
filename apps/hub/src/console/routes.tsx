@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
 import { diffLines } from "diff";
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, not, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, min, ne, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Child } from "hono/jsx";
@@ -56,7 +56,7 @@ import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
 import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
-import { archivedThread, ENCRYPTED_PLACEHOLDER, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
+import { archivedThread, MAX_AGENT_MESSAGES, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
@@ -87,6 +87,7 @@ import {
   Chip,
   CodeBlock,
   counted,
+  EmptyState,
   Field,
   fieldAria,
   InvitePage,
@@ -94,10 +95,12 @@ import {
   LINE_CAP,
   LINE_PHONE,
   Line,
+  Pager,
   People,
   Pill,
   type ProjectFilter,
   Result,
+  RowMenu,
   Stamp,
   Table,
   toneOf,
@@ -117,6 +120,19 @@ import {
   TokenForm,
   Tokens,
 } from "./team.js";
+import {
+  ALERT_STATUS,
+  ALERT_TITLE,
+  AlertText,
+  Conversation,
+  fill,
+  Handles,
+  lanesOf,
+  MutedPill,
+  Streak,
+  shortId,
+  threadName,
+} from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -637,6 +653,34 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     }));
   }
 
+  // Who is in each thread, in order of first appearance: who wrote, and who a direct thread's messages went to, from the
+  // messages the reader may see (the thread page's own filter). Display only.
+  const peopleOf = async (p: Principal, ids: string[], direct: string[]) => {
+    const people = new Map<string, string[]>();
+    const add = (id: string, handle: string) => {
+      const list = people.get(id) ?? [];
+      if (!list.includes(handle)) people.set(id, [...list, handle]);
+    };
+    if (!ids.length) return people;
+    for (const r of await db
+      .select({ threadId: message.threadId, handle: membership.handle })
+      .from(message)
+      .innerJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
+      .where(and(inArray(message.threadId, ids), sentOrReceivedBy(db, p)))
+      .groupBy(message.threadId, membership.handle)
+      .orderBy(min(message.createdAt)))
+      add(r.threadId, r.handle);
+    if (direct.length)
+      for (const r of await db
+        .selectDistinct({ threadId: message.threadId, handle: membership.handle })
+        .from(receipt)
+        .innerJoin(message, eq(message.id, receipt.messageId))
+        .innerJoin(membership, and(eq(membership.userId, receipt.recipientUserId), eq(membership.teamId, receipt.teamId)))
+        .where(and(inArray(message.threadId, direct), sentOrReceivedBy(db, p))))
+        add(r.threadId, r.handle);
+    return people;
+  };
+
   consoleApp.get("/threads", async (c) => {
     const p = c.get("principal");
     const _ = tr(c);
@@ -659,47 +703,159 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
-    const table = (of: typeof rows) => (
-      <Table
-        lang={tr(c).lang}
-        head={[_("Thread"), _("Kind"), _("Subject"), _("Agent streak"), _("State"), _("Last message")]}
-        rows={of.map((t) => [
-          <a href={withProject(`/console/threads/${t.id}`, f.selected)}>{t.id}</a>,
-          _(t.kind),
-          // The subject of someone else's direct thread is part of it: only the audited opening shows it to an admin.
-          t.kind === "direct" && !mine.includes(t.id) ? "" : (t.subject ?? ""),
-          t.agentStreak,
-          <Pill tone={t.mutedAt ? "warn" : "neutral"}>{_(t.mutedAt ? "muted" : "open")}</Pill>,
-          <When at={t.lastMessageAt} lang={_.lang} />,
-        ])}
-        empty={
-          archived ? _("No archived threads.") : _("No threads yet. A thread starts with the first message an agent or a person sends.")
+    // The subject and the people of someone else's direct thread are part of it: only the audited opening shows them to an
+    // admin.
+    const hidden = (t: (typeof rows)[number]) => t.kind === "direct" && !mine.includes(t.id);
+    const shown = rows.filter((t) => !hidden(t));
+    const people = await peopleOf(
+      p,
+      shown.map((t) => t.id),
+      shown.filter((t) => t.kind === "direct").map((t) => t.id),
+    );
+    const me =
+      (
+        await db
+          .select({ handle: membership.handle })
+          .from(membership)
+          .where(and(eq(membership.userId, p.user.id), eq(membership.teamId, p.teamId)))
+      )[0]?.handle ?? null;
+    // Under the name: the kind when the name does not already say it, then what else is true of the thread.
+    const about = (t: (typeof rows)[number]) =>
+      [
+        t.subject && !hidden(t) && _(t.kind === "team" ? "Team thread" : "Direct thread"),
+        hidden(t) && _("You're not in it. Opening it is recorded in the audit log."),
+        t.encrypted && _("End-to-end encrypted"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    // The agent streak only as it nears the loop guard's limit: below that it reads the same on every row.
+    const nearLimit = (t: (typeof rows)[number]) => t.agentStreak >= MAX_AGENT_MESSAGES - 2;
+    // One header on screen for the whole page: the later tables keep theirs for screen readers, and each caption names its
+    // group.
+    let tables = 0;
+    const table = (of: typeof rows, caption: string) => (
+      <div class={tables++ ? "threads-list later" : "threads-list"}>
+        <Table
+          lang={_.lang}
+          caption={caption}
+          head={[_("Thread"), _("People"), _("Last message")]}
+          primary={0}
+          numeric={[2]}
+          sort={{ column: 2, dir: "descending" }}
+          rows={of.map((t) => [
+            <>
+              <a class="row-link" href={withProject(`/console/threads/${t.id}`, f.selected)}>
+                {threadName(hidden(t) ? { kind: t.kind, subject: null } : t, people.get(t.id), me, _)}
+              </a>
+              {(about(t) || t.mutedAt || nearLimit(t)) && (
+                <span class="thread-meta">
+                  {about(t) && (
+                    <span>
+                      {hidden(t) && (
+                        <>
+                          <code translate="no">{shortId(t.id)}</code> ·{" "}
+                        </>
+                      )}
+                      {about(t)}
+                    </span>
+                  )}
+                  <MutedPill t={t} _={_} />
+                  {nearLimit(t) && <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} />}
+                </span>
+              )}
+            </>,
+            hidden(t) ? <span class="meta">{_("People not shown")}</span> : <Handles handles={people.get(t.id) ?? []} _={_} />,
+            <Stamp at={t.lastMessageAt} lang={_.lang} />,
+          ])}
+          empty=""
+        />
+      </div>
+    );
+    // Current threads quiet for more than a day (some of their messages are still unread) come last, after one rule. With
+    // every project shown, each part is grouped by project; a guest never sees the team's projects, their names included.
+    const dayAgo = Date.now() - 86_400_000;
+    const quiet = (t: (typeof rows)[number]) => !archived && t.lastMessageAt.getTime() < dayAgo;
+    const part = (of: typeof rows, caption: string, inProject: string, id: string, Heading: "h2" | "h3") =>
+      f.selected || p.role === "guest"
+        ? of.length > 0 && table(of, _(caption))
+        : byProject(f, of, (t) => t.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`${id}-${g.id}`}>
+              <Heading id={`${id}-${g.id}`}>{g.name}</Heading>
+              {table(g.rows, fill(_(inProject), { project: g.name }))}
+            </section>
+          ));
+    const filtered = f.projects.find((pr) => pr.id === f.selected)?.name;
+    // Older pages go back with ?before=; an older page links back to the latest threads, in the same tab and project.
+    const params = [archived && "archived=1", f.selected && `project=${encodeURIComponent(f.selected)}`].filter(Boolean);
+    const latest = `/console/threads${params.length ? `?${params.join("&")}` : ""}`;
+    const older =
+      found.length > PAGE && last
+        ? `/console/threads?${[...params, `before=${encodeURIComponent(last.lastMessageAt.toISOString())}`].join("&")}`
+        : undefined;
+    const newer = c.req.query("before") ? latest : undefined;
+    // The page's description already says what the archives hold.
+    const empty = archived ? (
+      <EmptyState title={_("No archived threads.")} />
+    ) : f.selected ? (
+      <EmptyState
+        title={filtered ? fill(_("No threads in {project}."), { project: filtered }) : _("No threads outside a project.")}
+        action={
+          <p>
+            <a href={`/console/threads?${archived ? "archived=1&" : ""}project=`}>{_("Show all projects")}</a>
+          </p>
         }
-      />
+      >
+        {_("A thread joins a project when an agent working in its repository writes.")}
+      </EmptyState>
+    ) : (
+      <EmptyState
+        title={_("No threads yet.")}
+        icon="terminal"
+        action={<CodeBlock code={'codetgh send --to @team --body "Hello, team"'} lang={_.lang} command />}
+      >
+        {_("A thread starts with the first message an agent or a person sends.")}
+      </EmptyState>
     );
     return page(
       c,
       "Threads",
       <>
         <ArchiveTabs base="/console/threads" archived={archived} lang={_.lang} project={f.selected} />
-        {/* A guest never sees the team's projects, their names as headings included. */}
-        {f.selected || rows.length === 0 || p.role === "guest"
-          ? table(rows)
-          : byProject(f, rows, (t) => t.projectId, _("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {table(g.rows)}
+        {rows.length === 0 ? (
+          empty
+        ) : (
+          <>
+            {part(
+              rows.filter((t) => !quiet(t)),
+              "Threads",
+              "Threads in {project}",
+              "p",
+              "h2",
+            )}
+            {rows.some(quiet) && (
+              <section aria-labelledby="earlier-threads">
+                <h2 class="earlier" id="earlier-threads">
+                  {_("Earlier threads")}
+                </h2>
+                {part(rows.filter(quiet), "Earlier threads", "Earlier threads in {project}", "e", "h3")}
               </section>
-            ))}
-        {found.length > PAGE && last && (
-          <a
-            href={`/console/threads?${archived ? "archived=1&" : ""}${f.selected ? `project=${encodeURIComponent(f.selected)}&` : ""}before=${encodeURIComponent(last.lastMessageAt.toISOString())}`}
-          >
-            {_("Older")}
-          </a>
+            )}
+          </>
         )}
+        {(older || newer) && <Pager lang={_.lang} newer={newer} older={older} />}
       </>,
       f,
+      {
+        head: (
+          <p class="lede">
+            {_(
+              archived
+                ? "A thread moves here after a day without messages, once every message in it is read."
+                : "Threads with a message in the last day, or with a message someone hasn't read yet.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 
@@ -718,82 +874,232 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return { t, adminRead };
   };
 
+  // A reply sent without `to` is stored as user:<id> or agent:<id>: the page names the person by their handle. Display only.
+  const named = async (teamId: string, to: string[]) => {
+    const ids = (prefix: string) => [...new Set(to.filter((a) => a.startsWith(prefix)).map((a) => a.slice(prefix.length)))];
+    const handles = new Map<string, string>();
+    const users = ids("user:");
+    const agents = ids("agent:");
+    if (users.length)
+      for (const r of await db
+        .select({ id: membership.userId, handle: membership.handle })
+        .from(membership)
+        .where(and(eq(membership.teamId, teamId), inArray(membership.userId, users))))
+        handles.set(`user:${r.id}`, `@${r.handle}`);
+    if (agents.length)
+      for (const r of await db
+        .select({ id: agent.id, handle: membership.handle })
+        .from(agent)
+        .innerJoin(membership, and(eq(membership.userId, agent.userId), eq(membership.teamId, agent.teamId)))
+        .where(and(eq(agent.teamId, teamId), inArray(agent.id, agents))))
+        handles.set(`agent:${r.id}`, `@${r.handle}`);
+    return handles;
+  };
+
   consoleApp.get("/threads/:id", async (c) => {
-    const { t, adminRead } = await loadThread(c);
+    const _ = tr(c);
+    let loaded: Awaited<ReturnType<typeof loadThread>>;
+    try {
+      loaded = await loadThread(c);
+    } catch (e) {
+      // A page load gets the thread's own words; an htmx refresh keeps the bare reason.
+      if (!(e instanceof HubError && e.code === "E_NOT_FOUND") || c.req.header("HX-Request") === "true") throw e;
+      return c.html(
+        <ErrorPage
+          status={404}
+          lang={_.lang}
+          title="This thread doesn't exist."
+          next="Check the link, or find the thread in the list."
+          back={{ href: "/console/threads", label: "Back to threads" }}
+        />,
+        404,
+      );
+    }
+    const { t, adminRead } = loaded;
     const p = c.get("principal");
     if (adminRead) await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "thread.read_by_admin", subjectId: t.id }));
-    const project = kept(c);
+    const keep = kept(c);
     // The latest page, oldest first; Older goes back. A thread grows with every reply: never load all of it.
     const found = await db
-      .select({ message, name: user.name })
+      .select({ message, name: user.name, handle: membership.handle, label: agent.label })
       .from(message)
       .innerJoin(user, eq(user.id, message.fromUserId))
+      .leftJoin(membership, and(eq(membership.userId, message.fromUserId), eq(membership.teamId, message.teamId)))
+      .leftJoin(agent, eq(agent.id, message.fromAgentId))
       .where(and(eq(message.threadId, t.id), adminRead ? undefined : sentOrReceivedBy(db, p), olderThan(c, message.createdAt)))
       .orderBy(desc(message.createdAt))
       .limit(PAGE + 1);
-    const rows = found.slice(0, PAGE).reverse();
+    const handles = await named(
+      p.teamId,
+      found.flatMap((r) => r.message.to),
+    );
+    const rows = found
+      .slice(0, PAGE)
+      .reverse()
+      .map((r) => ({ ...r, key: r.handle ?? r.name, message: { ...r.message, to: r.message.to.map((a) => handles.get(a) ?? a) } }));
     const first = rows[0];
-    const state = t.mutedAt ? (t.mutedReason === "human" ? "muted by a person" : "muted (loop guard)") : "open";
+    const lanes = lanesOf(rows);
+    const [me] = await db
+      .select({ handle: membership.handle })
+      .from(membership)
+      .where(and(eq(membership.userId, p.user.id), eq(membership.teamId, p.teamId)));
+    // A guest never sees the team's projects.
+    const [inProject] =
+      t.projectId && p.role !== "guest"
+        ? await db
+            .select({ name: project.name })
+            .from(project)
+            .where(and(eq(project.id, t.projectId), eq(project.teamId, p.teamId)))
+        : [];
+    const older = c.req.query("before");
     // Every refresh of an admin read would be audited as a new opening, and an older page is not the latest: those stay still.
     const live =
-      adminRead || c.req.query("before")
+      adminRead || older
         ? {}
         : {
-            "hx-get": withProject(`/console/threads/${t.id}`, project),
+            "hx-get": withProject(`/console/threads/${t.id}`, keep),
             "hx-select": "main",
             "hx-target": "main",
             "hx-swap": "outerHTML",
             "hx-trigger": "sse:activity",
           };
+    const title = threadName(t, lanes.keys, me?.handle ?? null, _);
     return page(
       c,
-      t.subject ?? `Thread ${t.id}`,
-      <div {...live}>
-        <p>
-          <a href={withProject("/console/threads", project)}>{tr(c)("Back to threads")}</a>
+      title,
+      <>
+        <div {...live} class="thread">
+          <p class="loading-text">{_("Loading…")}</p>
+          {adminRead && (
+            <Banner title={_("You're reading a direct thread as an admin.")}>
+              {_("This opening is recorded in the audit log, and the page doesn't refresh on its own.")}
+            </Banner>
+          )}
+          <aside class="thread-props" aria-label={_("About this thread")}>
+            <dl>
+              <div>
+                <dt>{_("People")}</dt>
+                <dd>{lanes.keys.length ? <Handles handles={lanes.keys} _={_} /> : <span class="meta">{_("Nobody yet")}</span>}</dd>
+              </div>
+              {inProject && (
+                <div class="props-project">
+                  <dt>{_("Project")}</dt>
+                  <dd>
+                    <Chip>{inProject.name}</Chip>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>{_("First message")}</dt>
+                <dd>
+                  {/* The first page holds the thread's first message; on a later one it is still to come. */}
+                  <Stamp at={(found.length > PAGE ? undefined : first?.message.createdAt) ?? t.createdAt} lang={_.lang} />
+                </dd>
+              </div>
+              <div>
+                <dt>{_("Last message")}</dt>
+                <dd>
+                  <Stamp at={t.lastMessageAt} lang={_.lang} />
+                </dd>
+              </div>
+            </dl>
+          </aside>
+          <div class="thread-main">
+            {found.length > PAGE && first && (
+              <p class="convo-more">
+                <a
+                  class="button"
+                  href={`/console/threads/${t.id}?${keep ? `project=${encodeURIComponent(keep)}&` : ""}before=${encodeURIComponent(first.message.createdAt.toISOString())}`}
+                >
+                  <Icon name="arrow-up" />
+                  {_("Older messages")}
+                </a>
+              </p>
+            )}
+            {rows.length ? (
+              <Conversation rows={rows} lanes={lanes} _={_} title={t.subject} />
+            ) : (
+              <EmptyState title={_("No messages here yet.")}>{_("Messages you send or receive in this thread appear here.")}</EmptyState>
+            )}
+            {older && (
+              <p class="convo-more">
+                <a class="button" href={withProject(`/console/threads/${t.id}`, keep)}>
+                  <Icon name="arrow-down" />
+                  {_("Latest messages")}
+                </a>
+              </p>
+            )}
+            {t.mutedAt && t.mutedReason !== "human" && (
+              <Banner tone="warn" title={_("The loop guard muted this thread.")}>
+                {/* Only what this reader can do: an admin reading someone else's direct thread can't reply, a guest can't reopen. */}
+                {fill(
+                  _(
+                    adminRead
+                      ? "Agents wrote {max} messages in a row. Reopen the thread so agents can write again."
+                      : p.role === "guest"
+                        ? "Agents wrote {max} messages in a row. Reply as a person so agents can write again."
+                        : "Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again.",
+                  ),
+                  { max: MAX_AGENT_MESSAGES },
+                )}
+              </Banner>
+            )}
+            {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
+            {!adminRead && !t.encrypted && (
+              <form class="reply" hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
+                <Field
+                  id="reply-body"
+                  label={_("Reply to the thread")}
+                  lang={_.lang}
+                  help={_("Sent as you. A reply from a person resets the agent streak and reopens a muted thread.")}
+                >
+                  <textarea
+                    id="reply-body"
+                    hx-preserve="true"
+                    name="body"
+                    required
+                    maxlength={8000}
+                    rows={4}
+                    {...fieldAria("reply-body", { help: true })}
+                  />
+                </Field>
+                <button type="submit" class="primary">
+                  {_("Send reply")}
+                </button>
+              </form>
+            )}
+            {t.encrypted && !adminRead && (
+              <Banner title={_("The console can't write into this thread.")}>
+                {_("Reply from your terminal: codetgh encrypts the reply for every participant.")}
+              </Banner>
+            )}
+          </div>
+        </div>
+        {/* Shown by the stylesheet only once a live refresh has failed (console.js writes why after the region). */}
+        <p class="live-reload">
+          <a href={withProject(`/console/threads/${t.id}`, keep)}>{_("Reload the page")}</a>
         </p>
-        <p>
-          {t.kind} thread · {state} · agent streak {t.agentStreak}
-        </p>
-        <Table
-          lang={tr(c).lang}
-          head={["From", "Kind", "Message", "Sent"]}
-          rows={rows.map(({ message: m, name }) => [
-            `${name}${m.authoredBy === "agent" ? " (agent)" : ""}`,
-            `${m.kind} · ${m.priority}`,
-            <>
-              {m.flags.map((f) => (
-                <span class="flag">{f}</span>
-              ))}
-              {m.subject && <strong>{m.subject}</strong>}
-              <pre>{m.encrypted ? ENCRYPTED_PLACEHOLDER : m.body}</pre>
-            </>,
-            <When at={m.createdAt} />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && first && (
-          <a
-            href={`/console/threads/${t.id}?${project ? `project=${encodeURIComponent(project)}&` : ""}before=${encodeURIComponent(first.message.createdAt.toISOString())}`}
-          >
-            {tr(c)("Older")}
-          </a>
-        )}
-        {/* Only where a reply can succeed: not in someone else's direct thread, nor in plain text in an encrypted one. */}
-        {!adminRead && !t.encrypted && (
-          <form hx-post={`/console/threads/${t.id}/reply`} hx-swap="none">
-            <label>
-              Reply as a human <textarea id="reply-body" hx-preserve="true" name="body" required maxlength={8000} rows={3} />
-            </label>
-            <button type="submit">Send</button>
-          </form>
-        )}
-        {t.mutedAt ? (
-          <Action post={`/console/threads/${t.id}/reopen`} label="Reopen" />
-        ) : (
-          <Action post={`/console/threads/${t.id}/mute`} label="Mute" />
-        )}
-      </div>,
+      </>,
+      undefined,
+      {
+        back: <a href={withProject("/console/threads", keep)}>{_("Back to threads")}</a>,
+        head: (
+          <>
+            <span>{_(t.kind === "team" ? "Team thread" : "Direct thread")}</span>
+            {inProject && <Chip>{inProject.name}</Chip>}
+            {t.encrypted && <span>{_("End-to-end encrypted")}</span>}
+            <MutedPill t={t} _={_} />
+            <Streak n={t.agentStreak} max={MAX_AGENT_MESSAGES} _={_} />
+          </>
+        ),
+        // A guest can't mute or reopen a thread: no button that would only be refused.
+        actions:
+          p.role === "guest" ? undefined : t.mutedAt ? (
+            <Action post={`/console/threads/${t.id}/reopen`} label={_("Reopen thread")} />
+          ) : (
+            <Action post={`/console/threads/${t.id}/mute`} label={_("Mute thread")} />
+          ),
+      },
     );
   });
 
@@ -838,39 +1144,124 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    // The hub raises an audit alert itself; any other alert names who sent the message, or nobody once they are erased.
+    const sender = (a: (typeof rows)[number]["alert"], name: string | null) => name ?? _(a.kind === "audit_tamper" ? "The hub" : "Nobody");
+    // Alerts on someone else's direct thread, which the thread page audits when an admin opens it (the same check as /threads).
+    const onThreads = [...new Set(rows.flatMap((r) => (r.alert.threadId ? [r.alert.threadId] : [])))];
+    const mine = onThreads.length ? (await participantThreads(p)).map((r) => r.id) : [];
+    const audited = onThreads.length
+      ? (
+          await db
+            .select({ id: thread.id })
+            .from(thread)
+            .where(and(inArray(thread.id, onThreads), eq(thread.kind, "direct")))
+        )
+          .map((r) => r.id)
+          .filter((id) => !mine.includes(id))
+      : [];
+    // Which alert a row's actions act on, for screen readers: its kind and who sent it.
+    const which = (a: (typeof rows)[number]["alert"], name: string | null) => ({
+      alert: _(ALERT_TITLE[a.kind] ?? a.kind),
+      from: sender(a, name),
+    });
     return page(
       c,
       "Alerts",
       <>
-        <Table
-          lang={tr(c).lang}
-          head={[_("Kind"), _("Sender"), _("Excerpt"), _("Status"), _("Actions")]}
-          empty={_("No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
-          rows={rows.map(({ alert: a, name }) => [
-            <>
-              <Pill tone="danger">{_(a.kind)}</Pill>
-              <br />
-              <When at={a.createdAt} lang={_.lang} />
-            </>,
-            name ?? "",
-            <pre>{a.excerpt}</pre>,
-            <Pill tone={toneOf(a.status)}>{_(a.status)}</Pill>,
-            a.status === "open" && (
+        <div class="alerts-list">
+          <Table
+            lang={_.lang}
+            caption={_("Alerts")}
+            head={[_("Alert"), _("Raised"), _("Status"), _("Actions")]}
+            primary={0}
+            numeric={[1]}
+            actions
+            sort={{ column: 1, dir: "descending" }}
+            empty={
+              <EmptyState title={_("No alerts.")}>
+                {_("Messages that look like instructions, or that carry a secret, show up here for an admin to decide.")}
+              </EmptyState>
+            }
+            rows={rows.map(({ alert: a, name }) => [
+              <AlertText
+                a={a}
+                from={a.userId ? `${sender(a, name)} · ${_(a.agentId ? "agent" : "person")}` : sender(a, name)}
+                which={which(a, name)}
+                audited={!!a.threadId && audited.includes(a.threadId)}
+                max={MAX_AGENT_MESSAGES}
+                _={_}
+              />,
+              <Stamp at={a.createdAt} lang={_.lang} />,
               <>
-                <Action post={`/console/alerts/${a.id}/dismissed`} label={_("Dismiss")} />
-                <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />
-                {a.kind === "secret_blocked" && (
-                  <Action post={`/console/alerts/${a.id}/fingerprint_allowed`} label={_("Allow this fingerprint")} />
+                <Pill tone={a.status === "open" ? "warn" : "neutral"}>{_(ALERT_STATUS[a.status] ?? a.status)}</Pill>
+                {a.resolvedAt && (
+                  <span class="meta">
+                    {_("Decided")} <Stamp at={a.resolvedAt} lang={_.lang} />
+                  </span>
                 )}
-                {a.agentId && <Action post={`/console/agents/${a.agentId}/quarantined`} label={_("Quarantine sender")} />}
-              </>
-            ),
-          ])}
-        />
-        {found.length > PAGE && last && (
-          <a href={`/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}`}>{_("Older")}</a>
+              </>,
+              a.status === "open" && (
+                <>
+                  <Action
+                    post={`/console/alerts/${a.id}/dismissed`}
+                    label={_("Dismiss")}
+                    name={fill(_("Dismiss: {alert}, {from}"), which(a, name))}
+                  />
+                  <RowMenu
+                    label={fill(_("More decisions on this alert: {alert}, {from}"), which(a, name))}
+                    items={[
+                      <Action post={`/console/alerts/${a.id}/false_positive`} label={_("False positive")} />,
+                      a.kind === "secret_blocked" && (
+                        <Action
+                          post={`/console/alerts/${a.id}/fingerprint_allowed`}
+                          label={_("Allow this fingerprint")}
+                          confirm={{
+                            title: _("Allow this secret's fingerprint?"),
+                            body: _("Messages that carry this exact secret then pass the hub's check. Other secrets are still refused."),
+                          }}
+                        />
+                      ),
+                      a.agentId && (
+                        <Action
+                          post={`/console/agents/${a.agentId}/quarantined`}
+                          label={_("Quarantine sender")}
+                          level="danger"
+                          confirm={{
+                            title: fill(_("Quarantine {name}'s sessions?"), { name: sender(a, name) }),
+                            body: _(
+                              "Every session of this person can then send only notes, questions and answers: no claims, tasks, requests, handoffs or memory. Only an admin lifts it.",
+                            ),
+                          }}
+                        />
+                      ),
+                    ].filter(Boolean)}
+                  />
+                </>
+              ),
+            ])}
+          />
+        </div>
+        {/* An older page (?before=) links back to the latest alerts. */}
+        {((found.length > PAGE && last) || c.req.query("before")) && (
+          <Pager
+            lang={_.lang}
+            newer={c.req.query("before") ? "/console/alerts" : undefined}
+            older={
+              found.length > PAGE && last ? `/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}` : undefined
+            }
+          />
         )}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede">
+            {_(
+              "What the hub flagged or stopped, newest first. Decide on each open alert: dismiss it once handled, or mark it a false positive.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 

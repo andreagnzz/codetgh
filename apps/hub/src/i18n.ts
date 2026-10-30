@@ -440,6 +440,112 @@ const FR: Record<string, string> = {
   // ---- End of batch 2. ----
 
   // ---- Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this block. ----
+  // Threads.
+  "Threads with a message in the last day, or with a message someone hasn't read yet.":
+    "Les fils avec un message dans la dernière journée, ou avec un message que quelqu'un n'a pas encore lu.",
+  "A thread moves here after a day without messages, once every message in it is read.":
+    "Un fil arrive ici après une journée sans message, une fois tous ses messages lus.",
+  People: "Personnes",
+  "Team thread": "Fil d'équipe",
+  "Direct thread": "Fil direct",
+  "Direct thread with {people}": "Fil direct avec {people}",
+  "Team thread from {people}": "Fil d'équipe lancé par {people}",
+  "+{n} more": "+{n}\u00a0autres",
+  "You're not in it. Opening it is recorded in the audit log.": "Tu n'y participes pas. L'ouvrir l'inscrit au journal d'audit.",
+  "People not shown": "Personnes non affichées",
+  "Muted by a person": "Mis en sourdine par une personne",
+  "Muted by the loop guard": "Mis en sourdine par le garde-fou des boucles",
+  "Agent streak {n}\u00a0of\u00a0{max}": "Série d'agents\u00a0: {n}\u00a0sur\u00a0{max}",
+  "Earlier threads": "Fils plus anciens",
+  "Threads in {project}": "Fils dans {project}",
+  "Earlier threads in {project}": "Fils plus anciens dans {project}",
+  "End-to-end encrypted": "Chiffré de bout en bout",
+  "No threads yet.": "Aucun fil pour l'instant.",
+  "A thread starts with the first message an agent or a person sends.":
+    "Un fil commence au premier message envoyé par un agent ou une personne.",
+  "No threads in {project}.": "Aucun fil dans {project}.",
+  "No threads outside a project.": "Aucun fil hors projet.",
+  "A thread joins a project when an agent working in its repository writes.":
+    "Un fil rejoint un projet quand un agent qui travaille dans son dépôt y écrit.",
+  "Show all projects": "Voir tous les projets",
+  // A thread.
+  "This thread doesn't exist.": "Ce fil n'existe pas.",
+  "Check the link, or find the thread in the list.": "Vérifie le lien, ou retrouve le fil dans la liste.",
+  "About this thread": "À propos de ce fil",
+  "First message": "Premier message",
+  "Nobody yet": "Personne pour l'instant",
+  "Mute thread": "Mettre le fil en sourdine",
+  "Reopen thread": "Rouvrir le fil",
+  "Left to right: {names}": "De gauche à droite\u00a0: {names}",
+  agent: "agent",
+  person: "personne",
+  "Low priority": "Priorité basse",
+  "High priority": "Priorité haute",
+  Blocking: "Bloquant",
+  "Looks like an instruction": "Ressemble à une consigne",
+  "The hub flagged this text. It's shown here, never run.": "Le hub a signalé ce texte. Il est affiché ici, jamais exécuté.",
+  "May hold a secret": "Contient peut-être un secret",
+  "Don't copy it anywhere before checking it.": "Ne le copie nulle part avant de l'avoir vérifié.",
+  "Links to another site": "Renvoie vers un autre site",
+  "Check where a link leads before you open it.": "Vérifie où mène un lien avant de l'ouvrir.",
+  "Read it in a participant's terminal with codetgh inbox.": "Lis-le dans le terminal d'un participant avec codetgh inbox.",
+  "End-to-end encrypted. Read it in a participant's terminal with codetgh inbox.":
+    "Chiffré de bout en bout. Lis-le dans le terminal d'un participant avec codetgh inbox.",
+  "The console can't write into this thread.": "La console ne peut pas écrire dans ce fil.",
+  "Reply from your terminal: codetgh encrypts the reply for every participant.":
+    "Réponds depuis ton terminal\u00a0: codetgh chiffre la réponse pour chaque participant.",
+  "Older messages": "Messages précédents",
+  "Latest messages": "Derniers messages",
+  "No messages here yet.": "Aucun message ici pour l'instant.",
+  "Messages you send or receive in this thread appear here.": "Les messages que tu envoies ou reçois dans ce fil apparaissent ici.",
+  "You're reading a direct thread as an admin.": "Tu lis un fil direct en tant qu'admin.",
+  "This opening is recorded in the audit log, and the page doesn't refresh on its own.":
+    "Cette ouverture est inscrite au journal d'audit, et la page ne se met pas à jour toute seule.",
+  "The loop guard muted this thread.": "Le garde-fou des boucles a mis ce fil en sourdine.",
+  "Agents wrote {max} messages in a row. Reply as a person, or reopen the thread, so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds toi-même, ou rouvre le fil, pour que les agents puissent écrire à nouveau.",
+  "Agents wrote {max} messages in a row. Reply as a person so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Réponds toi-même pour que les agents puissent écrire à nouveau.",
+  "Agents wrote {max} messages in a row. Reopen the thread so agents can write again.":
+    "Les agents ont écrit {max}\u00a0messages d'affilée. Rouvre le fil pour que les agents puissent écrire à nouveau.",
+  "Reply to the thread": "Répondre dans le fil",
+  "Sent as you. A reply from a person resets the agent streak and reopens a muted thread.":
+    "Envoyé en ton nom. Une réponse d'une personne remet la série d'agents à zéro et rouvre un fil en sourdine.",
+  "Send reply": "Envoyer la réponse",
+  "Reload the page": "Recharger la page",
+  // Alerts.
+  "What the hub flagged or stopped, newest first. Decide on each open alert: dismiss it once handled, or mark it a false positive.":
+    "Ce que le hub a signalé ou arrêté, du plus récent au plus ancien. Décide pour chaque alerte ouverte\u00a0: ignore-la une fois traitée, ou marque-la comme faux positif.",
+  Alert: "Alerte",
+  Raised: "Levée",
+  "Secret blocked": "Secret bloqué",
+  "Agent loop": "Boucle d'agents",
+  "Loop waiting for a person": "Boucle en attente d'une personne",
+  "Audit log tampered with": "Journal d'audit altéré",
+  "The hub refused the message: the secret was never stored.": "Le hub a refusé le message\u00a0: le secret n'a jamais été enregistré.",
+  "The loop guard muted the thread after {max} agent messages in a row.":
+    "Le garde-fou des boucles a mis le fil en sourdine après {max}\u00a0messages d'agents d'affilée.",
+  "The loop orchestrator already reopened this thread once: a person decides now.":
+    "L'orchestrateur de boucles a déjà rouvert ce fil une fois\u00a0: une personne décide maintenant.",
+  "The hub": "Le hub",
+  Nobody: "Personne",
+  // An alert's status and decision, in the feminine of « alerte »: a masculine entity (a thread, a task) needs its own key.
+  Open: "Ouverte",
+  Dismissed: "Ignorée",
+  Decided: "Décidée",
+  "Fingerprint allowed": "Empreinte autorisée",
+  "More decisions on this alert: {alert}, {from}": "Autres décisions sur cette alerte\u00a0: {alert}, {from}",
+  "Dismiss: {alert}, {from}": "Ignorer\u00a0: {alert}, {from}",
+  "Open thread: {alert}, {from}": "Ouvrir le fil\u00a0: {alert}, {from}",
+  "Allow this secret's fingerprint?": "Autoriser l'empreinte de ce secret\u202f?",
+  "Messages that carry this exact secret then pass the hub's check. Other secrets are still refused.":
+    "Les messages qui contiennent exactement ce secret passeront alors le contrôle du hub. Les autres secrets restent refusés.",
+  "Quarantine {name}'s sessions?": "Mettre les sessions de {name} en quarantaine\u202f?",
+  "Every session of this person can then send only notes, questions and answers: no claims, tasks, requests, handoffs or memory. Only an admin lifts it.":
+    "Les sessions de cette personne ne pourront plus envoyer que des notes, des questions et des réponses\u00a0: ni réservation, ni tâche, ni demande, ni relais, ni mémoire. Seul un admin lève la quarantaine.",
+  "No alerts.": "Aucune alerte.",
+  "Messages that look like instructions, or that carry a secret, show up here for an admin to decide.":
+    "Les messages qui ressemblent à des consignes, ou qui contiennent un secret, arrivent ici pour qu'un admin décide.",
   // ---- End of batch 3. ----
 
   // ---- Batch 4, agents, projects and delegations (refonte/agents-projets). Only that batch edits this block. ----
