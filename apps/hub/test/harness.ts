@@ -40,6 +40,9 @@ export async function startHub(
       () => resolve(s as Server),
     );
   });
+  // Only the client ends an idle connection. Hub and client share this process: a step that blocks it (synchronous git,
+  // slow on Windows) holds both idle timers, and the hub's would then reset the socket the client just reused.
+  server.keepAliveTimeout = 0;
   const port = (server.address() as AddressInfo).port;
   const url = `http://${opts.hostname ?? "localhost"}:${port}`;
   let databaseUrl: string | undefined;
