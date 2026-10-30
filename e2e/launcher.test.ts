@@ -34,7 +34,7 @@ function fakeClaude() {
   fakeCommand(
     dir,
     "claude",
-    `import { writeFileSync } from "node:fs";
+    `import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const dir = ${JSON.stringify(dir)};
 if (process.argv[2] === "plugin") {
@@ -44,7 +44,9 @@ if (process.argv[2] === "plugin") {
 writeFileSync(join(dir, "args"), process.argv.slice(2).join(" "));
 writeFileSync(join(dir, "argv"), JSON.stringify(process.argv.slice(2)));
 writeFileSync(join(dir, "cwd"), process.cwd());
-writeFileSync(join(dir, "pid"), String(process.pid));
+// Last, and whole: once pid is there, so is every file above.
+writeFileSync(join(dir, "pid.tmp"), String(process.pid));
+renameSync(join(dir, "pid.tmp"), join(dir, "pid"));
 setTimeout(() => {}, 300_000);
 `,
   );
@@ -61,6 +63,17 @@ async function launcher(config: string) {
   delete process.env.CODETGH_URL;
   delete process.env.CODETGH_TOKEN;
   return out.join("\n");
+}
+// Started on Windows through claude.cmd and cmd.exe, which a loaded runner can take seconds to bring up.
+async function started(fake: string) {
+  for (let i = 0; i < 300 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+  if (!existsSync(join(fake, "pid"))) throw new Error(`the fake claude in ${fake} did not start within 15 s`);
+}
+// Through the launcher, which then forgets the server. Killed behind its back, it is cmd.exe on Windows that the launcher
+// watches, still running for a moment after claude: the next pass would take it for the server and start none.
+async function stop(config: string) {
+  await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "0" });
+  await launcher(config);
 }
 
 describe("Remote Control launcher", () => {
@@ -79,7 +92,7 @@ describe("Remote Control launcher", () => {
     const config = join(mkdtempSync(join(tmpdir(), "codetgh-launch-cfg-")), "launcher.json");
     writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
     await launcher(config);
-    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    await started(fake);
     expect(readFileSync(join(fake, "args"), "utf8")).toMatch(/^remote-control --name CodeTgh · /);
     expect(readFileSync(join(fake, "cwd"), "utf8").trim()).toBe(repoDir);
     // remote-control has no --settings: the plugin goes on at local scope, for this user in this repository only.
@@ -104,7 +117,7 @@ describe("Remote Control launcher", () => {
     writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
     await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
     await launcher(config);
-    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    await started(fake);
     const first = Number(readFileSync(join(fake, "pid"), "utf8"));
     process.kill(first, "SIGKILL");
     for (let i = 0; i < 50 && alive(first); i++) await sleep(50);
@@ -119,7 +132,7 @@ describe("Remote Control launcher", () => {
     expect(second).not.toBe(first);
     expect(alive(second)).toBe(true);
     expect(await projectsPage()).toContain("Remote Control running");
-    process.kill(second, "SIGKILL");
+    await stop(config);
   });
 
   it("refuses a project that is not in its local list, and says so in the console", async () => {
@@ -140,10 +153,10 @@ describe("Remote Control launcher", () => {
     writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
     await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
     await launcher(config);
-    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    await started(fake);
     await hub.db.update(project).set({ name: "acme" }).where(eq(project.id, projectId));
     const argv: string[] = JSON.parse(readFileSync(join(fake, "argv"), "utf8"));
-    process.kill(Number(readFileSync(join(fake, "pid"), "utf8")), "SIGKILL");
+    await stop(config);
     expect(argv).toEqual(["remote-control", "--name", "CodeTgh · web appco"]);
     expect(argv.join(" ")).not.toMatch(/["&|^%<>!\n]/);
   });
@@ -156,9 +169,9 @@ describe("Remote Control launcher", () => {
     writeFileSync(config, JSON.stringify({ projects: { [projectId]: repoDir } }));
     await consolePost(hub.url, team.lea.cookie, `/console/projects/${projectId}/launch`, { on: "1" });
     await launcher(config);
-    for (let i = 0; i < 50 && !existsSync(join(fake, "pid")); i++) await sleep(50);
+    await started(fake);
     const argv: string[] = JSON.parse(readFileSync(join(fake, "argv"), "utf8"));
-    process.kill(Number(readFileSync(join(fake, "pid"), "utf8")), "SIGKILL");
+    await stop(config);
     expect(argv).toEqual(["remote-control", "--name", `CodeTgh · ${projectId}`]);
   });
 });

@@ -90,7 +90,8 @@ it("shows a guest only their own agents on the dashboard", async () => {
     repo_name: "acme/ledger-secret",
   });
   const html = await (await fetch(`${hub.url}/console`, { headers: { cookie: team.malik.cookie } })).text();
-  const presence = html.slice(html.indexOf('id="presence-h"'), html.indexOf('id="todo-h"'));
+  const start = html.indexOf('id="presence-h"');
+  const presence = html.slice(start, html.indexOf("</section>", start));
   for (const leak of ["rotating billing keys quietly", "acme/ledger-secret", "lea@", "sam@"]) expect(html, leak).not.toContain(leak);
   for (const name of ["Léa", "Sam"]) expect(presence, name).not.toContain(name);
   expect(presence).toContain("Malik");

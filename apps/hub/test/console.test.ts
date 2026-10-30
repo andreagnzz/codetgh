@@ -166,10 +166,10 @@ describe("thread state", () => {
     const sam = await mcpClient(hub.url, team.sam.token);
     const sent = JSON.parse((await call(sam, "send_message", { to: "@lea", kind: "note", body: "mute me", allow_offline: true })).text);
     const page = async () => (await fetch(`${hub.url}/console/threads/${sent.thread}`, { headers: { cookie: team.lea.cookie } })).text();
-    expect(await page()).toContain("open");
+    expect(await page()).toContain(">Mute thread</button>");
     expect((await post(`/console/threads/${sent.thread}/mute`, team.lea.cookie, await csrf(hub.url, team.lea.cookie))).status).toBe(204);
     const muted = await page();
-    expect(muted).toContain("muted by a person");
+    expect(muted).toContain("Muted by a person");
     expect(muted).not.toContain("loop guard");
     await sam.close();
   });

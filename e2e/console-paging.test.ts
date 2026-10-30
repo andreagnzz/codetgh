@@ -17,7 +17,9 @@ afterAll(() => hub.stop());
 const get = async (path: string) => (await fetch(`${hub.url}${path}`, { headers: { cookie: team.lea.cookie } })).text();
 // The link that pages back carries ?before= (a list's "Older", a thread's "Older messages").
 const older = (html: string) => html.match(/href="([^"]+[?&;]before=[^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
-// An older page's way back goes to the newest rows (no query steps back one page), and says so: "Newest".
+// An older page's way back to the latest rows: the list's "Newer".
+const newer = (html: string) => html.match(/href="([^"]*)"[^>]*>(?:(?!<\/a>)[\s\S])*?Newer<\/a>/)?.[1]?.replaceAll("&amp;", "&");
+// A list whose way back goes to the newest rows (no query steps back one page) says so: "Newest".
 const newest = (html: string) => html.match(/href="([^"]*)"[^>]*>(?:(?!<\/a>)[\s\S])*?Newest<\/a>/)?.[1]?.replaceAll("&amp;", "&");
 
 it("pages alerts: no Older link at exactly 50, and one row on the next page at 51", async () => {
@@ -36,6 +38,8 @@ it("pages alerts: no Older link at exactly 50, and one row on the next page at 5
   const next = await get(older(first) ?? "/missing");
   expect(next).toContain("alert number 50.");
   expect(next).not.toContain("alert number 49.");
+  expect(newer(first)).toBeUndefined();
+  expect(newer(next)).toBe("/console/alerts");
 });
 
 it("pages memory: no Older link at exactly 50, and one row on the next page at 51", async () => {
@@ -79,6 +83,8 @@ it("pages threads: no Older link at exactly 50, and one row on the next page at 
   const next = await get(older(first) ?? "/missing");
   expect(next).toContain("thr_50");
   expect(next).not.toContain("thr_49");
+  expect(newer(first)).toBeUndefined();
+  expect(newer(next)).toBe("/console/threads");
 });
 
 it("pages a thread: its latest 50 messages, oldest first, and the 51st on the next page", async () => {
