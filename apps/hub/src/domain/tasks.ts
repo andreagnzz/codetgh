@@ -23,7 +23,15 @@ export const ALLOWED: Record<TaskStatus, TaskStatus[]> = {
   done: [],
   cancelled: [],
 };
-export const MAX_NOTES = 20;
+const MAX_NOTES = 20;
+
+export async function trimNotes(tx: Db, row: Task) {
+  if (row.notes.length > MAX_NOTES)
+    await tx
+      .update(task)
+      .set({ notes: row.notes.slice(-MAX_NOTES) })
+      .where(eq(task.id, row.id));
+}
 
 export const archivedTask = () =>
   sql`(${inArray(task.status, ["done", "cancelled"])} and ${lt(task.updatedAt, new Date(Date.now() - ARCHIVE_AFTER_MS))})`;
@@ -326,11 +334,7 @@ export async function updateTask(
         "E_VERSION_CONFLICT",
         `task ${input.task_id} changed (version is now ${current.version}): read it again with task_list`,
       );
-    if (row.notes.length > MAX_NOTES)
-      await tx
-        .update(task)
-        .set({ notes: row.notes.slice(-MAX_NOTES) })
-        .where(eq(task.id, row.id));
+    await trimNotes(tx, row);
     await audit(tx, p, a, takeover ? "task.taken_over" : "task.updated", row, {
       fields: Object.keys(patch),
       ...(takeover && { taken_from: former }),

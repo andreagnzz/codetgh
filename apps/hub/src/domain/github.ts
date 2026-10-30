@@ -10,7 +10,7 @@ import { requireAdmin } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { bridgeAuthor, projectThread } from "./bridges.js";
 import { type MessagingDeps, sendMessage } from "./messages.js";
-import { MAX_NOTES } from "./tasks.js";
+import { trimNotes } from "./tasks.js";
 
 // Each team has its own webhook URL and secret, so only the GitHub App its admin configured can post to it.
 // The secret is derived from the hub secret and a nonce: rotating the nonce replaces it, and the database never holds it.
@@ -159,11 +159,7 @@ async function linkRunnerTask(
       .where(eq(task.id, t.id))
       .returning();
     if (!moves || !row) return;
-    if (row.notes.length > MAX_NOTES)
-      await tx
-        .update(task)
-        .set({ notes: row.notes.slice(-MAX_NOTES) })
-        .where(eq(task.id, row.id));
+    await trimNotes(tx, row);
     await appendAudit(tx, {
       teamId,
       actorType: "hub",
@@ -262,11 +258,7 @@ async function verifyByTag(db: Db, teamId: string, e: Payload, meta: { delivery:
         .where(eq(task.id, t.id))
         .returning();
       if (!row) continue;
-      if (row.notes.length > MAX_NOTES)
-        await tx
-          .update(task)
-          .set({ notes: row.notes.slice(-MAX_NOTES) })
-          .where(eq(task.id, row.id));
+      await trimNotes(tx, row);
       await appendAudit(tx, {
         teamId,
         actorType: "hub",

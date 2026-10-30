@@ -8,7 +8,7 @@ import type { Principal } from "../principal.js";
 import { byUser } from "./admin.js";
 import { appendAudit } from "./audit.js";
 import { assertNoSecrets, type MessagingDeps } from "./messages.js";
-import { ALLOWED, MAX_NOTES, taskView, view } from "./tasks.js";
+import { ALLOWED, taskView, trimNotes, view } from "./tasks.js";
 
 type Task = typeof task.$inferSelect;
 
@@ -282,11 +282,7 @@ export async function runnerUpdate(
       .where(and(eq(task.id, taskId), eq(task.version, current.version), eq(task.leaseOwner, owner)))
       .returning();
     if (!row) throw new HubError("E_VERSION_CONFLICT", `task ${taskId} changed: read it again`);
-    if (row.notes.length > MAX_NOTES)
-      await tx
-        .update(task)
-        .set({ notes: row.notes.slice(-MAX_NOTES) })
-        .where(eq(task.id, row.id));
+    await trimNotes(tx, row);
     await audit(tx, p, "runner.updated", row, { fields: Object.keys(patch) });
     return runnerView(tx, row);
   });
