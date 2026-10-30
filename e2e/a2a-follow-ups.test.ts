@@ -3,8 +3,12 @@ import { Role, TaskState } from "@a2a-js/sdk";
 import { ClientFactory } from "@a2a-js/sdk/client";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { a2aTask, message, thread } from "../apps/hub/src/db/schema.js";
+import { a2aTask, membership, message, thread } from "../apps/hub/src/db/schema.js";
+import { createExternalAgent } from "../apps/hub/src/domain/a2a.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
+import { createTeam } from "../apps/hub/src/domain/teams.js";
+import { newId } from "../apps/hub/src/ids.js";
+import { principalForToken } from "../apps/hub/src/principal.js";
 import { call, code, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
@@ -146,11 +150,23 @@ it("mutes a context's thread after 5 agent messages in a row, until a person wri
   expect(await asks("Thanks, by when?")).toBe(TaskState.TASK_STATE_SUBMITTED);
 });
 
-// A context id is the caller's to choose: another external agent repeating it, or a fresh one, opens a thread of its own.
-it("never links a new task to another agent's context, nor a fresh context to an earlier thread", async () => {
+// A context id is the caller's to choose: an external agent of another team or of this one repeating it, or a fresh one,
+// opens a thread of its own.
+it("never links a new task to another team's or agent's context, nor a fresh context to an earlier thread", async () => {
   const client = await new ClientFactory().createFromUrl(hub.url);
   const sent = await client.sendMessage(ask("Do you support SSO?"), auth());
   const contextId = "status" in sent ? sent.contextId : "";
+  const lea = await principalForToken(hub.db, team.lea.token);
+  if (!lea) throw new Error("setup");
+  const otherTeam = await createTeam(hub.db, "Other team");
+  await hub.db
+    .insert(membership)
+    .values({ id: newId("mem"), teamId: otherTeam, userId: team.malik.userId, role: "member", handle: "malik" });
+  const elsewhere = await createExternalAgent(hub.db, { ...lea, teamId: otherTeam }, "Their partner");
+  const fromElsewhere = ask("Do you support SAML?");
+  fromElsewhere.message.contextId = contextId;
+  const away = await client.sendMessage(fromElsewhere, { serviceParameters: { Authorization: `Bearer ${elsewhere.token}` } });
+  expect("status" in away && away.status?.state).toBe(TaskState.TASK_STATE_SUBMITTED);
   const res = await consolePost(hub.url, team.lea.cookie, "/console/agents/a2a", { name: "Other partner" });
   const otherToken = (await res.text()).match(/ctgh_[A-Za-z0-9_-]+/)?.[0] ?? "";
   const theirs = ask("Do you support SCIM?");
@@ -162,7 +178,7 @@ it("never links a new task to another agent's context, nor a fresh context to an
   await client.sendMessage(fresh, auth());
 
   const [q1] = await hub.db.select().from(message).where(eq(message.body, "Do you support SSO?"));
-  for (const body of ["Do you support SCIM?", "Do you support passkeys?"]) {
+  for (const body of ["Do you support SAML?", "Do you support SCIM?", "Do you support passkeys?"]) {
     const [q] = await hub.db.select().from(message).where(eq(message.body, body));
     expect(q?.replyTo).toBeNull();
     expect(q?.threadId).not.toBe(q1?.threadId);
