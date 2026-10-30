@@ -25,7 +25,6 @@ const FR: Record<string, string> = {
   "No delegate session. A member starts one with codetgh start --accept-requests-from @handle.":
     "Aucune session déléguée. Un membre en lance une avec codetgh start --accept-requests-from @pseudo.",
   "Turn off": "Couper",
-  "Permission prompts are off in this session": "Les demandes de permission sont désactivées dans cette session",
   "Project id": "Identifiant du projet",
   "Remote Control running": "Remote Control en marche",
   "Remote Control stopped": "Remote Control arrêté",

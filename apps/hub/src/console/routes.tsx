@@ -119,6 +119,7 @@ import {
   AuditLede,
   AuditTable,
   ClaimsTable,
+  fill,
   MemoryDecide,
   MemoryDetail,
   MemoryHead,
@@ -151,19 +152,7 @@ import {
   TokenForm,
   Tokens,
 } from "./team.js";
-import {
-  ALERT_STATUS,
-  ALERT_TITLE,
-  AlertText,
-  Conversation,
-  fill,
-  Handles,
-  lanesOf,
-  MutedPill,
-  Streak,
-  shortId,
-  threadName,
-} from "./threads.js";
+import { ALERT_STATUS, ALERT_TITLE, AlertText, Conversation, Handles, lanesOf, MutedPill, Streak, shortId, threadName } from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
