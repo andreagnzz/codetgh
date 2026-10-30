@@ -13,8 +13,11 @@ test.afterEach(() => hub.stop());
 test("join the team: invitation, account, token, agent online", async ({ page, browser }) => {
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/members`);
+  // The invitation form waits behind its button in the page header.
+  await page.locator("summary", { hasText: "Invite a member" }).click();
   await page.getByLabel("Email").fill("nina@acme.test");
-  await page.getByRole("button", { name: "Invite" }).click();
+  // Exact: with no invitation pending, the empty state's "Copy the invite command" also holds the word.
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
   const link = (await page.locator("#invite-result pre").textContent())?.trim() ?? "";
   expect(link).toContain("/invite/");
 
@@ -35,7 +38,7 @@ test("join the team: invitation, account, token, agent online", async ({ page, b
   await startSession(hub.url, token, "nina-first-session");
   await page.goto(`${hub.url}/console`);
   await expect(page.locator(".people")).toContainText("Nina");
-  await expect(page.locator(".people")).toContainText("online");
+  await expect(page.locator(".people")).toContainText("Online");
 });
 
 test("handle a suspicious message: escaped text, quarantine the sender", async ({ page }) => {
@@ -50,14 +53,19 @@ test("handle a suspicious message: escaped text, quarantine the sender", async (
   await sam.close();
 
   await signIn(page, hub.url, team.lea);
-  await expect(page.getByText("instruction_like")).toBeVisible();
+  await expect(page.getByText("looks like an instruction")).toBeVisible();
   await page.goto(`${hub.url}/console/alerts`);
   await expect(page.getByText("<script>rm -rf</script>", { exact: false })).toBeVisible();
   expect(await page.locator("script:not([src])").count()).toBe(0);
+  // A rarer decision, in the row's menu; quarantining asks first, and its dialog runs it.
+  await page.locator('summary[aria-label="More decisions on this alert: Looks like an instruction, Sam"]').click();
+  await page.getByRole("button", { name: "Quarantine sender…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Quarantine Sam's sessions?" });
+  await expect(dialog).toContainText("Only an admin lifts it.");
   // The action answers HX-Refresh: wait for that reload, or the next goto races it (ERR_ABORTED).
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Quarantine sender" }).click()]);
+  await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Quarantine sender", exact: true }).click()]);
   await page.goto(`${hub.url}/console/agents`);
-  await expect(page.locator("table")).toContainText("quarantined");
+  await expect(page.locator("table")).toContainText("Quarantined");
 });
 
 test("remove a member: their console session ends at once", async ({ page, browser }) => {
@@ -66,7 +74,12 @@ test("remove a member: their console session ends at once", async ({ page, brows
 
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/members`);
-  await page.getByRole("row", { name: /Malik/ }).getByRole("button", { name: "Revoke" }).click();
+  // Revoking access waits in the person's menu and asks first; the dialog's button runs it.
+  await page.locator('summary[aria-label="Actions for Malik"]').click();
+  await page.getByRole("button", { name: "Revoke access for Malik…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Revoke Malik's access?" });
+  await expect(dialog).toContainText("They're signed out at once");
+  await Promise.all([page.waitForEvent("load"), dialog.getByRole("button", { name: "Revoke access", exact: true }).click()]);
   await expect(page.getByRole("row", { name: /Malik/ })).toHaveCount(0);
 
   await malik.goto(`${hub.url}/console/tokens`);
@@ -105,7 +118,7 @@ test("validate a decision: proposed by an agent, accepted by a human, in the nex
   await sam.close();
 
   await signIn(page, hub.url, team.lea);
-  await page.getByRole("link", { name: /Team memory to validate: 1/ }).click();
+  await page.getByRole("link", { name: /1 memory proposal waits for a decision/ }).click();
   await page.getByRole("link", { name: "Dates in ISO 8601" }).click();
   await expect(page.getByText("Every API returns ISO 8601 dates.")).toBeVisible();
   await page.getByLabel("Note").fill("agreed in standup");

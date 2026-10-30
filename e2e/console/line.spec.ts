@@ -27,7 +27,7 @@ test("only a message that arrives live traces its wire, and it is announced poli
   await send("second");
   await expect(page.locator(".wire-row")).toHaveCount(2);
   await expect(page.locator(".wire-row.fresh")).toHaveCount(1);
-  await expect(page.locator("#line-announce")).toHaveText(/New message: Sam \(agent\) → @lea/);
+  await expect(page.locator("#line-announce")).toHaveText(/New message: Sam's agent → @lea/);
   await expect(page.locator("#line-announce")).toHaveAttribute("aria-live", "polite");
   expect(await page.locator(".wire-row.fresh .link").evaluate((el) => getComputedStyle(el).animationName)).toBe("trace");
 });
@@ -47,7 +47,7 @@ test("a refused action shows its reason under the form; the skip link comes firs
   await page.goto(`${hub.url}/console/me`);
   await page.getByLabel("Type erase to confirm").fill("nope");
   await page.getByRole("button", { name: "Erase my data" }).click();
-  await expect(page.locator(".field-error")).toHaveText("type erase to confirm");
+  await expect(page.locator(".field-error")).toHaveText("Nothing was erased. Type erase in the box to confirm.");
   await expect(page.locator(".field-error")).toHaveAttribute("role", "alert");
 });
 

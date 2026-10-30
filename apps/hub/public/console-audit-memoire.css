@@ -1,21 +1,501 @@
 /* Batch 6, audit, memory, claims and tasks (refonte/audit-memoire). Only that batch edits this file; the tokens, base and
-   components are in console.css. Until it restyles its screens, the rules below keep today's memory diff and status links. */
-.add {
-  background: var(--success-soft);
+   components are in console.css. Every rule is scoped to this batch's classes (rec-, audit-, memory-, claim-, task-), since
+   each batch's stylesheet loads on every page. */
+
+/* The page's one line of context, in the header under the title. */
+.rec-lede {
+  margin: 0;
 }
-.del {
-  text-decoration: line-through;
+
+/* A cell on two lines: what a person reads, then what identifies it, in a caption. */
+.rec-main,
+.rec-sub {
+  display: block;
 }
-main > nav:not([class]) {
+.rec-sub {
+  margin-top: var(--sp-1);
+}
+/* A machine key or a short id: mono, muted, no tint (it is not a value to copy, a chip is). */
+.rec-key,
+:where(.meta) > .rec-key {
+  padding: 0;
+  background: none;
+  color: var(--text-muted);
+  font: 400 var(--fs-caption) / 16px var(--mono);
+}
+/* A session label in a cell keeps the column narrow: cut, its full text on hover and for screen readers. From 1024 px the
+   columns have the room for a usual label (malik@fix/invoice-rounding) whole; stacked on a phone, it takes the cell's width. */
+:is(.rec-main, .rec-sub) > .chip {
+  max-width: 12rem;
+}
+@media (min-width: 1024px) {
+  :is(.rec-main, .rec-sub) > .chip {
+    max-width: 16rem;
+  }
+}
+@media (max-width: 639px) {
+  :is(.rec-main, .rec-sub) > .chip {
+    max-width: 100%;
+  }
+}
+/* A key breaks after its dots only; a short id, its start and end around an ellipsis, never. */
+.rec-key {
+  overflow-wrap: normal;
+}
+.rec-id {
+  white-space: nowrap;
+}
+/* A missing value says so, quietly. */
+.rec-none {
+  color: var(--text-muted);
+}
+/* Text a person or an agent wrote keeps its line breaks and wraps anywhere rather than pushing the page. */
+.rec-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+p.rec-text {
+  line-height: 22px;
+}
+/* A time that leads its cell reads as text; the relative time under it stays a caption. */
+.rec-main > time {
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 20px;
+}
+.rec-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* Detail pages (a task, a memory item): the properties first for a screen reader; a column on the right from 1280 px,
+   a wrapping row above the text under it. */
+.rec-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "props" "body";
+  gap: var(--sp-6);
+}
+.rec-props {
+  grid-area: props;
+  min-width: 0;
+}
+.rec-body {
+  grid-area: body;
+  min-width: 0;
+}
+.rec-props dl {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 var(--sp-6);
-  margin: 0 0 var(--sp-6);
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
 }
-main > nav:not([class]) a {
+.rec-props dl > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.rec-props dt {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.rec-props dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.rec-props dd > * {
+  min-width: 0;
+  max-width: 100%;
+}
+/* A link in a property is a target of 24 px or more. */
+.rec-props dd > a {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  min-height: 40px;
+  min-height: 24px;
+}
+.rec-props dd > .rec-sub {
+  margin: 0;
+  flex-basis: 100%;
+}
+.rec-props time {
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 20px;
+}
+.rec-body > section:not(.panel) > h2 {
+  margin-top: var(--sp-8);
+}
+.rec-body > h2:first-child,
+.rec-body > .banner:first-child + h2 {
+  margin-top: 0;
+}
+.rec-body > .panel {
+  margin-top: var(--sp-8);
+}
+/* A note a person left with a decision: quoted, with the rule a quote carries. */
+.rec-note {
+  max-width: var(--measure);
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Who did it in a timeline: the person, then the session when their agent did. */
+.rec-who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.rec-who > strong {
+  font-weight: 500;
+}
+@media (min-width: 1280px) {
+  .rec-detail {
+    grid-template-columns: minmax(0, 1fr) 272px;
+    grid-template-areas: "body props";
+    column-gap: var(--sp-8);
+    align-items: start;
+  }
+  .rec-props dl {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--sp-4);
+    padding: 0 0 0 var(--sp-6);
+    border-bottom: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+
+/* Audit log. The event's number opens its hash and the previous one, on the floating layer: the chain stays on the page
+   without widening the table. */
+.audit-log th:first-child,
+.audit-log td:first-child {
+  width: 1%;
+}
+.audit-log .chip {
+  max-width: 9rem;
+}
+/* How it came in, on one line: REST API, Console. */
+.audit-log td:nth-child(4) {
+  white-space: nowrap;
+}
+@media (min-width: 1280px) {
+  .audit-log .chip {
+    max-width: 14rem;
+  }
+}
+/* A refusal of Verify chain shows under the header's two buttons, never squeezing them. */
+.page-actions:has(> [hx-post="/console/audit/verify"]) {
+  flex-wrap: wrap;
+}
+.page-actions:has(> [hx-post="/console/audit/verify"]) > .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+@media (min-width: 640px) {
+  .page-actions:has(> [hx-post="/console/audit/verify"]),
+  .page-actions:has(> [hx-post="/console/audit/verify"]) > .field-error {
+    justify-content: flex-end;
+  }
+}
+details.audit-hash > summary {
+  width: auto;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+details.audit-hash > summary .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+details.audit-hash[open] > summary .icon {
+  transform: rotate(180deg);
+}
+.audit-hash .pop {
+  left: 0;
+  right: auto;
+  width: 26rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  white-space: normal;
+}
+.audit-hash dl {
+  margin: 0;
+}
+.audit-hash dt {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.audit-hash dd {
+  margin: var(--sp-1) 0 var(--sp-3);
+}
+.audit-hash dd:last-child {
+  margin-bottom: 0;
+}
+.audit-hash dd code {
+  padding: 0;
+  background: none;
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+/* Under 640 px each event is a record of three lines: what happened and its number; who, from where and when; on what. The
+   keys, the ids and the relative time stay on wider screens and in the export. */
+@media (max-width: 639px) {
+  .audit-log tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    padding: var(--sp-2) 0;
+  }
+  /* The end of the first line. */
+  .audit-log tr::after {
+    content: "";
+    order: 2;
+    flex-basis: 100%;
+  }
+  .audit-log td,
+  .audit-log td.primary-cell {
+    display: block;
+    padding: 0;
+  }
+  .audit-log td::before {
+    content: none;
+  }
+  .audit-log td > .cell {
+    display: inline;
+  }
+  .audit-log :is(.rec-main, .rec-sub) {
+    display: inline;
+  }
+  .audit-log td:nth-child(5) {
+    order: 0;
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+  }
+  .audit-log td:nth-child(1) {
+    order: 1;
+    width: auto;
+    margin-left: var(--sp-2);
+  }
+  details.audit-hash > summary {
+    min-height: 24px;
+  }
+  /* The number sits on the right: its hashes open towards the left. */
+  .audit-hash .pop {
+    left: auto;
+    right: 0;
+  }
+  .audit-log td:nth-child(3) {
+    order: 3;
+    min-width: 0;
+    margin-top: var(--sp-1);
+  }
+  .audit-log td:nth-child(4) {
+    order: 4;
+  }
+  .audit-log td:nth-child(2) {
+    order: 5;
+  }
+  .audit-log td:is(:nth-child(4), :nth-child(2)) {
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+    line-height: 16px;
+    white-space: nowrap;
+  }
+  .audit-log td:is(:nth-child(4), :nth-child(2))::before {
+    content: "\00a0·\00a0";
+  }
+  .audit-log td:nth-child(2) .rec-main > time {
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+  .audit-log td:nth-child(6) {
+    order: 6;
+    flex-basis: 100%;
+    min-width: 0;
+    margin-top: var(--sp-1);
+  }
+  /* Read on the wider screens: the key under the action, "Person" under a person, the id under a named object, the
+     relative time. A session's label stays, after the person. */
+  .audit-log td:is(:nth-child(5), :nth-child(6), :nth-child(2)) .rec-sub,
+  .audit-log td:nth-child(3) .rec-sub:not(:has(.chip)) {
+    display: none;
+  }
+  .audit-log td:nth-child(3) .rec-sub {
+    margin-left: var(--sp-1);
+  }
+  .audit-log .chip {
+    max-width: 100%;
+  }
+}
+
+/* Team memory: a new version as changes, line by line. The sign says what changed, the tint repeats it. */
+.memory-diff {
+  max-width: 48rem;
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-radius: var(--r-md);
+  background: var(--surface-inset);
+  line-height: 20px;
+}
+.memory-diff > :is(ins, del, span) {
+  position: relative;
+  display: block;
+  min-height: 20px;
+  padding: 0 var(--sp-4) 0 var(--sp-8);
+  text-decoration: none;
+}
+.memory-diff > ::before {
+  position: absolute;
+  left: var(--sp-3);
+  font-weight: 600;
+}
+.memory-diff > ins {
+  background: var(--success-soft);
+}
+.memory-diff > ins::before {
+  content: "+";
+  color: var(--success);
+}
+.memory-diff > del {
+  background: var(--error-soft);
+}
+.memory-diff > del::before {
+  content: "\2212";
+  color: var(--error);
+}
+
+/* Claims: the scope as typed, breaking after its slashes, inside a name only when one is longer than the column; fixed column
+   widths, so a long path or session never squeezes the others. */
+.claim-scope {
+  overflow-wrap: break-word;
+}
+@media (min-width: 640px) {
+  .claims-log table {
+    table-layout: fixed;
+  }
+  .claims-log th:nth-child(1) {
+    width: 28%;
+  }
+  .claims-log th:nth-child(2) {
+    width: 20%;
+  }
+  /* When it ends, and Release as a text action: narrow columns, so the reason has the room. */
+  .claims-log th:nth-child(4) {
+    width: 6rem;
+  }
+  .claims-log th:nth-child(5) {
+    width: 6rem;
+  }
+  .claims-log td {
+    overflow-wrap: break-word;
+  }
+  /* A fixed column knows its width: a session label is cut at it. */
+  .claims-log .chip {
+    max-width: 100%;
+  }
+}
+
+/* Tasks: one table per status, the columns at the same widths from group to group, so a project reads as one board; the
+   column headers show once per project and stay for screen readers in every group. */
+.task-group table {
+  table-layout: fixed;
+}
+.task-group :is(th, td):nth-child(2) {
+  width: 11rem;
+}
+.task-group :is(th, td):nth-child(3) {
+  width: 9rem;
+}
+/* A group's heading starts with its status's glyph, as on the pill: hollow, or filled in the tone of Blocked and Done. */
+.task-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--sp-2);
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  vertical-align: 0.1em;
+}
+.task-status[data-tone="danger"]::before {
+  border-color: var(--error);
+  background: var(--error);
+}
+.task-status[data-tone="ok"]::before {
+  border-color: var(--success);
+  background: var(--success);
+}
+.task-group .count {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-body);
+}
+.task-group + .task-group thead th {
+  height: 0;
+  padding-block: 0;
+  border: 0;
+  font-size: 0;
+  line-height: 0;
+}
+.task-group + .task-group tbody tr:first-child > td {
+  border-top: 1px solid var(--border-strong);
+}
+.task-group .rec-sub .rec-text {
+  white-space: normal;
+}
+@media (max-width: 639px) {
+  .task-group :is(th, td):nth-child(n) {
+    width: auto;
+  }
+  .task-group + .task-group tbody tr:first-child > td {
+    border-top: 0;
+  }
+}
+
+/* New task: the page header's button; open, the form spans the header under the title. */
+.page-actions:has(> .new-task > details[open]) {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: var(--sp-4);
+}
+.new-task {
+  flex: 1;
+  min-width: 0;
+}
+.new-task > details[open] {
+  margin: 0;
+}
+/* Closed, only its button sits in the header's actions, at the height of the other pages' header buttons. */
+.new-task > details:not([open]) {
+  margin: 0;
+}
+.new-task > details:not([open]) > summary {
+  min-height: 32px;
+  padding-inline: var(--sp-3);
+}
+/* While a decision is sent, only its button turns: the one the click focused; Reject's turns in the dialog. */
+.rec-body form[hx-post$="/decide"][aria-busy="true"] button[type="submit"]:not(:focus)::after {
+  content: none;
+}
+/* In a panel, whose paragraphs are muted, a refusal keeps the error color. */
+.new-task .panel .field-error,
+.rec-body .panel .field-error {
+  color: var(--error);
 }

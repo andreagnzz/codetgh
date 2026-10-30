@@ -32,7 +32,6 @@ describe("pages", () => {
 
   it("shows a full-page error in the public layout, with its status, the hub's reason and a way back", async () => {
     for (const [path, cookie, status, title] of [
-      ["/console/threads/thr_unknown", team.lea.cookie, 404, "This page doesn't exist."],
       ["/console/tasks/tsk_unknown", team.lea.cookie, 404, "This page doesn't exist."],
       ["/console/members", team.sam.cookie, 403, "You can't open this page."],
       ["/console/memory?status=bogus", team.lea.cookie, 400, "This request isn't valid."],
@@ -47,8 +46,13 @@ describe("pages", () => {
       expect(html, path).toContain('href="/console"');
     }
     // What to do is the body text; the hub's own reason follows as a muted caption.
+    expect(await (await get("/console/tasks/tsk_unknown", { cookie: team.lea.cookie })).text()).toContain(
+      '<p>Check the link, or start again from the overview.</p><p class="meta">The hub said: task not found.</p>',
+    );
+    // An unknown thread has its own page: what to do, and the way back to the threads list.
     const thread = await (await get("/console/threads/thr_unknown", { cookie: team.lea.cookie })).text();
-    expect(thread).toContain('<p>Check the link, or start again from the overview.</p><p class="meta">The hub said: thread not found.</p>');
+    expect(thread).toContain("<h1>This thread doesn&#39;t exist.</h1><p>Check the link, or find the thread in the list.</p>");
+    expect(thread).toContain('href="/console/threads"');
   });
 
   it("answers an unknown page opened in a browser with the 404 page, and an API, MCP or htmx client with the bare 404", async () => {

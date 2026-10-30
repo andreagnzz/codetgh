@@ -135,7 +135,7 @@ it("names the recipient of an answer on the activity line instead of its interna
   const [a] = await hub.db.select().from(message).where(eq(message.body, "On the usual box."));
 
   const html = await dashboard(team.lea.cookie);
-  expect(html).toContain(`data-mid="${a?.id}" data-summary="New message: Sam (agent) → @lea"`);
+  expect(html).toContain(`data-mid="${a?.id}" data-summary="New message: Sam&#39;s agent → @lea"`);
   expect(html).not.toMatch(/agent:agt_|user:usr_/);
   await lea.close();
   await sam.close();

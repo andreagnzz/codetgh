@@ -1,15 +1,630 @@
 /* Batch 3, threads, the thread page and alerts (refonte/fils-alertes). Only that batch edits this file; the tokens, base and
-   components are in console.css. Until it restyles its screens, the rules below keep today's markup (the excerpt is also on the
-   overview). */
+   components are in console.css. The excerpt stays for the overview, until batch 2 moves it to its own words. */
 .excerpt {
   font-family: var(--mono);
   font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
-.flag {
-  border: 1px solid currentColor;
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-full);
+
+/* A list page's description, under its title. */
+.page-meta > .lede {
+  margin: 0;
+}
+
+/* Threads: one row per thread, named by its subject or by its kind and people; muted ones say by whom. */
+.thread-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
   font-size: var(--fs-caption);
-  margin-right: var(--sp-1);
+  line-height: 16px;
+}
+/* The short id of a thread that shows no name: mono at the caption's size. */
+.thread-meta code {
+  font-size: 1em;
+}
+.handles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+}
+.handles .more {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  white-space: nowrap;
+}
+/* The agent streak: the count in words, five ticks that repeat it. */
+.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+.ticks > span {
+  width: 4px;
+  height: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 1px;
+}
+.ticks > .on {
+  border-color: var(--text-muted);
+  background: var(--text-muted);
+}
+/* A rule that carries meaning, with its words in it: what is below has had no message for more than a day. */
+.earlier {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-6) 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.earlier::before,
+.earlier::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
+}
+.earlier::before {
+  flex: 0 0 var(--sp-4);
+}
+
+/* A thread: the conversation on its people's lanes; from 1280 px, what the thread is beside it. */
+.thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+}
+.thread > * {
+  min-width: 0;
+}
+.thread > .loading-text,
+.thread > .banner {
+  margin: 0;
+}
+/* Under 1280 px what the thread is folds into lines under its title, above a rule: its people, then its dates. The project is
+   already in the meta line. */
+.thread-props {
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.thread-props dl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+}
+.thread-props dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+}
+.thread-props dl > :first-child {
+  flex-basis: 100%;
+}
+.thread-props .props-project {
+  display: none;
+}
+.thread-props dt {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.thread-props dd {
+  margin: 0;
+}
+.thread-props dd time {
+  color: var(--text);
+}
+@media (min-width: 1280px) {
+  .thread {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    column-gap: var(--sp-12);
+  }
+  .thread > * {
+    grid-column: 1;
+  }
+  .thread > .thread-props {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    position: sticky;
+    top: var(--sp-6);
+    padding: 0 0 0 var(--sp-6);
+    border-bottom: 0;
+    border-left: 1px solid var(--border);
+  }
+  .thread-props dl,
+  .thread-props dl > div,
+  .thread-props .props-project {
+    display: block;
+  }
+  .thread-props dl > div + div {
+    margin-top: var(--sp-4);
+  }
+  .thread-props dt {
+    margin-bottom: var(--sp-1);
+  }
+  .thread-props dd time {
+    font-size: inherit;
+    line-height: inherit;
+  }
+}
+
+/* Lanes: 14 px apart on phones (six at most), from 640 px 32 px, narrowing to 24 px past nine people, so they never take
+   more than 288 px of the column. The count comes from data-lanes (no inline style). */
+.convo {
+  --lanes: 1;
+  --pitch: 14px;
+  --gutter: calc(var(--lanes) * var(--pitch) + var(--sp-3));
+}
+.convo[data-lanes="2"] {
+  --lanes: 2;
+}
+.convo[data-lanes="3"] {
+  --lanes: 3;
+}
+.convo[data-lanes="4"] {
+  --lanes: 4;
+}
+.convo[data-lanes="5"] {
+  --lanes: 5;
+}
+.convo[data-lanes="6"] {
+  --lanes: 6;
+}
+.convo[data-lanes="7"] {
+  --lanes: 7;
+}
+.convo[data-lanes="8"] {
+  --lanes: 8;
+}
+.convo[data-lanes="9"] {
+  --lanes: 9;
+}
+.convo[data-lanes="10"] {
+  --lanes: 10;
+}
+/* The names stay in view while the conversation scrolls. */
+.convo-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.convo-caption {
+  max-width: none;
+  margin: 0;
+  padding-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.convo-names {
+  display: none;
+}
+.convo-svg {
+  display: block;
+  width: calc(var(--lanes) * var(--pitch));
+  overflow: visible;
+}
+.convo-svg.narrow {
+  display: none;
+}
+.convo-svg.heads {
+  height: 24px;
+}
+.convo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.convo-row {
+  position: relative;
+  padding-left: var(--gutter);
+}
+.convo-row > .convo-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+}
+/* A lane is a person: a rule that carries information, so the strong border. The accent belongs to wires between two
+   people and to the sender's mark. */
+.convo-svg .lane {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.convo-svg :is(.link, .caret) {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.convo-svg .link {
+  stroke-dasharray: 1;
+}
+.convo-svg .end {
+  fill: var(--accent);
+}
+.convo-svg.heads .caret {
+  stroke: var(--text-muted);
+}
+/* The one expressive motion of the console: a new message traces its wire from the sender, once, in 300 ms. */
+.fresh .convo-svg .link {
+  transform-box: fill-box;
+  animation: trace 300ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh .convo-svg .link {
+    animation: none;
+  }
+}
+/* A message: who wrote, the session, the recipient, the kind and the priority, then when, on one line from 640 px (on a phone
+   who and when, the rest under them); then what the hub noticed, and the text as written, in reading type, its line breaks
+   kept. */
+.msg {
+  min-width: 0;
+  padding: var(--sp-2) 0 var(--sp-6);
+}
+.convo-row:last-child .msg {
+  padding-bottom: var(--sp-2);
+}
+.msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  max-width: none;
+  margin: 0;
+}
+.msg-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.msg > .msg-head > time {
+  order: 3;
+  margin-left: auto;
+}
+.msg-head > :is(.chip, .msg-to, .msg-kind, .pill) {
+  order: 2;
+}
+@media (max-width: 639px) {
+  .msg > .msg-head > time {
+    order: 0;
+  }
+  .msg-head::after {
+    content: "";
+    order: 1;
+    flex-basis: 100%;
+  }
+}
+.msg-by,
+.msg-to,
+.msg-kind {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.msg-to {
+  overflow-wrap: anywhere;
+}
+.msg-head > .chip {
+  max-width: 16rem;
+}
+.msg-subject {
+  margin: var(--sp-2) 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.msg-body {
+  margin: var(--sp-1) 0 0;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-body.encrypted {
+  color: var(--text-muted);
+}
+/* What the hub noticed in a message: one small alert per flag, its title on its own line. */
+.msg-flags {
+  list-style: none;
+  max-width: var(--measure);
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+}
+.msg-flags li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-inset);
+}
+.msg-flags li + li {
+  margin-top: var(--sp-2);
+}
+.msg-flags li[data-tone="warn"] {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.msg-flags p {
+  margin: 0;
+}
+.flag-title {
+  font-weight: 600;
+}
+.msg-flags .icon {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+.msg-flags :where([data-tone="warn"]) .icon {
+  color: var(--warning);
+}
+.convo-more {
+  margin: 0;
+}
+.convo-more + .convo,
+.convo + .convo-more {
+  margin-top: var(--sp-4);
+}
+.convo-more .button {
+  gap: var(--sp-2);
+}
+/* The reply: under the conversation, after a rule; the page's one primary action. */
+.reply {
+  max-width: 48rem;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--border);
+}
+.reply .field {
+  max-width: none;
+}
+/* The help is a caption: at 12 px the reading measure would hold more than 80 characters. */
+.reply .help {
+  max-width: 29rem;
+}
+.reply textarea {
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+.thread-main > .banner {
+  margin: var(--sp-6) 0 0;
+}
+/* A live refresh that fails: console.js writes why after the thread; it shows above it, where the eye is, with the way to
+   load the page again. */
+.live-reload {
+  display: none;
+}
+main:has(> .thread + .field-error) {
+  display: flex;
+  flex-direction: column;
+}
+main:has(> .thread + .field-error) > .page-head {
+  order: -2;
+}
+main > .thread + .field-error {
+  order: -1;
+  max-width: none;
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--error);
+  border-radius: var(--r-md);
+  background: var(--error-soft);
+}
+main:has(> .thread + .field-error) > .live-reload {
+  display: block;
+  order: -1;
+  margin: 0 0 var(--sp-6);
+}
+.live-reload a {
+  font-weight: 500;
+}
+
+/* Phones: the six people seen first get the lanes, the others share the last one; a caption names them. */
+@media (max-width: 639px) {
+  .convo[data-narrow="6"] {
+    --lanes: 6;
+  }
+  .convo[data-narrow] .convo-svg.wide {
+    display: none;
+  }
+  .convo[data-narrow] .convo-svg.narrow {
+    display: block;
+  }
+}
+/* From 640 px each handle is printed above its caret: on one row when every name fits its lane, else taking turns on two
+   rows (three past six people), so a name gets the width of two lanes (three) before it is cut. */
+@media (min-width: 640px) {
+  .convo {
+    --pitch: clamp(24px, 288px / var(--lanes), 32px);
+  }
+  .convo-caption {
+    display: none;
+  }
+  .convo-names {
+    --rows: 2;
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding-top: var(--sp-1);
+    color: var(--text-muted);
+    font: var(--fs-caption) / 16px var(--mono);
+  }
+  .convo-names[data-rows="1"] {
+    --rows: 1;
+  }
+  .convo-names[data-rows="3"] {
+    --rows: 3;
+  }
+  .convo-names-row {
+    display: flex;
+    margin-left: calc((0.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .convo-names-row + .convo-names-row {
+    margin-left: calc((1.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .convo-names-row + .convo-names-row + .convo-names-row {
+    margin-left: calc((2.5 - var(--rows) / 2) * var(--pitch));
+  }
+  .convo-name {
+    flex: none;
+    width: calc(var(--rows) * var(--pitch));
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Wider than its lane, the first name starts over the first lane instead of spilling left of the column. */
+  .convo-names:not([data-rows="1"]) > .convo-names-row:first-child > .convo-name:first-child {
+    padding-left: calc((var(--rows) / 2 - 0.5) * var(--pitch));
+    overflow: visible;
+    text-align: left;
+  }
+}
+
+/* Alerts: what was flagged, in words, then the excerpt quoted as the agent wrote it, or the hub's note. */
+.alert-kind {
+  margin: 0;
+  font-weight: 500;
+}
+.alert-from {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+/* Three lines at most: the thread holds the whole message. */
+.alert-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A decided alert reads quieter than one that still waits for a decision. */
+.alert-text.decided :is(.alert-kind, .alert-excerpt, .alert-note) {
+  color: var(--text-muted);
+}
+.alert-note {
+  margin: var(--sp-1) 0 0;
+  overflow-wrap: anywhere;
+}
+.alert-note code {
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-xs);
+  background: var(--surface-inset);
+}
+.alert-link {
+  margin: var(--sp-1) 0 0;
+}
+.alert-link a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+/* Under the link to someone else's direct thread: opening it is audited. */
+.alert-audit {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 16px;
+}
+.alerts-list .pill + .meta {
+  display: block;
+  margin-top: var(--sp-1);
+}
+
+/* Both lists keep their columns from one table to the next (one per project, then the earlier ones), so the threads show
+   their header row once: a later table keeps its header for screen readers, at no height. Under 640 px a record is its name
+   and what it is, then its values on one line, and its actions: no label where the value says what it is. */
+@media (min-width: 640px) {
+  .threads-list table,
+  .alerts-list table {
+    table-layout: fixed;
+  }
+  .threads-list th:nth-child(2) {
+    width: 30%;
+  }
+  .threads-list th:nth-child(3) {
+    width: 8rem;
+  }
+  .threads-list.later th {
+    padding-block: 0;
+    border: 0;
+    line-height: 0;
+    clip-path: inset(50%);
+  }
+  .threads-list.later th .icon {
+    display: none;
+  }
+  .alerts-list th:nth-child(2) {
+    width: 6.5rem;
+  }
+  .alerts-list th:nth-child(3) {
+    width: 9.5rem;
+  }
+  .alerts-list th:nth-child(4) {
+    width: 8.5rem;
+  }
+}
+@media (max-width: 639px) {
+  :is(.threads-list, .alerts-list) tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-3) 0;
+  }
+  :is(.threads-list, .alerts-list) td {
+    display: block;
+    padding: 0;
+  }
+  :is(.threads-list, .alerts-list) td::before {
+    content: none;
+  }
+  :is(.threads-list, .alerts-list) td:is(.primary-cell, .actions-cell) {
+    flex: 1 0 100%;
+  }
+  :is(.threads-list, .alerts-list) td.primary-cell {
+    padding-bottom: var(--sp-1);
+  }
+  .threads-list td.num {
+    margin-left: auto;
+  }
+  .alerts-list .pill + .meta {
+    display: inline;
+    margin: 0 0 0 var(--sp-2);
+  }
+  .alerts-list td.actions-cell {
+    padding-top: var(--sp-1);
+  }
 }

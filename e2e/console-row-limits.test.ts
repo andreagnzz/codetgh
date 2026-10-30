@@ -83,7 +83,7 @@ it("filters agents and project sessions by viewer and project before the row lim
 
 it("counts every task in the status headings and says when the board is cut", async () => {
   const html = await get("/console/tasks?project=");
-  expect(html).toContain("todo (210)");
+  expect(html).toContain('To do <span class="count">210</span>');
   expect(html).toContain("Showing 200 of 210");
 });
 
@@ -99,14 +99,15 @@ it("pages alerts and memory with an Older link, and counts the claims it cuts", 
   expect(await get("/console/claims")).toContain("Showing 200 of 210");
 });
 
-it("counts every open alert on the dashboard and lists five of them", async () => {
+it("counts every open alert on the overview and names the newest", async () => {
   const html = await get("/console");
-  expect(html).toContain("Review alerts (55)");
-  expect(html.split('class="excerpt"')).toHaveLength(6);
+  expect(html).toContain("55\u00a0open alerts.");
+  expect(html.split("Newest:")).toHaveLength(2);
 });
 
 it("shows a guest their own agents on the dashboard however many the team runs", async () => {
   await hub.db.update(membership).set({ role: "guest" }).where(eq(membership.userId, team.sam.userId));
   const html = await get("/console", team.sam.cookie);
-  expect(html.slice(html.indexOf('id="presence-h"'), html.indexOf('id="todo-h"'))).toContain("Sam");
+  const start = html.indexOf('id="presence-h"');
+  expect(html.slice(start, html.indexOf("</section>", start))).toContain("Sam");
 });

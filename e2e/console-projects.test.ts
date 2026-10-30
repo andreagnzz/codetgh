@@ -19,7 +19,9 @@ const page = async (cookie: string, lang = "en") =>
 describe("console: sessions by project", () => {
   it("says what to do when no repository is linked yet", async () => {
     await hub.db.delete(project);
-    expect(await page(team.sam.cookie)).toContain("No project yet. A project appears when a member runs codetgh start in a repository");
+    const empty = await page(team.sam.cookie);
+    expect(empty).toContain("No projects yet.");
+    expect(empty).toContain("A project appears when a member starts a session with <code>codetgh start</code> in a team repository");
     // Linked again, as codetgh project new would, for the tests below.
     for (const repo of ["acme/webapp", "acme/billing"])
       await hub.db.insert(project).values({
@@ -46,7 +48,7 @@ describe("console: sessions by project", () => {
     expect(html).toContain("feat/login");
     expect(html).toContain("Malik");
     expect(html).toContain("fix/invoice");
-    expect(html).toMatch(/online/);
+    expect(html).toMatch(/Online/);
     // Sam is a plain member: still sees teammates' sessions on this page.
     expect(html).not.toContain("No project yet");
   });
@@ -70,7 +72,9 @@ describe("console: sessions outside a project", () => {
     const html = await page(team.sam.cookie);
     const loose = section(html, "none");
     expect(loose).toContain("Sessions outside a project");
-    expect(loose).toContain("Start claude inside the project&#39;s repository folder to link the session.");
+    expect(loose).toContain(
+      "Start <code>claude</code> inside the project&#39;s repository folder to link a session, or attach one to a project here.",
+    );
     expect(loose).toContain("sam@scratch");
     expect(loose).not.toContain("sam@cli");
     expect(loose).not.toContain("feat/login");

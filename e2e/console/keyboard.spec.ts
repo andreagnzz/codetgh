@@ -37,6 +37,16 @@ const tab = async (page: Page) => {
   expect(f.width, f.text).toBe("2px");
   return f.text;
 };
+// Escape hides the dialog and gives the focus back at once, but its close event, on which console.js forgets the request the
+// dialog held, comes with the next frame: a key pressed before it opens a confirmation that this late event then empties.
+const escapeDialog = async (page: Page) => {
+  const closed = await page.locator("#confirm").evaluateHandle((d) => ({
+    done: new Promise<void>((resolve) => d.addEventListener("close", () => resolve(), { once: true })),
+  }));
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#confirm")).toBeHidden();
+  await closed.evaluate((c) => c.done);
+};
 
 for (const scheme of ["light", "dark"] as const)
   test(`wide screen, ${scheme}: skip link, logo, the navigation in order, then the account menu`, async ({ page }) => {
@@ -113,7 +123,7 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Sessions already open are not closed.");
   expect((await focused(page)).text).toBe("Cancel");
-  await page.keyboard.press("Escape");
+  await escapeDialog(page);
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
 
@@ -150,7 +160,7 @@ test("a form's button can ask first with its own words; confirming sends that bu
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("It stays under Rejected with your note.");
   expect((await focused(page)).text).toBe("Cancel");
-  await page.keyboard.press("Escape");
+  await escapeDialog(page);
   await expect(reject).toBeFocused();
 
   await page.keyboard.press("Enter");
@@ -227,6 +237,11 @@ test("a table wider than its frame is a named stop whose arrows scroll it; one t
   await signIn(page, hub.url, team.lea);
   await page.goto(`${hub.url}/console/audit`);
   const frame = page.locator(".table-wrap").first();
+  // The audit log fits its frame at 768 px now: made wider than it, it stands for any table that does not.
+  await frame.evaluate((wrap) => {
+    wrap.querySelector("table")?.style.setProperty("min-width", "1400px");
+    dispatchEvent(new Event("resize"));
+  });
   await expect(frame).toHaveAttribute("role", "region");
   await expect(frame).toHaveAttribute("tabindex", "0");
   await expect(frame).toHaveAccessibleName(/\S/);
