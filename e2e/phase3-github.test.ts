@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auditEvent, membership, message, project, task, thread } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
 import { call, callOnce, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, githubBridge } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -17,9 +17,7 @@ beforeAll(async () => {
   hub = await startHub({ limiter: new RateLimiter(() => (now += 3_600_000)) });
   team = await hub.seed();
   // The admin creates the team's webhook in the console and pastes the URL and secret into their GitHub App.
-  const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
-  hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-  SECRET = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+  ({ hookUrl, secret: SECRET } = await githubBridge(hub.url, team.lea.cookie));
   // Léa works in the repository: the hook registered its project under the origin's fingerprint.
   await startSession(hub.url, team.lea.token, "lea-gh", { repo: repoFingerprint("git@github.com:Acme/WebApp.git") });
 });

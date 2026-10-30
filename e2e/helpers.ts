@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -106,6 +107,25 @@ export async function consolePost(url: string, cookie: string, path: string, for
     headers: { cookie, "X-CSRF-Token": await csrfToken(url, cookie), "content-type": "application/x-www-form-urlencoded", origin: url },
     body: new URLSearchParams(form).toString(),
   });
+}
+
+// Turns on the team's GitHub webhook as its admin does in the console; deliver() posts a pull_request event signed with its secret.
+export async function githubBridge(url: string, cookie: string) {
+  const page = await (await consolePost(url, cookie, "/console/settings/github")).text();
+  const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
+  const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+  const deliver = (body: string, headers: Record<string, string> = {}) =>
+    fetch(hookUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "pull_request",
+        ...headers,
+        "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      },
+      body,
+    });
+  return { hookUrl, secret, deliver };
 }
 
 // Plays the person in the browser: waits for the code the CLI prints, then approves it in the console.

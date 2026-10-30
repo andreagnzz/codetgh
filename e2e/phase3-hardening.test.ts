@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { newKeyPair, publicKeyOf } from "@codetgh/shared/e2e";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { and, eq } from "drizzle-orm";
@@ -9,7 +8,7 @@ import { eraseMe, exportMyData } from "../apps/hub/src/domain/privacy.js";
 import { createTeam } from "../apps/hub/src/domain/teams.js";
 import { principalForToken } from "../apps/hub/src/principal.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, githubBridge } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -40,9 +39,7 @@ describe("phase 3 security review fixes", () => {
   });
 
   it("relays a GitHub delivery once, even when it is replayed", async () => {
-    const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
-    const url = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-    const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
+    const bridge = await githubBridge(hub.url, team.lea.cookie);
     await startSession(hub.url, team.lea.token, "lea-hard-gh", { repo: repoFingerprint("git@github.com:acme/api.git") });
     const body = JSON.stringify({
       action: "opened",
@@ -50,17 +47,7 @@ describe("phase 3 security review fixes", () => {
       sender: { login: "octocat" },
       pull_request: { number: 3, title: "Replay me", html_url: "https://github.com/acme/api/pull/3", merged: false },
     });
-    const deliver = () =>
-      fetch(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-github-event": "pull_request",
-          "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
-          "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
-        },
-        body,
-      });
+    const deliver = () => bridge.deliver(body, { "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958" });
     expect((await deliver()).status).toBe(202);
     expect((await deliver()).status).toBe(202);
     const rows = (await hub.db.select().from(message).where(eq(message.teamId, team.teamId))).filter((m) => m.body.includes("Replay me"));

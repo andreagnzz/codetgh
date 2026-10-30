@@ -1,9 +1,8 @@
-import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agent, invitation, membership, team as teamTable, user } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub } from "../apps/hub/test/harness.js";
-import { consolePost } from "./helpers.js";
+import { consolePost, githubBridge } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -94,32 +93,22 @@ describe("members", () => {
   });
 
   it("refuses to revoke a bridge member, so the GitHub webhook keeps working", async () => {
-    const page = await (await consolePost(hub.url, team.lea.cookie, "/console/settings/github")).text();
-    const hookUrl = page.match(/https?:\/\/\S+\/bridges\/github\/[A-Za-z0-9_-]+/)?.[0] ?? "";
-    const secret = page.match(/Webhook secret<\/p>[\s\S]*?<code translate="no">([A-Za-z0-9_-]{20,})<\/code>/)?.[1] ?? "";
-    const deliver = () => {
-      const body = JSON.stringify({
-        action: "opened",
-        repository: { full_name: "acme/webapp", html_url: "https://github.com/acme/webapp" },
-        sender: { login: "octocat" },
-        pull_request: {
-          number: 9,
-          title: "Add pages",
-          html_url: "https://github.com/acme/webapp/pull/9",
-          merged: false,
-          head: { ref: "feat/p", sha: "abc1234" },
-        },
-      });
-      return fetch(hookUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-github-event": "pull_request",
-          "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
-        },
-        body,
-      });
-    };
+    const github = await githubBridge(hub.url, team.lea.cookie);
+    const deliver = () =>
+      github.deliver(
+        JSON.stringify({
+          action: "opened",
+          repository: { full_name: "acme/webapp", html_url: "https://github.com/acme/webapp" },
+          sender: { login: "octocat" },
+          pull_request: {
+            number: 9,
+            title: "Add pages",
+            html_url: "https://github.com/acme/webapp/pull/9",
+            merged: false,
+            head: { ref: "feat/p", sha: "abc1234" },
+          },
+        }),
+      );
     expect((await deliver()).status).toBe(202);
     const [bridge] = await hub.db.select().from(membership).where(eq(membership.handle, "bridge-github"));
     expect((await consolePost(hub.url, team.lea.cookie, `/console/members/${bridge?.id}/revoke`)).status).toBe(403);
