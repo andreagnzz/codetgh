@@ -13,7 +13,7 @@ Hardening, as set in `deploy/compose.yaml`:
 - `cap_drop: ALL` and `no-new-privileges`;
 - memory, CPU and PID limits;
 - pinned images: `node:24.21.0-bookworm-slim` and `postgres:17.11-bookworm`;
-- the only mounts are the `pgdata` volume and, for dumps, `deploy/backups/` on the host (dumps travel through `docker compose exec`, never through a mount).
+- the only mounts are the `pgdata` volume, the hub's `hubstate` volume (the [audit witness](#audit-witness)) and, for dumps, `deploy/backups/` on the host (dumps travel through `docker compose exec`, never through a mount).
 
 ## Exposure
 
@@ -125,8 +125,32 @@ Reading the diff is the point: this step turns files your user can write into fi
   docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db dropdb -U codetgh codetgh
   docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db createdb -U codetgh codetgh
   docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T db pg_restore -U codetgh -d codetgh --no-owner < deploy/backups/<dump>
+  docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm --no-deps hub sh -c 'rm -f /var/lib/codetgh/audit-*.json'
   docker compose -f deploy/compose.yaml --env-file deploy/.env start hub
   ```
+  The `rm` clears the [audit witness](#audit-witness): it holds checkpoints signed after the dump, which the restored chain no longer has, so the hub would sign nothing. The hub starts the witness again on the restored chain.
+
+## Audit witness
+
+The hub keeps the last audit checkpoint it signed for each team (team id, seq, head hash, time) outside the database, in `/var/lib/codetgh/audit-<team id>.json` (`CODETGH_STATE_DIR`, set by the image) on the `hubstate` volume. `docker compose up` creates the volume, owned by the hub's user (1000, `docs/FACTS.md`); the rest of the container stays read-only. Before each checkpoint (every 10 minutes, and on **Verify chain** or an export), the hub checks that the chain in the database still extends that checkpoint, so a database writer cannot rewrite the audit history and have a restarted hub sign it.
+
+What the log and the console say:
+- `audit witness started now: trust on first use of the chain in the database` (warning, once per team): the file was missing, on the first start with the volume or on a new volume. The hub checked the chain as usual and recorded its head; it trusts what the database held at that moment.
+- Alert **audit log not signed: audit chain does not extend the last signed checkpoint (seq N)** (`audit_tamper`, also logged with the team id): the event at seq N is gone or changed, or the chain breaks after it. The database was written outside the hub, or restored from a dump older than seq N. The hub keeps serving but signs no checkpoint for that team, so **Verify chain** and `codetgh audit verify` show the problem.
+- **signed checkpoint N is gone**: checkpoint rows were deleted from the database.
+- **the audit witness file cannot be read**: the file is damaged or unreadable; the hub signs nothing for that team until it is fixed.
+- `CODETGH_STATE_DIR is unset or not writable` at start: no volume (an older `compose.yaml`) or a volume the hub cannot write. The witness then lives in memory and a restart forgets it, as before this feature.
+
+To recover:
+1. Find out why. After a restore you ran on purpose, this is expected (the `rm` in [Restore](#restore) avoids it). Otherwise treat it as an incident: `codetgh backup` to keep the database as it is now, then compare it with an older dump or a saved export (`codetgh audit verify <file>`) to see what changed.
+2. Once the database holds a chain you trust (restored from a good dump, or checked and accepted), delete that team's witness file. The team id is in the alert's log line and in the export's file name:
+   ```
+   docker compose -f deploy/compose.yaml --env-file deploy/.env exec hub ls /var/lib/codetgh
+   docker compose -f deploy/compose.yaml --env-file deploy/.env exec hub rm /var/lib/codetgh/audit-<team id>.json
+   ```
+3. In the console, **Audit log › Verify chain** starts the witness again (trust on first use) and signs. Then **Dismiss** the alert in **Alerts**: a team has one open `audit_tamper` alert at a time, so the next problem raises a new one only after that.
+
+Limit: someone who can write the database and also controls the hub container, the `hubstate` volume or the Docker host can rewrite or delete the witness, and the hub then trusts the chain it finds. `down -v`, or a new volume, also starts it again on first use. Events written since the last checkpoint are only covered by the next one. For a check that does not depend on this machine, keep exports elsewhere and verify them with `codetgh audit verify`.
 
 ## Rotate CODETGH_SECRET
 
@@ -168,7 +192,7 @@ sudo tailscale funnel reset                                        # no more pub
 docker compose -f deploy/compose.yaml --env-file deploy/.env down  # containers stop; the pgdata volume stays
 ```
 
-`down -v` also deletes the database volume. Take a dump first.
+`down -v` also deletes the database volume and the audit witness. Take a dump first.
 
 ## Remote Control launcher (optional, owner only)
 

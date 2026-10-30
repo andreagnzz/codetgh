@@ -285,6 +285,8 @@ Activité. Les hooks disent au hub si la session est dans un tour, sans appel de
 
 Journal d'audit. Chaque écriture ajoute un audit_event chaîné : hash = SHA-256(prev_hash + JSON canonique de l'événement). Toute modification a posteriori casse la chaîne, et la console l'affiche. Le hub signe aussi la tête de chaîne à intervalle régulier (point de contrôle, clé hors base) : sans ces points, qui écrit dans la base pourrait recalculer la chaîne ou en couper la fin.
 
+Témoin d'audit. La base seule ne montre pas qu'on a supprimé des points de contrôle signés puis recalculé la chaîne en dessous : le hub garde donc, hors de la base, le dernier point de contrôle qu'il a signé pour chaque équipe (équipe, seq, hachage de tête, date), un fichier par équipe dans CODETGH_STATE_DIR, écrit dans un fichier temporaire, synchronisé (fsync) puis renommé. Avant de signer, il vérifie que la chaîne en base prolonge ce témoin : l'événement au seq du témoin existe, a ce hachage, et la chaîne se vérifie à partir de lui. Sinon il ne signe rien pour cette équipe, lève l'alerte audit_tamper « audit chain does not extend the last signed checkpoint », la journalise (identifiants et seq, aucun secret) et continue de servir. Sans fichier (premier démarrage, nouveau volume), il fait les contrôles habituels de la chaîne, enregistre la tête signée et journalise que le témoin commence maintenant (confiance au premier usage) ; un fichier illisible ou mal formé bloque la signature et lève l'alerte. Sans CODETGH_STATE_DIR accessible en écriture (tests, développement), le témoin reste en mémoire, un redémarrage l'oublie, et le hub le dit une fois au démarrage. Limite : qui écrit dans la base et contrôle aussi le conteneur du hub ou son volume peut réécrire le témoin ; les événements écrits depuis le dernier point de contrôle ne sont couverts qu'au suivant.
+
 ## Outils MCP
 
 Le hub expose vingt outils, quelques ressources et trois prompts ; Claude n'en appelle que quelques-uns par session, et chaque réponse reste sous 2 000 tokens par défaut.
@@ -1099,6 +1101,7 @@ pnpm build       hub, CLI, hook.js et plugin
 | CODETGH_SECRET | Clé maîtresse de 32 octets en base64 : signe les cookies de session, chiffre la clé de signature OAuth (table jwks), dérive les jetons CSRF de la console, les secrets des webhooks GitHub, les empreintes des secrets autorisés et, sans CODETGH_AUDIT_KEY, la clé des points de contrôle d'audit ; rotation : docs/DEPLOY.md | Obligatoire |
 | DATABASE_URL | Chaîne de connexion Postgres ; absente, le hub utilise PGlite | PGlite |
 | CODETGH_DATA_DIR | Dossier de PGlite et des pièces jointes | ./data |
+| CODETGH_STATE_DIR | Dossier du témoin d'audit (dernier point de contrôle signé par équipe), hors de la base ; absent ou non accessible en écriture, le témoin reste en mémoire | /var/lib/codetgh dans l'image ; sinon aucun |
 | PORT | Port d'écoute HTTP | 8787 |
 | AUTH_GITHUB_ID, AUTH_GITHUB_SECRET | Connexion GitHub | Aucun |
 | AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET | Connexion Google | Aucun |
@@ -1148,6 +1151,8 @@ services:
     init: true
     read_only: true
     tmpfs: [/tmp]
+    volumes:
+      - hubstate:/var/lib/codetgh
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 768m
@@ -1180,6 +1185,7 @@ services:
       retries: 10
 volumes:
   pgdata:
+  hubstate:
 ```
 
 | Sujet | Règle |
@@ -1189,7 +1195,7 @@ volumes:
 | Sauvegardes | pg_dump quotidien, restauration testée à chaque version ; avec PGlite, copie du dossier data/ hub arrêté |
 | Mises à jour | Version sémantique ; API /v1 stable ; un outil MCP déprécié reste servi pendant deux versions mineures |
 | Secrets | CODETGH_SECRET et mots de passe dans le gestionnaire de secrets de la plateforme, jamais dans l'image ni dans Git ; la rotation de CODETGH_SECRET (docs/DEPLOY.md) oblige à se reconnecter à la console, à recréer les webhooks GitHub et à réautoriser les empreintes ; le connecteur OAuth obtient un nouveau jeton d'accès par son jeton de rafraîchissement, et se reconnecte s'il ne rafraîchit pas ; elle fixe d'abord CODETGH_AUDIT_KEY à la graine dérivée de l'ancien secret : sinon plus aucun point de contrôle d'audit n'est signé ni vérifié |
-| Image | Construction en plusieurs étapes, utilisateur non root, système de fichiers en lecture seule sauf data/ |
+| Image | Construction en plusieurs étapes, utilisateur non root, système de fichiers en lecture seule sauf data/ et le témoin d'audit (/var/lib/codetgh) |
 
 ### Observabilité
 
