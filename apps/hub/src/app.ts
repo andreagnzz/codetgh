@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { accessSync, constants } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requireMcpAuth } from "@better-auth/mcp";
@@ -137,6 +138,15 @@ const LEASE_SWEEP_MS = 60_000;
 const SESSION_SWEEP_MS = 10 * 60_000;
 const PROMPT_BUDGET = 9500;
 
+const writable = (dir: string) => {
+  try {
+    accessSync(dir, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Request lines carry ids, status and latency only: never headers, tokens or message text.
 const defaultLogger = () =>
   pino({
@@ -178,9 +188,16 @@ export function createApp({
   const deps: MessagingDeps = { db, bus, limiter, secret: config.secret };
   // The audit key never touches the database: its own seed, or one derived from the hub secret.
   const auditKey = auditKeyFromSeed(config.auditKey ? Buffer.from(config.auditKey, "base64") : deriveAuditSeed(config.secret));
+  const witness = { dir: config.stateDir && writable(config.stateDir) ? config.stateDir : undefined, log: logger };
+  if (!witness.dir)
+    logger.warn("CODETGH_STATE_DIR is unset or not writable: the last signed audit checkpoint is kept in memory, a restart forgets it");
   const signHeads = async () => {
     try {
-      for (const t of await db.select({ id: team.id }).from(team)) await writeCheckpoint(db, t.id, auditKey).catch(() => {});
+      for (const t of await db.select({ id: team.id }).from(team)) {
+        const r = await writeCheckpoint(db, t.id, auditKey, witness).catch(() => undefined);
+        // Ids and seqs only; the alert in the console says the same.
+        if (r?.status === "refused") logger.error({ team_id: t.id, problem: r.problem }, "audit log not signed");
+      }
     } catch (e) {
       logger.error({ err: (e as Error).name }, "checkpoint failed");
     }
@@ -896,7 +913,7 @@ export function createApp({
     return c.redirect(local, 302);
   });
   app.get("/assets/oauth.js", (c) => c.body(OAUTH_JS, 200, { "content-type": "text/javascript" }));
-  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey, hold, device }));
+  app.route("/", consoleRoutes({ config, db, auth, bus, messaging: deps, mailer, auditKey, witness, hold, device }));
   app.get("/healthz", (c) => c.text("ok"));
 
   // The plugin and the CLI come from the hub itself, so members always get the version their hub speaks.

@@ -264,6 +264,12 @@ A wrapped thread key is anonymous (X25519 to the member's public key, no sender 
 - In the reference deployment (Tailscale 1.104.1), MagicDNS and HTTPS were already on and the `funnel` attribute had to be added. CodeTgh uses `tailscale funnel --bg --https=443 http://127.0.0.1:8787`.
 - `X-Forwarded-For` through Funnel (source read 2026-10-28: [`ipn/ipnlocal/serve.go`](https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go), `addProxyForwardedHeaders`): the proxy sets it with `Header.Set` to the connection's source address, so a value the client sent is replaced, not appended; it also sets `X-Forwarded-Host` and, over TLS, `X-Forwarded-Proto: https`. For a Funnel connection the source is the client (« srcAddr represents the source AddrPort and not that of the ingressPeer »). Not checked on a live host: the address the hub container sees as its socket (the compose network's gateway, through Docker's port publishing).
 
+### A new named volume takes the owner of its mount point (source read 2026-10-30)
+
+- [Volumes](https://docs.docker.com/engine/storage/volumes/): « If you start a container which creates a new volume, and the container has files or directories in the directory to be mounted such as `/app/`, Docker copies the directory's contents into the volume »; `volume-nocopy` turns that off. The page does not say what happens to the directory's owner and mode.
+- Source ([`daemon/container/container_unix.go`](https://github.com/moby/moby/blob/master/daemon/container/container_unix.go), `copyExistingContents`, and [`containerd/continuity` `fs/copy.go`](https://github.com/containerd/continuity/blob/main/fs/copy.go), `copyDirectory`): when the volume is empty, Docker copies the image's directory into it with `fs.CopyDir`, which first sets the volume's root to the directory's mode and `Lchown`s it to the directory's uid and gid, even when the directory holds no file.
+- So `deploy/Dockerfile` makes `/var/lib/codetgh` belong to `node` (1000), and the `hubstate` volume compose mounts there is writable by the hub, which runs as 1000 on a read-only root filesystem. Not checked on a live host (no Docker run for this change).
+
 
 ### Remote Control launcher (2026-10-14, Claude Code 2.1.296, Linux)
 

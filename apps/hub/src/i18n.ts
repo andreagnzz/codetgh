@@ -159,6 +159,11 @@ const FR: Record<string, string> = {
   "Quarantine sender": "Mettre l'expéditeur en quarantaine",
   "No alerts. Messages that look like instructions, or that carry a secret, show up here for an admin to decide.":
     "Aucune alerte. Les messages qui ressemblent à des consignes, ou qui contiennent un secret, arrivent ici pour qu'un admin décide.",
+  // Audit log
+  "No checkpoint was signed: the audit log in the database no longer matches what this hub signed.":
+    "Aucun point de contrôle n'a été signé : le journal d'audit en base ne correspond plus à ce que ce hub a signé.",
+  "Whoever runs the server follows Audit witness in docs/DEPLOY.md to find the cause and recover, then dismisses the alert.":
+    "La personne qui administre le serveur suit « Audit witness » dans docs/DEPLOY.md pour en trouver la cause et reprendre, puis ignore l'alerte.",
   // Threads
   Thread: "Fil",
   Subject: "Sujet",

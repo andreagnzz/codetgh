@@ -1,3 +1,5 @@
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   type AuditRecord,
   type auditKeyFromSeed,
@@ -10,6 +12,8 @@ import {
   verifyAudit,
 } from "@codetgh/shared/audit";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import type { Logger } from "pino";
+import { ulid } from "ulid";
 import type { Db } from "../db/index.js";
 import { alert, auditCheckpoint, auditEvent } from "../db/schema.js";
 import { newId } from "../ids.js";
@@ -80,14 +84,62 @@ export async function appendAudit(tx: Db, input: AuditInput) {
   await tx.insert(auditEvent).values({ ...row, prevHash, hash: eventHash(prevHash, record) });
 }
 
-// Highest checkpoint this process signed per team: the database alone cannot show that signed checkpoints were deleted.
-const lastSigned = new Map<string, number>();
+type Witness = { team_id: string; seq: number; hash: string; at: string };
 
-// Signs the current head when it moved since the last checkpoint, and only on top of a chain that still matches that
-// checkpoint: a hub that signed whatever head it finds would vouch for a log rewritten in the database. Runs on an
-// interval and before each export.
-export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
-  const signed = await db.transaction(async (tx) => {
+// The last checkpoint this hub signed per team, kept out of the database's reach in CODETGH_STATE_DIR: the database alone
+// cannot show that signed checkpoints were deleted or the chain under them rewritten, even after a restart. Without that
+// directory the witness lives in this process, and a restart forgets it.
+export type WitnessStore = { dir?: string; log?: Logger };
+const inMemory = new Map<string, Witness>();
+
+// encodeURIComponent leaves no "/" in the name: a team id read from the database cannot point outside the directory.
+const witnessFile = (dir: string, teamId: string) => join(dir, `audit-${encodeURIComponent(teamId)}.json`);
+
+// null when the file does not exist yet; throws when it cannot be read or does not hold this team's checkpoint.
+async function readWitness(dir: string, teamId: string): Promise<Witness | null> {
+  const text = await readFile(witnessFile(dir, teamId), "utf8").catch((e: NodeJS.ErrnoException) => {
+    if (e.code === "ENOENT") return null;
+    throw e;
+  });
+  if (text === null) return null;
+  const w = JSON.parse(text);
+  if (w?.team_id !== teamId || !Number.isSafeInteger(w.seq) || !/^[0-9a-f]{64}$/.test(w.hash) || typeof w.at !== "string")
+    throw new Error("malformed audit witness");
+  return w;
+}
+
+// Written beside the file, flushed (fsync), then renamed over it: a crash leaves the old witness or the new one, never half.
+async function saveWitness(dir: string, w: Witness) {
+  const file = witnessFile(dir, w.team_id);
+  const tmp = `${file}.${ulid()}.tmp`;
+  await writeFile(tmp, JSON.stringify(w), { mode: 0o600, flush: true });
+  await rename(tmp, file);
+}
+
+export type CheckpointResult = { status: "signed"; seq: number } | { status: "unchanged" } | { status: "refused"; problem: string };
+
+// One check, signature and witness write at a time per team. The witness is written after the commit, so the team's
+// advisory lock, released by the commit, cannot cover it; one hub process owns the state directory.
+const running = new Map<string, Promise<unknown>>();
+
+// Signs the current head when it moved since the last checkpoint, and only on top of a chain that still extends the
+// witnessed checkpoint and matches the last one in the database: a hub that signed whatever head it finds would vouch for
+// a log rewritten in the database. Runs on an interval and before each export.
+export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey, store: WitnessStore = {}): Promise<CheckpointResult> {
+  // An earlier run's failure is its own caller's.
+  const run = (running.get(teamId) ?? Promise.resolve()).catch(() => {}).then(() => signHead(db, teamId, key, store));
+  running.set(teamId, run);
+  try {
+    return await run;
+  } finally {
+    if (running.get(teamId) === run) running.delete(teamId);
+  }
+}
+
+async function signHead(db: Db, teamId: string, key: AuditKey, store: WitnessStore): Promise<CheckpointResult> {
+  // undefined: the witness file exists but cannot be read, and nothing is signed until someone looks.
+  const witness = store.dir ? await readWitness(store.dir, teamId).catch(() => undefined) : (inMemory.get(teamId) ?? null);
+  const [result, latest] = await db.transaction(async (tx): Promise<[CheckpointResult, Witness?]> => {
     await lockTeam(tx, teamId);
     const [prev] = await tx
       .select()
@@ -95,27 +147,31 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
       .where(eq(auditCheckpoint.teamId, teamId))
       .orderBy(desc(auditCheckpoint.seq))
       .limit(1);
+    const from = Math.min(prev?.seq ?? Number.POSITIVE_INFINITY, witness?.seq ?? Number.POSITIVE_INFINITY);
     const events = (
       await tx
         .select()
         .from(auditEvent)
-        .where(and(eq(auditEvent.teamId, teamId), prev ? gte(auditEvent.seq, prev.seq) : undefined))
+        .where(and(eq(auditEvent.teamId, teamId), Number.isFinite(from) ? gte(auditEvent.seq, from) : undefined))
         .orderBy(asc(auditEvent.seq))
     ).map(toRecord);
-    const [anchor] = events;
+    const at = (seq: number) => events.find((e) => e.seq === seq);
     const head = events.at(-1);
-    const known = lastSigned.get(teamId);
-    const broken = chainBreak(events, prev ? anchor?.prev_hash : GENESIS);
+    const broken = chainBreak(events, Number.isFinite(from) ? events[0]?.prev_hash : GENESIS);
     const problem =
-      known !== undefined && (prev?.seq ?? 0) < known
-        ? `signed checkpoint ${known} is gone`
-        : prev && !checkpointSigned(toCheckpoint(prev), key.publicKey)
-          ? `checkpoint at seq ${prev.seq} is not signed by this hub`
-          : prev && (anchor?.seq !== prev.seq || anchor.hash !== prev.hash)
-            ? `the chain at seq ${prev.seq} differs from the signed checkpoint`
-            : broken !== null
-              ? `first break at seq ${broken}`
-              : null;
+      witness === undefined
+        ? "the audit witness file cannot be read"
+        : witness && (at(witness.seq)?.hash !== witness.hash || (broken !== null && broken >= witness.seq))
+          ? `audit chain does not extend the last signed checkpoint (seq ${witness.seq})`
+          : witness && (prev?.seq ?? 0) < witness.seq
+            ? `signed checkpoint ${witness.seq} is gone`
+            : prev && !checkpointSigned(toCheckpoint(prev), key.publicKey)
+              ? `checkpoint at seq ${prev.seq} is not signed by this hub`
+              : prev && at(prev.seq)?.hash !== prev.hash
+                ? `the chain at seq ${prev.seq} differs from the signed checkpoint`
+                : broken !== null
+                  ? `first break at seq ${broken}`
+                  : null;
     if (problem) {
       const [open] = await tx
         .select({ id: alert.id })
@@ -124,9 +180,10 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
         .limit(1);
       if (!open)
         await tx.insert(alert).values({ id: newId("alr"), teamId, kind: "audit_tamper", excerpt: `audit log not signed: ${problem}` });
-      return;
+      return [{ status: "refused", problem }];
     }
-    if (!head || (prev && prev.seq >= head.seq)) return;
+    if (!head || (prev && prev.seq >= head.seq))
+      return [{ status: "unchanged" }, prev && { team_id: teamId, seq: prev.seq, hash: prev.hash, at: prev.at.toISOString() }];
     const c = signCheckpoint(key, {
       team_id: teamId,
       seq: head.seq,
@@ -143,9 +200,24 @@ export async function writeCheckpoint(db: Db, teamId: string, key: AuditKey) {
       keyId: c.key_id,
       sig: c.sig,
     });
-    return c.seq;
+    return [
+      { status: "signed", seq: c.seq },
+      { team_id: teamId, seq: c.seq, hash: c.hash, at: c.at },
+    ];
   });
-  if (signed !== undefined) lastSigned.set(teamId, signed);
+  // Forward only, after the commit: a witness never names a checkpoint the database does not hold, nor an older one.
+  if (!latest || (witness && latest.seq <= witness.seq)) return result;
+  if (!store.dir) {
+    inMemory.set(teamId, latest);
+    return result;
+  }
+  await saveWitness(store.dir, latest).catch((e: NodeJS.ErrnoException) => {
+    store.log?.error({ team_id: teamId, err: e.code ?? e.name }, "audit witness not written");
+    throw e;
+  });
+  if (witness === null)
+    store.log?.warn({ team_id: teamId, seq: latest.seq }, "audit witness started now: trust on first use of the chain in the database");
+  return result;
 }
 
 export async function exportAudit(db: Db, teamId: string) {

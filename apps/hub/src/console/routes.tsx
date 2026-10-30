@@ -48,7 +48,7 @@ import {
   updateSettings,
 } from "../domain/admin.js";
 import { listAgents, listDelegates, presence } from "../domain/agents.js";
-import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, writeCheckpoint } from "../domain/audit.js";
+import { type AuditKey, appendAudit, exportAudit, verifyTeamAudit, type WitnessStore, writeCheckpoint } from "../domain/audit.js";
 import type { Bus } from "../domain/bus.js";
 import { adminReleaseClaim } from "../domain/claims.js";
 import { clientIp, type DeviceAuth } from "../domain/device.js";
@@ -174,6 +174,7 @@ type Deps = {
   messaging: MessagingDeps;
   mailer: Mailer;
   auditKey: AuditKey;
+  witness: WitnessStore;
   hold: (key: string, max: number) => () => void;
   device: DeviceAuth;
 };
@@ -187,7 +188,7 @@ const ASSETS: Record<string, [string, string]> = {
   "sse.js": [readFileSync(require.resolve("htmx-ext-sse/dist/sse.min.js"), "utf8"), "text/javascript"],
 };
 
-export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, hold, device }: Deps) {
+export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditKey, witness, hold, device }: Deps) {
   const app = new Hono<Env>();
   const csrfFor = (sessionId: string) => createHmac("sha256", config.secret).update(`csrf:${sessionId}`).digest("base64url");
   const csp = secureHeaders({
@@ -2046,18 +2047,41 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     );
   });
 
+  // A refused checkpoint is never shown as a success: over a chain rewritten above the last kept checkpoint, the chain
+  // and the checkpoints left in the database still verify.
+  const refused = (c: Context<Env>, problem: string) => (
+    <Result>
+      {tr(c)("No checkpoint was signed: the audit log in the database no longer matches what this hub signed.")} <code>{problem}</code>.{" "}
+      {tr(c)("Whoever runs the server follows Audit witness in docs/DEPLOY.md to find the cause and recover, then dismisses the alert.")}
+    </Result>
+  );
+
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
     await wordRefusals(c, () => requireAdmin(p));
-    await writeCheckpoint(db, p.teamId, auditKey);
-    return c.html(<VerifyResult r={await verifyTeamAudit(db, p.teamId, auditKey.publicKey)} _={tr(c)} />);
+    const signed = await writeCheckpoint(db, p.teamId, auditKey, witness);
+    const r = await verifyTeamAudit(db, p.teamId, auditKey.publicKey);
+    // Refused: never the success banner, but where the chain breaks when the check finds it.
+    if (signed.status === "refused")
+      return c.html(
+        <>
+          {refused(c, signed.problem)}
+          {!r.ok && <VerifyResult r={r} _={tr(c)} />}
+        </>,
+      );
+    return c.html(<VerifyResult r={r} _={tr(c)} />);
   });
 
   // Offline check: codetgh audit verify <file>. Ids only: the audit log never holds message text.
   consoleApp.get("/audit/export", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
-    await writeCheckpoint(db, p.teamId, auditKey);
+    // No file the offline check would pass while the hub refuses to sign this chain.
+    const signed = await writeCheckpoint(db, p.teamId, auditKey, witness);
+    if (signed.status === "refused") {
+      c.status(409);
+      return page(c, "Audit log", refused(c, signed.problem));
+    }
     const { events, checkpoints } = await exportAudit(db, p.teamId);
     await db.transaction((tx) => appendAudit(tx, { ...byUser(p), action: "audit.exported" }));
     c.header("Content-Disposition", `attachment; filename="codetgh-audit-${p.teamId}.json"`);
