@@ -3,9 +3,9 @@ import { Role, TaskState } from "@a2a-js/sdk";
 import { ClientFactory } from "@a2a-js/sdk/client";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { a2aTask } from "../apps/hub/src/db/schema.js";
+import { a2aTask, message } from "../apps/hub/src/db/schema.js";
 import { RateLimiter } from "../apps/hub/src/domain/limits.js";
-import { type Hub, startHub } from "../apps/hub/test/harness.js";
+import { call, type Hub, mcpClient, startHub } from "../apps/hub/test/harness.js";
 import { consolePost } from "./helpers.js";
 
 let hub: Hub;
@@ -60,4 +60,35 @@ it("keeps a follow-up's message id at a bounded length", async () => {
   await client.sendMessage(followUp, auth());
   const [row] = await hub.db.select().from(a2aTask).where(eq(a2aTask.id, id));
   expect(JSON.stringify(row?.task).length).toBeLessThan(2_000);
+});
+
+// An answer completes the task, a terminal state in A2A: the next question opens a new task in the same context.
+it("opens a new task in the same context for a question asked after an answer", async () => {
+  const client = await new ClientFactory().createFromUrl(hub.url);
+  const sent = await client.sendMessage(ask("Which region do you host in?"), auth());
+  const first = "status" in sent ? sent : null;
+  const lea = await mcpClient(hub.url, team.lea.token);
+  const answer = async (question: string, body: string) => {
+    const [q] = await hub.db.select().from(message).where(eq(message.body, question));
+    await call(lea, "send_message", { reply_to: q?.id, kind: "answer", body });
+  };
+  await answer("Which region do you host in?", "eu-west.");
+  await expect(client.sendMessage(ask("Same task?", first?.id), auth())).rejects.toThrow("terminal state");
+
+  const next = ask("And where are the backups?");
+  next.message.contextId = first?.contextId ?? "";
+  const resent = await client.sendMessage(next, auth());
+  const second = "status" in resent ? resent : null;
+  expect(second?.id).not.toBe(first?.id);
+  expect(second?.contextId).toBe(first?.contextId);
+
+  await answer("And where are the backups?", "In Frankfurt.");
+  await lea.close();
+  const after = await client.getTask({ tenant: "", id: second?.id ?? "", historyLength: 10 }, auth());
+  const texts = (role: Role) =>
+    after.history.filter((m) => m.role === role).flatMap((m) => m.parts.map((p) => (p.content?.$case === "text" ? p.content.value : "")));
+  expect(after.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+  expect(texts(Role.ROLE_USER)).toEqual(["And where are the backups?"]);
+  expect(texts(Role.ROLE_AGENT).join("\n")).toContain("In Frankfurt.");
+  expect(texts(Role.ROLE_AGENT).join("\n")).not.toContain("eu-west.");
 });

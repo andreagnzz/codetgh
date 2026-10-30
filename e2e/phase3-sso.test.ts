@@ -112,7 +112,7 @@ describe("SSO with the organization's OpenID provider (phase 3)", () => {
     const page = await fetch(`${hub.url}/console`, { headers: { cookie }, redirect: "manual" });
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("Acme web");
-    expect(await (await fetch(`${hub.url}/login`)).text()).toContain("Sign in with your organization");
+    expect(await (await fetch(`${hub.url}/login`)).text()).toContain("Continue with your organization");
   });
 
   it("refuses a back-channel logout token it cannot verify", async () => {
