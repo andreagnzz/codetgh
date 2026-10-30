@@ -163,13 +163,11 @@ export async function handleSlackEvent(
 export async function createSlackCode(deps: MessagingDeps, p: Principal) {
   const code = Array.from({ length: 8 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[randomInt(32)]).join("");
   await deps.db.transaction(async (tx) => {
+    const set = { codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) };
     await tx
       .insert(slackLink)
-      .values({ teamId: p.teamId, userId: p.user.id, codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) })
-      .onConflictDoUpdate({
-        target: [slackLink.teamId, slackLink.userId],
-        set: { codeHash: hashCode(code), codeExpiresAt: new Date(Date.now() + 10 * 60_000) },
-      });
+      .values({ teamId: p.teamId, userId: p.user.id, ...set })
+      .onConflictDoUpdate({ target: [slackLink.teamId, slackLink.userId], set });
     await appendAudit(tx, { ...byUser(p), action: "slack.link_code_created", subjectId: p.membershipId });
   });
   return code;
