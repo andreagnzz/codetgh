@@ -253,8 +253,9 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       try {
         // The SDK refuses a follow-up whose context id differs from its task's: refused here, a long one is never stored.
         if (rc.contextId.length > MAX_ID) throw new HubError("E_INVALID", `contextId over ${MAX_ID} characters`);
-        // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too; a new
-        // task in a context this agent used before goes in the thread of that context's first question still kept.
+        // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too. A new
+        // task in a context this agent already used replies to the earliest question of that context that still exists, so
+        // it joins that thread: the join on message skips a question the retention purged, a parent sendMessage would not find.
         const [first] = rc.task
           ? await db.select({ messageId: a2aTask.messageId }).from(a2aTask).where(eq(a2aTask.id, task.id))
           : await db
