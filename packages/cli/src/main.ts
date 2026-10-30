@@ -1727,25 +1727,13 @@ async function doctor(deps: { keyring: () => Promise<Keyring>; io: Io }) {
   }
   // archive plugin sources (the hub's marketplace) need Claude Code 2.1.224.
   const version = (await run("claude", ["--version"], 5000))?.match(/\d+\.\d+\.\d+/)?.[0];
-  const recent = version
-    ? version
-        .split(".")
-        .map(Number)
-        .reduce((a, n) => a * 1000 + n, 0) >= 2_001_224
-    : false;
+  const recent = atLeast(version ?? "", "2.1.224");
   check(
     recent,
     version ? `Claude Code ${version}` : "Claude Code not found",
     version ? "update Claude Code to 2.1.224 or newer: claude update" : "install Claude Code: https://code.claude.com/docs/en/setup",
   );
-  if (
-    recent &&
-    version &&
-    version
-      .split(".")
-      .map(Number)
-      .reduce((a, n) => a * 1000 + n, 0) < 2_001_296
-  )
+  if (recent && version && !atLeast(version, "2.1.296"))
     io.out(`warn Claude Code ${version} is older than 2.1.296, the version CodeTgh is tested with: claude update`);
   if (recent && version && !atLeast(version, ONE_COMMAND_INSTALL))
     io.out(
