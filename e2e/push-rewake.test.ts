@@ -49,9 +49,12 @@ describe("push: rewake mode (opt-in)", () => {
     await startSession(hub.url, team.sam.token, "sam-rw1", { repo: ACME_REPO });
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     const waiting = runHook("rewake", { session_id: "sam-rw1" }, env);
-    // Wait until the first waiter has recorded itself, rather than for a fixed time.
+    // Wait until the first waiter has recorded itself, rather than for a fixed time. Only in the state files: a hook writes
+    // a *.tmp file beside one and renames it over it, so a tmp file listed can be gone when it is read.
     const recorded = () =>
-      readdirSync(env.CODETGH_STATE_DIR).some((f) => readFileSync(join(env.CODETGH_STATE_DIR, f), "utf8").includes('"waiter"'));
+      readdirSync(env.CODETGH_STATE_DIR)
+        .filter((f) => !f.endsWith(".tmp"))
+        .some((f) => readFileSync(join(env.CODETGH_STATE_DIR, f), "utf8").includes('"waiter"'));
     for (let i = 0; i < 200 && !recorded(); i++) await new Promise((r) => setTimeout(r, 50));
     expect(recorded()).toBe(true);
     // A second Stop while the first waiter runs: one waiter per session.

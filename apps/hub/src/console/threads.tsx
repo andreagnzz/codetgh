@@ -4,12 +4,11 @@ import { MAX_EXCERPT } from "../domain/messages.js";
 import type { Lang } from "../i18n.js";
 import { Icon } from "../icons.js";
 import { Chip, Pill, Stamp } from "./pages.js";
+import { fill } from "./records.js";
 
 // Threads, a thread and alerts (batch 3 of the console redesign). Every value below is rendered by JSX, which escapes text:
 // agent-written strings never become HTML.
 export type Tr = ((s: string) => string) & { lang: Lang };
-export const fill = (s: string, values: Record<string, string | number>) =>
-  s.replace(/\{(\w+)\}/g, (all, k: string) => (k in values ? String(values[k]) : all));
 
 // What a thread is called: its subject, or its kind and its people. A direct thread names who it is with (the reader left
 // out); a team thread, who started it.

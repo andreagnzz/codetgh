@@ -119,6 +119,7 @@ import {
   AuditLede,
   AuditTable,
   ClaimsTable,
+  fill,
   MemoryDecide,
   MemoryDetail,
   MemoryHead,
@@ -151,19 +152,7 @@ import {
   TokenForm,
   Tokens,
 } from "./team.js";
-import {
-  ALERT_STATUS,
-  ALERT_TITLE,
-  AlertText,
-  Conversation,
-  fill,
-  Handles,
-  lanesOf,
-  MutedPill,
-  Streak,
-  shortId,
-  threadName,
-} from "./threads.js";
+import { ALERT_STATUS, ALERT_TITLE, AlertText, Conversation, Handles, lanesOf, MutedPill, Streak, shortId, threadName } from "./threads.js";
 
 type Env = { Variables: { principal: Principal; csrf: string; sessionCreatedAt: Date } };
 type Deps = {
@@ -824,7 +813,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       found.length > PAGE && last
         ? `/console/threads?${[...params, `before=${encodeURIComponent(last.lastMessageAt.toISOString())}`].join("&")}`
         : undefined;
-    const newer = c.req.query("before") ? latest : undefined;
+    const newest = c.req.query("before") ? latest : undefined;
     // The page's description already says what the archives hold.
     const empty = archived ? (
       <EmptyState title={_("No archived threads.")} />
@@ -874,7 +863,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
             )}
           </>
         )}
-        {(older || newer) && <Pager lang={_.lang} newer={newer} older={older} />}
+        {(older || newest) && <Pager lang={_.lang} newest={newest} older={older} />}
       </>,
       f,
       {
@@ -1277,7 +1266,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
         {((found.length > PAGE && last) || c.req.query("before")) && (
           <Pager
             lang={_.lang}
-            newer={c.req.query("before") ? "/console/alerts" : undefined}
+            newest={c.req.query("before") ? "/console/alerts" : undefined}
             older={
               found.length > PAGE && last ? `/console/alerts?before=${encodeURIComponent(last.alert.createdAt.toISOString())}` : undefined
             }

@@ -84,6 +84,8 @@ test("invite a member: the form opens under the page header, and the link shows 
   expect(await tabs(page, 3)).toEqual(["Role", "Valid for", "Invite"]);
   await page.keyboard.press("Enter");
   await expect(page.locator("#invite-result")).toContainText("Send this link to zoe@acme.test.");
+  // Sent, the form is empty again for the next invitation; the link stays under it.
+  await expect(page.locator("#invite-email")).toHaveValue("");
   expect(await tab(page)).toBe("Copy the invitation link");
 });
 
@@ -100,6 +102,7 @@ test("tokens: create one by keyboard, then copy the token and its commands", asy
   expect(await tab(page)).toBe("Create a token");
   await page.keyboard.press("Enter");
   await expect(page.locator("#new-token")).toContainText("Token created. Copy it now: you won't see it again.");
+  await expect(page.locator("#token-label")).toHaveValue("");
   expect(await tabs(page, 4)).toEqual([
     "Copy the token",
     "Copy the sign-in command",

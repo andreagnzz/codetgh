@@ -374,13 +374,6 @@ export const ArchiveTabs: FC<{ base: string; archived: boolean; lang: Lang; proj
 export const toneOf = (state: string): Tone =>
   (({ online: "ok", trusted: "ok", open: "warn", quarantined: "danger" }) as Record<string, Tone>)[state] ?? "neutral";
 
-// A session in bypassPermissions stands out; other permission modes read as plain text.
-export const Bypass: FC<{ lang: Lang }> = ({ lang }) => (
-  <span title={t(lang, "Permission prompts are off in this session")}>
-    <Pill tone="danger">bypass</Pill>
-  </span>
-);
-
 // Relative time for people, the exact instant for machines and on hover.
 export const When: FC<{ at: Date; lang?: string }> = ({ at, lang = "en" }) => {
   const s = Math.round((at.getTime() - Date.now()) / 1000);

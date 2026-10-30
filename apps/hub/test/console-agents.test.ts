@@ -257,6 +257,11 @@ describe("agents", () => {
     expect(await page("/console/agents", team.malik.cookie, "fr")).toContain(">En pause</span>");
     // Words that describe a session agree with it, as a feminine noun.
     expect(html).toMatch(/<p class="meta">Vue <time/);
+    // An idle session waits for its next turn: « en veille », on Agents as on the overview.
+    expect(html).toContain('<span class="pill" data-tone="neutral">En veille</span>');
+    const overview = await page("/console", team.lea.cookie, "fr");
+    expect(overview).toContain('<span class="pill" data-tone="neutral">En veille</span>');
+    expect(html + overview).not.toContain("Inactif");
   });
 });
 
