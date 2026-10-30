@@ -19,6 +19,8 @@ const get = async (path: string) => (await fetch(`${hub.url}${path}`, { headers:
 const older = (html: string) => html.match(/href="([^"]+[?&;]before=[^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
 // An older page's way back to the latest rows: the list's "Newer".
 const newer = (html: string) => html.match(/href="([^"]*)"[^>]*>(?:(?!<\/a>)[\s\S])*?Newer<\/a>/)?.[1]?.replaceAll("&amp;", "&");
+// A list whose way back goes to the newest rows (no query steps back one page) says so: "Newest".
+const newest = (html: string) => html.match(/href="([^"]*)"[^>]*>(?:(?!<\/a>)[\s\S])*?Newest<\/a>/)?.[1]?.replaceAll("&amp;", "&");
 
 it("pages alerts: no Older link at exactly 50, and one row on the next page at 51", async () => {
   const row = (i: number) => ({
@@ -60,6 +62,8 @@ it("pages memory: no Older link at exactly 50, and one row on the next page at 5
   const next = await get(older(first) ?? "/missing");
   expect(next).toContain("memory number 50.");
   expect(next).not.toContain("memory number 49.");
+  expect(newest(first)).toBeUndefined();
+  expect(newest(next)).toBe("/console/memory?status=all");
 });
 
 it("pages threads: no Older link at exactly 50, and one row on the next page at 51", async () => {
@@ -118,6 +122,15 @@ it("pages the audit log: no Older link at exactly 50, and one row on the next pa
   expect(await total()).toBe(50);
   expect(older(await get("/console/audit"))).toBeUndefined();
   await append(1);
-  const next = await get(older(await get("/console/audit")) ?? "/missing");
+  const first = await get("/console/audit");
+  const next = await get(older(first) ?? "/missing");
   expect(next.match(/<tr>/g)).toHaveLength(2);
+  expect(newest(first)).toBeUndefined();
+  expect(newest(next)).toBe("/console/audit");
+  // On a third page too, the way back is the newest rows, never the page just before.
+  await append(50);
+  const third = await get(older(await get(older(await get("/console/audit")) ?? "/missing")) ?? "/missing");
+  expect(third.match(/<tr>/g)).toHaveLength(2);
+  expect(newest(third)).toBe("/console/audit");
+  expect(third).not.toContain("Newer");
 });

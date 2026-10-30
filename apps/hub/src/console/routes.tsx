@@ -2,9 +2,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { CLAIM_ENFORCEMENT, ROLES, type Role, TASK_STATUSES, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
+import { CLAIM_ENFORCEMENT, ROLES, type Role, TaskCreateInput, TaskUpdateInput } from "@codetgh/shared";
 import { AgentProjectForm, UserCodeForm } from "@codetgh/shared/rest";
-import { diffLines } from "diff";
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, min, ne, not, or, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -55,12 +54,12 @@ import { adminReleaseClaim } from "../domain/claims.js";
 import { clientIp, type DeviceAuth } from "../domain/device.js";
 import { createGithubHook } from "../domain/github.js";
 import { launchStates, setLaunchDesired } from "../domain/launcher.js";
-import { canDecide, decideMemory, memoryRef, setPinned } from "../domain/memory.js";
+import { canDecide, decideMemory, setPinned } from "../domain/memory.js";
 import { archivedThread, MAX_AGENT_MESSAGES, type MessagingDeps, sendMessage, sentOrReceivedBy } from "../domain/messages.js";
 import { eraseMe, exportMyData } from "../domain/privacy.js";
 import { runStates, setRunDesired } from "../domain/runner.js";
 import { createSlackCode } from "../domain/slack.js";
-import { archivedTask, createTask, updateTask } from "../domain/tasks.js";
+import { ALLOWED, archivedTask, createTask, updateTask } from "../domain/tasks.js";
 import {
   findInvitation,
   inviteMember,
@@ -116,6 +115,28 @@ import {
   Table,
   When,
 } from "./pages.js";
+import {
+  AuditLede,
+  AuditTable,
+  ClaimsTable,
+  MemoryDecide,
+  MemoryDetail,
+  MemoryHead,
+  MemoryTable,
+  MemoryTabs,
+  memoryLabel,
+  type Names,
+  NewTaskForm,
+  refusal,
+  TaskBoard,
+  TaskDetail,
+  TaskPill,
+  TasksEmpty,
+  TaskUpdateForm,
+  taskEvent,
+  VerifyResult,
+  Who,
+} from "./records.js";
 import {
   GithubHook,
   Invitations,
@@ -1910,9 +1931,77 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
     return refresh(c);
   });
 
+  // Names for the ids of a page (display only), from rows its reader already sees elsewhere: people, sessions, team threads'
+  // subjects (a direct thread's stays out), tasks, memory items and projects.
+  const namesOf = async (teamId: string, ids: Array<string | null | undefined>): Promise<Names> => {
+    const want = (prefix: string) => [...new Set(ids.filter((id): id is string => !!id?.startsWith(`${prefix}_`)))];
+    const names = new Map<string, string>();
+    const threads = new Map<string, { kind: string; subject: string | null }>();
+    const add = (rows: Array<{ id: string; name: string }>) => {
+      for (const r of rows) names.set(r.id, r.name);
+    };
+    const [usr, mem, agt, thr, tsk, mit, prj] = ["usr", "mem", "agt", "thr", "tsk", "mit", "prj"].map(want);
+    if (usr?.length) add(await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, usr)));
+    if (mem?.length)
+      add(
+        await db
+          .select({ id: membership.id, name: user.name })
+          .from(membership)
+          .innerJoin(user, eq(user.id, membership.userId))
+          .where(and(eq(membership.teamId, teamId), inArray(membership.id, mem))),
+      );
+    if (agt?.length)
+      add(
+        await db
+          .select({ id: agent.id, name: agent.label })
+          .from(agent)
+          .where(and(eq(agent.teamId, teamId), inArray(agent.id, agt))),
+      );
+    if (thr?.length)
+      for (const t of await db
+        .select({ id: thread.id, kind: thread.kind, subject: thread.subject })
+        .from(thread)
+        .where(and(eq(thread.teamId, teamId), inArray(thread.id, thr))))
+        threads.set(t.id, t);
+    if (tsk?.length)
+      add(
+        await db
+          .select({ id: task.id, name: task.title })
+          .from(task)
+          .where(and(eq(task.teamId, teamId), inArray(task.id, tsk))),
+      );
+    if (mit?.length)
+      for (const m of await db
+        .select()
+        .from(memoryItem)
+        .where(and(eq(memoryItem.teamId, teamId), inArray(memoryItem.id, mit))))
+        names.set(m.id, `${memoryLabel(m)} · ${m.title}`);
+    if (prj?.length)
+      add(
+        await db
+          .select({ id: project.id, name: project.name })
+          .from(project)
+          .where(and(eq(project.teamId, teamId), inArray(project.id, prj))),
+      );
+    return { names, threads };
+  };
+
+  // The refusals of the audit, memory, claims and tasks forms in the reader's words (records.tsx); the code and the status
+  // stay the hub's.
+  const wordRefusals = async <T,>(c: Context<Env>, step: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await step();
+    } catch (e) {
+      if (!(e instanceof HubError)) throw e;
+      const words = refusal(e, tr(c));
+      throw words ? new HubError(e.code, words, e.retryAfterS) : e;
+    }
+  };
+
   consoleApp.get("/audit", async (c) => {
     const p = c.get("principal");
     requireAdmin(p);
+    const _ = tr(c);
     const before = Number(c.req.query("before")) || undefined;
     const found = await db
       .select()
@@ -1922,46 +2011,46 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    const names = await namesOf(
+      p.teamId,
+      rows.flatMap((e) => [e.actorUserId, e.actorAgentId, e.subjectId, typeof e.data.thread === "string" ? e.data.thread : null]),
+    );
     return page(
       c,
       "Audit log",
       <>
-        <p>
-          <button type="button" hx-post="/console/audit/verify" hx-target="#verify-result">
-            Verify chain
-          </button>{" "}
-          <a href="/console/audit/export">Export JSON</a> (check it offline with <code>codetgh audit verify</code>)
-        </p>
-        <div id="verify-result" />
-        <Table
-          lang={tr(c).lang}
-          head={["#", "At", "Actor", "Via", "Action", "Subject", "Hash"]}
-          rows={rows.map((e) => [
-            e.seq,
-            <When at={e.at} />,
-            e.actorAgentId ?? e.actorUserId ?? e.actorType,
-            e.via,
-            e.action,
-            e.subjectId ?? "",
-            e.hash.slice(0, 12),
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && last && <a href={`/console/audit?before=${last.seq}`}>Older</a>}
+        <div id="verify-result" aria-live="polite" />
+        <AuditTable rows={rows} names={names} teamName={p.teamName} _={_} />
+        {(before || found.length > PAGE) && (
+          <Pager
+            lang={_.lang}
+            newest={before ? "/console/audit" : undefined}
+            older={found.length > PAGE && last ? `/console/audit?before=${last.seq}` : undefined}
+          />
+        )}
       </>,
+      undefined,
+      {
+        head: <AuditLede _={_} />,
+        actions: (
+          <>
+            <a class="button" href="/console/audit/export">
+              {_("Export JSON")}
+            </a>
+            <button type="button" class="secondary" hx-post="/console/audit/verify" hx-target="#verify-result">
+              {_("Verify chain")}
+            </button>
+          </>
+        ),
+      },
     );
   });
 
   consoleApp.post("/audit/verify", async (c) => {
     const p = c.get("principal");
-    requireAdmin(p);
+    await wordRefusals(c, () => requireAdmin(p));
     await writeCheckpoint(db, p.teamId, auditKey);
-    const r = await verifyTeamAudit(db, p.teamId, auditKey.publicKey);
-    return c.html(
-      <Result>
-        {r.ok ? `Chain intact: ${r.events} events, ${r.checkpoints} signed checkpoints.` : `Problem (${r.problem}): ${r.message}.`}
-      </Result>,
-    );
+    return c.html(<VerifyResult r={await verifyTeamAudit(db, p.teamId, auditKey.publicKey)} _={tr(c)} />);
   });
 
   // Offline check: codetgh audit verify <file>. Ids only: the audit log never holds message text.
@@ -2022,12 +2111,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
 
   consoleApp.get("/memory", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const status = c.req.query("status") ?? "proposed";
     if (!["proposed", "accepted", "superseded", "rejected", "all"].includes(status)) throw new HubError("E_INVALID", "unknown status");
     const found = await db
-      .select({ item: memoryItem, name: user.name })
+      .select({ item: memoryItem, name: user.name, agentLabel: agent.label })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
+      .leftJoin(agent, eq(agent.id, memoryItem.proposedByAgent))
       .where(
         and(
           eq(memoryItem.teamId, p.teamId),
@@ -2039,111 +2130,125 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .limit(PAGE + 1);
     const rows = found.slice(0, PAGE);
     const last = rows.at(-1);
+    // The tabs count every item of each status, also those past the page.
+    const byStatus = await db
+      .select({ status: memoryItem.status, n: count() })
+      .from(memoryItem)
+      .where(eq(memoryItem.teamId, p.teamId))
+      .groupBy(memoryItem.status);
+    const counts: Record<string, number> = Object.fromEntries(byStatus.map((r) => [r.status, r.n]));
+    counts.all = byStatus.reduce((n, r) => n + r.n, 0);
+    const older = c.req.query("before");
     return page(
       c,
       "Team memory",
       <>
-        <nav>
-          {["proposed", "accepted", "superseded", "rejected", "all"].map((s) => (
-            <a href={`/console/memory?status=${s}`}>{s}</a>
-          ))}
-        </nav>
-        <Table
-          lang={tr(c).lang}
-          head={["Ref", "Version", "Kind", "Status", "Title", "Proposed by", "When"]}
-          rows={rows.map(({ item, name }) => [
-            memoryRef(item),
-            item.version,
-            item.kind,
-            `${item.status}${item.pinned ? " · pinned" : ""}`,
-            <a href={`/console/memory/${item.id}`}>{item.title}</a>,
-            `${name}${item.authoredBy === "agent" ? " (agent)" : ""}`,
-            <When at={item.createdAt} />,
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        {found.length > PAGE && last && (
-          <a href={`/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`}>{tr(c)("Older")}</a>
+        <MemoryTabs status={status} counts={counts} _={_} />
+        <MemoryTable rows={rows} status={status} _={_} />
+        {(older || found.length > PAGE) && (
+          <Pager
+            lang={_.lang}
+            newest={older ? `/console/memory?status=${status}` : undefined}
+            older={
+              found.length > PAGE && last
+                ? `/console/memory?status=${status}&before=${encodeURIComponent(last.item.createdAt.toISOString())}`
+                : undefined
+            }
+          />
         )}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              "Decisions, contracts and conventions the team keeps. Agents read the accepted ones; a person accepts or rejects what agents propose.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 
   consoleApp.get("/memory/:id", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const [row] = await db
-      .select({ item: memoryItem, name: user.name })
+      .select({ item: memoryItem, name: user.name, agentLabel: agent.label })
       .from(memoryItem)
       .innerJoin(user, eq(user.id, memoryItem.proposedByUser))
+      .leftJoin(agent, eq(agent.id, memoryItem.proposedByAgent))
       .where(and(eq(memoryItem.id, c.req.param("id")), eq(memoryItem.teamId, p.teamId)));
     if (!row) throw new HubError("E_NOT_FOUND", "no such item");
-    const { item, name } = row;
-    const [old] = item.supersedesId ? await db.select().from(memoryItem).where(eq(memoryItem.id, item.supersedesId)) : [];
+    const { item } = row;
+    const [old] = item.supersedesId
+      ? await db
+          .select()
+          .from(memoryItem)
+          .where(and(eq(memoryItem.id, item.supersedesId), eq(memoryItem.teamId, p.teamId)))
+      : [];
+    // The versions proposed after this one: the accepted one replaced it, a proposed one waits, a rejected one is not shown.
+    const newer = await db
+      .select()
+      .from(memoryItem)
+      .where(and(eq(memoryItem.supersedesId, item.id), eq(memoryItem.teamId, p.teamId), not(eq(memoryItem.status, "rejected"))))
+      .orderBy(asc(memoryItem.version));
+    const [decider] = item.decidedByUser ? await db.select({ name: user.name }).from(user).where(eq(user.id, item.decidedByUser)) : [];
     return page(
       c,
-      `${memoryRef(item)} v${item.version} · ${item.title}`,
-      <>
-        <p>
-          {item.kind} · {item.status}
-          {item.pinned && " · pinned"} · proposed by {name}
-          {item.authoredBy === "agent" ? " (agent)" : ""} on <When at={item.createdAt} />
-          {item.branch && ` · branch ${item.branch}`}
-        </p>
-        {old ? (
-          <>
-            <h2>Changes from v{old.version}</h2>
-            {/* Removed text in red, added text in green; both rendered as text. */}
-            <pre>
-              {diffLines(old.body, item.body).map((part) => (
-                <span class={part.added ? "add" : part.removed ? "del" : "same"}>{part.value}</span>
-              ))}
-            </pre>
-          </>
-        ) : (
-          <pre>{item.body}</pre>
-        )}
-        {item.decisionNote && <p>Decision note: {item.decisionNote}</p>}
-        {item.status === "proposed" && canDecide(p) && (
-          <form hx-post={`/console/memory/${item.id}/decide`} hx-swap="none">
-            <label>
-              Note <input name="note" maxlength={500} />
-            </label>
-            <button type="submit" name="decision" value="accept">
-              Accept
-            </button>
-            <button type="submit" name="decision" value="reject">
-              Reject
-            </button>
-          </form>
-        )}
-        {item.status === "accepted" && canDecide(p) && (
-          <Action post={`/console/memory/${item.id}/pin`} vals={{ pinned: String(!item.pinned) }} label={item.pinned ? "Unpin" : "Pin"} />
-        )}
-      </>,
+      item.title,
+      <MemoryDetail
+        item={item}
+        proposer={row}
+        decider={decider?.name ?? null}
+        old={old}
+        replacedBy={newer.find((n) => n.status === "accepted" || n.status === "superseded")}
+        proposed={newer.filter((n) => n.status === "proposed")}
+        decide={
+          item.status === "proposed" && (
+            <MemoryDecide item={item} old={old} can={canDecide(p)} acceptBy={p.settings.memory_accept_by ?? "member"} _={_} />
+          )
+        }
+        _={_}
+      />,
       undefined,
-      { named: true },
+      {
+        back: <a href={`/console/memory?status=${item.status}`}>{_("Back to team memory")}</a>,
+        head: <MemoryHead item={item} _={_} />,
+        actions: item.status === "accepted" && canDecide(p) && (
+          <Action
+            post={`/console/memory/${item.id}/pin`}
+            vals={{ pinned: String(!item.pinned) }}
+            label={_(item.pinned ? "Unpin" : "Pin")}
+          />
+        ),
+        named: true,
+      },
     );
   });
 
   consoleApp.post("/memory/:id/decide", async (c) => {
-    const f = await form(c);
-    if (f.decision !== "accept" && f.decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
-    await decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision: f.decision, note: f.note }, "console");
+    const { decision, note } = await form(c);
+    if (decision !== "accept" && decision !== "reject") throw new HubError("E_INVALID", "decision must be accept or reject");
+    await wordRefusals(c, () => decideMemory(messaging, c.get("principal"), { item_id: c.req.param("id"), decision, note }, "console"));
     bus.emit("attention", { teamId: c.get("principal").teamId });
     return refresh(c);
   });
 
   consoleApp.post("/memory/:id/pin", async (c) => {
-    await setPinned(db, c.get("principal"), c.req.param("id"), (await form(c)).pinned === "true");
+    const pinned = (await form(c)).pinned === "true";
+    await wordRefusals(c, () => setPinned(db, c.get("principal"), c.req.param("id"), pinned));
     return refresh(c);
   });
 
   consoleApp.get("/claims", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const rows = await db
-      .select({ claim, name: user.name, total: sql<number>`count(*) over ()`.mapWith(Number) })
+      .select({ claim, name: user.name, agentLabel: agent.label, total: sql<number>`count(*) over ()`.mapWith(Number) })
       .from(claim)
       .innerJoin(user, eq(user.id, claim.holderUserId))
+      .leftJoin(agent, eq(agent.id, claim.holderAgentId))
       .where(and(eq(claim.teamId, p.teamId), isNull(claim.releasedAt), gt(claim.expiresAt, new Date())))
       .orderBy(asc(claim.expiresAt))
       .limit(PAGE * 4);
@@ -2151,33 +2256,36 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       c,
       "Claims",
       <>
-        <Table
-          lang={tr(c).lang}
-          head={["Scope", "Holder", "Mode", "Reason", "Time left", ""]}
-          rows={rows.map((r) => [
-            r.claim.scope,
-            r.name,
-            r.claim.mode,
-            r.claim.reason ?? "",
-            `${Math.max(1, Math.round((r.claim.expiresAt.getTime() - Date.now()) / 60_000))} min`,
-            isAdmin(p) ? <Action post={`/console/claims/${r.claim.id}/release`} label="Release" /> : "",
-          ])}
-          empty={tr(c)("Nothing yet.")}
-        />
+        <ClaimsTable rows={rows} admin={isAdmin(p)} _={_} />
         {capped(c, rows.length, rows[0]?.total)}
       </>,
+      undefined,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              isAdmin(p)
+                ? "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out. Release a claim its session left behind."
+                : "What agents are working on right now, ending soonest first. A claim ends when its session releases it or ends, or when its time runs out.",
+            )}
+          </p>
+        ),
+      },
     );
   });
 
   consoleApp.post("/claims/:id/release", async (c) => {
     const p = c.get("principal");
-    requireAdmin(p);
-    await adminReleaseClaim(db, p, c.req.param("id"));
+    await wordRefusals(c, () => {
+      requireAdmin(p);
+      return adminReleaseClaim(db, p, c.req.param("id"));
+    });
     return refresh(c);
   });
 
   consoleApp.get("/tasks", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const archived = c.req.query("archived") === "1";
     const f = await projectFilter(c);
     const where = and(eq(task.teamId, p.teamId), onProject(task.projectId, f), archived ? archivedTask() : not(archivedTask()));
@@ -2194,68 +2302,50 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(task)
       .where(where)
       .groupBy(task.projectId, task.status);
-    const countOf = (s: string, projectId?: string) =>
+    const countOf = (projectId?: string) => (s: string) =>
       counts.filter((x) => x.status === s && (!projectId || (x.projectId ?? "none") === projectId)).reduce((n, x) => n + x.n, 0);
-    // Under a project heading, the status headings step down one level.
-    const board = (all: typeof rows, projectId?: string) =>
-      TASK_STATUSES.map((s) => {
-        const of = all.filter((r) => r.task.status === s);
-        const Heading = projectId ? "h3" : "h2";
-        return (
-          of.length > 0 && (
-            <>
-              <Heading>
-                {s} ({countOf(s, projectId)})
-              </Heading>
-              <Table
-                lang={tr(c).lang}
-                head={["Title", "Assignee", "Version", "Updated"]}
-                rows={of.map((r) => [
-                  <a href={withProject(`/console/tasks/${r.task.id}`, f.selected)}>{r.task.title}</a>,
-                  r.handle ? `@${r.handle}` : "",
-                  r.task.version,
-                  <When at={r.task.updatedAt} />,
-                ])}
-                empty={tr(c)("Nothing yet.")}
-              />
-            </>
-          )
-        );
-      });
+    const href = (id: string) => withProject(`/console/tasks/${id}`, f.selected);
+    const chosen = f.selected === "none" ? null : f.projects.find((pr) => pr.id === f.selected)?.name;
     return page(
       c,
       "Tasks",
       <>
-        <ArchiveTabs base="/console/tasks" archived={archived} lang={tr(c).lang} project={f.selected} />
-        {archived && rows.length === 0 && <p>{tr(c)("Nothing yet.")}</p>}
-        {f.selected
-          ? board(rows)
-          : byProject(f, rows, (r) => r.task.projectId, tr(c)("Outside a project")).map((g) => (
-              <section aria-labelledby={`p-${g.id}`}>
-                <h2 id={`p-${g.id}`}>{g.name}</h2>
-                {board(g.rows, g.id)}
-              </section>
-            ))}
+        <ArchiveTabs base="/console/tasks" archived={archived} lang={_.lang} project={f.selected} />
+        {rows.length === 0 ? (
+          <TasksEmpty archived={archived} project={f.selected ? (chosen ?? null) : undefined} _={_} />
+        ) : f.selected ? (
+          <TaskBoard rows={rows} countOf={countOf()} href={href} level="h2" _={_} />
+        ) : (
+          byProject(f, rows, (r) => r.task.projectId, _("Outside a project")).map((g) => (
+            <section aria-labelledby={`p-${g.id}`}>
+              <h2 id={`p-${g.id}`}>{g.name}</h2>
+              <TaskBoard rows={g.rows} countOf={countOf(g.id)} href={href} level="h3" _={_} />
+            </section>
+          ))
+        )}
         {capped(
           c,
           rows.length,
           counts.reduce((n, x) => n + x.n, 0),
         )}
-        <h2>New task</h2>
-        <form hx-post="/console/tasks" hx-swap="none">
-          <label>
-            Title <input name="title" required maxlength={200} />
-          </label>
-          <label>
-            Description <textarea name="body" maxlength={8000} />
-          </label>
-          <label>
-            Assignee (@handle) <input name="assignee" />
-          </label>
-          <button type="submit">Create</button>
-        </form>
       </>,
       f,
+      {
+        head: (
+          <p class="lede rec-lede">
+            {_(
+              "What the team works on, by project and status. People create tasks here; agents create, claim and update them with the task tools.",
+            )}
+          </p>
+        ),
+        actions: (
+          <div class="new-task">
+            <Collapsible summary={_("New task")}>
+              <NewTaskForm _={_} />
+            </Collapsible>
+          </div>
+        ),
+      },
     );
   });
 
@@ -2267,13 +2357,14 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
   };
 
   consoleApp.post("/tasks", async (c) => {
-    const input = parsed(TaskCreateInput.safeParse(filled(await form(c))));
-    await createTask(messaging, c.get("principal"), null, input);
+    const f = filled(await form(c));
+    await wordRefusals(c, () => createTask(messaging, c.get("principal"), null, parsed(TaskCreateInput.safeParse(f))));
     return refresh(c);
   });
 
   consoleApp.get("/tasks/:id", async (c) => {
     const p = c.get("principal");
+    const _ = tr(c);
     const [t] = await db
       .select()
       .from(task)
@@ -2284,64 +2375,91 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       .from(auditEvent)
       .where(and(eq(auditEvent.teamId, p.teamId), eq(auditEvent.subjectId, t.id)))
       .orderBy(asc(auditEvent.seq));
+    const [assignee] = t.assigneeUserId
+      ? await db
+          .select({ handle: membership.handle })
+          .from(membership)
+          .where(and(eq(membership.userId, t.assigneeUserId), eq(membership.teamId, p.teamId)))
+      : [];
+    // A guest never sees the team's projects; guests have no task pages, the check stays with the data.
+    const [inProject] =
+      t.projectId && p.role !== "guest"
+        ? await db
+            .select({ name: project.name })
+            .from(project)
+            .where(and(eq(project.id, t.projectId), eq(project.teamId, p.teamId)))
+        : [];
+    const names = await namesOf(p.teamId, [
+      t.createdByUser,
+      t.createdByAgent,
+      ...history.flatMap((e) => [e.actorUserId, e.actorAgentId]),
+      ...t.notes.flatMap((n) => [n.user_id, n.agent_id]),
+    ]);
+    const who = (userId: string | null, agentId: string | null) => (
+      <Who name={(userId && names.names.get(userId)) || _("A former member")} label={agentId ? (names.names.get(agentId) ?? null) : null} />
+    );
+    // A note written with an update reads under that update (the closest one by the same person, within seconds); a note on
+    // its own is its own event.
+    const updates = history.filter((e) => e.action === "task.updated" || e.action === "task.taken_over");
+    const along = new Map<number, string[]>();
+    const loose: typeof t.notes = [];
+    for (const n of t.notes) {
+      const at = new Date(n.at).getTime();
+      const near = updates
+        .filter((e) => e.actorUserId === n.user_id && Math.abs(e.at.getTime() - at) < 5_000)
+        .sort((a, b) => Math.abs(a.at.getTime() - at) - Math.abs(b.at.getTime() - at))[0];
+      if (near && taskEvent(near, _)) along.set(near.seq, [...(along.get(near.seq) ?? []), n.text]);
+      else loose.push(n);
+    }
+    const changes = history.flatMap((e) => {
+      const text = taskEvent(e, _);
+      if (!text) return [];
+      const actor = e.actorType === "hub" ? <Who name={_("Hub")} /> : who(e.actorUserId, e.actorAgentId);
+      return [{ at: e.at, actor, text, change: true, body: along.get(e.seq)?.join("\n") }];
+    });
+    const events = [
+      ...changes,
+      ...loose.map((n) => ({ at: new Date(n.at), actor: who(n.user_id, n.agent_id), text: _("added a note"), body: n.text })),
+    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+    const current = events.findLastIndex((e) => "change" in e);
     return page(
       c,
       t.title,
-      <>
-        <p>
-          <a href={withProject("/console/tasks", kept(c))}>{tr(c)("Back to tasks")}</a>
-        </p>
-        <p>
-          {t.status} · version {t.version}
-        </p>
-        <pre>{t.body}</pre>
-        <h2>Notes</h2>
-        <Table
-          lang={tr(c).lang}
-          head={["When", "Note"]}
-          rows={t.notes.map((n) => [n.at, <pre>{n.text}</pre>])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        <h2>History</h2>
-        <Table
-          lang={tr(c).lang}
-          head={["#", "Action", "Via", "At"]}
-          rows={history.map((e) => [e.seq, e.action, e.via, <When at={e.at} />])}
-          empty={tr(c)("Nothing yet.")}
-        />
-        <h2>Update</h2>
-        <form hx-post={`/console/tasks/${t.id}`} hx-swap="none">
-          <input type="hidden" name="expected_version" value={String(t.version)} />
-          <label>
-            Status{" "}
-            <select name="status">
-              <option value="">unchanged</option>
-              {TASK_STATUSES.filter((s) => s !== "claimed").map((s) => (
-                <option value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Assignee (@handle or none) <input name="assignee" />
-          </label>
-          <label>
-            Reason (needed for blocked) <input name="reason" maxlength={200} />
-          </label>
-          <label>
-            Note <input name="note" maxlength={500} />
-          </label>
-          <button type="submit">Save</button>
-        </form>
-      </>,
+      <TaskDetail
+        t={t}
+        handle={assignee?.handle ?? null}
+        project={inProject?.name ?? null}
+        creator={who(t.createdByUser, t.createdByAgent)}
+        events={events.map((e, i) => ({ ...e, now: i === current }))}
+        // A blocked task also offers Blocked, with which its reason changes.
+        form={
+          <TaskUpdateForm
+            t={t}
+            moves={t.status === "blocked" ? ["blocked", ...ALLOWED.blocked] : ALLOWED[t.status].filter((s) => s !== "claimed")}
+            _={_}
+          />
+        }
+        _={_}
+      />,
       undefined,
-      { named: true },
+      {
+        back: <a href={withProject("/console/tasks", kept(c))}>{_("Back to tasks")}</a>,
+        head: <TaskPill status={t.status} _={_} />,
+        named: true,
+      },
     );
   });
 
   consoleApp.post("/tasks/:id", async (c) => {
     const { expected_version, ...patch } = filled(await form(c));
-    const input = parsed(TaskUpdateInput.safeParse({ task_id: c.req.param("id"), expected_version: Number(expected_version), patch }));
-    await updateTask(messaging, c.get("principal"), null, input);
+    await wordRefusals(c, () =>
+      updateTask(
+        messaging,
+        c.get("principal"),
+        null,
+        parsed(TaskUpdateInput.safeParse({ task_id: c.req.param("id"), expected_version: Number(expected_version), patch })),
+      ),
+    );
     return refresh(c);
   });
 
