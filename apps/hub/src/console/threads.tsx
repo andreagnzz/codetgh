@@ -260,7 +260,7 @@ export const Conversation: FC<{ rows: ConvRow[]; lanes: Lanes; _: Tr; title: str
 
 // Alerts: what the hub flagged or stopped, in words. The excerpt of a flagged message is quoted as the agent wrote it; the
 // hub's own notes become sentences.
-export const ALERT_KIND: Record<string, string> = {
+export const ALERT_TITLE: Record<string, string> = {
   instruction_like: "Looks like an instruction",
   secret_blocked: "Secret blocked",
   loop_guard: "Agent loop",
@@ -285,7 +285,7 @@ export const AlertText: FC<{
   _: Tr;
 }> = ({ a, from, which, audited, max, _ }) => (
   <div class={a.status === "open" ? "alert-text" : "alert-text decided"}>
-    <p class="alert-kind">{_(ALERT_KIND[a.kind] ?? a.kind)}</p>
+    <p class="alert-kind">{_(ALERT_TITLE[a.kind] ?? a.kind)}</p>
     <p class="alert-from">{from}</p>
     {a.kind === "secret_blocked" ? (
       <p class="alert-note">

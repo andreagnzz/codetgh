@@ -121,8 +121,8 @@ import {
   Tokens,
 } from "./team.js";
 import {
-  ALERT_KIND,
   ALERT_STATUS,
+  ALERT_TITLE,
   AlertText,
   Conversation,
   fill,
@@ -1161,7 +1161,7 @@ export function consoleRoutes({ config, db, auth, bus, messaging, mailer, auditK
       : [];
     // Which alert a row's actions act on, for screen readers: its kind and who sent it.
     const which = (a: (typeof rows)[number]["alert"], name: string | null) => ({
-      alert: _(ALERT_KIND[a.kind] ?? a.kind),
+      alert: _(ALERT_TITLE[a.kind] ?? a.kind),
       from: sender(a, name),
     });
     return page(
