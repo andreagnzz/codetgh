@@ -3,8 +3,10 @@ import { createHmac } from "node:crypto";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import type { Keyring } from "../packages/cli/src/main.js";
 
 // Tests run the same single-file bundle the plugin ships, built once per test process.
 let bundle: string | undefined;
@@ -126,6 +128,27 @@ export async function githubBridge(url: string, cookie: string) {
       body,
     });
   return { hookUrl, secret, deliver };
+}
+
+// Runs codetgh <args> in this process against a hub, with an empty keyring unless one is given: what it printed and its exit code.
+export async function runCli(args: string[], env: { url: string; token: string }, o: { stdin?: string; keyring?: Keyring } = {}) {
+  // Imported here, so the tests that never run the CLI do not load it.
+  const { program } = await import("../packages/cli/src/main.js");
+  const keyring = o.keyring ?? { get: () => null, set() {}, delete() {} };
+  const out: string[] = [];
+  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([o.stdin ?? ""]) };
+  process.env.CODETGH_URL = env.url;
+  process.env.CODETGH_TOKEN = env.token;
+  process.exitCode = 0;
+  try {
+    await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", ...args]);
+  } finally {
+    delete process.env.CODETGH_URL;
+    delete process.env.CODETGH_TOKEN;
+  }
+  const code = process.exitCode;
+  process.exitCode = 0;
+  return { out: out.join("\n"), code };
 }
 
 // Plays the person in the browser: waits for the code the CLI prints, then approves it in the console.

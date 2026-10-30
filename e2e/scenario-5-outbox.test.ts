@@ -3,13 +3,12 @@ import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { message } from "../apps/hub/src/db/schema.js";
 import { callOnce, type Hub, startHub } from "../apps/hub/test/harness.js";
-import { daemon, program } from "../packages/cli/src/main.js";
-import { hubRest } from "./helpers.js";
+import { daemon } from "../packages/cli/src/main.js";
+import { hubRest, runCli } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -23,22 +22,7 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-async function cli(args: string[], env: { url: string; token: string }) {
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
-  process.env.CODETGH_URL = env.url;
-  process.env.CODETGH_TOKEN = env.token;
-  process.exitCode = 0;
-  try {
-    await program({ keyring: async () => ({ get: () => null, set() {}, delete() {} }), io }).parseAsync(["node", "codetgh", ...args]);
-  } finally {
-    delete process.env.CODETGH_URL;
-    delete process.env.CODETGH_TOKEN;
-  }
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const cli = (args: string[], env: { url: string; token: string }) => runCli(args, env);
 
 // One hub address, unreachable until up(): then a relay to the test hub listens on it, as when the hub comes back.
 async function hubDownThenUp() {

@@ -2,11 +2,10 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { call, type Hub, mcpClient, setRole, startHub, startSession } from "../apps/hub/test/harness.js";
-import { type Keyring, program } from "../packages/cli/src/main.js";
+import { runCli } from "./helpers.js";
 
 const ORIGIN = "git@github.com:acme/webapp.git";
 let hub: Hub;
@@ -49,18 +48,7 @@ function branch(files: string[]) {
   return `refs/heads/feature ${git(dir, "rev-parse", "HEAD")} refs/heads/feature ${"0".repeat(40)}\n`;
 }
 
-async function checkPush(token: string, refs: string, url = hub.url) {
-  const keyring: Keyring = { get: () => null, set: () => {}, delete: () => {} };
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([refs]) };
-  process.env.CODETGH_URL = url;
-  process.env.CODETGH_TOKEN = token;
-  process.exitCode = 0;
-  await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", "claims", "check-push"]);
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const checkPush = (token: string, refs: string, url = hub.url) => runCli(["claims", "check-push"], { url, token }, { stdin: refs });
 
 describe("codetgh claims check-push against a hub", () => {
   it("refuses a push that carries a file another person claims, not one that session or person claims", async () => {

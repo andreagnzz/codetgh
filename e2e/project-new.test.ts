@@ -2,15 +2,13 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { Readable } from "node:stream";
 import { repoFingerprint } from "@codetgh/shared/repo";
 import { eq } from "drizzle-orm";
 import { strToU8, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { project } from "../apps/hub/src/db/schema.js";
 import { type Hub, startHub, startSession } from "../apps/hub/test/harness.js";
-import { type Keyring, program } from "../packages/cli/src/main.js";
-import { fakeCommand, gitRepo } from "./helpers.js";
+import { fakeCommand, gitRepo, runCli } from "./helpers.js";
 
 let hub: Hub;
 let team: Awaited<ReturnType<Hub["seed"]>>;
@@ -55,18 +53,7 @@ function repo(origin: string) {
   process.chdir(dir);
   return dir;
 }
-async function cli(args: string[], token = team.lea.token) {
-  const keyring: Keyring = { get: () => null, set: () => {}, delete: () => {} };
-  const out: string[] = [];
-  const io = { out: (s: string) => out.push(s), err: (s: string) => out.push(s), stdin: Readable.from([""]) };
-  process.env.CODETGH_URL = hub.url;
-  process.env.CODETGH_TOKEN = token;
-  process.exitCode = 0;
-  await program({ keyring: async () => keyring, io }).parseAsync(["node", "codetgh", ...args]);
-  const code = process.exitCode;
-  process.exitCode = 0;
-  return { out: out.join("\n"), code };
-}
+const cli = (args: string[], token = team.lea.token) => runCli(args, { url: hub.url, token });
 
 describe("codetgh project new", () => {
   it("creates the project, declares the hub's marketplace and prints the invitation message", async () => {
