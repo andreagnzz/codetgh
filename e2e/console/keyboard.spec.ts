@@ -37,16 +37,6 @@ const tab = async (page: Page) => {
   expect(f.width, f.text).toBe("2px");
   return f.text;
 };
-// Escape hides the dialog and gives the focus back at once, but its close event, on which console.js forgets the request the
-// dialog held, comes with the next frame: a key pressed before it opens a confirmation that this late event then empties.
-const escapeDialog = async (page: Page) => {
-  const closed = await page.locator("#confirm").evaluateHandle((d) => ({
-    done: new Promise<void>((resolve) => d.addEventListener("close", () => resolve(), { once: true })),
-  }));
-  await page.keyboard.press("Escape");
-  await expect(page.locator("#confirm")).toBeHidden();
-  await closed.evaluate((c) => c.done);
-};
 
 for (const scheme of ["light", "dark"] as const)
   test(`wide screen, ${scheme}: skip link, logo, the navigation in order, then the account menu`, async ({ page }) => {
@@ -123,7 +113,7 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Sessions already open are not closed.");
   expect((await focused(page)).text).toBe("Cancel");
-  await escapeDialog(page);
+  await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
 
@@ -148,6 +138,40 @@ test("confirmation dialog: Cancel first, Escape gives the focus back; confirming
   await page.keyboard.press("Escape");
 });
 
+test("Escape then Enter before the dialog's close event: the new confirmation still runs its action", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page, hub.url, team.lea);
+  await page.goto(`${hub.url}/console/catalogue`);
+  const trigger = page.locator("#demo-confirm-host").getByRole("button", { name: "Revoke token…", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Revoke the token laptop-cli?" });
+  await expect(dialog).toBeVisible();
+  // The close event of the first confirmation is held back, as a busy frame would, until the second one is open.
+  const late = await page.locator("#confirm").evaluateHandle((d) => {
+    const held = { release: () => {} };
+    const hold = (e: Event) => {
+      if (e.target !== d) return;
+      e.stopPropagation();
+      document.removeEventListener("close", hold, true);
+      held.release = () => d.dispatchEvent(new Event("close"));
+    };
+    document.addEventListener("close", hold, true);
+    return held;
+  });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await late.evaluate((held) => held.release());
+
+  await page.keyboard.press("Tab");
+  expect((await focused(page)).text).toBe("Revoke token");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".toasts .toast")).toHaveText("Token laptop-cli revoked.");
+});
+
 test("a form's button can ask first with its own words; confirming sends that button's value with the form", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, hub.url, team.lea);
@@ -160,7 +184,7 @@ test("a form's button can ask first with its own words; confirming sends that bu
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("It stays under Rejected with your note.");
   expect((await focused(page)).text).toBe("Cancel");
-  await escapeDialog(page);
+  await page.keyboard.press("Escape");
   await expect(reject).toBeFocused();
 
   await page.keyboard.press("Enter");

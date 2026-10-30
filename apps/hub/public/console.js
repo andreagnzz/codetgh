@@ -53,8 +53,10 @@
     if (dialog?.open && pending && e.detail.elt !== pending.elt && e.detail.target?.contains(pending.elt)) e.detail.shouldSwap = false;
   });
   // Closed by Cancel, Escape or after the action: the keyboard goes back to the trigger, or to the button of the row menu that
-  // held it, which closed when the dialog took the focus.
+  // held it, which closed when the dialog took the focus. The event comes a frame late: a confirmation asked meanwhile (Escape
+  // then Enter) has opened the dialog again, and keeps its request.
   dialog?.addEventListener("close", () => {
+    if (dialog.open) return;
     const back = pending && triggerOf(pending.elt, pending.by);
     pending = null;
     if (!back?.isConnected) return;
@@ -104,6 +106,9 @@
     // Refused, the dialog stays open and can be confirmed again.
     if (pending?.elt === e.detail.elt) pending.sent = false;
     if (e.detail.successful && liveRegion(e.detail.elt)) loadedAt = new Date();
+    // A form folded behind its button (add an external agent, invite, create a token) shows its result under it, then
+    // empties for the next one; refused, it keeps what was typed.
+    if (e.detail.successful && e.detail.elt.matches?.("details.panel form[hx-target]")) e.detail.elt.reset();
   });
   // The hub answers a refused action with its reason (4xx); anything else gets a generic next step.
   document.body.addEventListener("htmx:responseError", (e) => {

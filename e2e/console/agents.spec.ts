@@ -93,6 +93,9 @@ test("add an external agent: the form opens under the page header, the token sho
   await page.keyboard.press("Enter");
   await expect(page.locator("#a2a-result")).toContainText("Copy the token now.");
   await expect(page.locator("#a2a-result code")).toContainText("Authorization: Bearer ctgh_");
+  // Added, the form is empty again for the next one; the token stays under it.
+  await expect(page.locator("#a2a-name")).toHaveValue("");
+  await expect(panel).toBeVisible();
   expect(await tab(page)).toBe("Copy the two lines");
 });
 

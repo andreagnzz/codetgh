@@ -933,10 +933,14 @@ describe("codetgh runner review loop", () => {
   });
 
   it("blocks the task after 3 rounds without approval and tells the owner", async () => {
+    // Four passes, seven agents: in the fake docker each agent adds five processes (docker run, then rm and ps before and
+    // after it) and each pass three docker checks, which made this the slowest test on Windows. The rounds count the same
+    // without a container; the first test of this block covers the read-only review in one.
+    const none = { isolation: "none" };
     const id = await create("REJECT9 never");
-    await runner();
+    await runner(none);
     const pr = (await row(id))?.prNumber ?? 0;
-    for (let i = 0; i < 3; i++) await runner();
+    for (let i = 0; i < 3; i++) await runner(none);
     const note = `3 review rounds without approval, see PR #${pr}`;
     const t = await row(id);
     expect(t).toMatchObject({ status: "blocked", reviewRound: 3, leaseOwner: null });

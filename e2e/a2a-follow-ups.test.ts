@@ -92,3 +92,20 @@ it("opens a new task in the same context for a question asked after an answer", 
   expect(texts(Role.ROLE_AGENT).join("\n")).toContain("In Frankfurt.");
   expect(texts(Role.ROLE_AGENT).join("\n")).not.toContain("eu-west.");
 });
+
+// tasks/list with a context id: the tasks of that conversation only; without one, the agent's latest tasks.
+it("lists only the tasks of the context asked for", async () => {
+  const client = await new ClientFactory().createFromUrl(hub.url);
+  const sent = await client.sendMessage(ask("Do you have a status page?"), auth());
+  const first = "status" in sent ? sent : null;
+  const other = await client.sendMessage(ask("Who is on call this week?"), auth());
+  const list = async (contextId: string) =>
+    (
+      await client.listTasks(
+        { tenant: "", contextId, status: TaskState.TASK_STATE_UNSPECIFIED, pageToken: "", statusTimestampAfter: undefined },
+        auth(),
+      )
+    ).tasks.map((t) => t.id);
+  expect(await list(first?.contextId ?? "")).toEqual([first?.id]);
+  expect(await list("")).toEqual(expect.arrayContaining([first?.id, "status" in other ? other.id : ""]));
+});
