@@ -8,7 +8,7 @@ import {
   ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/index.js";
 import { a2aTask, agent, membership, message, receipt, user } from "../db/schema.js";
@@ -190,12 +190,22 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       if (!row) return undefined;
       const task = row.task;
       if (!row.messageId) return task;
-      // The task's questions: the first one, and the follow-ups the agent sent as replies to it.
+      // The task's questions: the first one, and the follow-ups the agent sent as replies to it, not the first question of a
+      // later task in its context.
       const question = alias(message, "question");
       const questions = db
         .select({ id: question.id })
         .from(question)
-        .where(or(eq(question.id, row.messageId), and(eq(question.replyTo, row.messageId), eq(question.fromAgentId, a.id))));
+        .where(
+          or(
+            eq(question.id, row.messageId),
+            and(
+              eq(question.replyTo, row.messageId),
+              eq(question.fromAgentId, a.id),
+              notExists(db.select().from(a2aTask).where(eq(a2aTask.messageId, question.id))),
+            ),
+          ),
+        );
       const answers = await db
         .select({ message, fromName: user.name })
         .from(message)
@@ -243,8 +253,18 @@ export function a2aServer(deps: MessagingDeps, publicUrl: string) {
       try {
         // The SDK refuses a follow-up whose context id differs from its task's: refused here, a long one is never stored.
         if (rc.contextId.length > MAX_ID) throw new HubError("E_INVALID", `contextId over ${MAX_ID} characters`);
-        // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too.
-        const [first] = rc.task ? await db.select({ messageId: a2aTask.messageId }).from(a2aTask).where(eq(a2aTask.id, task.id)) : [];
+        // A follow-up goes to the team as a reply to the task's first question, so load finds the answers to it too. A new
+        // task in a context this agent already used replies to the earliest question of that context that still exists, so
+        // it joins that thread: the join on message skips a question the retention purged, a parent sendMessage would not find.
+        const [first] = rc.task
+          ? await db.select({ messageId: a2aTask.messageId }).from(a2aTask).where(eq(a2aTask.id, task.id))
+          : await db
+              .select({ messageId: a2aTask.messageId })
+              .from(a2aTask)
+              .innerJoin(message, eq(message.id, a2aTask.messageId))
+              .where(and(eq(a2aTask.teamId, p.teamId), eq(a2aTask.agentId, a.id), sql`${a2aTask.task}->>'contextId' = ${rc.contextId}`))
+              .orderBy(asc(message.createdAt))
+              .limit(1);
         const sent = await sendMessage(
           deps,
           { p, agent: a, via: "rest" },
