@@ -46,8 +46,12 @@ describe("delegation to an opt-in session", () => {
   it("wakes the delegate with an authorized request, and its reply reaches the sender mid-turn", async () => {
     const env = { ...hookEnv(hub.url, team.sam.token), CLAUDE_PLUGIN_OPTION_PUSH_MODE: "rewake" };
     const waiting = runHook("rewake", { session_id: "sam-del" }, env);
+    // Only in the state files: a hook writes a *.tmp file beside one and renames it over it, so a tmp file listed can be
+    // gone when it is read.
     const recorded = () =>
-      readdirSync(env.CODETGH_STATE_DIR).some((f) => readFileSync(join(env.CODETGH_STATE_DIR, f), "utf8").includes('"waiter"'));
+      readdirSync(env.CODETGH_STATE_DIR)
+        .filter((f) => !f.endsWith(".tmp"))
+        .some((f) => readFileSync(join(env.CODETGH_STATE_DIR, f), "utf8").includes('"waiter"'));
     for (let i = 0; i < 200 && !recorded(); i++) await new Promise((r) => setTimeout(r, 50));
 
     const started = Date.now();
