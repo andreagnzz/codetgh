@@ -17,7 +17,7 @@
     "@codetgh/guard": "workspace:*",
     "@codetgh/shared": "workspace:*",
     "@electric-sql/pglite": "0.5.9",
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@modelcontextprotocol/hono": "2.0.2",
     "@modelcontextprotocol/server": "2.3.1",
     "better-auth": "1.7.7",
